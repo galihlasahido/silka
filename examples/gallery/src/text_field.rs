@@ -43,7 +43,7 @@ pub const KOLOM_KUNCI: &str = "Kunci lisensi";
 /// Nama a11y kolom yang dimatikan.
 pub const KOLOM_MATI: &str = "Nomor pelanggan";
 /// Isi tetap kolom read-only.
-pub const KUNCI: &str = "RUSTUI-2026-XYZ7";
+pub const KUNCI: &str = "SILKA-2026-XYZ7";
 
 /// Lebar kolom dalam langkah skala spacing (4pt) — 80 langkah = 320pt.
 const LEBAR: f32 = 80.0;
