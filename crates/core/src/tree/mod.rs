@@ -7,7 +7,7 @@
 //! |---|---|
 //! | `Element` (identitas/state) | slot arena ber-[`NodeId`] bergenerasi |
 //! | `RenderObject` (layout/paint/a11y) | [`RenderNode`] sebagai trait object |
-//! | `PaintingContext` | [`PaintCtx`], kosakata `rustui-paint` saja |
+//! | `PaintingContext` | [`PaintCtx`], kosakata `silka-paint` saja |
 //! | `BoxConstraints` | [`BoxConstraints`] — protokol native, bukan tempelan |
 //! | relayout boundary | dihitung tiap layout, lihat [`RenderTree::flush_layout`] |
 //!
@@ -34,9 +34,9 @@
 //! berbeda — keduanya membaca angka yang sama.
 //!
 //! ```
-//! use rustui_core::tree::{BoxConstraints, RenderTree};
-//! use rustui_core::view::{column, fixed, reconcile};
-//! use rustui_paint::Size;
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, reconcile};
+//! use silka_paint::Size;
 //!
 //! let mut tree = RenderTree::new();
 //! reconcile(

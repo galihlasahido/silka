@@ -5,12 +5,12 @@
 //! token theme (`REKOMENDASI` §2.7) ditulis manusia dalam notasi hex sRGB —
 //! palet HIG dan palet Tailwind step 50–950 keduanya begitu. Konversi ke ruang
 //! linear yang dibutuhkan GPU terjadi **di batas backend**
-//! (`rustui-renderer`), bukan di kode widget.
+//! (`silka-renderer`), bukan di kode widget.
 
 /// Warna RGBA dalam ruang sRGB non-linear, komponen 0.0–1.0, alpha straight.
 ///
 /// ```
-/// use rustui_paint::Color;
+/// use silka_paint::Color;
 ///
 /// let biru = Color::hex(0x0A84FF);
 /// assert_eq!(biru.a, 1.0);

@@ -1,7 +1,7 @@
 //! Scene: satu frame yang siap digambar, dinyatakan sebagai daftar perintah.
 //!
 //! `Scene` adalah satu-satunya hal yang menyeberang dari framework ke backend.
-//! Backend mana pun (`rustui-renderer` di wgpu hari ini; GL/CPU nanti) menerima
+//! Backend mana pun (`silka-renderer` di wgpu hari ini; GL/CPU nanti) menerima
 //! `&Scene` dan tidak pernah menerima tipe grafis milik dirinya sendiri dari
 //! sisi pemanggil (REKOMENDASI §3.2, §5 failure mode #7).
 
@@ -14,7 +14,7 @@ use crate::shadow::{Shadow, ShadowPair};
 /// Kumpulan perintah gambar untuk satu frame, plus warna latar.
 ///
 /// ```
-/// use rustui_paint::{Color, Scene};
+/// use silka_paint::{Color, Scene};
 ///
 /// let scene = Scene::new(Color::hex(0x1C1C1E));
 /// assert!(scene.is_empty());
@@ -84,7 +84,7 @@ impl Scene {
     /// jadi elevasi 0 benar-benar gratis.
     ///
     /// ```
-    /// use rustui_paint::{Color, Quad, Rect, Scene, Shadow, ShadowPair};
+    /// use silka_paint::{Color, Quad, Rect, Scene, Shadow, ShadowPair};
     ///
     /// let mut scene = Scene::new(Color::WHITE);
     /// let bayangan = ShadowPair::new(
@@ -135,7 +135,7 @@ pub enum Command {
     /// Bayangan ganda ala HIG = dua perintah ini berurutan; lihat
     /// [`Scene::push_shadowed`].
     Shadow(ShadowQuad),
-    /// Sekumpulan glyph sewarna dari atlas `rustui-text`.
+    /// Sekumpulan glyph sewarna dari atlas `silka-text`.
     ///
     /// Perintah ini hanya membawa id atlas + kotak tujuan — tidak ada font,
     /// tidak ada shaping, tidak ada DPI (lihat modul [`crate::glyph`]).

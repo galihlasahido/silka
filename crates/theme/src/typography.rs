@@ -10,9 +10,9 @@
 //! | Optical size | **ya** — sumbu `opsz` Inter v4 diikat ke ukuran | tidak |
 //! | Tracking | tabel ala SF: longgar di kecil, rapat di besar | 0, kecuali judul besar |
 //!
-//! Crate ini sengaja **tidak** bergantung pada `rustui-text`: token adalah
+//! Crate ini sengaja **tidak** bergantung pada `silka-text`: token adalah
 //! nilai murni, dan sebuah crate token tidak boleh menyeret font shaper ke
-//! dalam pohon dependensi. Pemetaan ke `rustui_text::TextStyle` terjadi di
+//! dalam pohon dependensi. Pemetaan ke `silka_text::TextStyle` terjadi di
 //! lapisan widget:
 //!
 //! ```ignore

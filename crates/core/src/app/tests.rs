@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_paint::{Color, Command, Point, Quad, Scene, Size};
+use silka_paint::{Color, Command, Point, Quad, Scene, Size};
 
 use crate::input::{Event, PointerButton, PointerEvent, PointerPhase};
 use crate::scheduler::{Dirty, Wake};
@@ -634,7 +634,7 @@ impl crate::view::ViewNode for BergerakProps {
     }
 }
 
-/// Majukan seluruh `Bergerak` di pohon — bentuk `rustui_widgets::advance`.
+/// Majukan seluruh `Bergerak` di pohon — bentuk `silka_widgets::advance`.
 fn maju(tree: &mut crate::tree::RenderTree, tick: &crate::animation::Tick) -> Dirty {
     let mut dirty = Dirty::NONE;
     let mut tumpukan = vec![tree.root()];

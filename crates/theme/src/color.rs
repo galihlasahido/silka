@@ -4,7 +4,7 @@
 //! mengisinya dari [`crate::palette`]. Karena itu satu widget yang benar di
 //! Cupertino otomatis benar di Tailwind, terang maupun gelap (§2.7).
 
-use rustui_paint::Color;
+use silka_paint::Color;
 
 /// Token warna semantik lengkap.
 ///

@@ -3,9 +3,9 @@
 //! bisa di-drag, bukan cuma klik (rasa iOS/macOS)"*.
 //!
 //! ```
-//! # use rustui_widgets::{switch, Fonts};
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_core::signals::Runtime;
+//! # use silka_widgets::{switch, Fonts};
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_core::signals::Runtime;
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! # let rt = Runtime::new();
@@ -61,19 +61,19 @@
 
 use std::rc::Rc;
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
-use rustui_core::animation::{MotionRole, Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
+use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyCode, NamedKey,
     PointerButton, PointerPhase, VelocityTracker,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
-use rustui_text::FontWeight;
-use rustui_theme::{Preset, RadiusToken, Theme};
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::{Builder, View, ViewNode};
+use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
+use silka_text::FontWeight;
+use silka_theme::{Preset, RadiusToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -287,7 +287,7 @@ impl SwitchCallback {
 }
 
 impl PartialEq for SwitchCallback {
-    /// Identitas, bukan isi — aturan yang sama dengan [`rustui_core::Callback`].
+    /// Identitas, bukan isi — aturan yang sama dengan [`silka_core::Callback`].
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
@@ -364,7 +364,7 @@ impl SwitchNode {
                 // Satuan posisinya **bagian lintasan**, bukan poin: toleransi
                 // kecepatan yang lebih longgar mencegah ekor gerakan yang tak
                 // terlihat tapi terus meminta frame (§3.5).
-                .with_tolerance(rustui_core::animation::Tolerance::new(
+                .with_tolerance(silka_core::animation::Tolerance::new(
                     1.0 / 512.0,
                     1.0 / 64.0,
                 )),
@@ -999,8 +999,8 @@ pub struct Switch {
 /// terdengar berbeda.
 ///
 /// ```
-/// # use rustui_widgets::{switch, Fonts};
-/// # use rustui_theme::{Appearance, Theme};
+/// # use silka_widgets::{switch, Fonts};
+/// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
 /// switch(&fonts, &t, "Mode pesawat")
@@ -1029,8 +1029,8 @@ pub fn toggle(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch 
 /// pilihan desain.
 ///
 /// ```
-/// # use rustui_widgets::switch_only;
-/// # use rustui_theme::{Appearance, Theme};
+/// # use silka_widgets::switch_only;
+/// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
 /// switch_only(&t).label("Wi-Fi").on(true);
 /// ```

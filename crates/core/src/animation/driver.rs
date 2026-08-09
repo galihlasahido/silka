@@ -20,8 +20,8 @@ use super::value::{Animatable, SpringValue};
 ///
 /// ```
 /// use std::time::{Duration, Instant};
-/// use rustui_core::animation::{AnimationDriver, SpringValue};
-/// use rustui_core::scheduler::{Dirty, FrameScheduler};
+/// use silka_core::animation::{AnimationDriver, SpringValue};
+/// use silka_core::scheduler::{Dirty, FrameScheduler};
 ///
 /// let mut scheduler = FrameScheduler::new();
 /// let mut driver = AnimationDriver::new();

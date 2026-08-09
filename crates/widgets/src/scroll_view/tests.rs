@@ -6,16 +6,16 @@
 //! (REKOMENDASI §9.5).
 
 use super::*;
-use rustui_core::access::AccessActions;
-use rustui_core::animation::Motion;
-use rustui_core::input::{
+use silka_core::access::AccessActions;
+use silka_core::animation::Motion;
+use silka_core::input::{
     Event, InputRouter, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent,
     PointerId, PointerPhase, Response, ScrollDelta, ScrollEvent,
 };
-use rustui_core::tree::RenderTree;
-use rustui_core::view::{column, fixed, reconcile};
-use rustui_paint::{Command, Point, Scene, Size};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::tree::RenderTree;
+use silka_core::view::{column, fixed, reconcile};
+use silka_paint::{Command, Point, Scene, Size};
+use silka_theme::{Appearance, Preset, Theme};
 use std::time::Duration;
 
 const RUANG: Size = Size::new(320.0, 400.0);

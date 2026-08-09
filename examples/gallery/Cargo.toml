@@ -1,5 +1,5 @@
 [package]
-name = "rustui-gallery"
+name = "silka-gallery"
 description = "Gallery app: demo interaktif setiap komponen sekaligus alat uji visual manual"
 version.workspace = true
 edition.workspace = true
@@ -11,13 +11,13 @@ publish = false
 # Rendering headless untuk golden/snapshot test halaman gallery (§9.5):
 # halaman yang sama yang tampil di window digambar ke tekstur offscreen lalu
 # dihitung pikselnya. Hanya dev-dependency — aplikasi sendiri tidak pernah
-# menyentuh backend langsung, ia lewat `rustui-platform`.
-rustui-renderer.workspace = true
+# menyentuh backend langsung, ia lewat `silka-platform`.
+silka-renderer.workspace = true
 
 [dependencies]
-rustui-widgets.workspace = true
-rustui-core.workspace = true
-rustui-theme.workspace = true
-rustui-platform.workspace = true
-rustui-paint.workspace = true
-rustui-text.workspace = true
+silka-widgets.workspace = true
+silka-core.workspace = true
+silka-theme.workspace = true
+silka-platform.workspace = true
+silka-paint.workspace = true
+silka-text.workspace = true

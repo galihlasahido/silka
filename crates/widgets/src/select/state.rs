@@ -7,7 +7,7 @@
 //! `(keadaan, niat) → keadaan`. Karena itu seluruhnya bisa diuji tanpa GPU,
 //! tanpa font, dan tanpa satu pun frame (§9.5).
 
-use rustui_paint::Rect;
+use silka_paint::Rect;
 
 use crate::overlay::Anchor;
 
@@ -32,7 +32,7 @@ pub enum SelectIntent {
 /// Keadaan satu select yang **dimiliki aplikasi**.
 ///
 /// Ringkas dan `Copy` supaya muat di satu
-/// [`Signal`](rustui_core::signals::Signal): satu titipan state, bukan empat.
+/// [`Signal`](silka_core::signals::Signal): satu titipan state, bukan empat.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SelectState {
     /// Popup sedang terbuka.

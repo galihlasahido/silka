@@ -5,24 +5,24 @@
 //! pohon aksesibilitas: yang harus terbukti bukan "fungsi ini mengembalikan
 //! nilai itu", melainkan "pengguna yang mengetik/mengklik/mengarang komposisi
 //! IME mendapat hasil yang benar". Semua yang murni Unicode (grapheme, kata,
-//! undo, preedit) sudah diuji di `rustui_text::edit`; di sini yang diuji adalah
+//! undo, preedit) sudah diuji di `silka_text::edit`; di sini yang diuji adalah
 //! sambungannya ke pohon, geometri, token, a11y, dan spring.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::{AccessActions, AccessRole};
-use rustui_core::animation::{Motion, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessRole};
+use silka_core::animation::{Motion, Tick};
+use silka_core::input::{
     Event, ImeEvent, ImeRequest, InputRouter, KeyCode, KeyEvent, Modifiers, NamedKey,
     PointerButton, PointerEvent, PointerPhase, Response,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, NodeId, RenderTree};
-use rustui_core::view::{reconcile, View};
-use rustui_paint::{Command, Point, Rect, Scene, Size};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, NodeId, RenderTree};
+use silka_core::view::{reconcile, View};
+use silka_paint::{Command, Point, Rect, Scene, Size};
+use silka_theme::{Appearance, Preset, Theme};
 
 use super::*;
 use crate::fonts::Fonts;
@@ -149,7 +149,7 @@ impl Uji {
     }
 
     fn scene(&mut self) -> Scene {
-        let mut s = Scene::new(rustui_paint::Color::BLACK);
+        let mut s = Scene::new(silka_paint::Color::BLACK);
         self.tree.paint_into(&mut s);
         s
     }
@@ -806,7 +806,7 @@ fn cincin_fokus_tumbuh_lewat_spring_bukan_melompat() {
 }
 
 /// Tebal cincin fokus yang benar-benar digambar frame ini.
-fn tebal_cincin(u: &mut Uji, warna: rustui_paint::Color) -> f32 {
+fn tebal_cincin(u: &mut Uji, warna: silka_paint::Color) -> f32 {
     u.scene()
         .commands()
         .iter()
@@ -948,7 +948,7 @@ fn kotak_seleksi_dan_caret_ikut_bergeser_saat_isi_tergulir() {
 
 #[test]
 fn dikte_suara_mengisi_kolom_lewat_aksi_set_value() {
-    use rustui_core::access::{AccessAction, AccessActionRequest};
+    use silka_core::access::{AccessAction, AccessActionRequest};
 
     let f = fonts();
     let t = tema();
@@ -978,7 +978,7 @@ fn dikte_suara_mengisi_kolom_lewat_aksi_set_value() {
 
 #[test]
 fn kolom_mati_dan_read_only_menolak_set_value() {
-    use rustui_core::access::{AccessAction, AccessActionRequest};
+    use silka_core::access::{AccessAction, AccessActionRequest};
 
     let f = fonts();
     let t = tema();

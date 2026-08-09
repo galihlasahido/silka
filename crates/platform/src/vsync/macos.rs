@@ -53,7 +53,7 @@ define_class!(
     struct DisplayLinkTarget;
 
     impl DisplayLinkTarget {
-        #[unsafe(method(rustuiDisplayLinkFired:))]
+        #[unsafe(method(silkaDisplayLinkFired:))]
         fn fired(&self, link: &CADisplayLink) {
             let ivars = self.ivars();
             ivars.clock.tick(interval_of(link));
@@ -116,12 +116,12 @@ impl DisplayLink {
         let target = DisplayLinkTarget::new(mtm, clock.clone(), Box::new(notify));
 
         // SAFETY: selector di atas sudah dipastikan ada; `target` merespons
-        // `rustuiDisplayLinkFired:` dengan tanda tangan yang cocok.
+        // `silkaDisplayLinkFired:` dengan tanda tangan yang cocok.
         let link: Option<Retained<CADisplayLink>> = unsafe {
             msg_send![
                 view,
                 displayLinkWithTarget: &*target,
-                selector: sel!(rustuiDisplayLinkFired:),
+                selector: sel!(silkaDisplayLinkFired:),
             ]
         };
         let link = link?;

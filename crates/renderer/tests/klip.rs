@@ -22,9 +22,9 @@
 //! Tanpa adapter GPU, test dilewati dengan pesan — kegagalan palsu di CI jauh
 //! lebih mahal daripada satu test yang absen.
 
-use rustui_paint::{Color, Command, Point, Quad, Rect, Scene, Size};
-use rustui_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
-use rustui_text::{TextConstraints, TextEngine, TextStyle};
+use silka_paint::{Color, Command, Point, Quad, Rect, Scene, Size};
+use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
+use silka_text::{TextConstraints, TextEngine, TextStyle};
 
 /// Kanvas 128×128 poin — cukup lega untuk clip bersarang tanpa menyentuh tepi.
 const SISI: f32 = 128.0;
@@ -243,7 +243,7 @@ fn clip_bersarang_mengiris_dan_memulihkan_kotak_induk() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // `rustui-core` mengirim kotak yang SUDAH diiriskan: `dalam` di bawah ini
+    // `silka-core` mengirim kotak yang SUDAH diiriskan: `dalam` di bawah ini
     // adalah hasil luar ∩ viewport dalam, bukan viewport dalam apa adanya.
     let luar = Rect::new(16.0, 16.0, 96.0, 96.0); // 16..112
     let dalam = Rect::new(48.0, 48.0, 32.0, 32.0); // 48..80

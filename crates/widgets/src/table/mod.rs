@@ -57,7 +57,7 @@
 //! | Syarat | Di mana |
 //! |---|---|
 //! | Benar di kedua preset | seluruh nilai lewat [`TableStyle`]/[`HeaderStyle`], diisi dari token |
-//! | State interaktif + spring | sorotan baris aktif **meluncur**, hover memudar, penunjuk tujuan geser kolom meluncur — semuanya [`SpringValue`](rustui_core::animation::SpringValue) |
+//! | State interaktif + spring | sorotan baris aktif **meluncur**, hover memudar, penunjuk tujuan geser kolom meluncur — semuanya [`SpringValue`](silka_core::animation::SpringValue) |
 //! | Keyboard penuh + focus ring | ↑/↓/PageUp/PageDown/Home/End (+⇧ merentang), ←/→ berpindah **sel**, ⌘A, Esc, Enter/Space; cincin fokus mengelilingi sel aktif |
 //! | Node AccessKit | `Table` + `Row` per baris (termasuk baris judul) + `Cell` per sel, lengkap dengan keadaan terpilihnya |
 //! | Dark mode | konsekuensi token — tidak ada satu angka warna pun di modul ini |
@@ -76,7 +76,7 @@
 //!   dua jendela sekaligus; menunggu kebutuhan nyata.
 //! - **`size_of_set`/`position_in_set` AccessKit**: jumlah baris yang benar
 //!   tidak bisa disimpulkan dari pohon a11y karena hanya jendelanya yang
-//!   dimaterialisasi, dan [`rustui_core::access::AccessNode`] belum punya
+//!   dimaterialisasi, dan [`silka_core::access::AccessNode`] belum punya
 //!   tempat untuk angka itu — utang yang sama persis dengan `list`.
 
 pub mod column;
@@ -87,9 +87,9 @@ mod state;
 mod tests;
 mod view;
 
-use rustui_core::animation::Tick;
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{NodeId, RenderTree};
+use silka_core::animation::Tick;
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{NodeId, RenderTree};
 
 use crate::list::{sync_virtual, ListMetrics, ListState, Virtualized};
 

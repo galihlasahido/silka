@@ -2026,87 +2026,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustui-core"
-version = "0.1.0"
-dependencies = [
- "accesskit",
- "rustui-paint",
- "rustui-text",
- "taffy",
-]
-
-[[package]]
-name = "rustui-gallery"
-version = "0.1.0"
-dependencies = [
- "rustui-core",
- "rustui-paint",
- "rustui-platform",
- "rustui-renderer",
- "rustui-text",
- "rustui-theme",
- "rustui-widgets",
-]
-
-[[package]]
-name = "rustui-paint"
-version = "0.1.0"
-
-[[package]]
-name = "rustui-platform"
-version = "0.1.0"
-dependencies = [
- "accesskit_winit",
- "objc2 0.6.4",
- "objc2-foundation 0.3.2",
- "objc2-quartz-core 0.3.2",
- "rustui-core",
- "rustui-paint",
- "rustui-renderer",
- "rustui-theme",
- "winit",
-]
-
-[[package]]
-name = "rustui-renderer"
-version = "0.1.0"
-dependencies = [
- "naga",
- "pollster",
- "raw-window-handle",
- "rustui-paint",
- "rustui-text",
- "wgpu",
-]
-
-[[package]]
-name = "rustui-text"
-version = "0.1.0"
-dependencies = [
- "cosmic-text",
- "fontdb",
- "rustui-paint",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "rustui-theme"
-version = "0.1.0"
-dependencies = [
- "rustui-paint",
-]
-
-[[package]]
-name = "rustui-widgets"
-version = "0.1.0"
-dependencies = [
- "rustui-core",
- "rustui-paint",
- "rustui-text",
- "rustui-theme",
-]
-
-[[package]]
 name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2213,6 +2132,87 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "silka-core"
+version = "0.1.0"
+dependencies = [
+ "accesskit",
+ "silka-paint",
+ "silka-text",
+ "taffy",
+]
+
+[[package]]
+name = "silka-gallery"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-renderer",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
+]
+
+[[package]]
+name = "silka-paint"
+version = "0.1.0"
+
+[[package]]
+name = "silka-platform"
+version = "0.1.0"
+dependencies = [
+ "accesskit_winit",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+ "objc2-quartz-core 0.3.2",
+ "silka-core",
+ "silka-paint",
+ "silka-renderer",
+ "silka-theme",
+ "winit",
+]
+
+[[package]]
+name = "silka-renderer"
+version = "0.1.0"
+dependencies = [
+ "naga",
+ "pollster",
+ "raw-window-handle",
+ "silka-paint",
+ "silka-text",
+ "wgpu",
+]
+
+[[package]]
+name = "silka-text"
+version = "0.1.0"
+dependencies = [
+ "cosmic-text",
+ "fontdb",
+ "silka-paint",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "silka-theme"
+version = "0.1.0"
+dependencies = [
+ "silka-paint",
+]
+
+[[package]]
+name = "silka-widgets"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-text",
+ "silka-theme",
 ]
 
 [[package]]

@@ -2,9 +2,9 @@
 //!
 //! Ini satu-satunya berkas di seluruh pohon yang tahu bentuk event winit.
 //! Aturannya sama dengan aturan wgpu (§3.2): nama `winit::` tidak boleh muncul
-//! di `rustui-core` maupun di kode widget, supaya shell lain (uji headless,
+//! di `silka-core` maupun di kode widget, supaya shell lain (uji headless,
 //! replay rekaman input, platform baru) cukup menghasilkan
-//! [`rustui_core::input::Event`].
+//! [`silka_core::input::Event`].
 //!
 //! Tiga hal yang **wajib** diselesaikan di sini, bukan di atas:
 //!
@@ -20,12 +20,12 @@
 
 use std::time::{Duration, Instant};
 
-use rustui_core::input::{
+use silka_core::input::{
     Buttons, CursorIcon, Event, ImeEvent, KeyCode, KeyEvent, KeyState, Modifiers, NamedKey,
     PointerButton, PointerEvent, PointerId, PointerKind, PointerPhase, ScrollDelta, ScrollEvent,
     ScrollPhase,
 };
-use rustui_paint::{Point, Rect};
+use silka_paint::{Point, Rect};
 use winit::dpi::{LogicalPosition, LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase};
 use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamed};

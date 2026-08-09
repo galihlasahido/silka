@@ -22,15 +22,15 @@
 //! disusun tangan, tidak ada aritmetika tata letak, tidak ada satu pun angka
 //! warna, dan tidak ada satu pun nama tipe wgpu/cosmic-text.
 
-use rustui_core::access::AccessRole;
-use rustui_core::app::{component, BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use rustui_core::view::{column, constrained, row, View};
-use rustui_paint::Insets;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{text, text_field, Fonts};
+use silka_core::access::AccessRole;
+use silka_core::app::{component, BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
+use silka_core::view::{column, constrained, row, View};
+use silka_paint::Insets;
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{text, text_field, Fonts};
 
 /// Judul halaman.
 pub const JUDUL: &str = "Text Field";
@@ -222,16 +222,16 @@ fn gema(fonts: &Fonts, nama: Signal<String>, surel: Signal<String>, terkirim: Si
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::{AccessActions, AccessRole};
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::{AccessActions, AccessRole};
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, ImeEvent, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent,
         PointerPhase,
     };
-    use rustui_paint::{Point, Rect, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
-    use rustui_widgets::MIN_HIT_TARGET;
+    use silka_paint::{Point, Rect, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
+    use silka_widgets::MIN_HIT_TARGET;
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
@@ -248,9 +248,9 @@ mod tests {
     }
 
     /// Satu frame lengkap termasuk detak animasi — urutan yang sama dengan
-    /// shell (`rustui_platform::run_app_with`).
+    /// shell (`silka_platform::run_app_with`).
     fn frame(ui: &mut AppRuntime, waktu: Instant) {
-        ui.animate_at(waktu, rustui_widgets::advance);
+        ui.animate_at(waktu, silka_widgets::advance);
         ui.frame();
     }
 

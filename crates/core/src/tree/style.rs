@@ -11,17 +11,17 @@
 //! token §2.6/§2.7: `gap_3()` berarti tiga langkah skala, bukan "12 piksel yang
 //! kebetulan enak dilihat".
 
-use rustui_paint::Insets;
+use silka_paint::Insets;
 
 use super::primitives::Axis;
 
 /// Satu langkah skala spacing, dalam poin logis.
 ///
-/// Cermin dari `rustui_theme::SpacingTokens::unit` — kedua preset (Cupertino
-/// dan Tailwind/shadcn) memakai 4pt (§2.7). `rustui-core` tidak boleh
+/// Cermin dari `silka_theme::SpacingTokens::unit` — kedua preset (Cupertino
+/// dan Tailwind/shadcn) memakai 4pt (§2.7). `silka-core` tidak boleh
 /// bergantung pada crate theme (theme yang dibangun di atas core, bukan
 /// sebaliknya), jadi angkanya diulang di sini dan dijaga oleh unit test di
-/// `rustui-widgets` saat lapisan itu menyambungkan keduanya.
+/// `silka-widgets` saat lapisan itu menyambungkan keduanya.
 pub const SPACING_UNIT: f32 = 4.0;
 
 /// Algoritma yang dipakai sebuah wadah untuk menata anak-anaknya.

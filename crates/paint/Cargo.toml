@@ -1,5 +1,5 @@
 [package]
-name = "rustui-paint"
+name = "silka-paint"
 description = "Abstraksi perintah gambar UI: rect/glyph/shadow/blur — tanpa tipe wgpu di API publik"
 version.workspace = true
 edition.workspace = true

@@ -9,16 +9,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::{AccessActions, AccessRole};
-use rustui_core::animation::{Motion, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessRole};
+use silka_core::animation::{Motion, Tick};
+use silka_core::input::{
     Event, InputRouter, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
 };
-use rustui_core::signals::Runtime;
-use rustui_core::tree::{BoxConstraints, NodeId, RenderTree};
-use rustui_core::view::{column, reconcile, View};
-use rustui_paint::{Color, Command, Point, Rect, Scene, Size};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::signals::Runtime;
+use silka_core::tree::{BoxConstraints, NodeId, RenderTree};
+use silka_core::view::{column, reconcile, View};
+use silka_paint::{Color, Command, Point, Rect, Scene, Size};
+use silka_theme::{Appearance, Preset, Theme};
 
 use super::*;
 use crate::overlay::{self, overlay_layer};
@@ -39,7 +39,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
 }
 
 /// Node pertama bertipe `T` di dalam pohon.
-fn cari<T: rustui_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
+fn cari<T: silka_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
     if tree.node_ref::<T>(id).is_some() {
         return Some(id);
     }
@@ -415,9 +415,9 @@ fn popup_terbuka_menjadi_menu_dengan_item_bertanda() {
         assert_eq!(e.node.label.as_deref(), Some(OPSI[i]));
         assert!(e.node.actions.contains(AccessActions::CLICK));
         let harus = if i == 2 {
-            rustui_core::access::AccessToggled::On
+            silka_core::access::AccessToggled::On
         } else {
-            rustui_core::access::AccessToggled::Off
+            silka_core::access::AccessToggled::Off
         };
         assert_eq!(e.node.toggled, Some(harus), "item {i}");
     }
@@ -434,7 +434,7 @@ struct Uji {
     _rt: Runtime,
     fonts: Fonts,
     theme: Theme,
-    state: rustui_core::signals::Signal<SelectState>,
+    state: silka_core::signals::Signal<SelectState>,
     tree: RenderTree,
     router: InputRouter,
     dipilih: Rc<RefCell<Vec<usize>>>,
@@ -723,7 +723,7 @@ fn hover_menuju_warna_baru_lewat_spring_bukan_lompat() {
 
     // Satu detak: warnanya bergerak ke arah target tanpa melompat ke sana.
     let tick = Tick::manual(Duration::from_millis(8), Motion::Full);
-    assert!(crate::motion::advance(&mut tree, &tick).contains(rustui_core::scheduler::Dirty::PAINT));
+    assert!(crate::motion::advance(&mut tree, &tick).contains(silka_core::scheduler::Dirty::PAINT));
     let n = tree.node_ref::<SelectTrigger>(id).unwrap();
     assert_ne!(n.background(), diam, "spring harus bergerak");
     assert_ne!(n.background(), t.color.surface_hover, "belum sampai");

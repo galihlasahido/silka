@@ -5,17 +5,17 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::{AccessActions, AccessRole, AccessToggled};
-use rustui_core::animation::{Motion, Spring, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessRole, AccessToggled};
+use silka_core::animation::{Motion, Spring, Tick};
+use silka_core::input::{
     Event, InputRouter, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent,
     PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, NodeId, RenderTree, TextDirection};
-use rustui_core::view::reconcile;
-use rustui_paint::{Color, Command, Point, Rect, Scene, Size};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, NodeId, RenderTree, TextDirection};
+use silka_core::view::reconcile;
+use silka_paint::{Color, Command, Point, Rect, Scene, Size};
+use silka_theme::{Appearance, Preset, Theme};
 
 use super::*;
 use crate::fonts::Fonts;
@@ -31,7 +31,7 @@ fn tema() -> Theme {
     Theme::cupertino(Appearance::Dark)
 }
 
-fn pohon(view: impl Into<rustui_core::view::View>) -> RenderTree {
+fn pohon(view: impl Into<silka_core::view::View>) -> RenderTree {
     let mut tree = RenderTree::new();
     reconcile(&mut tree, view);
     tree.layout(BoxConstraints::loose(RUANG));
@@ -324,7 +324,7 @@ fn reduced_motion_mematikan_sorotan_dan_membuang_pantulan_indikator() {
     // sepenuhnya, jadi satu detak sudah menyelesaikannya.
     assert_eq!(
         super::TAB_TINT_MOTION,
-        rustui_core::animation::MotionRole::Decorative
+        silka_core::animation::MotionRole::Decorative
     );
 
     reconcile(

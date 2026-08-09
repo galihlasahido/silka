@@ -1,7 +1,7 @@
 //! **Model editing teks**: caret per grapheme, seleksi, undo/redo, preedit IME.
 //!
 //! Ini separuh non-visual dari `text_field` (`KOMPONEN.md` Tier 2, "komponen
-//! tersulit di seluruh katalog"). Ia sengaja hidup di `rustui-text`, bukan di
+//! tersulit di seluruh katalog"). Ia sengaja hidup di `silka-text`, bukan di
 //! widget, karena tiga alasan:
 //!
 //! 1. **Aturannya aturan Unicode, bukan aturan tampilan.** Gerakan caret per
@@ -15,7 +15,7 @@
 //!    salah menyimpan huruf setengah jadi ke aplikasi.
 //!
 //! ```
-//! use rustui_text::edit::{Movement, TextEdit};
+//! use silka_text::edit::{Movement, TextEdit};
 //!
 //! let mut e = TextEdit::new("halo");
 //! e.move_caret(Movement::LineEnd, false);

@@ -5,7 +5,7 @@
 //! berbeda dan itulah gunanya halaman ini: di sini **tidak ada satu pun
 //! `Scene` yang disusun tangan**. Yang ditulis hanyalah pohon view; scene-nya
 //! lahir dari `signals → view-diff → layout → paint` di dalam
-//! [`rustui_core::app::AppRuntime`] (REKOMENDASI §2, §3.5).
+//! [`silka_core::app::AppRuntime`] (REKOMENDASI §2, §3.5).
 //!
 //! Dua hal yang ikut terbukti dengan menjalankan halaman ini:
 //!
@@ -16,12 +16,12 @@
 //!    `Signal<Theme>`, dan yang dibangun ulang hanyalah komponen yang
 //!    benar-benar membacanya (§2.7).
 
-use rustui_core::app::{component, BuildCtx};
-use rustui_core::signals::{Key, Signal};
-use rustui_core::tree::CrossAlign;
-use rustui_core::view::{column, expanded, fixed, row, View};
-use rustui_paint::{CornerStyle, Corners, Insets, ShadowPair};
-use rustui_theme::Theme;
+use silka_core::app::{component, BuildCtx};
+use silka_core::signals::{Key, Signal};
+use silka_core::tree::CrossAlign;
+use silka_core::view::{column, expanded, fixed, row, View};
+use silka_paint::{CornerStyle, Corners, Insets, ShadowPair};
+use silka_theme::Theme;
 
 /// Berapa baris kartu (satu baris = satu radius + satu elevasi).
 pub const BARIS: usize = 4;
@@ -94,9 +94,9 @@ fn gaya_baris(t: &Theme, baris: usize) -> (f32, ShadowPair) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::app::{app, AppRuntime};
-    use rustui_paint::{Command, Quad, Size};
-    use rustui_theme::{Appearance, Preset};
+    use silka_core::app::{app, AppRuntime};
+    use silka_paint::{Command, Quad, Size};
+    use silka_theme::{Appearance, Preset};
 
     const VIEWPORT: Size = Size::new(1024.0, 720.0);
 

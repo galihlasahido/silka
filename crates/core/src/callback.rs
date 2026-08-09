@@ -3,10 +3,10 @@
 //! Inilah bentuk `on_press` yang dijanjikan REKOMENDASI §2.5:
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
+//! # use silka_core::signals::Runtime;
 //! # let rt = Runtime::new();
 //! # let count = rt.signal(0i32);
-//! use rustui_core::Callback;
+//! use silka_core::Callback;
 //!
 //! let naikkan = Callback::new(move || count.set(count.get() + 1));
 //! naikkan.call();

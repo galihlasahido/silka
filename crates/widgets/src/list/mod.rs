@@ -55,7 +55,7 @@
 //! | Syarat | Di mana |
 //! |---|---|
 //! | Benar di kedua preset | seluruh nilai lewat [`ListStyle`], diisi dari token |
-//! | State interaktif + spring | sorotan seleksi **meluncur** antar baris, hover dan tekan memudar — semuanya [`SpringValue`](rustui_core::animation::SpringValue) |
+//! | State interaktif + spring | sorotan seleksi **meluncur** antar baris, hover dan tekan memudar — semuanya [`SpringValue`](silka_core::animation::SpringValue) |
 //! | Keyboard penuh + focus ring | ↑/↓/PageUp/PageDown/Home/End/Enter/Space; cincin fokus token `focus_ring` mengelilingi baris terpilih |
 //! | Node AccessKit | `List` + satu `ListItem` per baris beserta keadaan terpilihnya |
 //! | Dark mode | konsekuensi token — tidak ada satu angka warna pun di modul ini |
@@ -78,7 +78,7 @@
 //!   nyata.
 //! - **`size_of_set`/`position_in_set` AccessKit**: jumlah baris yang benar
 //!   tidak bisa disimpulkan dari pohon a11y karena hanya jendelanya yang
-//!   dimaterialisasi, dan [`rustui_core::access::AccessNode`] belum punya
+//!   dimaterialisasi, dan [`silka_core::access::AccessNode`] belum punya
 //!   tempat untuk angka itu.
 
 mod geometry;
@@ -88,9 +88,9 @@ mod state;
 mod tests;
 mod view;
 
-use rustui_core::animation::Tick;
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{NodeId, RenderNode, RenderTree};
+use silka_core::animation::Tick;
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{NodeId, RenderNode, RenderTree};
 
 use crate::scroll_view::{self, ScrollView};
 
@@ -176,7 +176,7 @@ pub fn nodes(tree: &RenderTree) -> Vec<NodeId> {
 ///
 /// Dua pekerjaan, keduanya butuh melihat pohon dan karena itu tidak boleh
 /// dikerjakan dari dalam `event` sebuah node ("node hanya boleh mengubah
-/// dirinya sendiri", [`rustui_core::tree`]):
+/// dirinya sendiri", [`silka_core::tree`]):
 ///
 /// 1. **Terbitkan posisi guliran** dari [`ScrollView`] ke [`ListState`].
 ///    Inilah yang membuat jendela baris menyusul guliran pada frame yang sama:

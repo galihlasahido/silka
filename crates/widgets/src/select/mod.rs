@@ -2,10 +2,10 @@
 //! shadcn.
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_core::view::column;
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_widgets::{overlay::overlay_layer, select, Fonts, SelectState};
+//! # use silka_core::signals::Runtime;
+//! # use silka_core::view::column;
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_widgets::{overlay::overlay_layer, select, Fonts, SelectState};
 //! # let rt = Runtime::new();
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
@@ -50,7 +50,7 @@
 //! | Node AccessKit | Pemicu = `Button` + nilai + `Expand`/`Collapse`; baris = `MenuItem` + `toggled` |
 //! | Dark mode | Token; tidak ada satu pun angka warna di berkas ini |
 //! | Hit target ≥ 44pt | `min_height` pemicu **dan** setiap baris |
-//! | Reduced-motion | Semua spring lewat [`Tick`](rustui_core::animation::Tick) yang membawa [`Motion`](rustui_core::animation::Motion) |
+//! | Reduced-motion | Semua spring lewat [`Tick`](silka_core::animation::Tick) yang membawa [`Motion`](silka_core::animation::Motion) |
 //!
 //! ## Yang sengaja belum ada
 //!
@@ -68,15 +68,15 @@ mod trigger;
 
 use std::rc::Rc;
 
-use rustui_core::access::AccessRole;
-use rustui_core::animation::Spring;
-use rustui_core::input::FocusPolicy;
-use rustui_core::signals::{Key, Signal};
-use rustui_core::tree::{BoxConstraints, CrossAlign};
-use rustui_core::view::{column, constrained, pad, viewport, Builder, View};
-use rustui_paint::Insets;
-use rustui_text::{FontWeight, TextConstraints, TextStyle};
-use rustui_theme::Theme;
+use silka_core::access::AccessRole;
+use silka_core::animation::Spring;
+use silka_core::input::FocusPolicy;
+use silka_core::signals::{Key, Signal};
+use silka_core::tree::{BoxConstraints, CrossAlign};
+use silka_core::view::{column, constrained, pad, viewport, Builder, View};
+use silka_paint::Insets;
+use silka_text::{FontWeight, TextConstraints, TextStyle};
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -93,7 +93,7 @@ pub use trigger::{bar_width, cari_awalan, SelectTrigger, SelectTriggerProps, Sel
 
 /// Ke mana sebuah [`SelectIntent`] dikirim.
 ///
-/// Bentuknya sama dengan [`Callback`](rustui_core::Callback) — `Clone` murah,
+/// Bentuknya sama dengan [`Callback`](silka_core::Callback) — `Clone` murah,
 /// kesamaan berdasarkan identitas — hanya saja ia membawa satu argumen, yang
 /// belum ada padanannya di inti.
 #[derive(Clone)]
@@ -516,7 +516,7 @@ impl Select {
     /// keyboard selalu terlihat. Guliran roda mouse tetap jalan, tapi rebuild
     /// berikutnya mengembalikannya ke jendela milik sorotan. Menyatukan
     /// keduanya butuh guliran yang bisa dibaca balik dari node — kait yang
-    /// belum ada di [`rustui_core::tree::Viewport`].
+    /// belum ada di [`silka_core::tree::Viewport`].
     pub fn popup(&self) -> OverlayBuilder {
         let t = &self.theme;
         let handler = self.handler();

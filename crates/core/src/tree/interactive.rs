@@ -24,7 +24,7 @@
 //!   warna, jadi preset Cupertino/Tailwind berganti tanpa satu baris pun
 //!   berubah di berkas ini.
 
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Size};
+use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Size};
 
 use crate::access::{AccessActions, AccessNode, AccessRole};
 use crate::callback::Callback;

@@ -1,7 +1,7 @@
 //! Kosakata node aksesibilitas: peran, aksi, dan isi yang **diisi widget**.
 //!
 //! Kosakata ini milik kita sendiri dan dipetakan 1:1 ke `accesskit` di
-//! [`super::bridge`] — persis pola yang dipakai `rustui-paint` terhadap wgpu
+//! [`super::bridge`] — persis pola yang dipakai `silka-paint` terhadap wgpu
 //! (§3.2): kode widget tidak pernah menyentuh tipe pustaka luar, sehingga
 //! pustaka itu bisa diganti/ditunda tanpa menyentuh satu pun widget.
 //!

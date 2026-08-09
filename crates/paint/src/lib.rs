@@ -1,4 +1,4 @@
-//! # rustui-paint
+//! # silka-paint
 //!
 //! Abstraksi perintah gambar tipis untuk seluruh framework (REKOMENDASI §3.2).
 //!
@@ -9,7 +9,7 @@
 //!   adalah *parameter* perintah gambar yang diteruskan ke shader, bukan
 //!   konstanta (REKOMENDASI §2.7, §3.6). Preset Cupertino mengirim squircle,
 //!   preset Tailwind mengirim arc biasa. Lihat [`CornerStyle`].
-//! - **Glyph** — dirujuk lewat id atlas milik `rustui-text`.
+//! - **Glyph** — dirujuk lewat id atlas milik `silka-text`.
 //! - **Shadow ganda** (ambient + key ala HIG) dan **blur** (dual-Kawase untuk
 //!   materials) — butuh dukungan layer/offscreen texture di render graph.
 //!
@@ -17,7 +17,7 @@
 //!
 //! API publik crate ini **tidak boleh memuat tipe wgpu** (atau API grafis
 //! lain). Kode widget hanya berbicara dalam perintah gambar crate ini;
-//! `rustui-renderer` (wgpu) adalah salah satu implementasi. Dengan begitu
+//! `silka-renderer` (wgpu) adalah salah satu implementasi. Dengan begitu
 //! backend baru (GL/CPU/BSD) bisa ditambah nanti di satu tempat tanpa
 //! menulis ulang framework (REKOMENDASI §5 failure mode #7).
 //!
@@ -30,7 +30,7 @@
 //! [`Scene::clear_color`].
 //!
 //! ```
-//! use rustui_paint::{Color, Corners, CornerStyle, Quad, Rect, Scene};
+//! use silka_paint::{Color, Corners, CornerStyle, Quad, Rect, Scene};
 //!
 //! let mut scene = Scene::new(Color::hex(0x1C1C1E));
 //! scene.push(

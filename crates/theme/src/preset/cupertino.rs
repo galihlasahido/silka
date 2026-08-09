@@ -9,7 +9,7 @@
 //! - **Inter dengan optical size**: sumbu `opsz` diikat ke ukuran font, dan
 //!   tracking mengikuti tabel SF (longgar di kecil, rapat di besar).
 
-use rustui_paint::{Color, CornerStyle, Shadow, ShadowPair};
+use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
 use crate::palette::hig;
 use crate::typography::{optical_tracking, weight, TypeStyle, TypographyTokens};

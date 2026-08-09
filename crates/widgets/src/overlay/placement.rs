@@ -22,9 +22,9 @@
 //!    seburuk apa pun ukurannya.
 //!
 //! ```
-//! use rustui_core::tree::TextDirection;
-//! use rustui_paint::{Rect, Size};
-//! use rustui_widgets::overlay::{place, Placement, PhysicalSide, Side};
+//! use silka_core::tree::TextDirection;
+//! use silka_paint::{Rect, Size};
+//! use silka_widgets::overlay::{place, Placement, PhysicalSide, Side};
 //!
 //! // Tombol menempel di tepi bawah layar: popover "di bawah" tidak muat…
 //! let layar = Rect::new(0.0, 0.0, 400.0, 300.0);
@@ -41,8 +41,8 @@
 //! assert!(hasil.flipped);
 //! ```
 
-use rustui_core::tree::{TextDirection, SPACING_UNIT};
-use rustui_paint::{Point, Rect, Size};
+use silka_core::tree::{TextDirection, SPACING_UNIT};
+use silka_paint::{Point, Rect, Size};
 
 // ---------------------------------------------------------------------------
 // Sisi & perataan
@@ -160,7 +160,7 @@ pub enum PlacementMode {
 /// Ditulis gaya Dart (§2.5): fungsi konstruktor + method chaining.
 ///
 /// ```
-/// use rustui_widgets::overlay::{Align, Placement, Side};
+/// use silka_widgets::overlay::{Align, Placement, Side};
 ///
 /// // Menu yang membuka ke bawah, rata awal baris, berjarak 4pt.
 /// let _ = Placement::anchored(Side::Bottom).align(Align::Start).gap(4.0);
@@ -334,7 +334,7 @@ impl Placed {
 ///
 /// Sengaja data, bukan `NodeId`: sebuah render node tidak boleh mengintip
 /// geometri node lain dari dalam layout-nya sendiri (aturan "node tidak pernah
-/// tahu posisinya sendiri", `rustui_core::tree`). Yang menerjemahkan node
+/// tahu posisinya sendiri", `silka_core::tree`). Yang menerjemahkan node
 /// pemicu menjadi kotak adalah [`crate::overlay::anchor_rect`], dipanggil di
 /// luar layout — biasanya di handler yang membuka overlay-nya.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

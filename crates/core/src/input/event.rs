@@ -1,8 +1,8 @@
 //! Kosakata event input — **milik kita sendiri**, bukan tipe winit.
 //!
-//! Alasannya sama dengan alasan `rustui-paint` tidak memuat tipe wgpu
+//! Alasannya sama dengan alasan `silka-paint` tidak memuat tipe wgpu
 //! (REKOMENDASI §3.2): kode widget berbicara dalam kosakata ini, dan
-//! `rustui-platform` adalah satu-satunya tempat yang tahu winit. Backend shell
+//! `silka-platform` adalah satu-satunya tempat yang tahu winit. Backend shell
 //! lain (uji headless, replay rekaman input, nanti mungkin platform baru) cukup
 //! menghasilkan tipe-tipe di modul ini.
 //!
@@ -17,7 +17,7 @@
 use core::fmt;
 use std::time::Duration;
 
-use rustui_paint::Point;
+use silka_paint::Point;
 
 // ---------------------------------------------------------------------------
 // Modifiers

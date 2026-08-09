@@ -20,7 +20,7 @@
 
 use std::rc::Rc;
 
-use rustui_core::signals::{use_signal, Runtime, Signal};
+use silka_core::signals::{use_signal, Runtime, Signal};
 
 use crate::list::{use_list_state, ListMetrics, ListScroll, ListState};
 

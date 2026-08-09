@@ -4,7 +4,7 @@
 //! atlas mask 1024² = 1 MiB, dan mengunggahnya setiap frame berarti membakar
 //! bandwidth untuk data yang tidak berubah. Karena itu yang diunggah hanyalah
 //! **kotak yang dilaporkan berubah** oleh
-//! [`GlyphSource::take_dirty`](rustui_paint::GlyphSource::take_dirty) — biasanya
+//! [`GlyphSource::take_dirty`](silka_paint::GlyphSource::take_dirty) — biasanya
 //! nol byte pada frame kedua dan seterusnya.
 //!
 //! Dua atlas hidup berdampingan dan keduanya selalu ter-bind:
@@ -18,7 +18,7 @@
 //! valid — aplikasi tanpa teks tidak membayar apa pun, dan tidak ada jalur
 //! kode "pipeline tanpa tekstur" yang harus dijaga terpisah.
 
-use rustui_paint::{AtlasRegion, GlyphFormat, GlyphSource};
+use silka_paint::{AtlasRegion, GlyphFormat, GlyphSource};
 
 /// Satu tekstur atlas beserta ukuran yang sedang ditampungnya.
 #[derive(Debug)]
@@ -84,10 +84,10 @@ impl GlyphAtlasGpu {
             wgpu::TextureFormat::Rgba8Unorm
         };
         Self {
-            mask: AtlasTexture::new(device, "rustui.atlas.mask", wgpu::TextureFormat::R8Unorm, 1),
-            color: AtlasTexture::new(device, "rustui.atlas.color", color_format, 1),
+            mask: AtlasTexture::new(device, "silka.atlas.mask", wgpu::TextureFormat::R8Unorm, 1),
+            color: AtlasTexture::new(device, "silka.atlas.color", color_format, 1),
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
-                label: Some("rustui.atlas.sampler"),
+                label: Some("silka.atlas.sampler"),
                 // Clamp: glyph di tepi atlas tidak boleh mengambil texel dari
                 // sisi seberang. Padding 1 px antar entri menjaga tetangga.
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -152,8 +152,8 @@ impl GlyphAtlasGpu {
             let tumbuh = self.texture(format).size != diminta;
             if tumbuh {
                 let (label, tex_format) = match format {
-                    GlyphFormat::Mask => ("rustui.atlas.mask", self.mask.format),
-                    GlyphFormat::Color => ("rustui.atlas.color", self.color.format),
+                    GlyphFormat::Mask => ("silka.atlas.mask", self.mask.format),
+                    GlyphFormat::Color => ("silka.atlas.color", self.color.format),
                 };
                 *self.texture_mut(format) = AtlasTexture::new(device, label, tex_format, diminta);
                 self.revision += 1;

@@ -1,13 +1,13 @@
 //! Unit test pass paint: isi [`Scene`] yang dihasilkan render tree.
 //!
 //! Yang diperiksa di sini bukan piksel (itu urusan test rasterisasi
-//! `rustui-renderer`), melainkan **kontraknya**: berapa perintah yang keluar,
+//! `silka-renderer`), melainkan **kontraknya**: berapa perintah yang keluar,
 //! urutannya, koordinat absolutnya setelah padding/flex, dan apakah clip
 //! viewport benar-benar membuang isi yang tergulir keluar.
 
 use std::any::TypeId;
 
-use rustui_paint::{
+use silka_paint::{
     Color, Command, CornerStyle, Corners, Glyph, GlyphImageId, GlyphRun, Insets, Point, Quad, Rect,
     Shadow, ShadowPair, Size,
 };
@@ -30,7 +30,7 @@ fn anak(tree: &RenderTree, id: NodeId, i: usize) -> NodeId {
 }
 
 /// Kotak-kotak di scene, urut, beserta warnanya.
-fn kotak(scene: &rustui_paint::Scene) -> Vec<(Rect, Color)> {
+fn kotak(scene: &silka_paint::Scene) -> Vec<(Rect, Color)> {
     scene
         .commands()
         .iter()

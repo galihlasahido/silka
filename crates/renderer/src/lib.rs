@@ -1,8 +1,8 @@
-//! # rustui-renderer
+//! # silka-renderer
 //!
 //! Backend **wgpu** — satu-satunya tempat di workspace yang boleh menyentuh
 //! tipe wgpu (REKOMENDASI §3.2). Mengimplementasikan perintah gambar
-//! `rustui-paint` dengan shader SDF khusus UI ala GPUI:
+//! `silka-paint` dengan shader SDF khusus UI ala GPUI:
 //!
 //! - Rounded rect + **squircle** (superellipse G2-continuous) langsung di SDF
 //!   shader; radius/kelengkungan datang sebagai parameter per-perintah.
@@ -14,7 +14,7 @@
 //! Render hanya saat dirty; vsync lewat display link per platform (§3.5).
 //!
 //! Backend alternatif di masa depan (vello_hybrid GL, tiny-skia CPU) menjadi
-//! crate saudara yang mengimplementasikan `rustui-paint` yang sama.
+//! crate saudara yang mengimplementasikan `silka-paint` yang sama.
 //!
 //! ## Yang sudah ada (milestone `window-wgpu` + `sdf-shader` + `glyph-gpu-bridge` + `clip-gpu`)
 //!
@@ -49,8 +49,8 @@
 //!   GPU — nol byte pada frame yang teksnya tidak berubah.
 //! - **Satu draw call untuk seluruh scene**: teks ikut dalam urutan perintah
 //!   yang sama dengan kotak dan bayangan, jadi teks selalu di atas latarnya.
-//! - Atlasnya datang dari [`rustui_paint::GlyphSource`] — backend tidak pernah
-//!   menyebut `rustui-text`, dan `rustui-text` tidak pernah menyebut wgpu.
+//! - Atlasnya datang dari [`silka_paint::GlyphSource`] — backend tidak pernah
+//!   menyebut `silka-text`, dan `silka-text` tidak pernah menyebut wgpu.
 //!
 //! ### Clip
 //!
@@ -59,7 +59,7 @@
 //! persis urutan perintah, dan batch baru hanya dibuka saat kotak potongnya
 //! berubah — UI tanpa clip tetap satu draw call, satu scroll view menambah dua.
 //! Kotaknya dipakai apa adanya karena irisan clip bersarang sudah diselesaikan
-//! `rustui-core`; yang tetap dipelihara backend hanyalah ingatan akan kotak
+//! `silka-core`; yang tetap dipelihara backend hanyalah ingatan akan kotak
 //! induk untuk dipulihkan saat `PopClip`. Konversi poin logis → piksel fisik
 //! lewat [`SurfaceGeometry`] membulatkan **ke luar** (tepi konten tidak pernah
 //! termakan) dan menjepit ke batas surface (scissor di luar batas = validation
@@ -71,17 +71,17 @@
 //!
 //! ## Batas yang dijaga
 //!
-//! Permukaan publik crate ini hanya memakai tipe `rustui-paint` dan
+//! Permukaan publik crate ini hanya memakai tipe `silka-paint` dan
 //! `raw-window-handle`. Ia **tidak** tahu apa itu winit, dan pemanggilnya
 //! **tidak** perlu tahu apa itu wgpu. Satu-satunya pintu ke dunia wgpu adalah
 //! [`Gpu::device`], yang khusus untuk crate backend saudara.
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use rustui_paint::{Color, Scene, Size};
-//! use rustui_renderer::{Gpu, SurfaceGeometry};
+//! use silka_paint::{Color, Scene, Size};
+//! use silka_renderer::{Gpu, SurfaceGeometry};
 //!
-//! # fn contoh<W: rustui_renderer::WindowTarget>(window: Arc<W>) -> Result<(), Box<dyn std::error::Error>> {
+//! # fn contoh<W: silka_renderer::WindowTarget>(window: Arc<W>) -> Result<(), Box<dyn std::error::Error>> {
 //! let geometry = SurfaceGeometry::from_logical(Size::new(1024.0, 720.0), 2.0);
 //! let (gpu, mut surface) = Gpu::with_surface(window, geometry)?;
 //!

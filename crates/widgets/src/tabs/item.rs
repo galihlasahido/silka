@@ -1,7 +1,7 @@
 //! Satu tab: sorotan hover/press bertransisi **spring**, plus node AccessKit
 //! ber-peran [`AccessRole::Tab`].
 //!
-//! Kenapa bukan [`rustui_core::tree::Interactive`] yang dipakai ulang, padahal
+//! Kenapa bukan [`silka_core::tree::Interactive`] yang dipakai ulang, padahal
 //! `button` memakainya? Karena tiga hal yang berbeda secara kontrak, bukan
 //! secara selera:
 //!
@@ -20,16 +20,16 @@
 //! yang terlihat adalah dua kotak menyala bergantian, bukan satu thumb yang
 //! meluncur.
 
-use rustui_core::access::{AccessNode, AccessRole, AccessToggled};
-use rustui_core::animation::{MotionRole, Spring, SpringValue, Tick, Tolerance};
-use rustui_core::input::{
+use silka_core::access::{AccessNode, AccessRole, AccessToggled};
+use silka_core::animation::{MotionRole, Spring, SpringValue, Tick, Tolerance};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusPolicy, HitBehavior, HitShape, PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::ViewNode;
-use rustui_core::Callback;
-use rustui_paint::{Color, Corners, Point, Quad, Size};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::ViewNode;
+use silka_core::Callback;
+use silka_paint::{Color, Corners, Point, Quad, Size};
 
 /// Node render satu tab.
 pub struct TabBox {
@@ -131,7 +131,7 @@ impl TabBox {
     }
 
     /// Jalankan `on_press` — dipisah agar callback disalin keluar dulu, persis
-    /// [`rustui_core::tree::Interactive`]: ia hampir selalu menulis signal, dan
+    /// [`silka_core::tree::Interactive`]: ia hampir selalu menulis signal, dan
     /// tulisan signal tidak boleh berjalan sambil node ini dipinjam `&mut`.
     fn pilih(&mut self) {
         if self.disabled {
@@ -178,7 +178,7 @@ impl RenderNode for TabBox {
         // yang dibaca screen reader sebagai "terpilih".
         node.toggled = Some(AccessToggled::from(self.selected));
         if !self.disabled {
-            node.actions |= rustui_core::access::AccessActions::CLICK;
+            node.actions |= silka_core::access::AccessActions::CLICK;
         }
     }
 

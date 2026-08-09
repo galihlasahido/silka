@@ -4,7 +4,7 @@
 //! inilah yang menentukan apakah warna token tampil benar (sRGB) atau terlihat
 //! "cuci" karena salah ruang warna.
 
-use rustui_paint::Color;
+use silka_paint::Color;
 
 /// Pilih format swapchain: utamakan format sRGB agar konversi gamma dikerjakan
 /// hardware saat menulis, bukan ditebak-tebak di shader.

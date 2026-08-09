@@ -6,15 +6,15 @@
 //! dan mengumumkan dirinya ke teknologi bantu sebagai item menu yang
 //! bertanda/tidak.
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
-use rustui_core::animation::{Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
+use silka_core::animation::{Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, HitBehavior, HitShape, PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::ViewNode;
-use rustui_paint::{Color, Corners, Insets, Point, Quad, Rect, Size};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::ViewNode;
+use silka_paint::{Color, Corners, Insets, Point, Quad, Rect, Size};
 
 use super::{SelectHandler, SelectIntent};
 

@@ -2,9 +2,9 @@
 //! indeterminate dan animasi centang** seperti yang diminta catatan khususnya.
 //!
 //! ```
-//! # use rustui_widgets::{checkbox, Fonts};
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_core::signals::Runtime;
+//! # use silka_widgets::{checkbox, Fonts};
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_core::signals::Runtime;
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! # let rt = Runtime::new();
@@ -30,7 +30,7 @@
 //!
 //! ## Bagaimana centangnya digambar tanpa perintah "garis"
 //!
-//! `rustui-paint` hari ini mengenal kotak bersudut, glyph, dan bayangan (§3.2)
+//! `silka-paint` hari ini mengenal kotak bersudut, glyph, dan bayangan (§3.2)
 //! — tidak ada primitif goresan, dan tidak ada rotasi. Centangnya karena itu
 //! dirakit dari rantai kotak berujung bulat yang saling menindih
 //! ([`check_dots`]): sebuah pena bundar yang dijejakkan rapat-rapat sepanjang
@@ -64,19 +64,19 @@
 
 use std::rc::Rc;
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
-use rustui_core::animation::{MotionRole, Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
+use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, NamedKey,
     PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_paint::{Color, CornerRadii, CornerStyle, Corners, Insets, Point, Quad, Rect, Size};
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::{Builder, View, ViewNode};
+use silka_paint::{Color, CornerRadii, CornerStyle, Corners, Insets, Point, Quad, Rect, Size};
+use silka_text::FontWeight;
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -161,7 +161,7 @@ impl From<CheckState> for AccessToggled {
 
 /// Aksi yang dititipkan aplikasi untuk menerima keadaan **baru**.
 ///
-/// Sengaja bukan [`rustui_core::Callback`]: yang perlu diceritakan sebuah
+/// Sengaja bukan [`silka_core::Callback`]: yang perlu diceritakan sebuah
 /// checkbox bukan "aku ditekan" melainkan "aku sekarang begini". Tanpa argumen
 /// itu setiap pemanggil terpaksa menghitung ulang keadaan berikutnya sendiri —
 /// tempat paling gampang melahirkan dua sumber kebenaran. Tiga sifatnya sama
@@ -1125,8 +1125,8 @@ pub struct Checkbox {
 /// terdengar berbeda.
 ///
 /// ```
-/// # use rustui_widgets::{checkbox, CheckState, Fonts};
-/// # use rustui_theme::{Appearance, Theme};
+/// # use silka_widgets::{checkbox, CheckState, Fonts};
+/// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
 /// checkbox(&fonts, &t, "Semua item")
@@ -1149,8 +1149,8 @@ pub fn checkbox(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Check
 /// pilihan desain.
 ///
 /// ```
-/// # use rustui_widgets::checkbox_only;
-/// # use rustui_theme::{Appearance, Theme};
+/// # use silka_widgets::checkbox_only;
+/// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
 /// checkbox_only(&t).label("Pilih semua").checked(true);
 /// ```
@@ -1310,14 +1310,14 @@ impl core::fmt::Debug for Checkbox {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::animation::Motion;
-    use rustui_core::input::{
+    use silka_core::animation::Motion;
+    use silka_core::input::{
         Event, InputRouter, KeyCode, KeyEvent, NamedKey, PointerEvent, PointerPhase,
     };
-    use rustui_core::tree::{BoxConstraints, RenderTree, TextDirection};
-    use rustui_core::view::{reconcile, View};
-    use rustui_paint::{Command, Scene};
-    use rustui_theme::{Appearance, Preset};
+    use silka_core::tree::{BoxConstraints, RenderTree, TextDirection};
+    use silka_core::view::{reconcile, View};
+    use silka_paint::{Command, Scene};
+    use silka_theme::{Appearance, Preset};
     use std::cell::Cell;
     use std::time::Duration;
 

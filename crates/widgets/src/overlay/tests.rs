@@ -10,17 +10,17 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::AccessRole;
-use rustui_core::animation::{Motion, Spring, Tick};
-use rustui_core::input::{
+use silka_core::access::AccessRole;
+use silka_core::animation::{Motion, Spring, Tick};
+use silka_core::input::{
     tab_order, Event, InputRouter, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent,
     PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, NodeId, RenderTree};
-use rustui_core::tree::{CrossAlign, MainAlign};
-use rustui_core::view::{column, fixed, interactive, pad, reconcile, View};
-use rustui_paint::{Color, Command, Insets, Point, Rect, Scene, Size};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, NodeId, RenderTree};
+use silka_core::tree::{CrossAlign, MainAlign};
+use silka_core::view::{column, fixed, interactive, pad, reconcile, View};
+use silka_paint::{Color, Command, Insets, Point, Rect, Scene, Size};
 
 use super::*;
 
@@ -698,9 +698,9 @@ fn modal_adalah_perangkap_fokus_yang_punya_tempat_mendarat() {
     let id = entri(&tree);
 
     // Dialog itu sendiri bisa difokuskan — dialog kosong pun punya tujuan Tab.
-    assert!(rustui_core::input::is_focusable(&tree, id));
+    assert!(silka_core::input::is_focusable(&tree, id));
     // Dan Tab di dalamnya tidak pernah keluar ke konten di belakang.
     let anak = tree.children(id)[0];
-    assert_eq!(rustui_core::input::enclosing_scope(&tree, anak), id);
+    assert_eq!(silka_core::input::enclosing_scope(&tree, anak), id);
     assert_eq!(tab_order(&tree, id), vec![anak]);
 }

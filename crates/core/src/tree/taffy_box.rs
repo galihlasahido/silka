@@ -3,8 +3,8 @@
 //!
 //! Ini satu-satunya modul di seluruh workspace yang boleh menyebut `taffy::`.
 //! Di luar sini semua orang berbicara dalam [`ContainerStyle`]/[`ItemStyle`]
-//! ([`super::style`]) — aturan yang sama seperti wgpu di `rustui-paint` (§3.2)
-//! dan cosmic-text di `rustui-text` (§3.3): mesin boleh diganti, kontrak widget
+//! ([`super::style`]) — aturan yang sama seperti wgpu di `silka-paint` (§3.2)
+//! dan cosmic-text di `silka-text` (§3.3): mesin boleh diganti, kontrak widget
 //! tidak ikut berubah.
 //!
 //! ## Bagaimana dua protokol layout disambungkan
@@ -20,7 +20,7 @@
 //!    "seberapa besar anak ini?", pertanyaannya diterjemahkan kembali menjadi
 //!    `BoxConstraints` dan dijawab oleh mesin layout kita sendiri. Di sinilah
 //!    **text measurement masuk**: node teks adalah daun biasa yang mengukur
-//!    dirinya lewat `rustui-text` ([`super::MeasuredBox`]).
+//!    dirinya lewat `silka-text` ([`super::MeasuredBox`]).
 //! 3. **Naik + penempatan** — hasil Taffy dipakai untuk melayout ulang setiap
 //!    anak dengan constraints tight sebesar kotak yang ia dapat, lalu
 //!    menempatkannya. Induk tetap yang menentukan posisi.
@@ -35,7 +35,7 @@
 //! [`super::LayoutCtx::layout_child_measured`], yang sengaja **tidak**
 //! menjadikan anak boundary meski constraints-nya tight.
 
-use rustui_paint::{Insets, Point, Size};
+use silka_paint::{Insets, Point, Size};
 
 use crate::access::{AccessNode, AccessRole};
 

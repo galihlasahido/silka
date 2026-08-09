@@ -1,4 +1,4 @@
-//! # rustui-theme
+//! # silka-theme
 //!
 //! Token semantik dan **dual preset first-party** (REKOMENDASI §2.7):
 //! **Cupertino** (HIG Apple, default) dan **Tailwind/shadcn**.
@@ -13,7 +13,7 @@
 //! - **Geometri sudut adalah parameter shader, bukan konstanta**:
 //!   [`RadiusToken`] menghasilkan [`Corners`] — di Cupertino squircle
 //!   (superellipse G2-continuous), di Tailwind arc biasa. Nilainya mengalir
-//!   lewat perintah `rustui-paint` sampai ke shader **dan** ke hit-testing
+//!   lewat perintah `silka-paint` sampai ke shader **dan** ke hit-testing
 //!   (§2.7, §3.6).
 //! - Token warna harus **reaktif** terhadap perubahan OS: dark mode live,
 //!   accent color sistem, reduce transparency (INTEGRASI-NATIVE §6). Karena
@@ -31,7 +31,7 @@
 //! | Preset | [`preset`] | Satu-satunya tempat token bertemu angka. |
 //!
 //! ```
-//! use rustui_theme::{Appearance, ColorToken, FontToken, Preset, RadiusToken, SpaceToken, Theme};
+//! use silka_theme::{Appearance, ColorToken, FontToken, Preset, RadiusToken, SpaceToken, Theme};
 //!
 //! let theme = Theme::cupertino(Appearance::Dark);
 //! assert_eq!(theme.preset, Preset::Cupertino);
@@ -69,7 +69,7 @@ pub use spacing::{SpaceToken, SpacingTokens};
 pub use token::Token;
 pub use typography::{FontToken, TypeStyle, TypographyTokens};
 
-use rustui_paint::{Color, Corners, ShadowPair};
+use silka_paint::{Color, Corners, ShadowPair};
 
 /// Terang atau gelap. Mengikuti setting OS kecuali aplikasi menguncinya.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -278,7 +278,7 @@ impl Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_paint::CornerStyle;
+    use silka_paint::CornerStyle;
 
     fn luminansi(c: Color) -> f32 {
         let [r, g, b, _] = c.to_linear();

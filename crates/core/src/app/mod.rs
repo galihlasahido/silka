@@ -42,10 +42,10 @@
 //! ## Contoh utuh (headless, tanpa GPU)
 //!
 //! ```
-//! use rustui_core::app::{app, component};
-//! use rustui_core::signals::{use_signal, Signal};
-//! use rustui_core::view::{column, fixed};
-//! use rustui_paint::Color;
+//! use silka_core::app::{app, component};
+//! use silka_core::signals::{use_signal, Signal};
+//! use silka_core::view::{column, fixed};
+//! use silka_paint::Color;
 //! use std::cell::Cell;
 //! use std::rc::Rc;
 //!

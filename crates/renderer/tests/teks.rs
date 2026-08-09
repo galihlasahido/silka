@@ -22,9 +22,9 @@
 //! Tanpa adapter GPU, test dilewati dengan pesan — kegagalan palsu di CI jauh
 //! lebih mahal daripada satu test yang absen.
 
-use rustui_paint::{Color, Point, Quad, Rect, Scene, Size};
-use rustui_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
-use rustui_text::{TextConstraints, TextEngine, TextStyle};
+use silka_paint::{Color, Point, Quad, Rect, Scene, Size};
+use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
+use silka_text::{TextConstraints, TextEngine, TextStyle};
 
 /// Kanvas 320×120 poin — muat satu baris teks besar dengan margin lega.
 const LEBAR: f32 = 320.0;
@@ -300,8 +300,7 @@ fn frame_kedua_memakai_atlas_yang_sudah_terunggah() {
     // Setelah frame pertama tidak ada lagi yang kotor: kalau frame kedua tetap
     // benar, berarti tekstur memang bertahan dan tidak diunggah ulang.
     assert!(
-        rustui_paint::GlyphSource::take_dirty(&mut mesin, rustui_paint::GlyphFormat::Mask)
-            .is_none(),
+        silka_paint::GlyphSource::take_dirty(&mut mesin, silka_paint::GlyphFormat::Mask).is_none(),
         "atlas masih menandai dirty setelah diunggah — akan diunggah ulang tiap frame"
     );
 
@@ -349,12 +348,12 @@ fn glyph_baru_di_frame_berikutnya_ikut_terunggah() {
 struct AtlasBuatan {
     size: u32,
     piksel: Vec<u8>,
-    region: rustui_paint::AtlasRegion,
-    dirty: Option<rustui_paint::AtlasRegion>,
+    region: silka_paint::AtlasRegion,
+    dirty: Option<silka_paint::AtlasRegion>,
 }
 
 impl AtlasBuatan {
-    fn baru(size: u32, region: rustui_paint::AtlasRegion) -> Self {
+    fn baru(size: u32, region: silka_paint::AtlasRegion) -> Self {
         let mut piksel = vec![0u8; (size * size) as usize];
         for y in region.y..region.max_y() {
             for x in region.x..region.max_x() {
@@ -370,37 +369,31 @@ impl AtlasBuatan {
     }
 }
 
-impl rustui_paint::GlyphSource for AtlasBuatan {
-    fn atlas_size(&self, format: rustui_paint::GlyphFormat) -> u32 {
+impl silka_paint::GlyphSource for AtlasBuatan {
+    fn atlas_size(&self, format: silka_paint::GlyphFormat) -> u32 {
         match format {
-            rustui_paint::GlyphFormat::Mask => self.size,
-            rustui_paint::GlyphFormat::Color => 0,
+            silka_paint::GlyphFormat::Mask => self.size,
+            silka_paint::GlyphFormat::Color => 0,
         }
     }
 
-    fn atlas_pixels(&self, format: rustui_paint::GlyphFormat) -> &[u8] {
+    fn atlas_pixels(&self, format: silka_paint::GlyphFormat) -> &[u8] {
         match format {
-            rustui_paint::GlyphFormat::Mask => &self.piksel,
-            rustui_paint::GlyphFormat::Color => &[],
+            silka_paint::GlyphFormat::Mask => &self.piksel,
+            silka_paint::GlyphFormat::Color => &[],
         }
     }
 
-    fn take_dirty(
-        &mut self,
-        format: rustui_paint::GlyphFormat,
-    ) -> Option<rustui_paint::AtlasRegion> {
+    fn take_dirty(&mut self, format: silka_paint::GlyphFormat) -> Option<silka_paint::AtlasRegion> {
         match format {
-            rustui_paint::GlyphFormat::Mask => self.dirty.take(),
-            rustui_paint::GlyphFormat::Color => None,
+            silka_paint::GlyphFormat::Mask => self.dirty.take(),
+            silka_paint::GlyphFormat::Color => None,
         }
     }
 
-    fn placement(
-        &self,
-        _image: rustui_paint::GlyphImageId,
-    ) -> Option<rustui_paint::GlyphPlacement> {
-        Some(rustui_paint::GlyphPlacement::new(
-            rustui_paint::GlyphFormat::Mask,
+    fn placement(&self, _image: silka_paint::GlyphImageId) -> Option<silka_paint::GlyphPlacement> {
+        Some(silka_paint::GlyphPlacement::new(
+            silka_paint::GlyphFormat::Mask,
             self.region,
         ))
     }
@@ -408,7 +401,7 @@ impl rustui_paint::GlyphSource for AtlasBuatan {
 
 #[test]
 fn tekstur_dibuat_ulang_saat_atlas_berganti_ukuran() {
-    use rustui_paint::{AtlasRegion, Glyph, GlyphImageId, GlyphRun};
+    use silka_paint::{AtlasRegion, Glyph, GlyphImageId, GlyphRun};
 
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);

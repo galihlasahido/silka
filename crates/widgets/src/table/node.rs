@@ -25,14 +25,14 @@
 
 use std::rc::Rc;
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole};
-use rustui_core::animation::{Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole};
+use silka_core::animation::{Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyCode, KeyEvent,
     Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase,
 };
-use rustui_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
+use silka_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
+use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
 
 use crate::list::{ListMetrics, RowAction};
 
@@ -60,7 +60,7 @@ const SORT_BARS: usize = 5;
 /// Nilai token yang **sudah diresolusi** untuk isi sebuah tabel.
 ///
 /// Tidak satu pun angka warna lahir di lapisan ini: semuanya datang dari
-/// [`rustui_theme::Theme`] satu tingkat di atas (§2.6, §2.7), sehingga preset
+/// [`silka_theme::Theme`] satu tingkat di atas (§2.6, §2.7), sehingga preset
 /// Cupertino dan Tailwind berganti tanpa satu baris pun berubah di sini.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TableStyle {

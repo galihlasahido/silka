@@ -2,7 +2,7 @@
 //!
 //! Semuanya tunduk pada satu protokol yang sama (constraints turun, ukuran
 //! naik, induk menentukan posisi) dan tidak satu pun tahu apa itu wgpu.
-//! Widget bergaya Dart di `rustui-widgets` nanti tinggal membungkus node-node
+//! Widget bergaya Dart di `silka-widgets` nanti tinggal membungkus node-node
 //! ini lewat lapisan view ([`crate::view`]).
 //!
 //! Wadah flex/grid **tidak** ada di sini: ia dijalankan Taffy dan tinggal di
@@ -13,7 +13,7 @@
 
 use std::rc::Rc;
 
-use rustui_paint::{Insets, Point, Size};
+use silka_paint::{Insets, Point, Size};
 
 use crate::access::{AccessActions, AccessNode, AccessRole};
 use crate::input::HitShape;
@@ -194,13 +194,13 @@ impl RenderNode for ConstrainedBox {
 /// `constraints -> ukuran`, dipakai sama persis oleh mesin box-constraints kita
 /// dan — lewat measure function Taffy — oleh wadah flex/grid
 /// ([`super::TaffyBox`]). Node teks nanti hanyalah `MeasuredBox` yang fungsinya
-/// memanggil `rustui_text::TextEngine::measure`:
+/// memanggil `silka_text::TextEngine::measure`:
 ///
 /// ```
-/// use rustui_core::tree::{BoxConstraints, RenderTree};
-/// use rustui_core::view::{measured, reconcile};
-/// use rustui_paint::Size;
-/// use rustui_text::{TextConstraints, TextEngine, TextStyle};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{measured, reconcile};
+/// use silka_paint::Size;
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
 /// use std::cell::RefCell;
 /// use std::rc::Rc;
 ///

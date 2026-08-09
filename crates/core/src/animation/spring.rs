@@ -36,7 +36,7 @@ const CRITICAL_BAND: f32 = 1.0e-4;
 /// fisiknya (frekuensi sudut ω dan rasio damping ζ).
 ///
 /// ```
-/// use rustui_core::animation::Spring;
+/// use silka_core::animation::Spring;
 ///
 /// let s = Spring::snappy();
 /// assert!((s.duration() - 0.5).abs() < 1e-6);
@@ -348,8 +348,8 @@ impl Propagator {
 
     /// Terapkan ke sepasang nilai apa pun yang bisa dianimasikan.
     ///
-    /// Skalar, [`rustui_paint::Point`], [`rustui_paint::Size`], dan
-    /// [`rustui_paint::Color`] memakai jalur yang sama persis.
+    /// Skalar, [`silka_paint::Point`], [`silka_paint::Size`], dan
+    /// [`silka_paint::Color`] memakai jalur yang sama persis.
     pub fn apply<T: Animatable>(self, x0: T, v0: T) -> (T, T) {
         (
             x0.scale(self.xx).add(v0.scale(self.xv)),

@@ -6,14 +6,14 @@
 //!
 //! - radius per sudut sudah dikalikan faktor squircle dan dibatasi terhadap
 //!   ukuran kotak (§3.6: geometri sudut adalah parameter, bukan konstanta);
-//! - eksponen superellipse sudah diturunkan dari [`rustui_paint::CornerStyle`];
+//! - eksponen superellipse sudah diturunkan dari [`silka_paint::CornerStyle`];
 //! - warna sudah dipindahkan ke ruang yang benar untuk format target.
 //!
 //! Konsekuensinya "shader menggambar squircle dengan benar" bisa diregresi-uji
 //! di CI tanpa GPU, dan satu-satunya yang tersisa untuk diuji secara visual
 //! adalah rasterisasinya sendiri.
 
-use rustui_paint::{
+use silka_paint::{
     Color, Command, Corners, GlyphFormat, GlyphRun, GlyphSource, Quad, Rect, Scene, ShadowQuad,
     Size,
 };
@@ -117,7 +117,7 @@ pub(crate) struct DrawList {
     batches: Vec<InstanceBatch>,
     /// Tumpukan clip — **hanya untuk memulihkan**, tidak pernah untuk mengiris.
     ///
-    /// Irisan clip bersarang sudah diselesaikan `rustui-core`: `PushClip`
+    /// Irisan clip bersarang sudah diselesaikan `silka-core`: `PushClip`
     /// membawa kotak yang sudah diiriskan dengan clip di luarnya (lihat
     /// `child_clip` di `core::tree::paint`). Yang tetap dibutuhkan backend
     /// hanyalah **ingatan** akan kotak induk, karena `PopClip` berarti
@@ -212,7 +212,7 @@ impl DrawList {
 /// [`Command::PushClip`]/[`Command::PopClip`] **tidak** menghasilkan instance:
 /// keduanya memecah daftar menjadi [`InstanceBatch`] yang nanti dipasang
 /// sebagai scissor rect GPU. Kotaknya dipakai apa adanya — irisan clip
-/// bersarang sudah dilakukan `rustui-core` sebelum perintahnya dibuat.
+/// bersarang sudah dilakukan `silka-core` sebelum perintahnya dibuat.
 ///
 /// Perintah yang belum didukung backend ini dilewati **secara eksplisit**
 /// (lihat lengan `match` di bawah) supaya "belum ada" tidak pernah tersamar
@@ -233,7 +233,7 @@ pub(crate) fn fill_draw_list(
             Command::GlyphRun(r) => fill_glyph_run(r, space, scale_factor, glyphs, out),
             Command::PushClip(rect) => out.push_clip(*rect),
             Command::PopClip => out.pop_clip(),
-            // Kosakata `rustui-paint` masih tumbuh (blur/material, layer
+            // Kosakata `silka-paint` masih tumbuh (blur/material, layer
             // offscreen). Perintah baru yang belum punya jalur di sini
             // dilewatkan agar frame tetap tergambar — tapi ia HARUS muncul
             // sebagai lengan bernama di atas begitu backend mendukungnya.
@@ -436,7 +436,7 @@ pub(crate) fn as_bytes(instances: &[QuadInstance]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_paint::{
+    use silka_paint::{
         AtlasRegion, CornerStyle, Glyph, GlyphImageId, GlyphPlacement, NoGlyphs, Shadow, ShadowPair,
     };
     use std::collections::HashMap;
@@ -444,7 +444,7 @@ mod tests {
     /// Atlas palsu: cukup untuk menguji seluruh aritmetika glyph tanpa font
     /// dan tanpa GPU. Bukti bahwa jalur teks di renderer benar-benar hanya
     /// berbicara lewat `GlyphSource` (§3.2) — kalau ia diam-diam butuh
-    /// `rustui-text`, test ini tidak akan bisa ditulis.
+    /// `silka-text`, test ini tidak akan bisa ditulis.
     #[derive(Debug, Default)]
     struct AtlasPalsu {
         ukuran: u32,
@@ -586,7 +586,7 @@ mod tests {
         let q = Quad::new(Rect::new(0.0, 0.0, 100.0, 100.0))
             .background(Color::WHITE)
             .corners(Corners::new(
-                rustui_paint::CornerRadii {
+                silka_paint::CornerRadii {
                     top_left: 1.0,
                     top_right: 2.0,
                     bottom_right: 3.0,

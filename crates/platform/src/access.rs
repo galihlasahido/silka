@@ -1,4 +1,4 @@
-//! Adapter aksesibilitas winit — jembatan antara pass a11y `rustui-core` dan
+//! Adapter aksesibilitas winit — jembatan antara pass a11y `silka-core` dan
 //! API aksesibilitas OS (REKOMENDASI §3.8).
 //!
 //! Yang menyeberang dari framework ke sini hanyalah
@@ -21,7 +21,7 @@
 //!    tidak pernah lengkap.
 
 use accesskit_winit::Adapter;
-use rustui_core::access::{AccessActionRequest, AccessTree};
+use silka_core::access::{AccessActionRequest, AccessTree};
 use winit::event::WindowEvent as WinitWindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};

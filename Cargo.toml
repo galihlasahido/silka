@@ -20,13 +20,13 @@ rust-version = "1.80"
 
 [workspace.dependencies]
 # Crate internal — selalu dirujuk lewat workspace agar versi konsisten.
-rustui-paint = { path = "crates/paint" }
-rustui-renderer = { path = "crates/renderer" }
-rustui-text = { path = "crates/text" }
-rustui-core = { path = "crates/core" }
-rustui-theme = { path = "crates/theme" }
-rustui-widgets = { path = "crates/widgets" }
-rustui-platform = { path = "crates/platform" }
+silka-paint = { path = "crates/paint" }
+silka-renderer = { path = "crates/renderer" }
+silka-text = { path = "crates/text" }
+silka-core = { path = "crates/core" }
+silka-theme = { path = "crates/theme" }
+silka-widgets = { path = "crates/widgets" }
+silka-platform = { path = "crates/platform" }
 
 # Dependensi eksternal terpilih (REKOMENDASI §3) — dikunci di sini agar
 # seluruh workspace seragam; diaktifkan per-crate sesuai batas arsitektur.
@@ -46,7 +46,7 @@ objc2-foundation  = { version = "0.3", default-features = false, features = ["st
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CADisplayLink", "objc2-core-foundation"] }
 
 # Text stack (§3.3) — HANYA di crates/text; crate lain berbicara lewat
-# `rustui-text`, tidak pernah menyentuh cosmic-text/fontdb langsung.
+# `silka-text`, tidak pernah menyentuh cosmic-text/fontdb langsung.
 cosmic-text       = "0.17"
 fontdb            = { version = "0.23", default-features = false }  # versi wajib sama dengan yang dipakai cosmic-text
 # Segmentasi UAX #29 (grapheme cluster + batas kata) — HANYA di crates/text,

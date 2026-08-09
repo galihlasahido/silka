@@ -7,7 +7,7 @@
 //! format sRGB, dan blending yang sama — sehingga apa yang diuji headless
 //! memang yang dilihat pengguna.
 
-use rustui_paint::{GlyphSource, NoGlyphs, Scene, Size};
+use silka_paint::{GlyphSource, NoGlyphs, Scene, Size};
 
 use crate::error::RendererError;
 use crate::geometry::SurfaceGeometry;
@@ -84,7 +84,7 @@ impl OffscreenTarget {
         let height = geometry.physical_height();
 
         let texture = gpu.device().create_texture(&wgpu::TextureDescriptor {
-            label: Some("rustui.offscreen"),
+            label: Some("silka.offscreen"),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -101,7 +101,7 @@ impl OffscreenTarget {
 
         let padded_row = padded_row_bytes(width);
         let readback = gpu.device().create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rustui.offscreen.readback"),
+            label: Some("silka.offscreen.readback"),
             size: (padded_row * height) as u64,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
@@ -162,11 +162,11 @@ impl OffscreenTarget {
         let mut encoder = gpu
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("rustui.offscreen.frame"),
+                label: Some("silka.offscreen.frame"),
             });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("rustui.offscreen.frame"),
+                label: Some("silka.offscreen.frame"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.view,
                     depth_slice: None,

@@ -11,22 +11,22 @@
 //! Bentuk sambungannya di aplikasi:
 //!
 //! ```no_run
-//! # use rustui_core::app::AppRuntime;
+//! # use silka_core::app::AppRuntime;
 //! # fn contoh(ui: &mut AppRuntime) {
 //! // Sekali per frame, sebelum `ui.frame()`:
-//! ui.animate(rustui_widgets::advance);
+//! ui.animate(silka_widgets::advance);
 //! ui.frame();
 //! # }
 //! ```
 //!
-//! [`rustui_core::app::AppRuntime::animate`] yang memegang
-//! [`AnimationDriver`](rustui_core::animation::AnimationDriver) — jam,
+//! [`silka_core::app::AppRuntime::animate`] yang memegang
+//! [`AnimationDriver`](silka_core::animation::AnimationDriver) — jam,
 //! reduced-motion, dan jawaban "masih adakah yang bergerak" ada di sana, jadi
 //! crate ini tidak perlu tahu apa pun tentang vsync.
 
-use rustui_core::animation::Tick;
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{NodeId, RenderTree};
+use silka_core::animation::Tick;
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{NodeId, RenderTree};
 
 use crate::button::ButtonBox;
 use crate::checkbox::CheckboxNode;
@@ -62,13 +62,13 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
 /// - [`Dirty::NONE`] — tidak ada satu pun yang bergerak.
 ///
 /// ```
-/// # use rustui_core::animation::{Motion, Tick};
-/// # use rustui_core::scheduler::Dirty;
-/// # use rustui_core::tree::{BoxConstraints, RenderTree};
-/// # use rustui_core::view::{fixed, reconcile};
-/// # use rustui_paint::Size;
+/// # use silka_core::animation::{Motion, Tick};
+/// # use silka_core::scheduler::Dirty;
+/// # use silka_core::tree::{BoxConstraints, RenderTree};
+/// # use silka_core::view::{fixed, reconcile};
+/// # use silka_paint::Size;
 /// # use std::time::Duration;
-/// use rustui_widgets::{advance, overlay::{overlay, overlay_layer}};
+/// use silka_widgets::{advance, overlay::{overlay, overlay_layer}};
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(

@@ -3,7 +3,7 @@
 //! ## Kenapa rentang, bukan himpunan indeks
 //!
 //! Godaan pertama adalah `HashSet<usize>`. Ia salah di sini, dan salahnya
-//! terukur: seleksi disimpan di sebuah [`Signal`](rustui_core::signals::Signal)
+//! terukur: seleksi disimpan di sebuah [`Signal`](silka_core::signals::Signal)
 //! yang **disalin setiap rebuild**, dan tabel ini dirancang untuk seratus ribu
 //! baris. ⌘A pada himpunan indeks berarti seratus ribu `usize` disalin setiap
 //! kali pengguna menggulir satu baris — janji "virtualisasi" batal justru di
@@ -13,7 +13,7 @@
 //! terpisah, dan tidak bersebelahan**. ⌘A menjadi satu rentang; seleksi acak
 //! ⌘-klik tetap sekecil jumlah kelompoknya; dan `contains` tetap O(log n).
 
-use rustui_core::input::Modifiers;
+use silka_core::input::Modifiers;
 
 /// Berapa banyak baris yang boleh dipilih sekaligus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

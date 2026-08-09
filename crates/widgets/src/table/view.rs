@@ -23,15 +23,15 @@
 
 use std::rc::Rc;
 
-use rustui_core::animation::Spring;
-use rustui_core::app::component;
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{Decoration, FocusRing, RenderNode};
-use rustui_core::view::{pad, Builder, View, ViewNode};
-use rustui_paint::{Color, Corners, Insets, ShadowPair};
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
+use silka_core::animation::Spring;
+use silka_core::app::component;
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{Decoration, FocusRing, RenderNode};
+use silka_core::view::{pad, Builder, View, ViewNode};
+use silka_paint::{Color, Corners, Insets, ShadowPair};
+use silka_text::FontWeight;
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -272,7 +272,7 @@ impl ViewNode for TableCellProps {
 
 /// Builder tabel tervirtualisasi.
 ///
-/// Tipe sendiri, bukan [`rustui_core::view::Builder`], karena `table()` bukan
+/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena `table()` bukan
 /// satu node melainkan **satu komponen berisi wadah gulir**: ia harus masuk
 /// scope sendiri supaya guliran hanya membangun ulang tabelnya, bukan seluruh
 /// halaman (§2.5).

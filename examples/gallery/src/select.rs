@@ -24,25 +24,25 @@
 //!   sebagai dimmed.
 //!
 //! ```text
-//! cargo run -p rustui-gallery -- --page pilihan
-//! cargo run -p rustui-gallery -- --page pilihan --preset tailwind --appearance light
+//! cargo run -p silka-gallery -- --page pilihan
+//! cargo run -p silka-gallery -- --page pilihan --preset tailwind --appearance light
 //! ```
 //!
 //! Batas yang jujur disebut karena terlihat langsung: **fokus belum berpindah
 //! otomatis** ke panel yang baru terbuka (lubang yang sudah dicatat
-//! `rustui_widgets::overlay`). Di select itu justru tidak terasa — pemicunya
+//! `silka_widgets::overlay`). Di select itu justru tidak terasa — pemicunya
 //! memang yang memegang keyboard selama popup terbuka, persis pop-up button
 //! macOS — tapi artinya screen reader belum "masuk" ke menunya sendiri.
 
-use rustui_core::access::AccessRole;
-use rustui_core::app::{BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use rustui_core::view::{column, constrained, row, View};
-use rustui_paint::Insets;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{overlay_layer, select, text, Fonts, Select, SelectState};
+use silka_core::access::AccessRole;
+use silka_core::app::{BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
+use silka_core::view::{column, constrained, row, View};
+use silka_paint::Insets;
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{overlay_layer, select, text, Fonts, Select, SelectState};
 
 /// Judul halaman.
 pub const JUDUL: &str = "Select";
@@ -124,7 +124,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .bind(periode);
 
     // Konten dulu, popup belakangan: urutan penulisan di sini **adalah** urutan
-    // tumpuk (`rustui_widgets::overlay`), dan tidak satu pun panel menghitung
+    // tumpuk (`silka_widgets::overlay`), dan tidak satu pun panel menghitung
     // posisinya sendiri.
     overlay_layer(konten(
         fonts,
@@ -223,14 +223,14 @@ fn baris_form(fonts: &Fonts, t: &Theme, nama: &str, s: &Select) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::{AccessActions, AccessRole, AccessTree};
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::{AccessActions, AccessRole, AccessTree};
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
     };
-    use rustui_paint::{Point, Rect, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
+    use silka_paint::{Point, Rect, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
@@ -261,7 +261,7 @@ mod tests {
         /// layout → paint — urutan yang sama dengan shell.
         fn frame(&mut self) {
             self.jam += SEFRAME;
-            self.ui.animate_at(self.jam, rustui_widgets::advance);
+            self.ui.animate_at(self.jam, silka_widgets::advance);
             self.ui.frame();
         }
 
@@ -345,7 +345,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{label} hilang:\n{}", pohon.dump()));
             assert_eq!(e.node.role, AccessRole::Button);
             assert!(
-                e.bounds.size.height >= rustui_widgets::MIN_HIT_TARGET,
+                e.bounds.size.height >= silka_widgets::MIN_HIT_TARGET,
                 "hit target {label} cuma {:?}",
                 e.bounds.size
             );
@@ -365,7 +365,7 @@ mod tests {
         for e in layar.pohon().entries() {
             if e.node.role == AccessRole::MenuItem {
                 assert!(
-                    e.bounds.size.height >= rustui_widgets::MIN_HIT_TARGET,
+                    e.bounds.size.height >= silka_widgets::MIN_HIT_TARGET,
                     "baris {:?} terlalu pendek",
                     e.node.label
                 );

@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use rustui_paint::{CornerStyle, Corners, Insets, Point, Size};
+use silka_paint::{CornerStyle, Corners, Insets, Point, Size};
 
 use crate::access::AccessRole;
 use crate::input::{
@@ -749,7 +749,7 @@ fn a11y_node_interaktif_mengumumkan_klik_dan_fokus() {
 struct KolomTeks {
     isi: String,
     preedit: String,
-    caret: rustui_paint::Rect,
+    caret: silka_paint::Rect,
 }
 
 impl RenderNode for KolomTeks {
@@ -779,7 +779,7 @@ impl RenderNode for KolomTeks {
         match event {
             // Fokus datang → IME dinyalakan dengan area caret; pergi → dimatikan.
             Event::Focus(crate::input::FocusEvent::Gained) => {
-                self.caret = rustui_paint::Rect::new(
+                self.caret = silka_paint::Rect::new(
                     ctx.bounds().origin.x,
                     ctx.bounds().origin.y,
                     1.0,
@@ -1065,7 +1065,7 @@ fn tombol_mati_tidak_pernah_memanggil_on_press() {
 
 #[test]
 fn latar_mengikuti_state_dan_bentuk_sudutnya_selalu_bentuk_sentuh() {
-    use rustui_paint::Color;
+    use silka_paint::Color;
 
     let diam = Color::hex(0x0A84FF);
     let hover = Color::hex(0x409CFF);
@@ -1104,7 +1104,7 @@ fn latar_mengikuti_state_dan_bentuk_sudutnya_selalu_bentuk_sentuh() {
 
 #[test]
 fn cincin_fokus_hanya_digambar_saat_node_memegang_fokus() {
-    use rustui_paint::{Color, Command, Scene};
+    use silka_paint::{Color, Command, Scene};
 
     let mut tree = pohon(
         interactive(fixed(100.0, 44.0))

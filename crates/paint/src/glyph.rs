@@ -1,10 +1,10 @@
 //! Kosakata glyph: bagaimana teks menyeberang ke backend **tanpa membawa font**.
 //!
-//! Kontrak (REKOMENDASI §3.2, §3.3): `rustui-paint` tidak tahu apa itu font,
+//! Kontrak (REKOMENDASI §3.2, §3.3): `silka-paint` tidak tahu apa itu font,
 //! shaping, atau atlas. Yang diketahuinya hanyalah:
 //!
 //! 1. sebuah **id opaque** ([`GlyphImageId`]) yang menunjuk satu bitmap glyph
-//!    di atlas milik `rustui-text`, dan
+//!    di atlas milik `silka-text`, dan
 //! 2. **kotak tujuan** dalam poin logis tempat bitmap itu digambar.
 //!
 //! Backend menukar id itu dengan koordinat tekstur lewat atlas yang sama.
@@ -18,7 +18,7 @@
 use crate::color::Color;
 use crate::geometry::{Point, Rect, Size};
 
-/// Id opaque satu bitmap glyph di atlas `rustui-text`.
+/// Id opaque satu bitmap glyph di atlas `silka-text`.
 ///
 /// Nilainya **tidak** stabil antar sesi dan tidak boleh disimpan ke disk: ia
 /// hanya berlaku selama atlas yang menerbitkannya masih hidup. Id tidak pernah
@@ -28,7 +28,7 @@ use crate::geometry::{Point, Rect, Size};
 pub struct GlyphImageId(u32);
 
 impl GlyphImageId {
-    /// Bungkus nilai mentah — hanya dipakai penerbit id (atlas `rustui-text`).
+    /// Bungkus nilai mentah — hanya dipakai penerbit id (atlas `silka-text`).
     pub const fn from_raw(raw: u32) -> Self {
         Self(raw)
     }

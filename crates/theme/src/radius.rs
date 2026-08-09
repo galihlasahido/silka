@@ -6,7 +6,7 @@
 //! [`Corners`] — radius **dan** eksponen superellipse-nya sekaligus, persis
 //! seperti yang diterima shader SDF dan hit-testing.
 
-use rustui_paint::{CornerStyle, Corners};
+use silka_paint::{CornerStyle, Corners};
 
 /// Token radius sudut + bentuk lengkungnya.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,7 +97,7 @@ impl RadiusToken {
 mod tests {
     use super::*;
     use crate::{Appearance, Preset, Theme};
-    use rustui_paint::Size;
+    use silka_paint::Size;
 
     #[test]
     fn skala_radius_naik_di_kedua_preset() {
@@ -138,7 +138,7 @@ mod tests {
         // sama, sudut squircle "lebih penuh" — titik dekat pojok masih di
         // dalam, padahal busur lingkaran sudah memotongnya.
         let s = Size::new(120.0, 40.0);
-        let p = rustui_paint::Point::new(2.0, 2.0);
+        let p = silka_paint::Point::new(2.0, 2.0);
         let r = 10.0;
         assert!(Corners::uniform(r, cup.style).contains(s, p));
         assert!(!Corners::uniform(r, tw.style).contains(s, p));

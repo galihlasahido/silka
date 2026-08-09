@@ -25,10 +25,10 @@
 //!
 //! ```
 //! use std::time::Duration;
-//! use rustui_core::input::{Event, InputRouter, PointerButton, PointerEvent, PointerPhase};
-//! use rustui_core::tree::{BoxConstraints, RenderTree};
-//! use rustui_core::view::{interactive, fixed, reconcile};
-//! use rustui_paint::{Point, Size};
+//! use silka_core::input::{Event, InputRouter, PointerButton, PointerEvent, PointerPhase};
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{interactive, fixed, reconcile};
+//! use silka_paint::{Point, Size};
 //!
 //! let mut tree = RenderTree::new();
 //! reconcile(&mut tree, interactive(fixed(120.0, 44.0)).label("Simpan"));
@@ -56,7 +56,7 @@
 //! - **Pengenalan gesture tingkat tinggi** (tap/drag/long-press recognizer).
 //!   Itu lapisan di atas, dan ia berdiri di atas dua hal yang disediakan di
 //!   sini: pointer capture dan [`VelocityTracker`].
-//! - **Tipe winit apa pun.** Penerjemahnya hidup di `rustui-platform`.
+//! - **Tipe winit apa pun.** Penerjemahnya hidup di `silka-platform`.
 
 pub mod event;
 pub mod focus;

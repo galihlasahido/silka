@@ -3,7 +3,7 @@
 //! Dark mode harus **live**: token warna dibangun ulang saat OS berpindah
 //! mode, bukan dibaca sekali saat start.
 
-use rustui_theme::{Appearance, Theme};
+use silka_theme::{Appearance, Theme};
 
 /// Terjemahkan tema OS dari winit ke [`Appearance`] token.
 pub fn appearance_from_winit(theme: winit::window::Theme) -> Appearance {
@@ -48,7 +48,7 @@ pub fn apply_system_appearance(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_theme::Preset;
+    use silka_theme::Preset;
 
     #[test]
     fn pemetaan_tema_winit_bolak_balik() {

@@ -48,7 +48,7 @@ impl CornerStyle {
     /// radius nominal. Arc = 1.0; squircle Apple ≈ 1.528.
     ///
     /// Angka ini dipakai baik oleh shader maupun oleh hit-testing, karena itu
-    /// ia hidup di `rustui-paint` — bukan di dalam renderer.
+    /// ia hidup di `silka-paint` — bukan di dalam renderer.
     pub fn extent_factor(self) -> f32 {
         1.0 + self.smoothing() * 0.88
     }
@@ -60,7 +60,7 @@ impl CornerStyle {
     /// - Squircle ala Apple (`smoothing` 0.6) → `4.0`, superellipse yang
     ///   dipakai HIG.
     ///
-    /// Angka ini hidup di `rustui-paint` bersama [`CornerStyle::extent_factor`]
+    /// Angka ini hidup di `silka-paint` bersama [`CornerStyle::extent_factor`]
     /// karena hit-testing harus memakai bentuk yang persis sama dengan yang
     /// digambar — bukan aproksimasi (REKOMENDASI §3.6).
     pub fn superellipse_exponent(self) -> f32 {
@@ -125,7 +125,7 @@ impl CornerRadii {
 /// Radius + bentuk lengkung: paket lengkap yang diteruskan ke shader.
 ///
 /// Widget tidak pernah menyusun ini sendiri — ia datang dari token theme
-/// (`rustui-theme`), sehingga preset aktif yang menentukan arc vs squircle.
+/// (`silka-theme`), sehingga preset aktif yang menentukan arc vs squircle.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Corners {
     /// Radius per sudut.
@@ -176,7 +176,7 @@ impl Corners {
     /// masuk, tepi kanan/bawah tidak.
     ///
     /// ```
-    /// use rustui_paint::{CornerStyle, Corners, Point, Size};
+    /// use silka_paint::{CornerStyle, Corners, Point, Size};
     ///
     /// let size = Size::new(100.0, 100.0);
     /// let titik = Point::new(2.0, 2.0);

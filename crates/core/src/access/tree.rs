@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use rustui_paint::Rect;
+use silka_paint::Rect;
 
 use crate::tree::{NodeId, RenderTree, TreeId};
 

@@ -1,11 +1,11 @@
 //! Jembatan DPI: poin logis ⇄ piksel fisik.
 //!
-//! Framework di atas backend hanya tahu poin logis (`rustui_paint::Size`).
+//! Framework di atas backend hanya tahu poin logis (`silka_paint::Size`).
 //! Swapchain hanya tahu piksel fisik. [`SurfaceGeometry`] adalah satu-satunya
 //! tempat konversinya terjadi, sehingga "DPI benar" punya satu titik
 //! kebenaran yang bisa diuji tanpa GPU.
 
-use rustui_paint::{Rect, Size};
+use silka_paint::{Rect, Size};
 
 /// Kotak scissor dalam **piksel fisik**, sudah dijamin berada di dalam surface.
 ///
@@ -106,7 +106,7 @@ impl SurfaceGeometry {
     /// Tiga hal terjadi di sini, dan ketiganya wajib:
     ///
     /// 1. **Skala DPI**: clip datang dalam poin logis karena itulah satu-satunya
-    ///    ruang koordinat yang dikenal layout dan `rustui-paint`; scissor
+    ///    ruang koordinat yang dikenal layout dan `silka-paint`; scissor
     ///    bekerja dalam piksel fisik.
     /// 2. **Pembulatan ke luar** (`floor` di tepi min, `ceil` di tepi max):
     ///    membulatkan ke dalam akan memakan satu piksel tepi konten pada scale

@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use rustui_paint::{AtlasRegion, GlyphFormat, GlyphImageId, GlyphPlacement, GlyphSource};
+use silka_paint::{AtlasRegion, GlyphFormat, GlyphImageId, GlyphPlacement, GlyphSource};
 
 use crate::atlas::{AtlasFormat, AtlasRect, GlyphAtlas};
 
@@ -113,7 +113,7 @@ impl GlyphKey {
 /// Satu bitmap glyph yang sudah menempati ruang di atlas.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlyphImage {
-    /// Id yang dipakai perintah gambar `rustui-paint`.
+    /// Id yang dipakai perintah gambar `silka-paint`.
     pub id: GlyphImageId,
     /// Atlas mana yang memuatnya (mask atau warna).
     pub format: AtlasFormat,
@@ -346,7 +346,7 @@ impl GlyphCache {
 /// Inilah satu-satunya jalan glyph menyeberang ke GPU.
 ///
 /// Backend (wgpu hari ini, GL/CPU nanti) tidak pernah menyebut
-/// `rustui_text` — ia hanya memegang `&mut dyn GlyphSource`. Karena itu
+/// `silka_text` — ia hanya memegang `&mut dyn GlyphSource`. Karena itu
 /// lapisan teks bisa diganti (parley, §3.3) tanpa menyentuh renderer, dan
 /// renderer bisa diganti tanpa menyentuh lapisan teks (§3.2).
 impl GlyphSource for GlyphCache {
@@ -382,7 +382,7 @@ impl GlyphCache {
     }
 }
 
-/// Format atlas versi `rustui-paint` → versi internal.
+/// Format atlas versi `silka-paint` → versi internal.
 pub(crate) fn dari_paint(format: GlyphFormat) -> AtlasFormat {
     match format {
         GlyphFormat::Mask => AtlasFormat::Mask,
@@ -390,7 +390,7 @@ pub(crate) fn dari_paint(format: GlyphFormat) -> AtlasFormat {
     }
 }
 
-/// Format atlas internal → versi `rustui-paint`.
+/// Format atlas internal → versi `silka-paint`.
 pub(crate) fn ke_paint(format: AtlasFormat) -> GlyphFormat {
     match format {
         AtlasFormat::Mask => GlyphFormat::Mask,

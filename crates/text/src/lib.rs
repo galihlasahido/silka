@@ -1,4 +1,4 @@
-//! # rustui-text
+//! # silka-text
 //!
 //! Wrapper tipis di atas **cosmic-text** (REKOMENDASI §3.3) — lapisan tersulit
 //! di seluruh framework dan pembunuh #1 framework GUI baru (§5 failure mode #1).
@@ -9,8 +9,8 @@
 //! - **Shaping** lewat cosmic-text (fontdb + rustybuzz + swash), termasuk font
 //!   fallback per platform, bidi (UAX #9), dan emoji ZWJ/warna.
 //! - **Glyph atlas** — glyph di-rasterisasi ke atlas dan dirujuk lewat id;
-//!   `rustui-paint` hanya berbicara dalam id itu, tidak pernah menyentuh font.
-//! - **Measure** — fungsi ukur untuk leaf node layout, dipakai `rustui-core`
+//!   `silka-paint` hanya berbicara dalam id itu, tidak pernah menyentuh font.
+//! - **Measure** — fungsi ukur untuk leaf node layout, dipakai `silka-core`
 //!   (box constraints) dan Taffy lewat measure function (§3.4).
 //!
 //! Yang wajib benar sejak awal (§3.3): subpixel *positioning* (bukan subpixel
@@ -21,15 +21,15 @@
 //!
 //! Tipe cosmic-text **tidak pernah muncul di API publik** crate ini. Pemanggil
 //! berbicara dalam [`TextStyle`], [`TextConstraints`], [`TextMeasure`],
-//! [`TextLayout`], dan `rustui_paint::GlyphRun`. Dengan begitu pindah ke
+//! [`TextLayout`], dan `silka_paint::GlyphRun`. Dengan begitu pindah ke
 //! `parley` nanti adalah pekerjaan di dalam crate ini saja, dan kode widget
 //! tetap tidak tahu apa itu font (§3.2, §3.3).
 //!
 //! ## Alur pemakaian
 //!
 //! ```
-//! use rustui_paint::{Color, Point, Scene};
-//! use rustui_text::{TextConstraints, TextEngine, TextStyle};
+//! use silka_paint::{Color, Point, Scene};
+//! use silka_text::{TextConstraints, TextEngine, TextStyle};
 //!
 //! // Satu mesin untuk seluruh aplikasi. `bundled_only` = tanpa font sistem,
 //! // dipakai test/CI agar hasilnya deterministik.
@@ -59,18 +59,18 @@
 //! ## Yang dilihat backend
 //!
 //! Perintah `GlyphRun` hanya membawa **id atlas + kotak tujuan logis**. Backend
-//! menukar id itu jadi tekstur lewat trait [`rustui_paint::GlyphSource`], yang
+//! menukar id itu jadi tekstur lewat trait [`silka_paint::GlyphSource`], yang
 //! diimplementasikan [`TextEngine`] (dan [`GlyphCache`]) — itulah satu-satunya
 //! permukaan yang dilihat backend:
 //!
 //! ```
-//! use rustui_paint::{GlyphFormat, GlyphSource};
-//! use rustui_text::TextEngine;
+//! use silka_paint::{GlyphFormat, GlyphSource};
+//! use silka_text::TextEngine;
 //!
 //! let mut teks = TextEngine::bundled_only();
-//! # let gaya = rustui_text::TextStyle::new();
-//! # let l = teks.layout("Halo", &gaya, rustui_text::TextConstraints::UNBOUNDED);
-//! # let run = teks.rasterize(&l, rustui_paint::Point::ZERO, rustui_paint::Color::WHITE);
+//! # let gaya = silka_text::TextStyle::new();
+//! # let l = teks.layout("Halo", &gaya, silka_text::TextConstraints::UNBOUNDED);
+//! # let run = teks.rasterize(&l, silka_paint::Point::ZERO, silka_paint::Color::WHITE);
 //!
 //! // Yang dilakukan backend tiap frame — tanpa pernah menyebut "font":
 //! let sisi = teks.atlas_size(GlyphFormat::Mask);

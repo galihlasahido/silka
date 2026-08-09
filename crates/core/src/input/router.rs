@@ -23,7 +23,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use rustui_paint::{Point, Rect, Size};
+use silka_paint::{Point, Rect, Size};
 
 use crate::scheduler::Dirty;
 use crate::tree::{NodeId, RenderTree};
@@ -43,7 +43,7 @@ use super::velocity::{Velocity, VelocityTracker};
 /// Bentuk kursor yang diminta sebuah node.
 ///
 /// Kosakata sendiri, dipetakan ke `winit::window::CursorIcon` di
-/// `rustui-platform` — alasan yang sama dengan seluruh modul input: kode widget
+/// `silka-platform` — alasan yang sama dengan seluruh modul input: kode widget
 /// tidak menyentuh tipe pustaka luar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
@@ -75,7 +75,7 @@ pub enum CursorIcon {
 
 /// Permintaan ke shell platform terkait IME.
 ///
-/// Diterjemahkan `rustui-platform` menjadi `set_ime_allowed` +
+/// Diterjemahkan `silka-platform` menjadi `set_ime_allowed` +
 /// `set_ime_cursor_area` — dua panggilan winit yang menentukan apakah jendela
 /// kandidat CJK muncul di tempat yang benar (REKOMENDASI §3.8).
 #[derive(Debug, Clone, Copy, PartialEq)]

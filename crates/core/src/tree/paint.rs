@@ -1,7 +1,7 @@
 //! **Pass paint: render tree → [`Scene`]** (REKOMENDASI §3.2).
 //!
 //! Pass ketiga, sejajar dengan layout dan a11y — bukan lapisan susulan. Yang
-//! keluar adalah satu daftar perintah gambar `rustui-paint`; **tidak ada tipe
+//! keluar adalah satu daftar perintah gambar `silka-paint`; **tidak ada tipe
 //! wgpu di mana pun di jalur ini**, dan tidak boleh pernah ada. Node render
 //! berbicara dalam quad/shadow/glyph, backend menerjemahkannya.
 //!
@@ -36,7 +36,7 @@
 //! ada yang kotor (§3.5), jadi cache di akar akan selalu meleset dan hanya
 //! menyalin seluruh frame dua kali.
 
-use rustui_paint::{Color, Command, Corners, GlyphRun, Point, Quad, Rect, Scene, ShadowPair, Size};
+use silka_paint::{Color, Command, Corners, GlyphRun, Point, Quad, Rect, Scene, ShadowPair, Size};
 
 use super::arena::{NodeId, RenderTree};
 // Hanya untuk tautan dokumentasi: kontrak pass ini hidup di `RenderNode`.
@@ -52,7 +52,7 @@ use super::arena::RenderNode;
 /// **Nilainya selalu hasil resolusi token theme** (`surface`, `separator`,
 /// `radius_md`, `shadow.md`) satu tingkat di atas — persis seperti `Insets`
 /// pada [`super::PaddingBox`] yang sudah menerima sisi fisik, bukan `start`/
-/// `end`. `rustui-core` sengaja tidak mengenal `rustui-theme`: mesin tidak
+/// `end`. `silka-core` sengaja tidak mengenal `silka-theme`: mesin tidak
 /// boleh punya pendapat tentang warna, dan preset Cupertino/Tailwind (§2.7)
 /// berganti tanpa satu baris pun berubah di sini.
 ///
@@ -151,7 +151,7 @@ pub(super) struct PaintCache {
 
 /// Akses terbatas ke scene selama sebuah node menggambar dirinya.
 ///
-/// Kosakatanya **hanya** `rustui-paint` — quad, shadow, glyph run. Tidak ada
+/// Kosakatanya **hanya** `silka-paint` — quad, shadow, glyph run. Tidak ada
 /// jalan dari sini ke tipe grafis backend, dan itu disengaja: kalau nanti ada
 /// backend GL/CPU, ia masuk di satu tempat tanpa menyentuh satu widget pun
 /// (§3.2).
@@ -225,14 +225,14 @@ impl PaintCtx<'_> {
 
     /// Gambar sebuah kotak beserta bayangan gandanya (ambient + key).
     ///
-    /// Urutannya ditentukan `rustui-paint`: ambient, key, baru kotaknya.
+    /// Urutannya ditentukan `silka-paint`: ambient, key, baru kotaknya.
     pub fn shadowed(&mut self, quad: Quad, shadows: ShadowPair) -> &mut Self {
         let quad = self.absolutkan(quad);
         for lapis in shadows.layers() {
             if !lapis.is_visible() {
                 continue;
             }
-            let bayangan = rustui_paint::ShadowQuad::for_quad(&quad, lapis);
+            let bayangan = silka_paint::ShadowQuad::for_quad(&quad, lapis);
             // Ekor gaussian ikut diperhitungkan: bayangan yang kotaknya di luar
             // clip masih bisa menyumbang piksel di dalamnya.
             if bayangan.is_visible() && terlihat(bayangan.bounds(), self.clip) {
@@ -274,7 +274,7 @@ impl PaintCtx<'_> {
             if !terlihat(bounds, self.clip) {
                 continue;
             }
-            absolut.push(rustui_paint::Glyph::new(glyph.image, bounds));
+            absolut.push(silka_paint::Glyph::new(glyph.image, bounds));
         }
         if !absolut.is_empty() {
             self.scene.push(absolut);

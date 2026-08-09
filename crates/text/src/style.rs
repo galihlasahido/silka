@@ -3,7 +3,7 @@
 //! Bentuk API mengikuti REKOMENDASI §2.5 — konstruktor + method chaining:
 //!
 //! ```
-//! use rustui_text::{FontWeight, TextStyle};
+//! use silka_text::{FontWeight, TextStyle};
 //!
 //! let judul = TextStyle::new().size(28.0).weight(FontWeight::SEMIBOLD).tracking(-0.02);
 //! assert_eq!(judul.size, 28.0);

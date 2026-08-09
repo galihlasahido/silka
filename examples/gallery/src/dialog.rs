@@ -22,31 +22,31 @@
 //!   setting itu panel tetap bergerak (gerakannya menjelaskan dari mana dialog
 //!   datang) tapi pantulannya dibuang. Belum bisa dilihat dari halaman ini —
 //!   shell belum membaca setting OS-nya (INTEGRASI-NATIVE §6) — jadi yang
-//!   menjaganya adalah uji `rustui_widgets::dialog` yang menjalankan transisi
+//!   menjaganya adalah uji `silka_widgets::dialog` yang menjalankan transisi
 //!   yang sama di bawah `Motion::Reduced`.
 //!
 //! ```text
-//! cargo run -p rustui-gallery -- --page dialog
-//! cargo run -p rustui-gallery -- --page dialog --preset tailwind --appearance light
+//! cargo run -p silka-gallery -- --page dialog
+//! cargo run -p silka-gallery -- --page dialog --preset tailwind --appearance light
 //! ```
 //!
 //! Satu batas yang jujur disebut di sini karena terlihat langsung: **fokus
 //! belum berpindah otomatis** ke panel yang baru terbuka (lubang yang sudah
-//! dicatat `rustui_widgets::overlay`), jadi setelah dialog muncul lewat klik,
+//! dicatat `silka_widgets::overlay`), jadi setelah dialog muncul lewat klik,
 //! tekan Tab sekali untuk masuk ke perangkap fokusnya. Jaring pengaman untuk
 //! keadaan "belum ada yang terfokus" sudah ada sebagai fungsi shell —
 //! `overlay::dismiss_topmost` dan `dialog::activate_default` — tapi yang
 //! memasangnya adalah siklus input aplikasi, dan `run_app_with` belum punya
 //! kait untuk itu.
 
-use rustui_core::app::{BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{CrossAlign, MainAlign};
-use rustui_core::view::{column, row, View};
-use rustui_paint::Insets;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{
+use silka_core::app::{BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{CrossAlign, MainAlign};
+use silka_core::view::{column, row, View};
+use silka_paint::Insets;
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{
     alert, button, button_variant, dialog, overlay_layer, text, ButtonOrder, ButtonVariant, Fonts,
 };
 
@@ -114,7 +114,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                      Menutupnya sekarang akan membuang perubahan itu.",
                 )
                 .open(buka.get() == Buka::Simpan)
-                .action(rustui_widgets::action("Jangan Simpan").on_press(jawab("Jangan Simpan")))
+                .action(silka_widgets::action("Jangan Simpan").on_press(jawab("Jangan Simpan")))
                 .cancel("Batal", jawab("Batal"))
                 .confirm("Simpan", jawab("Simpan")),
         )
@@ -198,14 +198,14 @@ fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::{AccessActions, AccessRole};
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::{AccessActions, AccessRole};
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
     };
-    use rustui_paint::{Command, Point, Rect, Scene, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
+    use silka_paint::{Command, Point, Rect, Scene, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
@@ -234,7 +234,7 @@ mod tests {
         /// Satu frame, termasuk memajukan spring — urutan yang sama dengan shell.
         fn frame(&mut self) {
             self.jam += FRAME;
-            self.ui.animate_at(self.jam, rustui_widgets::advance);
+            self.ui.animate_at(self.jam, silka_widgets::advance);
             self.ui.frame();
         }
 
@@ -470,7 +470,7 @@ mod tests {
                 // Dicari lewat lebarnya, bukan warnanya saja: di preset
                 // Cupertino `surface_elevated` sama dengan `surface`, jadi
                 // tombol sekunder punya latar yang sama dengan panel.
-                let lebar = t.space(rustui_widgets::DIALOG_WIDTH_STEPS);
+                let lebar = t.space(silka_widgets::DIALOG_WIDTH_STEPS);
                 let panel = kotak
                     .iter()
                     .find(|q| {
@@ -500,7 +500,7 @@ mod tests {
             assert_eq!(e.node.role, AccessRole::Button);
             assert!(e.node.actions.contains(AccessActions::CLICK));
             assert!(
-                e.bounds.size.height >= rustui_widgets::MIN_HIT_TARGET,
+                e.bounds.size.height >= silka_widgets::MIN_HIT_TARGET,
                 "hit target {label} cuma {:?}",
                 e.bounds.size
             );

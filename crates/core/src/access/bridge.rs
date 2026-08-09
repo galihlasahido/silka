@@ -7,7 +7,7 @@
 //!
 //! Dua hal yang mudah salah dan diselesaikan di sini sekali untuk selamanya:
 //!
-//! 1. **Satuan.** Pohon kita hidup dalam poin logis (§geometri `rustui-paint`);
+//! 1. **Satuan.** Pohon kita hidup dalam poin logis (§geometri `silka-paint`);
 //!    AccessKit menuntut piksel fisik relatif sudut window. Konversinya terjadi
 //!    di [`AccessTree::to_tree_update`], bukan di widget.
 //! 2. **Identitas.** [`NodeId`] kita bergenerasi (indeks + generasi) supaya
@@ -197,7 +197,7 @@ impl AccessTree {
     /// AccessKit menuntut koordinat piksel fisik relatif sudut window.
     pub fn to_tree_update(&self, scale_factor: f64) -> TreeUpdate {
         let mut tree = Tree::new(accesskit_id(self.root()));
-        tree.toolkit_name = Some("rustui".into());
+        tree.toolkit_name = Some("silka".into());
         tree.toolkit_version = Some(env!("CARGO_PKG_VERSION").into());
         TreeUpdate {
             nodes: self
@@ -257,7 +257,7 @@ impl AccessUpdate {
     pub fn to_tree_update(&self, scale_factor: f64) -> TreeUpdate {
         let tree = self.full.then(|| {
             let mut tree = Tree::new(accesskit_id(self.root));
-            tree.toolkit_name = Some("rustui".into());
+            tree.toolkit_name = Some("silka".into());
             tree.toolkit_version = Some(env!("CARGO_PKG_VERSION").into());
             tree
         });

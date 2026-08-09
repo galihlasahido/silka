@@ -11,18 +11,18 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::{AccessActions, AccessRole};
-use rustui_core::animation::Motion;
-use rustui_core::app::{app, AppRuntime};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessRole};
+use silka_core::animation::Motion;
+use silka_core::app::{app, AppRuntime};
+use silka_core::input::{
     Event, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent, PointerId,
     PointerPhase, ScrollDelta, ScrollEvent, ScrollPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{NodeId, RenderTree};
-use rustui_core::view::{fixed, View};
-use rustui_paint::{Command, Point, Rect, Size};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{NodeId, RenderTree};
+use silka_core::view::{fixed, View};
+use silka_paint::{Command, Point, Rect, Size};
+use silka_theme::{Appearance, Preset, Theme};
 
 use super::*;
 use crate::scroll_view::ScrollView;
@@ -310,7 +310,7 @@ fn daftar_yang_diam_tidak_menyisakan_pekerjaan() {
 #[test]
 fn hit_target_baris_minimal_44pt_walau_diminta_lebih_rapat() {
     let t = Theme::cupertino(Appearance::Light);
-    let rt = rustui_core::signals::Runtime::new();
+    let rt = silka_core::signals::Runtime::new();
     let st = ListState::new(&rt);
     let baris = |_: usize| View::from(fixed(320.0, 20.0));
 
@@ -553,7 +553,7 @@ fn sorotan_seleksi_memakai_warna_yang_berbeda_saat_daftar_tidak_terfokus() {
     assert!(!sorotan(&diam, t.color.selection));
 }
 
-fn sorotan(u: &Uji, warna: rustui_paint::Color) -> bool {
+fn sorotan(u: &Uji, warna: silka_paint::Color) -> bool {
     u.ui.scene().commands().iter().any(|c| match c {
         Command::Quad(q) => {
             q.background.r == warna.r
@@ -592,7 +592,7 @@ fn sorotan_meluncur_antar_baris_lewat_spring() {
     u.ui.animate(|tree, _| {
         crate::advance(
             tree,
-            &rustui_core::animation::Tick::manual(Duration::from_millis(4), Motion::Full),
+            &silka_core::animation::Tick::manual(Duration::from_millis(4), Motion::Full),
         )
     });
     u.ui.frame();
@@ -619,7 +619,7 @@ fn reduced_motion_menempatkan_sorotan_seketika() {
     let dirty = u.ui.animate(|tree, _| {
         crate::advance(
             tree,
-            &rustui_core::animation::Tick::manual(Duration::from_millis(8), Motion::Reduced),
+            &silka_core::animation::Tick::manual(Duration::from_millis(8), Motion::Reduced),
         )
     });
     u.ui.frame();
@@ -703,11 +703,11 @@ fn daftar_kosong_menampilkan_empty_state_dan_tidak_bisa_digulir() {
 fn data_yang_menyusut_tidak_meninggalkan_guliran_di_ruang_kosong() {
     // 5.000 baris digulir jauh ke bawah, lalu datanya menyusut jadi tiga.
     let state = Rc::new(Cell::new(None::<ListState>));
-    let panjang = Rc::new(Cell::new(None::<rustui_core::signals::Signal<usize>>));
+    let panjang = Rc::new(Cell::new(None::<silka_core::signals::Signal<usize>>));
     let (s, p) = (state.clone(), panjang.clone());
     let t = Theme::cupertino(Appearance::Dark);
     let ui = app(move |_cx| {
-        let n = rustui_core::signals::use_signal(|| 5_000usize);
+        let n = silka_core::signals::use_signal(|| 5_000usize);
         p.set(Some(n));
         let st = use_list_state();
         s.set(Some(st));

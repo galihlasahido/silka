@@ -20,12 +20,12 @@
 //! ## Bagaimana satu overlay dirakit
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_core::tree::{BoxConstraints, RenderTree};
-//! # use rustui_core::view::{fixed, reconcile};
-//! # use rustui_paint::{Rect, Size};
-//! # use rustui_theme::{Appearance, Theme};
-//! use rustui_widgets::overlay::{overlay, overlay_layer, Anchor, Barrier, Placement, Side};
+//! # use silka_core::signals::Runtime;
+//! # use silka_core::tree::{BoxConstraints, RenderTree};
+//! # use silka_core::view::{fixed, reconcile};
+//! # use silka_paint::{Rect, Size};
+//! # use silka_theme::{Appearance, Theme};
+//! use silka_widgets::overlay::{overlay, overlay_layer, Anchor, Barrier, Placement, Side};
 //!
 //! # let rt = Runtime::new();
 //! # let terbuka = rt.signal(true);
@@ -74,7 +74,7 @@
 //!   masuk ke [`place`] — bukan menulis ulang komponen yang menumpang.
 //! - **Fokus otomatis ke panel yang baru terbuka.** [`topmost`] menyediakan
 //!   node-nya dan [`Barrier::Modal`] sudah menjadi
-//!   [`FocusPolicy`](rustui_core::input::FocusPolicy) scope; yang menyambungkan
+//!   [`FocusPolicy`](silka_core::input::FocusPolicy) scope; yang menyambungkan
 //!   keduanya adalah siklus frame aplikasi, dan siklus itu belum punya kait
 //!   "overlay baru saja terbuka".
 
@@ -84,10 +84,10 @@ pub mod placement;
 #[cfg(test)]
 mod tests;
 
-use rustui_core::animation::Tick;
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{NodeId, RenderTree};
-use rustui_paint::{Point, Rect};
+use silka_core::animation::Tick;
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{NodeId, RenderTree};
+use silka_paint::{Point, Rect};
 
 pub use entry::{overlay, Barrier, Dismiss, OverlayBuilder, OverlayEntry, OverlayProps};
 pub use layer::{overlay_layer, InertBox, InertProps, LayerBuilder, LayerProps, OverlayLayer};
@@ -102,7 +102,7 @@ pub use placement::{place, Align, Anchor, PhysicalSide, Placed, Placement, Place
 /// Ini satu-satunya jalan sah dari "tombol yang diklik pengguna" ke
 /// [`Anchor`], dan ia sengaja hidup di luar layout. Sebuah render node tidak
 /// boleh mengintip geometri node lain dari dalam layout-nya sendiri (aturan
-/// "node tidak pernah tahu posisinya sendiri", [`rustui_core::tree`]) — jadi
+/// "node tidak pernah tahu posisinya sendiri", [`silka_core::tree`]) — jadi
 /// yang memanggil fungsi ini adalah handler yang **membuka** overlay-nya,
 /// setelah layout frame sebelumnya selesai, dan hasilnya dititipkan ke signal
 /// seperti nilai biasa.
@@ -175,13 +175,13 @@ pub fn topmost(tree: &RenderTree) -> Option<NodeId> {
 ///   pekerjaan yang lahir dari modul ini.
 ///
 /// ```
-/// # use rustui_core::animation::{Motion, Tick};
-/// # use rustui_core::scheduler::Dirty;
-/// # use rustui_core::tree::{BoxConstraints, RenderTree};
-/// # use rustui_core::view::{fixed, reconcile};
-/// # use rustui_paint::Size;
+/// # use silka_core::animation::{Motion, Tick};
+/// # use silka_core::scheduler::Dirty;
+/// # use silka_core::tree::{BoxConstraints, RenderTree};
+/// # use silka_core::view::{fixed, reconcile};
+/// # use silka_paint::Size;
 /// # use std::time::Duration;
-/// use rustui_widgets::overlay::{advance, overlay, overlay_layer};
+/// use silka_widgets::overlay::{advance, overlay, overlay_layer};
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(
@@ -239,15 +239,15 @@ pub fn settle(tree: &mut RenderTree) {
 /// Jaring pengaman untuk **Esc tanpa fokus**. Jalur normalnya lain: Esc
 /// mengalir dari node terfokus ke atas dan melewati [`OverlayEntry`] karena
 /// entri itu leluhur panelnya. Tapi kalau belum ada satu pun yang terfokus,
-/// event tombol hanya sampai ke akar pohon ([`rustui_core::input::InputRouter`])
+/// event tombol hanya sampai ke akar pohon ([`silka_core::input::InputRouter`])
 /// dan dialog tidak akan pernah melihatnya. Shell memanggil fungsi ini
 /// **hanya** saat router menjawab tidak ada yang menangani:
 ///
 /// ```
-/// # use rustui_core::input::{Event, InputRouter, KeyEvent, KeyCode, NamedKey};
-/// # use rustui_core::tree::RenderTree;
+/// # use silka_core::input::{Event, InputRouter, KeyEvent, KeyCode, NamedKey};
+/// # use silka_core::tree::RenderTree;
 /// # use std::time::Duration;
-/// # use rustui_widgets::overlay::{dismiss_topmost, Dismiss};
+/// # use silka_widgets::overlay::{dismiss_topmost, Dismiss};
 /// # let mut tree = RenderTree::new();
 /// # let mut router = InputRouter::new();
 /// let esc = Event::Key(KeyEvent::pressed(

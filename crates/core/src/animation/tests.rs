@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use rustui_paint::{Color, Point, Size};
+use silka_paint::{Color, Point, Size};
 
 use crate::input::Velocity;
 use crate::scheduler::Dirty;

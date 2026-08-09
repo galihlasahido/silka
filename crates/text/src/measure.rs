@@ -6,7 +6,7 @@
 //! yang sama dipakai Taffy lewat measure function-nya, jadi satu implementasi
 //! melayani dua pemakai.
 
-use rustui_paint::Size;
+use silka_paint::Size;
 
 use crate::style::canonical_bits;
 

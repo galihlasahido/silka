@@ -9,7 +9,7 @@
 //! `column`/`row` bawaan: yang sedang diuji adalah **pass a11y**, dan test-nya
 //! tidak boleh ikut gagal setiap kali mesin flex di bawahnya disetel ulang.
 
-use rustui_paint::{Insets, Point, Size};
+use silka_paint::{Insets, Point, Size};
 
 use crate::scheduler::Dirty;
 use crate::tree::{
@@ -583,7 +583,7 @@ mod accesskit_bridge {
         assert_eq!(update.tree.as_ref().map(|t| t.root), Some(update.focus));
         assert_eq!(
             update.tree.as_ref().and_then(|t| t.toolkit_name.as_deref()),
-            Some("rustui")
+            Some("silka")
         );
 
         let tombol_id = a11y.find_label("Simpan").expect("ada").id;

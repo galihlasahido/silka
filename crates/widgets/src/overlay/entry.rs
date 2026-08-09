@@ -11,16 +11,16 @@
 //! 3. **Penghalang penunjuk** ([`Barrier`]) cukup soal
 //!    [`RenderNode::hit_behavior`]: `Opaque` menyerap, `Ignore` meneruskan.
 
-use rustui_core::access::{AccessNode, AccessRole};
-use rustui_core::animation::{MotionRole, Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessNode, AccessRole};
+use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
+use silka_core::input::{
     Event, EventCtx, FocusPolicy, HitBehavior, NamedKey, PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_core::Callback;
-use rustui_paint::{Color, Point, Quad, Rect, Size};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::{Builder, View, ViewNode};
+use silka_core::Callback;
+use silka_paint::{Color, Point, Quad, Rect, Size};
 
 use super::placement::{Anchor, Placed, Placement, PlacementMode};
 
@@ -279,7 +279,7 @@ impl OverlayEntry {
     /// Callback disalin keluar dulu — ia hampir selalu menulis signal, dan
     /// tulisan signal boleh memicu apa saja; yang tidak boleh adalah ia
     /// berjalan sambil node ini masih dipinjam `&mut` (pola yang sama dengan
-    /// [`rustui_core::tree::Interactive`]).
+    /// [`silka_core::tree::Interactive`]).
     pub fn request_dismiss(&mut self, cara: Dismiss) -> bool {
         if !self.dismiss.contains(cara) {
             return false;
@@ -592,10 +592,10 @@ impl ViewNode for OverlayProps {
 /// Konstruktor gaya Dart (§2.5); seluruh sifatnya pindah ke method chain.
 ///
 /// ```
-/// # use rustui_core::signals::Runtime;
-/// # use rustui_core::view::fixed;
-/// # use rustui_theme::{Appearance, Theme};
-/// use rustui_widgets::overlay::{overlay, Barrier, Dismiss, Placement, Side};
+/// # use silka_core::signals::Runtime;
+/// # use silka_core::view::fixed;
+/// # use silka_theme::{Appearance, Theme};
+/// use silka_widgets::overlay::{overlay, Barrier, Dismiss, Placement, Side};
 ///
 /// # let rt = Runtime::new();
 /// # let terbuka = rt.signal(true);
@@ -620,12 +620,12 @@ pub fn overlay(panel: impl Into<View>) -> OverlayBuilder {
 
 /// Builder satu overlay.
 ///
-/// Tipe sendiri, bukan [`rustui_core::view::Builder`], karena lapisan layer
+/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena lapisan layer
 /// perlu **membaca** `open`/`barrier` sebelum pohon dirakit: hanya dengan
 /// begitu ia tahu apakah konten di belakang harus dimatikan (lihat
 /// [`super::overlay_layer`]).
 pub struct OverlayBuilder {
-    pub(super) key: Option<rustui_core::signals::Key>,
+    pub(super) key: Option<silka_core::signals::Key>,
     pub(super) props: OverlayProps,
     pub(super) panel: View,
 }
@@ -633,7 +633,7 @@ pub struct OverlayBuilder {
 impl OverlayBuilder {
     /// Kunci identitas — wajib untuk overlay yang datang dari daftar dinamis
     /// (tumpukan toast).
-    pub fn key(mut self, key: impl Into<rustui_core::signals::Key>) -> Self {
+    pub fn key(mut self, key: impl Into<silka_core::signals::Key>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -712,7 +712,7 @@ impl OverlayBuilder {
 
     /// Tandai gerakannya **dekoratif**: reduced-motion mematikannya sepenuhnya
     /// alih-alih sekadar membuang pantulannya
-    /// ([`rustui_core::animation::Motion`]).
+    /// ([`silka_core::animation::Motion`]).
     pub fn decorative(mut self) -> Self {
         self.props.motion = MotionRole::Decorative;
         self

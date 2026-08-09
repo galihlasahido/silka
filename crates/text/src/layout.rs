@@ -6,7 +6,7 @@
 //! yang berbeda-beda (scroll, animasi) tanpa shaping ulang — itu yang membuat
 //! **subpixel positioning** tetap benar saat teks digeser.
 
-use rustui_paint::{Point, Rect, Size};
+use silka_paint::{Point, Rect, Size};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::measure::{TextConstraints, TextMeasure};
@@ -338,7 +338,7 @@ pub(crate) fn ukur(
 #[cfg(test)]
 mod tests {
     use crate::{TextConstraints, TextEngine, TextStyle};
-    use rustui_paint::Point;
+    use silka_paint::Point;
 
     /// "é" sebagai e + combining acute: satu grapheme, dua char.
     const AKSEN: &str = "cafe\u{301}";

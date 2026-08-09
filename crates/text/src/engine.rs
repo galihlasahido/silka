@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use cosmic_text::{
     Align, Attrs, Buffer, CacheKeyFlags, Metrics, Shaping, SwashCache, SwashContent, Wrap,
 };
-use rustui_paint::{Color, Glyph, GlyphImageId, GlyphRun, Point, Rect, Scene, Size};
+use silka_paint::{Color, Glyph, GlyphImageId, GlyphRun, Point, Rect, Scene, Size};
 
 use crate::atlas::AtlasFormat;
 use crate::cache::{FontId, GlyphCache, GlyphKey, GlyphLookup, RasterGlyph, SubpixelBin};
@@ -350,23 +350,20 @@ impl TextEngine {
 /// Aplikasi cukup menyerahkan `&mut TextEngine` ke jalur render; tidak perlu
 /// membongkar cache-nya sendiri, dan backend tetap tidak tahu apa itu font
 /// (§3.2, §3.3).
-impl rustui_paint::GlyphSource for TextEngine {
-    fn atlas_size(&self, format: rustui_paint::GlyphFormat) -> u32 {
+impl silka_paint::GlyphSource for TextEngine {
+    fn atlas_size(&self, format: silka_paint::GlyphFormat) -> u32 {
         self.cache.atlas_size(format)
     }
 
-    fn atlas_pixels(&self, format: rustui_paint::GlyphFormat) -> &[u8] {
+    fn atlas_pixels(&self, format: silka_paint::GlyphFormat) -> &[u8] {
         self.cache.atlas_pixels(format)
     }
 
-    fn take_dirty(
-        &mut self,
-        format: rustui_paint::GlyphFormat,
-    ) -> Option<rustui_paint::AtlasRegion> {
+    fn take_dirty(&mut self, format: silka_paint::GlyphFormat) -> Option<silka_paint::AtlasRegion> {
         self.cache.take_dirty(format)
     }
 
-    fn placement(&self, image: GlyphImageId) -> Option<rustui_paint::GlyphPlacement> {
+    fn placement(&self, image: GlyphImageId) -> Option<silka_paint::GlyphPlacement> {
         self.cache.placement(image)
     }
 }

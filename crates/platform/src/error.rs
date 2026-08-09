@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use rustui_renderer::RendererError;
+use silka_renderer::RendererError;
 
 /// Kesalahan saat membuka window atau menjalankan event loop.
 #[derive(Debug, Clone, PartialEq, Eq)]

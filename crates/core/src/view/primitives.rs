@@ -1,12 +1,12 @@
 //! View untuk node primitif [`crate::tree`] — bentuk penulisannya sudah gaya
-//! Dart (§2.5), sehingga `rustui-widgets` tinggal membungkusnya dengan nama
+//! Dart (§2.5), sehingga `silka-widgets` tinggal membungkusnya dengan nama
 //! yang ramah aplikasi.
 //!
 //! ```
-//! use rustui_core::view::{column, fixed, pad, row};
-//! use rustui_paint::Insets;
+//! use silka_core::view::{column, fixed, pad, row};
+//! use silka_paint::Insets;
 //!
-//! use rustui_core::view::View;
+//! use silka_core::view::View;
 //!
 //! let _ = column([
 //!     View::from(pad(Insets::all(12.0), fixed(120.0, 24.0).label("Judul"))),
@@ -15,7 +15,7 @@
 //! .spacing(12.0);
 //! ```
 
-use rustui_paint::{Color, Corners, Insets, ShadowPair, Size};
+use silka_paint::{Color, Corners, Insets, ShadowPair, Size};
 
 use crate::scheduler::Dirty;
 use crate::tree::{
@@ -295,7 +295,7 @@ impl ViewNode for MeasuredProps {
 /// Inilah jalan masuk pengukuran teks ke sistem layout: baik mesin box
 /// constraints kita maupun wadah flex/grid ([`row`]/[`column`]/[`grid`])
 /// bertanya lewat satu pintu yang sama. Lihat contoh lengkap di
-/// [`rustui_core::tree::MeasuredBox`](crate::tree::MeasuredBox).
+/// [`silka_core::tree::MeasuredBox`](crate::tree::MeasuredBox).
 pub fn measured(measure: impl Fn(BoxConstraints) -> Size + 'static) -> Builder<MeasuredProps> {
     Builder::new(MeasuredProps {
         node: MeasuredBox::new(measure),

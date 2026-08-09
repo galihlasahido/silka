@@ -1,8 +1,8 @@
-//! # rustui-core
+//! # silka-core
 //!
 //! Mesin framework: semua yang ada di bawah API publik bergaya Dart
 //! (REKOMENDASI §2). Isi crate ini adalah **detail implementasi** — kontrak
-//! yang dilihat penulis aplikasi hidup di `rustui-widgets`.
+//! yang dilihat penulis aplikasi hidup di `silka-widgets`.
 //!
 //! Lapisan yang ditampung:
 //!
@@ -15,7 +15,7 @@
 //! - **Box constraints ala Flutter** sebagai protokol layout native
 //!   ("constraints turun, ukuran naik"), single pass + relayout boundaries;
 //!   Taffy dipakai untuk widget Flex/Grid, dengan measure function leaf
-//!   menumpang `rustui-text` (§3.4). Layout harus paham **mirroring RTL**
+//!   menumpang `silka-text` (§3.4). Layout harus paham **mirroring RTL**
 //!   sejak awal — retrofit RTL semustahil retrofit a11y (§9.8).
 //! - **Spring animation** (§3.5): nilai animasi menyimpan `(posisi, velocity)`
 //!   dan **selalu interruptible/retargetable** — solusi closed-form damped
@@ -34,7 +34,7 @@
 //! **Milestone `frame-scheduling`** — [`scheduler`]: mesin **render-on-dirty**
 //! beserta pengukuran frame time. Murni logika: ia tidak tahu winit maupun
 //! wgpu. Platform hanya menyuplai detak vsync dan interval terukurnya;
-//! `rustui-platform` memakai `CADisplayLink` di macOS (ProMotion-aware) dan
+//! `silka-platform` memakai `CADisplayLink` di macOS (ProMotion-aware) dan
 //! `request_redraw` winit di OS lain. **Tidak ada 16,6 ms di mana pun** —
 //! kalau interval belum diketahui, ia bernilai `None` dan tidak ada yang
 //! berpura-pura tahu.
@@ -60,10 +60,10 @@
 //! Alur satu frame yang dirakit ketiganya:
 //!
 //! ```
-//! use rustui_core::scheduler::FrameScheduler;
-//! use rustui_core::tree::{BoxConstraints, RenderTree};
-//! use rustui_core::view::{column, fixed, reconcile};
-//! use rustui_paint::Size;
+//! use silka_core::scheduler::FrameScheduler;
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, reconcile};
+//! use silka_paint::Size;
 //!
 //! let mut scheduler = FrameScheduler::new();
 //! let mut tree = RenderTree::new();
@@ -98,7 +98,7 @@
 //! [`access::AccessTree::dump`] memberi tree dump deterministik untuk golden
 //! test, dan [`access::AccessTree::changes_since`] menjaga janji "hanya saat
 //! dirty" tetap berlaku untuk screen reader juga. Konversi ke `accesskit`
-//! terkurung di satu berkas; adapter winit-nya ada di `rustui-platform`.
+//! terkurung di satu berkas; adapter winit-nya ada di `silka-platform`.
 //!
 //! **Milestone `taffy-flex`** — [`tree::TaffyBox`]: Flexbox dan CSS Grid
 //! dijalankan **Taffy sebagai widget di dalam protokol box constraints**
@@ -119,7 +119,7 @@
 //!
 //! 1. **Hit-testing sadar squircle** (§3.6) — [`input::HitShape::Rounded`]
 //!    menguji superellipse yang **sama persis** dengan yang dikirim ke shader
-//!    ([`rustui_paint::Corners::contains`]), jadi pojok yang terlihat kosong
+//!    ([`silka_paint::Corners::contains`]), jadi pojok yang terlihat kosong
 //!    tidak bisa diklik dan sebaliknya. Viewport memotong isinya, sehingga
 //!    baris yang sudah tergulir keluar tidak lagi bisa disentuh.
 //! 2. **Fokus & tab-order** ([`input::FocusManager`]) dihitung dari render tree
@@ -136,13 +136,13 @@
 //! Kontraknya melekat di [`tree::RenderNode`] (`hit_shape`, `hit_behavior`,
 //! `focus_policy`, `cursor`, `event`) sejajar dengan `access` — bukan lapisan
 //! susulan. [`tree::Interactive`] (`view::interactive`) adalah node pertama yang
-//! memakainya utuh, dan `rustui-platform` menerjemahkan winit ke kosakata ini
+//! memakainya utuh, dan `silka-platform` menerjemahkan winit ke kosakata ini
 //! di satu berkas.
 //!
 //! **Milestone `paint-pass`** — [`tree::RenderTree::paint`]: penyusunan
-//! [`rustui_paint::Scene`] dari render tree, pass ketiga yang sejajar dengan
+//! [`silka_paint::Scene`] dari render tree, pass ketiga yang sejajar dengan
 //! layout dan a11y (§3.2). [`tree::RenderNode::paint`] adalah bagian kontrak
-//! node, dan kosakatanya **hanya** `rustui-paint` — quad, shadow ganda, glyph
+//! node, dan kosakatanya **hanya** `silka-paint` — quad, shadow ganda, glyph
 //! run: tidak ada satu tipe wgpu pun yang bisa sampai ke kode widget, jadi
 //! backend baru (GL/CPU) nanti masuk di satu tempat. Empat sifatnya:
 //!
@@ -214,7 +214,7 @@
 //! disimulasikan lewat lapisan input berakhir sebagai piksel berbeda pada
 //! tekstur yang dirender GPU.
 //!
-//! [`rustui_paint::Command::PushClip`] sudah dieksekusi backend sebagai scissor
+//! [`silka_paint::Command::PushClip`] sudah dieksekusi backend sebagai scissor
 //! rect per rentang instance, jadi kontrak clip pass ini berlaku sampai ke
 //! piksel.
 //!

@@ -3,7 +3,7 @@
 //! Ini satu-satunya berkas komponen ini yang boleh menyebut [`Theme`]. Node
 //! render di [`super::list`] dan [`super::item`] hanya menerima
 //! [`TabsStyle`] yang **sudah** berisi warna, radius, dan jarak yang jadi —
-//! aturan yang sama seperti [`rustui_core::tree::Decoration`]: mesin tidak
+//! aturan yang sama seperti [`silka_core::tree::Decoration`]: mesin tidak
 //! punya pendapat tentang warna, jadi preset Cupertino/Tailwind berganti tanpa
 //! satu baris pun berubah di kode node.
 //!
@@ -11,9 +11,9 @@
 //! Tailwind) — bukan konstanta, karena bentuk itu mengalir sampai ke shader
 //! *dan* ke hit-testing (§2.7, §3.6).
 
-use rustui_core::tree::{Decoration, FocusRing};
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Rect, ShadowPair};
-use rustui_theme::Theme;
+use silka_core::tree::{Decoration, FocusRing};
+use silka_paint::{Color, CornerRadii, Corners, Insets, Rect, ShadowPair};
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 

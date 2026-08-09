@@ -1,7 +1,7 @@
 //! Geometri dasar dalam **poin logis** (device-independent).
 //!
-//! Seluruh framework di atas `rustui-paint` berbicara dalam poin logis; hanya
-//! lapisan surface di `rustui-renderer` yang mengalikan dengan scale factor
+//! Seluruh framework di atas `silka-paint` berbicara dalam poin logis; hanya
+//! lapisan surface di `silka-renderer` yang mengalikan dengan scale factor
 //! untuk mendapatkan piksel fisik. Dengan begitu DPI tidak pernah bocor ke
 //! kode widget.
 

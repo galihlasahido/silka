@@ -18,9 +18,9 @@
 //! dari token `typography.body_size` sehingga preset Cupertino (13pt) dan
 //! Tailwind (14pt) menghasilkan skala yang berbeda dengan sendirinya (§2.6).
 
-use rustui_paint::{Color, Point, Quad, Rect, Scene, Size};
-use rustui_text::{FontWeight, TextConstraints, TextEngine, TextStyle};
-use rustui_theme::Theme;
+use silka_paint::{Color, Point, Quad, Rect, Scene, Size};
+use silka_text::{FontWeight, TextConstraints, TextEngine, TextStyle};
+use silka_theme::Theme;
 
 /// Satu blok teks yang sudah punya tempat di halaman.
 #[derive(Debug, Clone)]
@@ -214,8 +214,8 @@ pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_paint::Command;
-    use rustui_theme::{Appearance, Preset};
+    use silka_paint::Command;
+    use silka_theme::{Appearance, Preset};
 
     const VIEWPORT: Size = Size::new(1024.0, 720.0);
 
@@ -428,8 +428,8 @@ mod tests {
     /// tetap hijau meski layar kosong.
     #[test]
     fn spesimen_teks_benar_benar_tergambar_di_gpu() {
-        use rustui_paint::Command;
-        use rustui_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
+        use silka_paint::Command;
+        use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
 
         const SKALA: f64 = 2.0;
 
@@ -445,7 +445,7 @@ mod tests {
 
         // Area sampel: bagian dalam panel, cukup jauh dari border agar tepi
         // anti-alias tidak ikut terhitung.
-        let panel = panel(&t, VIEWPORT).deflate(rustui_paint::Insets::all(2.0));
+        let panel = panel(&t, VIEWPORT).deflate(silka_paint::Insets::all(2.0));
         let permukaan = t.color.surface;
         let hitung = |img: &Rgba8Image| {
             let f = |v: f32| (v as f64 * SKALA).round().max(0.0) as u32;

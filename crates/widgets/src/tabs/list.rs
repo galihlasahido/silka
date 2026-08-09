@@ -17,15 +17,15 @@
 //!   ujung, dan tab yang dimatikan dilewati. Cincin fokus digambar mengelilingi
 //!   tab aktif, jadi ia ikut meluncur bersama indikator.
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole};
-use rustui_core::animation::{Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole};
+use silka_core::animation::{Spring, SpringValue, Tick};
+use silka_core::input::{
     Event, EventCtx, FocusEvent, FocusPolicy, KeyCode, NamedKey, PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::ViewNode;
-use rustui_paint::{CornerRadii, Corners, Insets, Quad, Rect, Size};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::ViewNode;
+use silka_paint::{CornerRadii, Corners, Insets, Quad, Rect, Size};
 
 use super::style::TabsStyle;
 
@@ -35,7 +35,7 @@ use super::style::TabsStyle;
 
 /// Aksi "tab ke-`index` dipilih" yang dititipkan aplikasi.
 ///
-/// Sepupu [`rustui_core::Callback`] yang membawa satu argumen; sifatnya sama
+/// Sepupu [`silka_core::Callback`] yang membawa satu argumen; sifatnya sama
 /// persis: `Clone` murah, `PartialEq` berdasarkan identitas, dan yang boleh
 /// dilakukannya hanyalah **menulis signal** — struktur pohon adalah wewenang
 /// view-diff (§2.5).

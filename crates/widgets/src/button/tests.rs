@@ -4,15 +4,15 @@
 
 use super::*;
 
-use rustui_core::access::AccessActions;
-use rustui_core::animation::Motion;
-use rustui_core::input::{
+use silka_core::access::AccessActions;
+use silka_core::animation::Motion;
+use silka_core::input::{
     Event, InputRouter, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
 };
-use rustui_core::tree::{NodeId, RenderTree};
-use rustui_core::view::reconcile;
-use rustui_paint::{Command, Scene};
-use rustui_theme::{Appearance, Preset};
+use silka_core::tree::{NodeId, RenderTree};
+use silka_core::view::reconcile;
+use silka_paint::{Command, Scene};
+use silka_theme::{Appearance, Preset};
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;

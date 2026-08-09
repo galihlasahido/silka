@@ -4,8 +4,8 @@
 //! chaining, tanpa struct literal dan tanpa macro:
 //!
 //! ```no_run
-//! use rustui_platform::window;
-//! use rustui_theme::{Appearance, Theme};
+//! use silka_platform::window;
+//! use silka_theme::{Appearance, Theme};
 //!
 //! window("Gallery")
 //!     .size(1024.0, 720.0)
@@ -19,17 +19,17 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rustui_core::access::{AccessActionRequest, AccessTree};
-use rustui_core::animation::Tick;
-use rustui_core::app::{AppRuntime, BuildCtx, ScaleFactor};
-use rustui_core::input::{Event as InputEvent, ImeRequest, Response as InputResponse};
-use rustui_core::scheduler::{Dirty, FrameLogger, FrameScheduler, Vsync, Wake};
-use rustui_core::signals::Signal;
-use rustui_core::tree::RenderTree;
-use rustui_core::view::View;
-use rustui_paint::{Color, GlyphSource, Scene, Size};
-use rustui_renderer::{FrameOutcome, Gpu, SurfaceGeometry, WindowSurface};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::access::{AccessActionRequest, AccessTree};
+use silka_core::animation::Tick;
+use silka_core::app::{AppRuntime, BuildCtx, ScaleFactor};
+use silka_core::input::{Event as InputEvent, ImeRequest, Response as InputResponse};
+use silka_core::scheduler::{Dirty, FrameLogger, FrameScheduler, Vsync, Wake};
+use silka_core::signals::Signal;
+use silka_core::tree::RenderTree;
+use silka_core::view::View;
+use silka_paint::{Color, GlyphSource, Scene, Size};
+use silka_renderer::{FrameOutcome, Gpu, SurfaceGeometry, WindowSurface};
+use silka_theme::{Appearance, Preset, Theme};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{StartCause, WindowEvent};
@@ -109,7 +109,7 @@ type SceneFn = Box<dyn FnMut(&FrameContext<'_>) -> Scene>;
 /// Penanggap event input.
 ///
 /// Bentuknya sengaja `Event -> Response`: aplikasi (atau lapisan widget di
-/// atasnya) meneruskan event ke [`rustui_core::input::InputRouter`] dan
+/// atasnya) meneruskan event ke [`silka_core::input::InputRouter`] dan
 /// mengembalikan apa adanya. Shell lalu menerjemahkan hasilnya menjadi
 /// panggilan winit — `request_redraw`, `set_ime_cursor_area`, `set_cursor` —
 /// sehingga tidak ada satu pun tipe winit yang perlu dilihat kode di atasnya.
@@ -130,8 +130,8 @@ type AccessActionFn = Box<dyn FnMut(AccessActionRequest)>;
 /// thread yang sama: closure `on_frame` saat menyusun scene (merasterisasi
 /// glyph baru ke atlas), lalu backend saat menggambar (mengunggah bagian
 /// atlas yang berubah). Keduanya tidak pernah berjalan bersamaan, jadi tidak
-/// ada biaya sinkronisasi — dan `rustui-platform` tetap tidak tahu apa itu
-/// font: yang dipegangnya hanyalah trait dari `rustui-paint`.
+/// ada biaya sinkronisasi — dan `silka-platform` tetap tidak tahu apa itu
+/// font: yang dipegangnya hanyalah trait dari `silka-paint`.
 type GlyphsRef = Rc<RefCell<dyn GlyphSource>>;
 
 /// Konfigurasi window, dibangun dengan method chaining.
@@ -238,20 +238,20 @@ impl WindowConfig {
     ///
     /// Tanpa ini, perintah `GlyphRun` di dalam scene **tidak menghasilkan
     /// piksel** — backend tidak punya bitmap untuk digambar. Biasanya yang
-    /// diserahkan adalah `rustui_text::TextEngine` yang sama dengan yang
+    /// diserahkan adalah `silka_text::TextEngine` yang sama dengan yang
     /// dipakai `on_frame`:
     ///
     /// ```no_run
     /// # use std::cell::RefCell;
     /// # use std::rc::Rc;
-    /// # use rustui_platform::window;
-    /// # use rustui_paint::{Color, Scene};
+    /// # use silka_platform::window;
+    /// # use silka_paint::{Color, Scene};
     /// # struct TextEngine;
-    /// # impl rustui_paint::GlyphSource for TextEngine {
-    /// #   fn atlas_size(&self, _: rustui_paint::GlyphFormat) -> u32 { 0 }
-    /// #   fn atlas_pixels(&self, _: rustui_paint::GlyphFormat) -> &[u8] { &[] }
-    /// #   fn take_dirty(&mut self, _: rustui_paint::GlyphFormat) -> Option<rustui_paint::AtlasRegion> { None }
-    /// #   fn placement(&self, _: rustui_paint::GlyphImageId) -> Option<rustui_paint::GlyphPlacement> { None }
+    /// # impl silka_paint::GlyphSource for TextEngine {
+    /// #   fn atlas_size(&self, _: silka_paint::GlyphFormat) -> u32 { 0 }
+    /// #   fn atlas_pixels(&self, _: silka_paint::GlyphFormat) -> &[u8] { &[] }
+    /// #   fn take_dirty(&mut self, _: silka_paint::GlyphFormat) -> Option<silka_paint::AtlasRegion> { None }
+    /// #   fn placement(&self, _: silka_paint::GlyphImageId) -> Option<silka_paint::GlyphPlacement> { None }
     /// # }
     /// let mesin = Rc::new(RefCell::new(TextEngine));
     /// let untuk_scene = mesin.clone();
@@ -265,7 +265,7 @@ impl WindowConfig {
     /// ```
     ///
     /// Kontraknya tetap dijaga: yang menyeberang hanyalah trait
-    /// `rustui_paint::GlyphSource` — shell tidak tahu apa itu font, dan
+    /// `silka_paint::GlyphSource` — shell tidak tahu apa itu font, dan
     /// backend tidak tahu apa itu winit.
     pub fn glyphs<G: GlyphSource + 'static>(mut self, glyphs: Rc<RefCell<G>>) -> Self {
         self.glyphs = Some(glyphs as GlyphsRef);
@@ -304,9 +304,9 @@ impl WindowConfig {
     /// menyeberang (§3.2 diterapkan ke input). Jalur normalnya satu baris:
     ///
     /// ```no_run
-    /// # use rustui_platform::window;
-    /// # use rustui_core::input::InputRouter;
-    /// # use rustui_core::tree::RenderTree;
+    /// # use silka_platform::window;
+    /// # use silka_core::input::InputRouter;
+    /// # use silka_core::tree::RenderTree;
     /// # use std::cell::RefCell;
     /// # use std::rc::Rc;
     /// let tree = Rc::new(RefCell::new(RenderTree::new()));
@@ -318,7 +318,7 @@ impl WindowConfig {
     /// ```
     ///
     /// Yang dikembalikan menentukan apa yang dilakukan shell berikutnya:
-    /// [`rustui_core::input::Response::dirty`] membangunkan renderer (dan
+    /// [`silka_core::input::Response::dirty`] membangunkan renderer (dan
     /// **hanya** itu yang membangunkannya — §3.5), `ime` diterjemahkan menjadi
     /// `set_ime_allowed`/`set_ime_cursor_area`, dan `cursor` menjadi
     /// `set_cursor`.
@@ -371,10 +371,10 @@ impl WindowConfig {
 /// yang perlu dirakit sendiri.
 ///
 /// ```no_run
-/// use rustui_platform::{run_app, window};
-/// use rustui_core::app::component;
-/// use rustui_core::signals::use_signal;
-/// use rustui_core::view::{column, fixed};
+/// use silka_platform::{run_app, window};
+/// use silka_core::app::component;
+/// use silka_core::signals::use_signal;
+/// use silka_core::view::{column, fixed};
 ///
 /// run_app(window("Hitung").size(480.0, 320.0), |_cx| {
 ///     let count = use_signal(|| 0i32);
@@ -391,19 +391,19 @@ impl WindowConfig {
 /// - **`on_frame` menghasilkan scene dari siklus hidup**, bukan dari scene yang
 ///   disusun tangan: `AppRuntime::frame()` menjalankan rebuild → diff → layout
 ///   → paint, dan yang menyeberang ke backend tetap hanya
-///   [`rustui_paint::Scene`] (§3.2).
+///   [`silka_paint::Scene`] (§3.2).
 /// - **`on_input` menyalurkan event ke pohon yang sama** dan mengembalikan
 ///   alasan dirty-nya — termasuk dirty yang lahir dari tulisan signal di dalam
 ///   handler.
 /// - **`on_access` menyusun pohon a11y dari geometri frame yang sama**, dengan
 ///   fokus dari router (§3.8).
-/// - **Theme dititipkan sebagai `Signal<Theme>`** di [`rustui_core::app::Env`]:
+/// - **Theme dititipkan sebagai `Signal<Theme>`** di [`silka_core::app::Env`]:
 ///   dark mode OS yang berubah menulis signal itu, dan **hanya** komponen yang
 ///   benar-benar membaca theme yang ikut dibangun ulang (§2.7).
 ///
 /// Janji "render hanya saat dirty" tetap utuh: setelah frame selesai, shell
 /// hanya meminta frame berikutnya bila
-/// [`rustui_core::app::AppRuntime::is_idle`] bernilai salah.
+/// [`silka_core::app::AppRuntime::is_idle`] bernilai salah.
 ///
 /// [`WindowConfig::on_frame`], [`WindowConfig::on_input`], dan
 /// [`WindowConfig::on_access`] yang sudah dipasang di `config` **digantikan**
@@ -421,19 +421,19 @@ pub fn run_app(
 /// `animate` dipanggil sekali per frame **sebelum** siklus rebuild → layout →
 /// paint, dengan render tree dan [`Tick`] frame itu; nilainya yang kembali
 /// adalah alasan dirty, dan selama ia masih menyebut
-/// [`Dirty::ANIMATION`](rustui_core::scheduler::Dirty::ANIMATION) shell terus
+/// [`Dirty::ANIMATION`](silka_core::scheduler::Dirty::ANIMATION) shell terus
 /// meminta frame berikutnya. Begitu semua spring settle, event loop kembali
 /// menunggu — janji "render hanya saat dirty" (§3.5) tidak dilanggar oleh
 /// keberadaan animasi.
 ///
-/// Bentuk `animate` sengaja persis milik `rustui_widgets::advance`, sehingga
+/// Bentuk `animate` sengaja persis milik `silka_widgets::advance`, sehingga
 /// aplikasi biasa cukup menulis:
 ///
 /// ```no_run
-/// # use rustui_platform::{run_app_with, window};
-/// # use rustui_core::view::fixed;
-/// # fn advance(_: &mut rustui_core::tree::RenderTree, _: &rustui_core::animation::Tick)
-/// #     -> rustui_core::scheduler::Dirty { rustui_core::scheduler::Dirty::NONE }
+/// # use silka_platform::{run_app_with, window};
+/// # use silka_core::view::fixed;
+/// # fn advance(_: &mut silka_core::tree::RenderTree, _: &silka_core::animation::Tick)
+/// #     -> silka_core::scheduler::Dirty { silka_core::scheduler::Dirty::NONE }
 /// run_app_with(window("Demo"), |_cx| fixed(80.0, 24.0).into(), advance).unwrap();
 /// ```
 pub fn run_app_with(
@@ -461,9 +461,9 @@ pub fn run_app_with(
 /// - `Signal<ScaleFactor>` — resolusi layar untuk rasterisasi teks (§3.3).
 ///
 /// ```
-/// use rustui_platform::headless_app;
-/// use rustui_core::view::fixed;
-/// use rustui_theme::{Appearance, Theme};
+/// use silka_platform::headless_app;
+/// use silka_core::view::fixed;
+/// use silka_theme::{Appearance, Theme};
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 /// let mut ui = headless_app(theme, |_cx| fixed(120.0, 24.0).into()).sized(320.0, 200.0);
@@ -690,7 +690,7 @@ impl Shell {
 
         #[cfg(debug_assertions)]
         eprintln!(
-            "rustui: window \"{}\" — backend {} pada {} ({}×{} px @ {}x) · vsync {} ({})",
+            "silka: window \"{}\" — backend {} pada {} ({}×{} px @ {}x) · vsync {} ({})",
             self.title,
             gpu.backend_name(),
             gpu.adapter_name(),
@@ -1063,7 +1063,7 @@ pub fn default_clear_color(theme: &Theme) -> Color {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::AccessRole;
+    use silka_core::access::AccessRole;
 
     /// Sumber atlas palsu — cukup untuk membuktikan jalurnya terpasang, tanpa
     /// menyeret stack text ke dalam uji shell.
@@ -1073,26 +1073,26 @@ mod tests {
     }
 
     impl GlyphSource for AtlasPalsu {
-        fn atlas_size(&self, _format: rustui_paint::GlyphFormat) -> u32 {
+        fn atlas_size(&self, _format: silka_paint::GlyphFormat) -> u32 {
             self.diminta.set(self.diminta.get() + 1);
             0
         }
 
-        fn atlas_pixels(&self, _format: rustui_paint::GlyphFormat) -> &[u8] {
+        fn atlas_pixels(&self, _format: silka_paint::GlyphFormat) -> &[u8] {
             &[]
         }
 
         fn take_dirty(
             &mut self,
-            _format: rustui_paint::GlyphFormat,
-        ) -> Option<rustui_paint::AtlasRegion> {
+            _format: silka_paint::GlyphFormat,
+        ) -> Option<silka_paint::AtlasRegion> {
             None
         }
 
         fn placement(
             &self,
-            _image: rustui_paint::GlyphImageId,
-        ) -> Option<rustui_paint::GlyphPlacement> {
+            _image: silka_paint::GlyphImageId,
+        ) -> Option<silka_paint::GlyphPlacement> {
             None
         }
     }
@@ -1241,8 +1241,8 @@ mod tests {
 
     #[test]
     fn on_input_menerima_event_dan_hasilnya_dipakai() {
-        use rustui_core::input::{Event, PointerEvent, PointerPhase};
-        use rustui_paint::Point;
+        use silka_core::input::{Event, PointerEvent, PointerPhase};
+        use silka_paint::Point;
 
         let mut c = window("Uji").on_input(|event| {
             let mut hasil = InputResponse::default();
@@ -1278,10 +1278,10 @@ mod tests {
 
     #[test]
     fn run_app_menyusun_scene_dari_siklus_hidup_bukan_dari_tangan() {
-        use rustui_core::app::component;
-        use rustui_core::signals::{use_signal, Signal};
-        use rustui_core::view::{column, fixed};
-        use rustui_paint::Command;
+        use silka_core::app::component;
+        use silka_core::signals::{use_signal, Signal};
+        use silka_core::view::{column, fixed};
+        use silka_paint::Command;
         use std::rc::Rc;
 
         let pegangan: Rc<Cell<Option<Signal<i32>>>> = Rc::default();
@@ -1292,7 +1292,7 @@ mod tests {
             simpan.set(Some(count));
             column([component("angka", move |_| {
                 fixed(40.0, 20.0 + count.get() as f32 * 10.0)
-                    .background(rustui_paint::Color::WHITE)
+                    .background(silka_paint::Color::WHITE)
                     .into()
             })])
             .into()
@@ -1337,10 +1337,10 @@ mod tests {
 
     #[test]
     fn run_app_menyambungkan_input_dan_a11y_ke_pohon_yang_sama() {
-        use rustui_core::app::component;
-        use rustui_core::input::{Event, PointerButton, PointerEvent, PointerPhase};
-        use rustui_core::view::{fixed, interactive};
-        use rustui_paint::Point;
+        use silka_core::app::component;
+        use silka_core::input::{Event, PointerButton, PointerEvent, PointerPhase};
+        use silka_core::view::{fixed, interactive};
+        use silka_paint::Point;
 
         let mut c = sambungkan_app(window("Uji"), |_cx| {
             component("tombol", |_| {
@@ -1367,8 +1367,8 @@ mod tests {
 
     #[test]
     fn run_app_menitipkan_theme_sebagai_signal() {
-        use rustui_core::signals::Signal;
-        use rustui_core::view::fixed;
+        use silka_core::signals::Signal;
+        use silka_core::view::fixed;
         use std::cell::RefCell;
         use std::rc::Rc;
 

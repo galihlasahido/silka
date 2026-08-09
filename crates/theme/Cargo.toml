@@ -1,5 +1,5 @@
 [package]
-name = "rustui-theme"
+name = "silka-theme"
 description = "Token semantik + preset first-party Cupertino & Tailwind/shadcn"
 version.workspace = true
 edition.workspace = true
@@ -7,4 +7,4 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rustui-paint.workspace = true
+silka-paint.workspace = true

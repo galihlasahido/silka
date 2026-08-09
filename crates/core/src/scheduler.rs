@@ -15,7 +15,7 @@
 //!
 //! ```
 //! use std::time::{Duration, Instant};
-//! use rustui_core::scheduler::{Dirty, FrameScheduler, Wake};
+//! use silka_core::scheduler::{Dirty, FrameScheduler, Wake};
 //!
 //! let mut s = FrameScheduler::new();
 //! assert!(s.is_idle());                        // idle = benar-benar tidak menggambar
@@ -602,7 +602,7 @@ impl FrameLogger {
         }
         let tanda = if lambat { "LAMBAT " } else { "" };
         Some(format!(
-            "rustui: {tanda}frame {} · build {} · present {} · Δ {} · sebab {} · vsync {vsync} · build p50 {} · p95 {} · max {} · over-budget {}/{}",
+            "silka: {tanda}frame {} · build {} · present {} · Δ {} · sebab {} · vsync {vsync} · build p50 {} · p95 {} · max {} · over-budget {}/{}",
             timing.index,
             ms(timing.build),
             ms(timing.present),

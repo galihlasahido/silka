@@ -21,14 +21,14 @@
 //! disusun tangan, tidak ada aritmetika tata letak, dan tidak ada satu pun
 //! angka warna — semuanya token (§2.6, §2.7).
 
-use rustui_core::app::{component, BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{CrossAlign, MainAlign};
-use rustui_core::view::{column, row, View};
-use rustui_paint::Insets;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{checkbox, checkbox_only, text, CheckState, Fonts};
+use silka_core::app::{component, BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{CrossAlign, MainAlign};
+use silka_core::view::{column, row, View};
+use silka_paint::Insets;
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{checkbox, checkbox_only, text, CheckState, Fonts};
 
 /// Judul halaman.
 pub const JUDUL: &str = "Checkbox";
@@ -172,14 +172,14 @@ fn mati(fonts: &Fonts, t: &Theme) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::{AccessActions, AccessRole, AccessToggled};
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::{AccessActions, AccessRole, AccessToggled};
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
     };
-    use rustui_paint::{Command, Point, Rect, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
+    use silka_paint::{Command, Point, Rect, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(720.0, 620.0);
@@ -237,9 +237,9 @@ mod tests {
     fn sampai_diam(ui: &mut AppRuntime) {
         let mut jam = Instant::now();
         for _ in 0..600 {
-            ui.animate_at(jam, rustui_widgets::advance);
+            ui.animate_at(jam, silka_widgets::advance);
             ui.frame();
-            if !rustui_widgets::is_animating(ui.tree()) {
+            if !silka_widgets::is_animating(ui.tree()) {
                 return;
             }
             jam += Duration::from_micros(8_333);
@@ -283,7 +283,7 @@ mod tests {
             assert!(e.node.actions.contains(AccessActions::CLICK), "{label}");
             assert!(e.node.actions.contains(AccessActions::FOCUS), "{label}");
             assert!(
-                e.bounds.size.height >= rustui_widgets::MIN_HIT_TARGET,
+                e.bounds.size.height >= silka_widgets::MIN_HIT_TARGET,
                 "hit target {label} cuma {:?}",
                 e.bounds.size
             );
@@ -397,7 +397,7 @@ mod tests {
         klik(&mut ui, p);
         ui.frame();
         assert!(
-            rustui_widgets::is_animating(ui.tree()),
+            silka_widgets::is_animating(ui.tree()),
             "klik harus melahirkan gerakan, bukan lompatan"
         );
         assert!(!ui.is_idle(), "frame berikutnya harus dijadwalkan");

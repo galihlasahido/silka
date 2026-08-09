@@ -29,14 +29,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use rustui_core::app::{component, BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use rustui_core::view::{column, constrained, pad, row, View};
-use rustui_paint::{Color, Insets};
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{
+use silka_core::app::{component, BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
+use silka_core::view::{column, constrained, pad, row, View};
+use silka_paint::{Color, Insets};
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{
     button, button_variant, col, table, text, use_table_state, ButtonVariant, Column, Fonts,
     SortBy, SortDirection, TableState,
 };
@@ -395,15 +395,15 @@ fn status_bar(fonts: &Fonts, state: TableState, dibuka: Signal<Option<usize>>) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::{AccessActions, AccessRole};
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::{AccessActions, AccessRole};
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase,
     };
-    use rustui_paint::{Point, Rect, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
-    use rustui_widgets::table::{header_nodes, nodes, TableBody, TableCellBox, TableHeaderBox};
+    use silka_paint::{Point, Rect, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
+    use silka_widgets::table::{header_nodes, nodes, TableBody, TableCellBox, TableHeaderBox};
     use std::time::Duration;
 
     const VIEWPORT: Size = Size::new(1200.0, 800.0);
@@ -422,12 +422,12 @@ mod tests {
     fn diam(ui: &mut AppRuntime) {
         for _ in 0..12 {
             ui.animate(|tree, _| {
-                rustui_widgets::settle(tree);
-                rustui_core::scheduler::Dirty::LAYOUT | rustui_core::scheduler::Dirty::PAINT
+                silka_widgets::settle(tree);
+                silka_core::scheduler::Dirty::LAYOUT | silka_core::scheduler::Dirty::PAINT
             });
-            ui.animate(rustui_widgets::advance);
+            ui.animate(silka_widgets::advance);
             ui.frame();
-            if ui.is_idle() && !rustui_widgets::is_animating(ui.tree()) {
+            if ui.is_idle() && !silka_widgets::is_animating(ui.tree()) {
                 break;
             }
         }
@@ -440,7 +440,7 @@ mod tests {
 
     /// Berapa sel yang benar-benar menjadi node.
     fn sel_di_pohon(ui: &AppRuntime) -> usize {
-        fn hitung(tree: &rustui_core::tree::RenderTree, id: rustui_core::tree::NodeId) -> usize {
+        fn hitung(tree: &silka_core::tree::RenderTree, id: silka_core::tree::NodeId) -> usize {
             usize::from(tree.node_ref::<TableCellBox>(id).is_some())
                 + tree
                     .children(id)
@@ -717,7 +717,7 @@ mod tests {
                     .commands()
                     .iter()
                     .filter_map(|c| match c {
-                        rustui_paint::Command::GlyphRun(r) => Some(r.color),
+                        silka_paint::Command::GlyphRun(r) => Some(r.color),
                         _ => None,
                     })
                     .collect();

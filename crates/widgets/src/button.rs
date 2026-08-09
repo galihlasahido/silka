@@ -1,9 +1,9 @@
 //! `button()` — komponen Tier 2 pertama (`KOMPONEN.md`).
 //!
 //! ```
-//! # use rustui_widgets::{button, Fonts};
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_core::signals::Runtime;
+//! # use silka_widgets::{button, Fonts};
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_core::signals::Runtime;
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! # let rt = Runtime::new();
@@ -15,7 +15,7 @@
 //! adalah wadah flex berisi [`crate::text`] di dalam sebuah node
 //! ([`ButtonBox`]) yang memegang seluruh kontrak interaksi — hit-test squircle,
 //! hover/press/focus, Space/Enter, emisi a11y — **plus** yang tidak dimiliki
-//! [`rustui_core::tree::Interactive`]: setiap perpindahan state berjalan lewat
+//! [`silka_core::tree::Interactive`]: setiap perpindahan state berjalan lewat
 //! **spring** (§3.5), bukan lompat.
 //!
 //! Empat gerakan yang dijalankan node ini, dan perannya terhadap
@@ -45,20 +45,20 @@
 //! tidak ikut mengecil. Begitu perintah transform ada, spring yang sama persis
 //! yang menggerakkannya; bentuk API di berkas ini tidak berubah.
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole};
-use rustui_core::animation::{MotionRole, Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole};
+use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, NamedKey,
     PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{BoxConstraints, CrossAlign, LayoutCtx, MainAlign, PaintCtx, RenderNode};
-use rustui_core::view::{constrained, row, Builder, View, ViewNode};
-use rustui_core::Callback;
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
-use rustui_text::FontWeight;
-use rustui_theme::{Appearance, Theme};
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{BoxConstraints, CrossAlign, LayoutCtx, MainAlign, PaintCtx, RenderNode};
+use silka_core::view::{constrained, row, Builder, View, ViewNode};
+use silka_core::Callback;
+use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
+use silka_text::FontWeight;
+use silka_theme::{Appearance, Theme};
 
 use crate::fonts::Fonts;
 use crate::text::text;

@@ -10,16 +10,16 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::{AccessActions, AccessRole};
-use rustui_core::animation::{Motion, Spring, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessRole};
+use silka_core::animation::{Motion, Spring, Tick};
+use silka_core::input::{
     Event, InputRouter, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, NodeId, RenderTree};
-use rustui_core::view::{fixed, reconcile, View};
-use rustui_paint::{Color, Command, Point, Scene, Size};
-use rustui_theme::{Appearance, Preset};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, NodeId, RenderTree};
+use silka_core::view::{fixed, reconcile, View};
+use silka_paint::{Color, Command, Point, Scene, Size};
+use silka_theme::{Appearance, Preset};
 
 use super::*;
 use crate::motion::{advance, settle};
@@ -56,7 +56,7 @@ fn entri(tree: &RenderTree) -> NodeId {
     *entries(tree).first().expect("harus ada satu overlay")
 }
 
-fn panel(tree: &RenderTree) -> rustui_paint::Rect {
+fn panel(tree: &RenderTree) -> silka_paint::Rect {
     tree.node_ref::<OverlayEntry>(entri(tree))
         .expect("overlay")
         .panel_rect()
@@ -192,7 +192,7 @@ fn urutan_visual_adalah_urutan_tab() {
     );
 
     let a11y = tree.access_tree(None);
-    let urut: Vec<String> = rustui_core::input::tab_order(&tree, entri(&tree))
+    let urut: Vec<String> = silka_core::input::tab_order(&tree, entri(&tree))
         .into_iter()
         .filter_map(|id| {
             a11y.entries()
@@ -286,23 +286,23 @@ struct KolomPalsu {
     label: String,
 }
 
-impl rustui_core::tree::RenderNode for KolomPalsu {
+impl silka_core::tree::RenderNode for KolomPalsu {
     fn layout(
         &mut self,
-        _ctx: &mut rustui_core::tree::LayoutCtx<'_>,
+        _ctx: &mut silka_core::tree::LayoutCtx<'_>,
         constraints: BoxConstraints,
     ) -> Size {
         constraints.constrain(Size::new(200.0, 28.0))
     }
 
-    fn access(&self, node: &mut rustui_core::access::AccessNode) {
+    fn access(&self, node: &mut silka_core::access::AccessNode) {
         node.role = AccessRole::TextInput;
         node.label = Some(self.label.clone());
         node.actions |= AccessActions::FOCUS;
     }
 
-    fn focus_policy(&self) -> rustui_core::input::FocusPolicy {
-        rustui_core::input::FocusPolicy::FOCUSABLE
+    fn focus_policy(&self) -> silka_core::input::FocusPolicy {
+        silka_core::input::FocusPolicy::FOCUSABLE
     }
 }
 
@@ -311,20 +311,20 @@ struct KolomPalsuProps {
     label: String,
 }
 
-impl rustui_core::view::ViewNode for KolomPalsuProps {
-    fn build(&self) -> Box<dyn rustui_core::tree::RenderNode> {
+impl silka_core::view::ViewNode for KolomPalsuProps {
+    fn build(&self) -> Box<dyn silka_core::tree::RenderNode> {
         Box::new(KolomPalsu {
             label: self.label.clone(),
         })
     }
 
-    fn update(&self, _node: &mut dyn rustui_core::tree::RenderNode) -> Dirty {
+    fn update(&self, _node: &mut dyn silka_core::tree::RenderNode) -> Dirty {
         Dirty::NONE
     }
 }
 
 fn kolom_palsu(label: &str) -> View {
-    rustui_core::view::Builder::new(KolomPalsuProps {
+    silka_core::view::Builder::new(KolomPalsuProps {
         label: label.to_string(),
     })
     .into()
@@ -624,7 +624,7 @@ fn dialog_punya_peran_nama_dan_aksi_bagi_screen_reader() {
 fn konten_di_belakang_dialog_benar_benar_inert() {
     let f = fonts();
     let t = tema();
-    let konten = rustui_core::view::interactive(fixed(120.0, 44.0)).label("Di belakang");
+    let konten = silka_core::view::interactive(fixed(120.0, 44.0)).label("Di belakang");
     let mut tree = pohon(
         overlay_layer(konten).overlay(dialog(&f, &t, "Judul").open(true).confirm("Ok", || {})),
     );
@@ -637,7 +637,7 @@ fn konten_di_belakang_dialog_benar_benar_inert() {
         "konten di belakang modal masih dibacakan:\n{}",
         a11y.dump()
     );
-    assert!(rustui_core::input::tab_order(&tree, tree.root())
+    assert!(silka_core::input::tab_order(&tree, tree.root())
         .iter()
         .all(|id| *id != tree.children(tree.root())[0]));
 }

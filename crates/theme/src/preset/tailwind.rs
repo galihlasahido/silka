@@ -12,7 +12,7 @@
 //! Yang **tidak** ikut dari web: CSS-nya. Tidak ada parser, tidak ada cascade,
 //! tidak ada selector — hanya angkanya (§2.6).
 
-use rustui_paint::{Color, CornerStyle, Shadow, ShadowPair};
+use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
 use crate::palette::tailwind::{AMBER, BLUE, EMERALD, RED, SLATE};
 use crate::palette::Step;

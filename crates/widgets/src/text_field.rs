@@ -4,9 +4,9 @@
 //! dan #2).
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_widgets::{text_field, Fonts};
+//! # use silka_core::signals::Runtime;
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_widgets::{text_field, Fonts};
 //! # let rt = Runtime::new();
 //! # let nama = rt.signal(String::new());
 //! # let fonts = Fonts::bundled_only();
@@ -21,10 +21,10 @@
 //!
 //! | Bagian | Di mana | Kenapa di sana |
 //! |---|---|---|
-//! | Caret/seleksi per grapheme, undo, preedit | [`rustui_text::edit`] | Aturan Unicode (UAX #29), bukan aturan tampilan — dan bisa diuji tanpa piksel |
-//! | Geometri caret, hit-test, kotak seleksi | [`rustui_text::TextLayout`] | Hanya hasil shaping yang tahu di mana huruf berdiri |
-//! | Fokus, capture penunjuk, klik beruntun | [`rustui_core::input`] | Sudah jadi kontrak input framework |
-//! | Token warna/jarak/sudut | [`rustui_theme`] | Satu tulisan, dua preset (§2.7) |
+//! | Caret/seleksi per grapheme, undo, preedit | [`silka_text::edit`] | Aturan Unicode (UAX #29), bukan aturan tampilan — dan bisa diuji tanpa piksel |
+//! | Geometri caret, hit-test, kotak seleksi | [`silka_text::TextLayout`] | Hanya hasil shaping yang tahu di mana huruf berdiri |
+//! | Fokus, capture penunjuk, klik beruntun | [`silka_core::input`] | Sudah jadi kontrak input framework |
+//! | Token warna/jarak/sudut | [`silka_theme`] | Satu tulisan, dua preset (§2.7) |
 //!
 //! Node ini menempelkan keempatnya, dan **tidak menambahkan aturan Unicode
 //! sendiri satu baris pun**.
@@ -52,7 +52,7 @@
 //! ## Utang teknis yang disadari
 //!
 //! - **Clipboard** (⌘C/⌘X/⌘V) belum tersambung: `arboard` hidup di
-//!   `rustui-platform` (INTEGRASI-NATIVE §4) dan crate ini tidak boleh
+//!   `silka-platform` (INTEGRASI-NATIVE §4) dan crate ini tidak boleh
 //!   bergantung padanya. Pintasannya sengaja **dibiarkan menggelembung** ke
 //!   atas, bukan ditelan diam-diam, supaya shell bisa melayaninya nanti tanpa
 //!   satu baris pun berubah di sini.
@@ -60,27 +60,27 @@
 //!   bertabrakan dengan janji "render hanya saat dirty" (§3.5) sampai scheduler
 //!   punya jalur timer resmi.
 //! - Satu baris saja; multi-baris + soft wrap adalah `text_area`, yang memakai
-//!   [`rustui_text::TextEdit::multiline`] yang sudah ada.
+//!   [`silka_text::TextEdit::multiline`] yang sudah ada.
 
 use std::rc::Rc;
 
-use rustui_core::access::{
+use silka_core::access::{
     AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole,
 };
-use rustui_core::animation::{Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::animation::{Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, ImeEvent, KeyCode,
     KeyEvent, Modifiers, NamedKey, PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{
     BoxConstraints, Decoration, FocusRing, LayoutCtx, NodeId, PaintCtx, RenderNode, RenderTree,
 };
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_paint::{Color, Corners, GlyphRun, Insets, Point, Quad, Rect, Size};
-use rustui_text::{Caret, Movement, TextConstraints, TextEdit, TextLayout, TextStyle};
-use rustui_theme::Theme;
+use silka_core::view::{Builder, View, ViewNode};
+use silka_paint::{Color, Corners, GlyphRun, Insets, Point, Quad, Rect, Size};
+use silka_text::{Caret, Movement, TextConstraints, TextEdit, TextLayout, TextStyle};
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -91,7 +91,7 @@ use crate::fonts::Fonts;
 
 /// Aksi yang menerima **isi kolom** — bentuk `on_change`/`on_submit`.
 ///
-/// [`rustui_core::Callback`] sengaja tidak membawa argumen (ia melayani
+/// [`silka_core::Callback`] sengaja tidak membawa argumen (ia melayani
 /// `on_press`); kolom teks butuh satu, dan hanya satu: teksnya. Sifatnya sama —
 /// `Clone` murah lewat [`Rc`], dan `PartialEq` berdasarkan identitas karena
 /// closure dibangun ulang tiap rebuild.
@@ -195,7 +195,7 @@ impl TextFieldBox {
     }
 
     /// Seleksi saat ini (indeks byte).
-    pub fn selection(&self) -> rustui_text::Selection {
+    pub fn selection(&self) -> silka_text::Selection {
         self.edit.selection()
     }
 
@@ -454,7 +454,7 @@ impl TextFieldBox {
             corners: self.corners,
             border_width: self.border_width,
             border_color: border,
-            shadows: rustui_paint::ShadowPair::NONE,
+            shadows: silka_paint::ShadowPair::NONE,
         }
     }
 
@@ -613,7 +613,7 @@ impl TextFieldBox {
                     }
                 }
                 // ⌘C/⌘X/⌘V dibiarkan menggelembung: clipboard hidup di
-                // `rustui-platform` (lihat catatan modul).
+                // `silka-platform` (lihat catatan modul).
                 _ => tertangani = false,
             },
 
@@ -669,7 +669,7 @@ impl TextFieldBox {
 
     // -- penunjuk -----------------------------------------------------------
 
-    fn penunjuk(&mut self, ctx: &mut EventCtx<'_>, p: &rustui_core::input::PointerEvent) {
+    fn penunjuk(&mut self, ctx: &mut EventCtx<'_>, p: &silka_core::input::PointerEvent) {
         match p.phase {
             PointerPhase::Enter => {
                 if !self.hovered {
@@ -763,8 +763,8 @@ impl RenderNode for TextFieldBox {
         if let Some(ring) = self.focus_ring.filter(|r| fokus > 0.0 && r.width > 0.0) {
             let tebal = ring.width * fokus;
             let kotak = ctx.local_bounds().deflate(Insets::all(-tebal));
-            let corners = rustui_paint::Corners::new(
-                rustui_paint::CornerRadii::all(self.corners.radii.max() + tebal),
+            let corners = silka_paint::Corners::new(
+                silka_paint::CornerRadii::all(self.corners.radii.max() + tebal),
                 self.corners.style,
             );
             ctx.quad(
@@ -898,11 +898,11 @@ impl core::fmt::Debug for TextFieldBox {
 /// datang dari adapter platform:
 ///
 /// ```no_run
-/// # use rustui_core::access::AccessActionRequest;
-/// # use rustui_core::tree::RenderTree;
+/// # use silka_core::access::AccessActionRequest;
+/// # use silka_core::tree::RenderTree;
 /// # fn contoh(tree: &mut RenderTree, permintaan: &AccessActionRequest) {
 /// // Di dalam `WindowConfig::on_access_action(...)`:
-/// rustui_widgets::text_field::apply_access_action(tree, permintaan);
+/// silka_widgets::text_field::apply_access_action(tree, permintaan);
 /// # }
 /// ```
 ///

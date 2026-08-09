@@ -17,7 +17,7 @@
 //! jadi `const` tanpa aritmetika float di `const fn` (batas `rust-version`
 //! workspace).
 
-use rustui_paint::Color;
+use silka_paint::Color;
 
 /// Satu langkah pada ramp 50–950.
 ///
@@ -103,7 +103,7 @@ impl Step {
 /// Ramp warna 11 langkah (50–950).
 ///
 /// ```
-/// use rustui_theme::palette::{tailwind, Step};
+/// use silka_theme::palette::{tailwind, Step};
 ///
 /// // `bg-slate-800` di web = warna ini, tanpa CSS apa pun.
 /// assert_eq!(tailwind::SLATE.hex(Step::S800), 0x1E293B);
@@ -186,7 +186,7 @@ pub mod tailwind {
 /// Warna label/separator/fill di HIG **semi-transparan** (mereka menyatu
 /// dengan material di belakangnya). Alpha-nya disimpan terpisah sebagai
 /// konstanta `*_ALPHA` supaya bisa dipasang lewat
-/// [`rustui_paint::Color::with_alpha`].
+/// [`silka_paint::Color::with_alpha`].
 pub mod hig {
     /// systemBlue — warna aksen default macOS/iOS (light).
     pub const SYSTEM_BLUE_LIGHT: u32 = 0x007AFF;

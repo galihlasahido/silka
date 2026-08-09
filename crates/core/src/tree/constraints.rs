@@ -13,8 +13,8 @@
 //! layout dan *relayout boundary* (§3.4) sah secara logika.
 //!
 //! ```
-//! use rustui_core::tree::BoxConstraints;
-//! use rustui_paint::Size;
+//! use silka_core::tree::BoxConstraints;
+//! use silka_paint::Size;
 //!
 //! // Induk memberi ruang maksimal 200×100, minimal 0.
 //! let c = BoxConstraints::loose(Size::new(200.0, 100.0));
@@ -22,7 +22,7 @@
 //! assert_eq!(c.constrain(Size::new(320.0, 40.0)), Size::new(200.0, 40.0));
 //! ```
 
-use rustui_paint::{Insets, Size};
+use silka_paint::{Insets, Size};
 
 /// Batas ukuran yang diturunkan induk ke anak.
 ///

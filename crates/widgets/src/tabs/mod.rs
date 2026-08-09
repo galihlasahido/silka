@@ -8,10 +8,10 @@
 //! jalur layout, input, atau a11y sendiri.
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_widgets::Fonts;
-//! use rustui_widgets::tabs::{tab, tabs, TabsVariant};
+//! # use silka_core::signals::Runtime;
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_widgets::Fonts;
+//! use silka_widgets::tabs::{tab, tabs, TabsVariant};
 //!
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
@@ -48,14 +48,14 @@
 //! | Node AccessKit | [`AccessRole::TabList`] + [`AccessRole::Tab`] dengan keadaan terpilih |
 //! | Dark mode | Ikut token, tanpa satu cabang `if` pun |
 //! | Hit target ≥ 44pt | [`TabsStyle::min_height`] dipaksa ke tiap tab saat layout |
-//! | Reduced-motion | Indikator [`Essential`](rustui_core::animation::MotionRole::Essential) (kehilangan pantulan), sorotan hover [`Decorative`](rustui_core::animation::MotionRole::Decorative) (hilang sama sekali) |
+//! | Reduced-motion | Indikator [`Essential`](silka_core::animation::MotionRole::Essential) (kehilangan pantulan), sorotan hover [`Decorative`](silka_core::animation::MotionRole::Decorative) (hilang sama sekali) |
 //!
 //! ## Siapa yang mendetakkan spring-nya
 //!
 //! Sama seperti [`crate::overlay::advance`]: shell memanggil [`advance`] sekali
 //! per frame, dan fungsi itu yang menjawab apakah masih ada yang bergerak
 //! (§3.5 "render hanya saat dirty"). Selama sambungan
-//! [`AnimationDriver`](rustui_core::animation::AnimationDriver) ke siklus frame
+//! [`AnimationDriver`](silka_core::animation::AnimationDriver) ke siklus frame
 //! aplikasi belum ada, sebuah shell bisa saja tidak pernah memanggilnya —
 //! dan node di sini **tidak membeku** kalau itu terjadi: sebelum ada satu pun
 //! detak, transisi dijalankan sebagai lompatan. Begitu detaknya datang,
@@ -67,14 +67,14 @@ pub mod style;
 #[cfg(test)]
 mod tests;
 
-use rustui_core::animation::{Spring, Tick};
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{AccessRole, CrossAlign, MainAlign, NodeId, RenderTree};
-use rustui_core::view::{row, Builder, View};
-use rustui_core::Callback;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
+use silka_core::animation::{Spring, Tick};
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{AccessRole, CrossAlign, MainAlign, NodeId, RenderTree};
+use silka_core::view::{row, Builder, View};
+use silka_core::Callback;
+use silka_text::FontWeight;
+use silka_theme::Theme;
 
 use crate::fonts::Fonts;
 use crate::text::text;
@@ -384,15 +384,15 @@ fn nodes(tree: &RenderTree) -> Vec<NodeId> {
 /// dihitung ulang.
 ///
 /// ```
-/// # use rustui_core::animation::{Motion, Tick};
-/// # use rustui_core::scheduler::Dirty;
-/// # use rustui_core::tree::{BoxConstraints, RenderTree};
-/// # use rustui_core::view::reconcile;
-/// # use rustui_paint::Size;
-/// # use rustui_theme::{Appearance, Theme};
-/// # use rustui_widgets::Fonts;
+/// # use silka_core::animation::{Motion, Tick};
+/// # use silka_core::scheduler::Dirty;
+/// # use silka_core::tree::{BoxConstraints, RenderTree};
+/// # use silka_core::view::reconcile;
+/// # use silka_paint::Size;
+/// # use silka_theme::{Appearance, Theme};
+/// # use silka_widgets::Fonts;
 /// # use std::time::Duration;
-/// use rustui_widgets::tabs::{advance, tab, tabs};
+/// use silka_widgets::tabs::{advance, tab, tabs};
 ///
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);

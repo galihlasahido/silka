@@ -11,7 +11,7 @@
 //! key/identity di list dinamis**.
 //!
 //! ```
-//! use rustui_core::signals::{use_signal, Runtime};
+//! use silka_core::signals::{use_signal, Runtime};
 //!
 //! let rt = Runtime::new();
 //! let count = rt.signal(0i32);
@@ -320,7 +320,7 @@ pub fn scope<R>(key: impl Into<Key>, body: impl FnOnce() -> R) -> R {
 /// memindahkan scope-nya, bukan state-nya.
 ///
 /// ```
-/// use rustui_core::signals::{list, use_signal, Key, Runtime};
+/// use silka_core::signals::{list, use_signal, Key, Runtime};
 ///
 /// let rt = Runtime::new();
 /// let mut baris: Vec<i64> = vec![1, 2, 3];

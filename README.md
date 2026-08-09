@@ -75,7 +75,7 @@ komponen, bukan fitur opsional.
 ## Menjalankan contoh
 
 ```bash
-cargo run -p rustui-gallery
+cargo run -p silka-gallery
 ```
 
 Galeri menampilkan komponen yang tersedia beserta variasinya, lengkap dengan

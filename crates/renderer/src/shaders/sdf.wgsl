@@ -1,4 +1,4 @@
-// rustui — shader SDF khusus UI (REKOMENDASI §3.2, §3.6).
+// silka — shader SDF khusus UI (REKOMENDASI §3.2, §3.6).
 //
 // SATU pipeline menggambar seluruh kosakata kotak yang menutupi ~95% UI:
 //
@@ -114,7 +114,7 @@ fn vs_main(@builtin(vertex_index) index: u32, inst: Instance) -> Varying {
 }
 
 // Radius sudut yang berlaku untuk kuadran tempat fragmen ini berada.
-// Sumbu y menghadap ke bawah, sesuai koordinat `rustui-paint`.
+// Sumbu y menghadap ke bawah, sesuai koordinat `silka-paint`.
 fn radius_for(local: vec2<f32>, radii: vec4<f32>) -> f32 {
     let kiri = local.x < 0.0;
     let atas = select(radii.y, radii.x, kiri);

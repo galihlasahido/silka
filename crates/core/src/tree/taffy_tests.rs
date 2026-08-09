@@ -4,8 +4,8 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use rustui_paint::{Insets, Point, Size};
-use rustui_text::{TextConstraints, TextEngine, TextStyle};
+use silka_paint::{Insets, Point, Size};
+use silka_text::{TextConstraints, TextEngine, TextStyle};
 
 use crate::view::{
     column, constrained, expanded, fixed, flexible, grid, item, measured, reconcile, row, viewport,
@@ -394,11 +394,11 @@ fn daun_terukur_dipanggil_dengan_lebar_dari_taffy() {
 
 #[test]
 fn pengukuran_teks_asli_mengalir_lewat_flex() {
-    // Test paling penting di berkas ini: `rustui-text` benar-benar dipakai
+    // Test paling penting di berkas ini: `silka-text` benar-benar dipakai
     // sebagai measure function leaf Taffy (§3.4), bukan hanya secara teori.
     let mesin = Rc::new(RefCell::new(TextEngine::bundled_only()));
     let gaya = TextStyle::new().size(17.0);
-    let kalimat = "Halo dunia dari rustui";
+    let kalimat = "Halo dunia dari silka";
 
     let ukur_teks = {
         let mesin = Rc::clone(&mesin);

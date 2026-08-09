@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 
-use rustui_paint::{Color, Scene, Size};
+use silka_paint::{Color, Scene, Size};
 
 use crate::access::AccessTree;
 use crate::animation::{AnimationDriver, Motion, Tick};
@@ -310,10 +310,10 @@ impl FrameReport {
 /// perubahan signal [`AppRuntime::is_idle`] tetap benar.
 ///
 /// ```
-/// use rustui_core::app::{app, component};
-/// use rustui_core::signals::use_signal;
-/// use rustui_core::view::{column, fixed};
-/// use rustui_paint::Color;
+/// use silka_core::app::{app, component};
+/// use silka_core::signals::use_signal;
+/// use silka_core::view::{column, fixed};
+/// use silka_paint::Color;
 ///
 /// let mut ui = app(|_cx| {
 ///     let count = use_signal(|| 0i32);
@@ -430,10 +430,10 @@ impl AppRuntime {
     /// [`crate::signals::Signal`] — bisa dibuat di tempat:
     ///
     /// ```
-    /// # use rustui_core::app::app;
-    /// # use rustui_core::view::fixed;
+    /// # use silka_core::app::app;
+    /// # use silka_core::view::fixed;
     /// let ui = app(|cx| {
-    ///     let judul: rustui_core::signals::Signal<&'static str> = cx.expect_env();
+    ///     let judul: silka_core::signals::Signal<&'static str> = cx.expect_env();
     ///     fixed(10.0, 10.0).label(judul.get()).into()
     /// })
     /// .with_env(|rt| rt.signal("Beranda"));
@@ -569,7 +569,7 @@ impl AppRuntime {
     /// animasi (§3.5) sudah lengkap, tapi tidak ada yang memanggilnya per frame.
     /// `f` menerima render tree dan [`Tick`] frame ini, lalu mengembalikan
     /// alasan dirty-nya — bentuk yang persis dipenuhi
-    /// `rustui_widgets::advance`. Dirty-nya digabung dengan permintaan
+    /// `silka_widgets::advance`. Dirty-nya digabung dengan permintaan
     /// scheduler, jadi selama masih ada spring yang bergerak frame berikutnya
     /// dijadwalkan sendiri, dan begitu semuanya settle renderer kembali tidur.
     ///
@@ -577,9 +577,9 @@ impl AppRuntime {
     /// sudah menjadi nilai frame ini, bukan frame berikutnya.
     ///
     /// ```
-    /// use rustui_core::app::app;
-    /// use rustui_core::scheduler::Dirty;
-    /// use rustui_core::view::fixed;
+    /// use silka_core::app::app;
+    /// use silka_core::scheduler::Dirty;
+    /// use silka_core::view::fixed;
     ///
     /// let mut ui = app(|_cx| fixed(80.0, 24.0).into()).sized(200.0, 100.0);
     /// // Tanpa satu pun animasi, majunya frame tidak melahirkan pekerjaan.

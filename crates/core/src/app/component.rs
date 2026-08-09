@@ -12,7 +12,7 @@
 //! seluruh pohon dari akar setiap kali sebuah signal berubah — persis yang
 //! ingin dihindari §2.5.
 
-use rustui_paint::{Point, Size};
+use silka_paint::{Point, Size};
 
 use crate::access::{AccessNode, AccessRole};
 use crate::scheduler::Dirty;
@@ -103,9 +103,9 @@ impl ViewNode for ComponentProps {
 /// dibangun ulang sendiri" (§2.5):
 ///
 /// ```
-/// use rustui_core::app::{app, component};
-/// use rustui_core::signals::use_signal;
-/// use rustui_core::view::{column, fixed};
+/// use silka_core::app::{app, component};
+/// use silka_core::signals::use_signal;
+/// use silka_core::view::{column, fixed};
 ///
 /// let mut ui = app(|_cx| {
 ///     column([

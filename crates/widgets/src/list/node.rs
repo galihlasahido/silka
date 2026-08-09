@@ -23,21 +23,21 @@
 
 use std::rc::Rc;
 
-use rustui_core::access::{AccessActions, AccessNode, AccessRole};
-use rustui_core::animation::{Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessNode, AccessRole};
+use silka_core::animation::{Spring, SpringValue, Tick};
+use silka_core::input::{
     Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyEvent, NamedKey, PointerButton,
     PointerEvent, PointerPhase,
 };
-use rustui_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
+use silka_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
+use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
 
 use super::geometry::ListMetrics;
 use super::state::ListState;
 
 /// Aksi yang menerima nomor baris — `on_activate` gaya Dart (§2.5).
 ///
-/// Bentuknya sama dengan [`rustui_core::Callback`] (`Rc`, `PartialEq`
+/// Bentuknya sama dengan [`silka_core::Callback`] (`Rc`, `PartialEq`
 /// identitas), hanya saja membawa argumen; begitu core punya `Callback<T>`,
 /// inilah yang pertama dihapus.
 ///
@@ -78,7 +78,7 @@ impl core::fmt::Debug for RowAction {
 /// Nilai token yang **sudah diresolusi** untuk isi sebuah daftar.
 ///
 /// Tidak satu pun angka warna lahir di lapisan ini: semuanya datang dari
-/// [`rustui_theme::Theme`] satu tingkat di atas (§2.6, §2.7), sehingga preset
+/// [`silka_theme::Theme`] satu tingkat di atas (§2.6, §2.7), sehingga preset
 /// Cupertino dan Tailwind berganti tanpa satu baris pun berubah di sini.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ListStyle {
@@ -376,7 +376,7 @@ impl ListBody {
     /// Dilayani [`super::sync`], bukan di sini: yang bisa menggulir adalah
     /// [`crate::scroll_view::ScrollView`] di atas node ini, dan sebuah render
     /// node tidak boleh meraba leluhurnya dari dalam `event` (aturan "node
-    /// hanya boleh mengubah dirinya sendiri", [`rustui_core::tree`]).
+    /// hanya boleh mengubah dirinya sendiri", [`silka_core::tree`]).
     pub(super) fn take_reveal(&mut self) -> Option<usize> {
         self.reveal.take()
     }

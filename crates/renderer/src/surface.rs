@@ -1,6 +1,6 @@
 //! Surface window: swapchain, resize/DPI, dan eksekusi satu [`Scene`].
 
-use rustui_paint::{GlyphSource, NoGlyphs, Scene, Size};
+use silka_paint::{GlyphSource, NoGlyphs, Scene, Size};
 
 use crate::error::RendererError;
 use crate::format::{choose_alpha_mode, choose_surface_format, clear_color};
@@ -22,7 +22,7 @@ pub enum FrameOutcome {
 
 /// Swapchain untuk satu window.
 ///
-/// API-nya sengaja bebas tipe wgpu: `rustui-platform` cukup meneruskan ukuran
+/// API-nya sengaja bebas tipe wgpu: `silka-platform` cukup meneruskan ukuran
 /// fisik dari winit dan sebuah [`Scene`].
 #[derive(Debug)]
 pub struct WindowSurface {
@@ -216,12 +216,12 @@ impl WindowSurface {
         let mut encoder = gpu
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("rustui.frame"),
+                label: Some("silka.frame"),
             });
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("rustui.frame"),
+                label: Some("silka.frame"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     depth_slice: None,

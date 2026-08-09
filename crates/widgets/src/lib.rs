@@ -1,4 +1,4 @@
-//! # rustui-widgets
+//! # silka-widgets
 //!
 //! Katalog komponen (lihat `KOMPONEN.md`) sekaligus **permukaan API publik**
 //! framework. Inilah kontrak yang harus dibekukan lebih awal; internal boleh
@@ -11,14 +11,14 @@
 //!    Macro DSL ala `rsx!` ditolak sebagai fondasi.
 //! 2. **Styling utility ala Tailwind sebagai method chain** (§2.6) — tanpa
 //!    CSS, tanpa parser, tanpa cascade. Nilai selalu resolve lewat token
-//!    `rustui-theme`, dan utility interaktif (`hover`/`pressed`/`focused`)
+//!    `silka-theme`, dan utility interaktif (`hover`/`pressed`/`focused`)
 //!    bertransisi lewat spring, bukan lompat.
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_core::view::{column, View};
-//! # use rustui_theme::{Appearance, Theme};
-//! use rustui_widgets::{button, text, Fonts};
+//! # use silka_core::signals::Runtime;
+//! # use silka_core::view::{column, View};
+//! # use silka_theme::{Appearance, Theme};
+//! use silka_widgets::{button, text, Fonts};
 //!
 //! # let rt = Runtime::new();
 //! # let count = rt.signal(0i32);
@@ -34,7 +34,7 @@
 //! ## Yang sudah ada
 //!
 //! - [`text`] (Tier 0) — daun teks yang **mengukur dirinya sendiri** lewat
-//!   `rustui-text` dan menggambar glyph dari atlas; wrap mengikuti lebar yang
+//!   `silka-text` dan menggambar glyph dari atlas; wrap mengikuti lebar yang
 //!   turun dari box constraints, dan isinya adalah nama node a11y.
 //! - [`button`] (Tier 2) — kontrol lengkap di atas token: varian
 //!   primary/secondary/ghost/destructive/link, state hover/press/focus/
@@ -100,7 +100,7 @@
 //!   terlihat, dan **preedit IME dirender inline bergaris bawah** — dengan
 //!   jalur tombol normal ditahan selama komposisi, sehingga aplikasi tidak
 //!   pernah menerima huruf setengah jadi (§3.3, §3.8). Model editingnya hidup
-//!   di [`rustui_text::edit`], geometrinya di [`rustui_text::TextLayout`].
+//!   di [`silka_text::edit`], geometrinya di [`silka_text::TextLayout`].
 //! - [`advance`] (infrastruktur) — satu detak untuk seluruh pohon: di sinilah
 //!   spring setiap widget dimajukan, sekali per frame, dan dari sinilah
 //!   jawaban "masih adakah yang bergerak" datang.
@@ -138,7 +138,7 @@
 //! target minimal 44pt, dan menghormati reduced-motion.
 //!
 //! Kode di crate ini **tidak boleh menyentuh tipe wgpu** — hanya perintah
-//! gambar `rustui-paint` (§3.2, §5 failure mode #7).
+//! gambar `silka-paint` (§3.2, §5 failure mode #7).
 
 #![warn(missing_docs)]
 

@@ -16,7 +16,7 @@
 //! pemberitahuan, jendela baris yang dibangun tidak akan pernah menyusul
 //! guliran, dan daftar akan tampak kosong begitu digulir.
 
-use rustui_core::signals::{use_signal, Runtime, Signal};
+use silka_core::signals::{use_signal, Runtime, Signal};
 
 use super::geometry::ListMetrics;
 

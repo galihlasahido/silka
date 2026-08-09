@@ -13,12 +13,12 @@
 //! - **Kunci hilang = node dibuang.**
 //!
 //! Bentuk penulisannya mengikuti §2.5 (fungsi konstruktor + method chaining),
-//! sama seperti API publik yang nanti diekspor `rustui-widgets`:
+//! sama seperti API publik yang nanti diekspor `silka-widgets`:
 //!
 //! ```
-//! use rustui_core::tree::{BoxConstraints, RenderTree};
-//! use rustui_core::view::{column, fixed, reconcile};
-//! use rustui_paint::Size;
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, reconcile};
+//! use silka_paint::Size;
 //!
 //! let mut tree = RenderTree::new();
 //! let stat = reconcile(

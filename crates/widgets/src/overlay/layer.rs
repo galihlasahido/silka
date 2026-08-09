@@ -16,12 +16,12 @@
 //! tidak bisa diklik, tidak bisa di-Tab, dan tidak dibacakan screen reader
 //! selama dialog terbuka.
 
-use rustui_core::access::{AccessNode, AccessRole};
-use rustui_core::input::{FocusPolicy, HitBehavior};
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, RenderNode};
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_paint::{Point, Size};
+use silka_core::access::{AccessNode, AccessRole};
+use silka_core::input::{FocusPolicy, HitBehavior};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{BoxConstraints, LayoutCtx, RenderNode};
+use silka_core::view::{Builder, View, ViewNode};
+use silka_paint::{Point, Size};
 
 use super::entry::OverlayBuilder;
 
@@ -199,10 +199,10 @@ impl ViewNode for LayerProps {
 /// urutan penulisannya adalah urutan tumpuknya.
 ///
 /// ```
-/// # use rustui_core::signals::Runtime;
-/// # use rustui_core::view::fixed;
-/// # use rustui_theme::{Appearance, Theme};
-/// use rustui_widgets::overlay::{overlay, overlay_layer, Barrier};
+/// # use silka_core::signals::Runtime;
+/// # use silka_core::view::fixed;
+/// # use silka_theme::{Appearance, Theme};
+/// use silka_widgets::overlay::{overlay, overlay_layer, Barrier};
 ///
 /// # let rt = Runtime::new();
 /// # let terbuka = rt.signal(false);

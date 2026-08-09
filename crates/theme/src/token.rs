@@ -5,7 +5,7 @@
 //! nilai yang **belum** punya arti sampai bertemu [`Theme`].
 //!
 //! ```
-//! use rustui_theme::{Appearance, ColorToken, RadiusToken, ShadowToken, SpaceToken, Theme};
+//! use silka_theme::{Appearance, ColorToken, RadiusToken, ShadowToken, SpaceToken, Theme};
 //!
 //! // Bentuk yang dipakai utility styling: token, bukan angka.
 //! let cupertino = Theme::cupertino(Appearance::Dark);
@@ -26,8 +26,8 @@
 //! Itulah yang membuat satu tanda tangan utility melayani keduanya:
 //!
 //! ```
-//! use rustui_paint::Color;
-//! use rustui_theme::{ColorToken, Theme, Token};
+//! use silka_paint::Color;
+//! use silka_theme::{ColorToken, Theme, Token};
 //!
 //! fn bg(theme: &Theme, warna: impl Token<Value = Color>) -> Color {
 //!     theme.resolve(warna)
@@ -40,7 +40,7 @@
 //! assert_eq!(bg(&t, Color::hex(0xFF00FF)), Color::hex(0xFF00FF));
 //! ```
 
-use rustui_paint::{Color, Corners, ShadowPair};
+use silka_paint::{Color, Corners, ShadowPair};
 
 use crate::{ColorToken, FontToken, RadiusToken, ShadowToken, SpaceToken, Theme, TypeStyle};
 
@@ -142,7 +142,7 @@ impl Token for TypeStyle {
 mod tests {
     use super::*;
     use crate::{Appearance, Preset};
-    use rustui_paint::CornerStyle;
+    use silka_paint::CornerStyle;
 
     #[test]
     fn token_resolve_ke_nilai_token_theme() {

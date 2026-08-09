@@ -16,8 +16,8 @@
 //!
 //! ```
 //! use std::time::Duration;
-//! use rustui_core::input::VelocityTracker;
-//! use rustui_paint::Point;
+//! use silka_core::input::VelocityTracker;
+//! use silka_paint::Point;
 //!
 //! let mut t = VelocityTracker::new();
 //! // Bergerak 600 poin/detik ke bawah selama 50 ms.
@@ -32,7 +32,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use rustui_paint::Point;
+use silka_paint::Point;
 
 /// Jendela waktu sampel yang ikut diperhitungkan.
 ///

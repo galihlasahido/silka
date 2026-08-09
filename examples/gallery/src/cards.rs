@@ -20,8 +20,8 @@
 //! lainnya — warna, radius, spacing, resep bayangan — tetap datang dari token
 //! theme aktif (§2.6).
 
-use rustui_paint::{CornerStyle, Corners, Quad, Rect, Scene, ShadowPair, Size};
-use rustui_theme::Theme;
+use silka_paint::{CornerStyle, Corners, Quad, Rect, Scene, ShadowPair, Size};
+use silka_theme::Theme;
 
 /// Berapa kartu per kolom (satu baris = satu radius + satu elevasi).
 const BARIS: usize = 4;
@@ -98,8 +98,8 @@ pub fn kartu_kartu(theme: &Theme, size: Size) -> Vec<Kartu> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_paint::Command;
-    use rustui_theme::{Appearance, Preset};
+    use silka_paint::Command;
+    use silka_theme::{Appearance, Preset};
 
     const VIEWPORT: Size = Size::new(1024.0, 720.0);
 

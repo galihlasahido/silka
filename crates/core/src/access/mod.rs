@@ -27,9 +27,9 @@
 //! ## Satu frame
 //!
 //! ```
-//! use rustui_core::tree::{BoxConstraints, RenderTree};
-//! use rustui_core::view::{fixed, pad, reconcile};
-//! use rustui_paint::{Insets, Size};
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{fixed, pad, reconcile};
+//! use silka_paint::{Insets, Size};
 //!
 //! let mut tree = RenderTree::new();
 //! tree.set_root_label("Laporan");
@@ -57,7 +57,7 @@
 //! ## Ke platform
 //!
 //! [`AccessTree::to_tree_update`] (fitur `accesskit`, menyala bawaan)
-//! menerjemahkan snapshot ke `accesskit::TreeUpdate`; `rustui-platform`
+//! menerjemahkan snapshot ke `accesskit::TreeUpdate`; `silka-platform`
 //! menyambungkannya ke `accesskit_winit` sehingga UIA (Windows),
 //! NSAccessibility (macOS), dan AT-SPI (Linux) mendapat pohon yang sama.
 

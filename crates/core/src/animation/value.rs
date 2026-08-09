@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use rustui_paint::{Color, Insets, Point, Rect, Size};
+use silka_paint::{Color, Insets, Point, Rect, Size};
 
 use super::motion::{Motion, MotionRole};
 use super::spring::Spring;
@@ -287,7 +287,7 @@ impl Animatable for Color {
 ///
 /// ```
 /// use std::time::Duration;
-/// use rustui_core::animation::{Motion, Spring, SpringValue};
+/// use silka_core::animation::{Motion, Spring, SpringValue};
 ///
 /// let mut x = SpringValue::new(0.0).with_spring(Spring::smooth());
 /// x.set_target(100.0);
@@ -556,9 +556,9 @@ impl SpringValue<Point> {
     /// ribuan poin.
     ///
     /// ```
-    /// use rustui_core::animation::SpringValue;
-    /// use rustui_core::input::Velocity;
-    /// use rustui_paint::Point;
+    /// use silka_core::animation::SpringValue;
+    /// use silka_core::input::Velocity;
+    /// use silka_paint::Point;
     ///
     /// let mut offset = SpringValue::new(Point::new(0.0, 0.0));
     /// offset.set_target(Point::new(0.0, -320.0));

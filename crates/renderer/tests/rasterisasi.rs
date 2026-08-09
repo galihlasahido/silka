@@ -9,8 +9,8 @@
 //! (container CI tanpa driver), test **dilewati dengan pesan**, bukan gagal:
 //! kegagalan palsu di CI jauh lebih mahal daripada satu test yang absen.
 
-use rustui_paint::{Color, CornerStyle, Corners, Quad, Rect, Scene, Shadow, ShadowPair, Size};
-use rustui_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
+use silka_paint::{Color, CornerStyle, Corners, Quad, Rect, Scene, Shadow, ShadowPair, Size};
+use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
 
 /// Kanvas 256×256 poin logis (scale 1.0) — cukup besar agar beda geometri
 /// sudut terukur dalam piksel utuh.

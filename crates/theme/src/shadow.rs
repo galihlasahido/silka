@@ -9,9 +9,9 @@
 //! milik kotak yang dibayangi, jadi bayangan kotak squircle otomatis squircle
 //! juga (§2.7 — bentuk sudut adalah parameter, bukan konstanta).
 //!
-//! [`Corners`]: rustui_paint::Corners
+//! [`Corners`]: silka_paint::Corners
 
-use rustui_paint::ShadowPair;
+use silka_paint::ShadowPair;
 
 /// Token bayangan per tingkat elevasi.
 #[derive(Debug, Clone, Copy, PartialEq)]

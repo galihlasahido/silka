@@ -13,7 +13,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use rustui_paint::{Color, Point, Rect, Scene, Size};
+use silka_paint::{Color, Point, Rect, Scene, Size};
 
 use crate::access::{AccessNode, AccessRole, AccessTree};
 use crate::input::{CursorIcon, Event, EventCtx, FocusPolicy, HitBehavior, HitShape};
@@ -129,7 +129,7 @@ pub trait RenderNode: AsAny {
     /// [`PaintCtx::paint_children`]/[`PaintCtx::paint_child`] sendiri — di
     /// situlah ia memutuskan apa yang berada di bawah dan di atas anaknya.
     ///
-    /// Kosakatanya hanya `rustui-paint`; tipe wgpu tidak pernah sampai ke sini
+    /// Kosakatanya hanya `silka-paint`; tipe wgpu tidak pernah sampai ke sini
     /// (§3.2).
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.paint_children();
@@ -178,7 +178,7 @@ pub trait RenderNode: AsAny {
     ///
     /// Bawaannya kotak penuh. Node yang menggambar dirinya dengan sudut
     /// melengkung wajib mengembalikan [`HitShape::Rounded`] dengan
-    /// [`rustui_paint::Corners`] **yang sama persis** dengan yang dikirim ke
+    /// [`silka_paint::Corners`] **yang sama persis** dengan yang dikirim ke
     /// shader — kalau tidak, ada pita beberapa poin di tiap pojok yang terlihat
     /// kosong tapi bisa diklik.
     fn hit_shape(&self) -> HitShape {
@@ -355,9 +355,9 @@ impl RenderNode for Root {
 /// dan urutan flush layout bisa diandalkan.
 ///
 /// ```
-/// use rustui_core::tree::{BoxConstraints, RenderTree};
-/// use rustui_core::view::{fixed, pad, reconcile};
-/// use rustui_paint::{Insets, Point, Size};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{fixed, pad, reconcile};
+/// use silka_paint::{Insets, Point, Size};
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(&mut tree, pad(Insets::all(8.0), fixed(100.0, 20.0)));
@@ -829,9 +829,9 @@ impl RenderTree {
     /// datang dari hasil layout, sama persis seperti `bounds` a11y.
     ///
     /// ```
-    /// use rustui_core::tree::{BoxConstraints, RenderTree};
-    /// use rustui_core::view::{fixed, pad, reconcile};
-    /// use rustui_paint::{Color, Insets, Size};
+    /// use silka_core::tree::{BoxConstraints, RenderTree};
+    /// use silka_core::view::{fixed, pad, reconcile};
+    /// use silka_paint::{Color, Insets, Size};
     ///
     /// let mut tree = RenderTree::new();
     /// reconcile(

@@ -1,4 +1,4 @@
-//! # rustui-gallery
+//! # silka-gallery
 //!
 //! Gallery app ala Flutter Gallery — **produk, bukan contoh sampingan**
 //! (REKOMENDASI §9.9): satu halaman demo interaktif per komponen di
@@ -24,18 +24,18 @@
 //! Argumen baris perintah untuk QA visual:
 //!
 //! ```text
-//! cargo run -p rustui-gallery -- --preset tailwind --appearance dark
-//! cargo run -p rustui-gallery -- --page kartu
-//! cargo run -p rustui-gallery -- --page reaktif
-//! cargo run -p rustui-gallery -- --page counter
-//! cargo run -p rustui-gallery -- --page tabs
-//! cargo run -p rustui-gallery -- --page dialog
-//! cargo run -p rustui-gallery -- --page tombol
-//! cargo run -p rustui-gallery -- --page centang
-//! cargo run -p rustui-gallery -- --page slider
-//! cargo run -p rustui-gallery -- --page pilihan
-//! cargo run -p rustui-gallery -- --page gulir
-//! cargo run -p rustui-gallery -- --page tabel
+//! cargo run -p silka-gallery -- --preset tailwind --appearance dark
+//! cargo run -p silka-gallery -- --page kartu
+//! cargo run -p silka-gallery -- --page reaktif
+//! cargo run -p silka-gallery -- --page counter
+//! cargo run -p silka-gallery -- --page tabs
+//! cargo run -p silka-gallery -- --page dialog
+//! cargo run -p silka-gallery -- --page tombol
+//! cargo run -p silka-gallery -- --page centang
+//! cargo run -p silka-gallery -- --page slider
+//! cargo run -p silka-gallery -- --page pilihan
+//! cargo run -p silka-gallery -- --page gulir
+//! cargo run -p silka-gallery -- --page tabel
 //! ```
 //!
 //! Halaman yang tersedia: `teks` (spesimen tipografi, default), `kartu`
@@ -52,25 +52,25 @@
 //! yang mewarisi kecepatan lemparan, dan scrollbar overlay yang memudar
 //! sendiri — rasa native yang tidak bisa dibuktikan unit test.
 
-mod centang;
+mod button;
+mod cards;
+mod checkbox;
 mod counter;
-mod daftar;
 mod dialog;
-mod gulir;
-mod kartu;
-mod kolom_teks;
-mod pilihan;
-mod reaktif;
-mod sakelar;
+mod list;
+mod reactive;
+mod scroll_view;
+mod select;
 mod slider;
-mod tabel;
+mod switch;
+mod table;
 mod tabs;
-mod teks;
-mod tombol;
+mod text_field;
+mod typography;
 
-use rustui_platform::{run_app, run_app_with, window, PlatformError};
-use rustui_theme::{Appearance, Preset};
-use rustui_widgets::Fonts;
+use silka_platform::{run_app, run_app_with, window, PlatformError};
+use silka_theme::{Appearance, Preset};
+use silka_widgets::Fonts;
 
 fn main() -> Result<(), PlatformError> {
     let opsi = Opsi::dari_argumen(std::env::args().skip(1));
@@ -86,7 +86,7 @@ fn main() -> Result<(), PlatformError> {
     let untuk_scene = fonts.shared();
     let halaman = opsi.halaman;
 
-    let mut config = window("rustui — Gallery")
+    let mut config = window("silka — Gallery")
         .size(1024.0, 720.0)
         .min_size(640.0, 480.0)
         .preset(opsi.preset);
@@ -102,7 +102,7 @@ fn main() -> Result<(), PlatformError> {
     // menyerahkan pohon view, dan `run_app` yang menjalankan siklus
     // signals → view-diff → layout → paint.
     match halaman {
-        Halaman::Reaktif => return run_app(config, reaktif::halaman),
+        Halaman::Reaktif => return run_app(config, reactive::halaman),
         Halaman::Counter => {
             // Atlas glyph yang sama dipakai dua kali per frame: saat membangun
             // view (mengukur + merasterisasi) dan saat menggambar (mengunggah
@@ -121,8 +121,8 @@ fn main() -> Result<(), PlatformError> {
             // membeku di frame pertama.
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| tombol::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| button::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Centang => {
@@ -132,8 +132,8 @@ fn main() -> Result<(), PlatformError> {
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| centang::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| checkbox::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Dialog => {
@@ -144,44 +144,44 @@ fn main() -> Result<(), PlatformError> {
             return run_app_with(
                 config.glyphs(fonts.shared()),
                 move |cx| dialog::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                silka_widgets::advance,
             );
         }
         Halaman::Pilihan => {
             // Select memakai sistem overlay untuk popupnya dan spring untuk
             // setiap perpindahan state, jadi halamannya `run_app_with`:
-            // `rustui_widgets::advance` memajukan keduanya sekali per frame dan
+            // `silka_widgets::advance` memajukan keduanya sekali per frame dan
             // shell berhenti meminta frame begitu semuanya settle (§3.5).
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| pilihan::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| select::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Sakelar => {
             // Sakelar adalah komponen yang paling terasa kalau spring-nya mati:
             // thumb-nya harus **menyusul jari**, bukan berpindah tempat. Karena
-            // itu halamannya `run_app_with` — `rustui_widgets::advance` yang
+            // itu halamannya `run_app_with` — `silka_widgets::advance` yang
             // memajukan posisi thumb, warna lintasan, dan cincin fokus sekali
             // per frame, lalu berhenti sendiri begitu semuanya settle (§3.5).
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| sakelar::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| switch::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Slider => {
             // Slider beranimasi, jadi halamannya memakai `run_app_with`:
-            // `rustui_widgets::advance` memajukan seluruh spring widget sekali
+            // `silka_widgets::advance` memajukan seluruh spring widget sekali
             // per frame, dan shell berhenti meminta frame begitu semuanya
             // settle (§3.5).
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
                 move |cx| slider::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                silka_widgets::advance,
             );
         }
         Halaman::KolomTeks => {
@@ -192,20 +192,20 @@ fn main() -> Result<(), PlatformError> {
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| kolom_teks::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| text_field::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Tabs => {
             // Indikator tab meluncur lewat spring, jadi halamannya memakai
-            // `run_app_with`: `rustui_widgets::advance` memajukan seluruh
+            // `run_app_with`: `silka_widgets::advance` memajukan seluruh
             // spring widget sekali per frame dan berhenti sendiri begitu
             // semuanya settle (§3.5).
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
                 move |cx| tabs::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                silka_widgets::advance,
             );
         }
         Halaman::Daftar => {
@@ -214,8 +214,8 @@ fn main() -> Result<(), PlatformError> {
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| daftar::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| list::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Tabel => {
@@ -225,8 +225,8 @@ fn main() -> Result<(), PlatformError> {
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| tabel::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| table::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Gulir => {
@@ -238,8 +238,8 @@ fn main() -> Result<(), PlatformError> {
             let untuk_view = fonts.clone();
             return run_app_with(
                 config.glyphs(fonts.shared()),
-                move |cx| gulir::halaman(cx, &untuk_view),
-                rustui_widgets::advance,
+                move |cx| scroll_view::halaman(cx, &untuk_view),
+                silka_widgets::advance,
             );
         }
         Halaman::Teks | Halaman::Kartu => {}
@@ -254,7 +254,7 @@ fn main() -> Result<(), PlatformError> {
             // di atas sini tidak ikut berubah (§3.3 subpixel positioning).
             mesin.set_scale_factor(frame.scale_factor() as f32);
             match halaman {
-                Halaman::Kartu => kartu::scene(frame.theme(), frame.size()),
+                Halaman::Kartu => cards::scene(frame.theme(), frame.size()),
                 // `Reaktif` dan `Counter` sudah ditangani di atas lewat
                 // `run_app`.
                 Halaman::Teks
@@ -270,7 +270,7 @@ fn main() -> Result<(), PlatformError> {
                 | Halaman::Pilihan
                 | Halaman::Gulir
                 | Halaman::Tabel
-                | Halaman::Daftar => teks::scene(&mut mesin, frame.theme(), frame.size()),
+                | Halaman::Daftar => typography::scene(&mut mesin, frame.theme(), frame.size()),
             }
         })
         // Tanpa baris ini perintah `GlyphRun` tidak punya bitmap dan halaman
@@ -404,8 +404,8 @@ impl Opsi {
     }
 
     #[cfg(test)]
-    fn theme(&self) -> rustui_theme::Theme {
-        rustui_theme::Theme::new(self.preset, self.appearance.unwrap_or_default())
+    fn theme(&self) -> silka_theme::Theme {
+        silka_theme::Theme::new(self.preset, self.appearance.unwrap_or_default())
     }
 }
 
@@ -482,24 +482,24 @@ mod tests {
     #[test]
     fn argumen_bisa_digabung() {
         let o = opsi(&["--preset", "tailwind", "--appearance", "dark"]);
-        assert_eq!(o.theme(), rustui_theme::Theme::tailwind(Appearance::Dark));
+        assert_eq!(o.theme(), silka_theme::Theme::tailwind(Appearance::Dark));
     }
 
     #[test]
     fn latar_gallery_selalu_token_background() {
-        let mut mesin = rustui_text::TextEngine::bundled_only();
-        let ukuran = rustui_paint::Size::new(1024.0, 720.0);
+        let mut mesin = silka_text::TextEngine::bundled_only();
+        let ukuran = silka_paint::Size::new(1024.0, 720.0);
         for o in [
             opsi(&["--preset", "cupertino", "--appearance", "dark"]),
             opsi(&["--preset", "tailwind", "--appearance", "light"]),
         ] {
             let theme = o.theme();
             assert_eq!(
-                kartu::scene(&theme, ukuran).clear_color(),
+                cards::scene(&theme, ukuran).clear_color(),
                 theme.color.background
             );
             assert_eq!(
-                teks::scene(&mut mesin, &theme, ukuran).clear_color(),
+                typography::scene(&mut mesin, &theme, ukuran).clear_color(),
                 theme.color.background
             );
         }

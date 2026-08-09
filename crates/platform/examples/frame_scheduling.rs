@@ -3,7 +3,7 @@
 //! Jalankan, lalu perhatikan stderr:
 //!
 //! ```text
-//! cargo run -p rustui-platform --example frame_scheduling
+//! cargo run -p silka-platform --example frame_scheduling
 //! ```
 //!
 //! Yang seharusnya terlihat:
@@ -12,7 +12,7 @@
 //!    `vsync 120.0 Hz (display-link) (CADisplayLink)`, bukan 60 Hz dan bukan
 //!    angka yang dikonstanta.
 //! 2. Selama tiga detik pertama, latar berdenyut karena tiap frame memanggil
-//!    [`rustui_platform::FrameContext::request_animation_frame`]; log frame
+//!    [`silka_platform::FrameContext::request_animation_frame`]; log frame
 //!    time mengalir.
 //! 3. Setelah animasi selesai, **log berhenti total** — tidak ada satu pun
 //!    frame yang digambar sampai window di-resize, dark mode OS berubah, atau
@@ -20,14 +20,14 @@
 
 use std::time::Duration;
 
-use rustui_paint::Scene;
-use rustui_platform::{window, PlatformError};
+use silka_paint::Scene;
+use silka_platform::{window, PlatformError};
 
 /// Berapa lama denyut berjalan sebelum window kembali benar-benar diam.
 const DURASI_ANIMASI: Duration = Duration::from_secs(3);
 
 fn main() -> Result<(), PlatformError> {
-    window("rustui — frame scheduling")
+    window("silka — frame scheduling")
         .size(720.0, 480.0)
         .on_frame(|frame| {
             let t = frame.elapsed();

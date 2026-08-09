@@ -1,7 +1,7 @@
 //! Unit test mesin layout: constraints turun, ukuran naik, induk menempatkan,
 //! plus cache dan relayout boundary.
 
-use rustui_paint::{Insets, Point, Size};
+use silka_paint::{Insets, Point, Size};
 
 use crate::scheduler::Dirty;
 use crate::view::{column, constrained, fixed, pad, reconcile, row, viewport};

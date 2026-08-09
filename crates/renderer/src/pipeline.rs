@@ -6,7 +6,7 @@
 //! border, kotak vs bayangan) adalah **data instance** — bukan varian shader.
 //! Tidak ada satu pun jalur kode yang merakit sumber shader saat runtime.
 
-use rustui_paint::{GlyphSource, Size};
+use silka_paint::{GlyphSource, Size};
 
 use crate::atlas::GlyphAtlasGpu;
 use crate::geometry::SurfaceGeometry;
@@ -48,7 +48,7 @@ impl SdfPipeline {
     /// naga) dibayar di muka saat window dibuat, bukan saat frame pertama.
     pub(crate) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("rustui.sdf.wgsl"),
+            label: Some("silka.sdf.wgsl"),
             source: wgpu::ShaderSource::Wgsl(SDF_WGSL.into()),
         });
 
@@ -57,7 +57,7 @@ impl SdfPipeline {
         // pergantian bind group di tengah render pass — syarat agar seluruh
         // scene (kotak, bayangan, dan teks) muat dalam satu draw call.
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("rustui.sdf.bind.layout"),
+            label: Some("silka.sdf.bind.layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -99,7 +99,7 @@ impl SdfPipeline {
         });
 
         let globals = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("rustui.sdf.globals"),
+            label: Some("silka.sdf.globals"),
             size: core::mem::size_of::<Globals>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
@@ -109,7 +109,7 @@ impl SdfPipeline {
         let bind_group = buat_bind_group(device, &bind_group_layout, &globals, &atlas);
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("rustui.sdf.layout"),
+            label: Some("silka.sdf.layout"),
             bind_group_layouts: &[Some(&bind_group_layout)],
             immediate_size: 0,
         });
@@ -124,7 +124,7 @@ impl SdfPipeline {
         ];
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("rustui.sdf"),
+            label: Some("silka.sdf"),
             layout: Some(&layout),
             vertex: wgpu::VertexState {
                 module: &module,
@@ -298,7 +298,7 @@ fn buat_bind_group(
     atlas: &GlyphAtlasGpu,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("rustui.sdf.bind"),
+        label: Some("silka.sdf.bind"),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
@@ -323,7 +323,7 @@ fn buat_bind_group(
 
 fn buat_buffer_instance(device: &wgpu::Device, kapasitas: usize) -> wgpu::Buffer {
     device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("rustui.sdf.instances"),
+        label: Some("silka.sdf.instances"),
         size: (kapasitas * QuadInstance::SIZE) as u64,
         usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,

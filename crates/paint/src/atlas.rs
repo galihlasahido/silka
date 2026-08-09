@@ -3,7 +3,7 @@
 //!
 //! Modul ini adalah sisi lain dari [`crate::glyph`]. Di sana perintah gambar
 //! hanya membawa id opaque; di sini didefinisikan kontrak minimum yang harus
-//! dipenuhi penerbit id itu (hari ini `rustui-text`, besok penerbit lain)
+//! dipenuhi penerbit id itu (hari ini `silka-text`, besok penerbit lain)
 //! supaya backend mana pun bisa mengunggah atlasnya:
 //!
 //! | Yang ditanya backend | Method |
@@ -131,8 +131,8 @@ impl GlyphPlacement {
 
 /// Sumber atlas glyph yang bisa dibaca backend.
 ///
-/// Diimplementasikan lapisan teks (`rustui_text::GlyphCache` dan
-/// `rustui_text::TextEngine`); dipakai backend saat menggambar
+/// Diimplementasikan lapisan teks (`silka_text::GlyphCache` dan
+/// `silka_text::TextEngine`); dipakai backend saat menggambar
 /// [`crate::Command::GlyphRun`].
 ///
 /// Id yang sudah hangus (atlas dibangun ulang karena penuh) harus

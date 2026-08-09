@@ -1,8 +1,8 @@
 //! View untuk [`Interactive`] — pembungkus interaktif bergaya Dart (§2.5).
 //!
 //! ```
-//! use rustui_core::view::{fixed, interactive};
-//! use rustui_paint::{CornerStyle, Corners};
+//! use silka_core::view::{fixed, interactive};
+//! use silka_paint::{CornerStyle, Corners};
 //!
 //! let _ = interactive(fixed(120.0, 44.0))
 //!     .label("Simpan")
@@ -16,7 +16,7 @@
 //! setiap rebuild akan menghapus keadaan tombol yang sedang ditekan jari
 //! pengguna.
 
-use rustui_paint::{Color, Corners, ShadowPair};
+use silka_paint::{Color, Corners, ShadowPair};
 
 use crate::access::AccessRole;
 use crate::callback::Callback;
@@ -231,10 +231,10 @@ impl Builder<InteractiveProps> {
     /// (§2.5).
     ///
     /// ```
-    /// # use rustui_core::signals::Runtime;
+    /// # use silka_core::signals::Runtime;
     /// # let rt = Runtime::new();
     /// # let count = rt.signal(0i32);
-    /// use rustui_core::view::{fixed, interactive};
+    /// use silka_core::view::{fixed, interactive};
     ///
     /// let _ = interactive(fixed(120.0, 44.0))
     ///     .label("Tambah")

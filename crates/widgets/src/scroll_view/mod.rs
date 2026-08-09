@@ -17,9 +17,9 @@
 //! | AccessKit | Peran [`AccessRole::ScrollView`] + aksi [`AccessActions::SCROLL`] yang **benar-benar jalan** ([`handle_access_action`]) |
 //!
 //! ```
-//! # use rustui_theme::{Appearance, Theme};
-//! # use rustui_core::view::{column, fixed};
-//! use rustui_widgets::scroll_view;
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_core::view::{column, fixed};
+//! use silka_widgets::scroll_view;
 //!
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! let _ = scroll_view(&t, column((0..50).map(|_| fixed(320.0, 44.0))))
@@ -45,15 +45,15 @@
 //! bergerak, ia kosong dan GPU benar-benar tidur (§3.5).
 //!
 //! ```
-//! # use rustui_core::animation::{Motion, Tick};
-//! # use rustui_core::scheduler::Dirty;
-//! # use rustui_core::tree::{BoxConstraints, RenderTree};
-//! # use rustui_core::view::{fixed, reconcile};
-//! # use rustui_paint::Size;
-//! # use rustui_theme::{Appearance, Theme};
+//! # use silka_core::animation::{Motion, Tick};
+//! # use silka_core::scheduler::Dirty;
+//! # use silka_core::tree::{BoxConstraints, RenderTree};
+//! # use silka_core::view::{fixed, reconcile};
+//! # use silka_paint::Size;
+//! # use silka_theme::{Appearance, Theme};
 //! # use std::time::Duration;
-//! use rustui_widgets::scroll_view;
-//! use rustui_widgets::scroll_view::{advance, nodes, scroll_to};
+//! use silka_widgets::scroll_view;
+//! use silka_widgets::scroll_view::{advance, nodes, scroll_to};
 //!
 //! # let t = Theme::cupertino(Appearance::Light);
 //! let mut tree = RenderTree::new();
@@ -68,7 +68,7 @@
 //!
 //! ## Batas yang diketahui
 //!
-//! Hit-test menelusuri anak lebih dulu (Flutter, [`rustui_core::input::hit`]),
+//! Hit-test menelusuri anak lebih dulu (Flutter, [`silka_core::input::hit`]),
 //! jadi tombol yang kebetulan berada **persis di bawah** scrollbar overlay
 //! menerima klik lebih dulu daripada thumb-nya. Menukar prioritas itu adalah
 //! perubahan di lapisan hit-test, bukan di widget ini; sampai saat itu jalur
@@ -81,22 +81,22 @@ mod tests;
 
 use std::time::Duration;
 
-use rustui_core::access::{
+use silka_core::access::{
     AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole,
 };
-use rustui_core::animation::{MotionRole, Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
+use silka_core::input::{
     Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, Modifiers, NamedKey,
     PointerButton, PointerPhase, ScrollPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{
     Axis, BoxConstraints, Decoration, FocusRing, LayoutCtx, NodeId, PaintCtx, RenderNode,
     RenderTree,
 };
-use rustui_core::view::{Builder, Decorated, View, ViewNode};
-use rustui_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
-use rustui_theme::Theme;
+use silka_core::view::{Builder, Decorated, View, ViewNode};
+use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 
@@ -210,7 +210,7 @@ impl Advanced {
 /// Node render `scroll_view`.
 ///
 /// Ia **relayout boundary permanen** dan memotong isinya, dua sifat yang
-/// diwarisi dari [`rustui_core::tree::Viewport`] dan sama pentingnya: isi
+/// diwarisi dari [`silka_core::tree::Viewport`] dan sama pentingnya: isi
 /// setinggi apa pun tidak pernah membuat window di-layout ulang, dan baris yang
 /// sudah tergulir keluar tidak bisa diklik.
 pub struct ScrollView {
@@ -570,7 +570,7 @@ impl ScrollView {
         }
     }
 
-    fn handle_scroll(&mut self, ctx: &mut EventCtx<'_>, e: &rustui_core::input::ScrollEvent) {
+    fn handle_scroll(&mut self, ctx: &mut EventCtx<'_>, e: &silka_core::input::ScrollEvent) {
         let gerak = self.main_delta(e.delta.to_points(self.line_height));
         let max = self.max_scroll();
         let dt = e.time.saturating_sub(self.last_scroll.unwrap_or(e.time));
@@ -658,7 +658,7 @@ impl ScrollView {
         }
     }
 
-    fn handle_pointer(&mut self, ctx: &mut EventCtx<'_>, e: &rustui_core::input::PointerEvent) {
+    fn handle_pointer(&mut self, ctx: &mut EventCtx<'_>, e: &silka_core::input::PointerEvent) {
         let lokal = ctx.local();
         let utama = self.main_of_point(lokal);
         let di_jalur =
@@ -751,7 +751,7 @@ impl ScrollView {
         }
     }
 
-    fn handle_key(&mut self, ctx: &mut EventCtx<'_>, e: &rustui_core::input::KeyEvent) {
+    fn handle_key(&mut self, ctx: &mut EventCtx<'_>, e: &silka_core::input::KeyEvent) {
         if !self.can_scroll() {
             return;
         }
@@ -1142,13 +1142,13 @@ pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
 
 /// Builder `scroll_view` bergaya Dart (§2.5).
 ///
-/// Tipe sendiri, bukan [`rustui_core::view::Builder`], karena aturan orphan
+/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena aturan orphan
 /// Rust: method chain sebuah widget hanya boleh hidup di crate yang memiliki
 /// tipenya. Bentuk penulisannya tetap sama persis dengan primitif inti —
 /// itulah yang penting bagi pemakai (`KOMPONEN.md`).
 #[derive(Debug)]
 pub struct ScrollBuilder {
-    key: Option<rustui_core::signals::Key>,
+    key: Option<silka_core::signals::Key>,
     props: ScrollProps,
     child: View,
 }
@@ -1170,7 +1170,7 @@ impl ScrollBuilder {
     }
 
     /// Kunci identitas di antara saudara-saudaranya (§2.5).
-    pub fn key(mut self, key: impl Into<rustui_core::signals::Key>) -> Self {
+    pub fn key(mut self, key: impl Into<silka_core::signals::Key>) -> Self {
         self.key = Some(key.into());
         self
     }
@@ -1200,7 +1200,7 @@ impl ScrollBuilder {
     }
 
     /// Bayangan ganda ala HIG untuk satu tingkat elevasi.
-    pub fn shadow(self, shadows: rustui_paint::ShadowPair) -> Self {
+    pub fn shadow(self, shadows: silka_paint::ShadowPair) -> Self {
         self.map(move |p| p.decoration.shadows = shadows)
     }
 

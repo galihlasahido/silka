@@ -7,13 +7,13 @@
 //!
 //! 1. **saat membangun view** — [`crate::text`] mengukur dan merasterisasi;
 //! 2. **saat menggambar** — backend mengunggah bagian atlas yang berubah lewat
-//!    [`rustui_paint::GlyphSource`].
+//!    [`silka_paint::GlyphSource`].
 //!
 //! Keduanya tidak pernah berjalan bersamaan, jadi `Rc<RefCell<…>>` sudah cukup
 //! dan tidak ada biaya sinkronisasi (REKOMENDASI §3.3).
 //!
 //! ```
-//! use rustui_widgets::Fonts;
+//! use silka_widgets::Fonts;
 //!
 //! // `bundled_only` = tanpa font sistem: cepat dan deterministik untuk test.
 //! let fonts = Fonts::bundled_only();
@@ -25,7 +25,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
-use rustui_text::TextEngine;
+use silka_text::TextEngine;
 
 /// Pegangan ber-`Clone` ke satu [`TextEngine`] milik aplikasi.
 #[derive(Clone)]

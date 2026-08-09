@@ -1,4 +1,4 @@
-//! # rustui-platform
+//! # silka-platform
 //!
 //! Shell **winit** dan seluruh "ekor 90/10 platform polish" — lapisan yang
 //! membuat aplikasi terasa warga asli di tiap OS (`INTEGRASI-NATIVE.md`,
@@ -36,14 +36,14 @@
 //! yang berputar saat idle (§3.5).
 //!
 //! Crate ini menjadi jembatan: ia tahu winit tapi **tidak tahu wgpu**. Yang
-//! menyeberang ke backend hanyalah [`rustui_paint::Scene`] dan ukuran fisik.
+//! menyeberang ke backend hanyalah [`silka_paint::Scene`] dan ukuran fisik.
 //!
 //! ## Milestone `input-hittest`
 //!
 //! [`input`] menerjemahkan event winit menjadi kosakata
-//! [`rustui_core::input`] — dan itulah **satu-satunya** berkas di pohon ini
+//! [`silka_core::input`] — dan itulah **satu-satunya** berkas di pohon ini
 //! yang tahu bentuk event winit, persis seperti wgpu terkurung di
-//! `rustui-renderer` (§3.2). Yang diselesaikan di sana dan tidak boleh naik ke
+//! `silka-renderer` (§3.2). Yang diselesaikan di sana dan tidak boleh naik ke
 //! atas: pembagian scale factor (winit melapor piksel fisik, framework
 //! berbicara poin logis), posisi kursor untuk `MouseInput` yang tidak
 //! membawanya, modifier yang datang sebagai event terpisah, dan penandaan
@@ -51,13 +51,13 @@
 //! menyimulasikannya dua kali (INTEGRASI-NATIVE §3).
 //!
 //! [`WindowConfig::on_input`] menyambungkannya ke aplikasi: event masuk,
-//! [`rustui_core::input::Response`] keluar, dan shell menerjemahkannya
+//! [`silka_core::input::Response`] keluar, dan shell menerjemahkannya
 //! menjadi `request_redraw`, `set_ime_allowed` + `set_ime_cursor_area`
 //! (jendela kandidat CJK berlabuh di caret, §3.8), serta `set_cursor`.
 //!
 //! ```no_run
-//! use rustui_platform::window;
-//! use rustui_theme::{Appearance, Preset, Theme};
+//! use silka_platform::window;
+//! use silka_theme::{Appearance, Preset, Theme};
 //!
 //! window("Aplikasi Pertama")
 //!     .size(960.0, 640.0)
@@ -73,16 +73,16 @@
 //!
 //! [`run_app`] adalah bentuk yang sebenarnya dipakai penulis aplikasi: sebuah
 //! window plus satu closure yang mengembalikan pohon view. Scene per frame
-//! **datang dari siklus hidup** [`rustui_core::app::AppRuntime`] — signals →
+//! **datang dari siklus hidup** [`silka_core::app::AppRuntime`] — signals →
 //! view-diff → layout → paint — bukan dari `Scene` yang disusun tangan; input
 //! dan pohon a11y menempel ke render tree yang sama; dan theme dititipkan
 //! sebagai `Signal<Theme>` sehingga dark mode OS yang berubah hanya membangun
 //! ulang komponen yang benar-benar membacanya.
 //!
 //! ```no_run
-//! use rustui_platform::{component, run_app, window};
-//! use rustui_core::signals::use_signal;
-//! use rustui_core::view::{column, fixed};
+//! use silka_platform::{component, run_app, window};
+//! use silka_core::signals::use_signal;
+//! use silka_core::view::{column, fixed};
 //!
 //! run_app(window("Hitung").size(480.0, 320.0), |_cx| {
 //!     let count = use_signal(|| 0i32);
@@ -94,13 +94,13 @@
 //! .unwrap();
 //! ```
 //!
-//! [`headless_app`] merakit [`rustui_core::app::AppRuntime`] yang **sama
+//! [`headless_app`] merakit [`silka_core::app::AppRuntime`] yang **sama
 //! persis** tanpa window dan tanpa GPU — dipakai `run_app` sendiri, dan dipakai
 //! uji integrasi untuk menjalankan halaman yang sama di CI, memberinya event
 //! input, lalu menghitung pikselnya di tekstur offscreen (§9.5). Titipan
 //! [`Env`] yang dilihat aplikasi karena itu tidak mungkin berbeda antara "di
 //! layar" dan "di test": `Signal<Theme>` (§2.7) dan
-//! [`Signal<ScaleFactor>`](rustui_core::app::ScaleFactor) (§3.3).
+//! [`Signal<ScaleFactor>`](silka_core::app::ScaleFactor) (§3.3).
 
 #![warn(missing_docs)]
 
@@ -125,28 +125,28 @@ pub use window::{
     default_clear_color, headless_app, run_app, run_app_with, window, FrameContext, WindowConfig,
 };
 
-/// Kosakata siklus hidup aplikasi yang dipakai bersama `rustui-core` (§2.5).
+/// Kosakata siklus hidup aplikasi yang dipakai bersama `silka-core` (§2.5).
 ///
 /// Diekspos ulang supaya `run_app(window(…), |cx| …)` bisa ditulis tanpa
-/// menambahkan `rustui-core` sebagai dependensi langsung.
-pub use rustui_core::app::{component, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};
+/// menambahkan `silka-core` sebagai dependensi langsung.
+pub use silka_core::app::{component, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};
 
 /// Pohon view — nilai kembalian closure yang diserahkan ke [`run_app`].
-pub use rustui_core::view::View;
+pub use silka_core::view::View;
 
-/// Kosakata scheduler yang dipakai bersama `rustui-core`.
+/// Kosakata scheduler yang dipakai bersama `silka-core`.
 ///
-/// Diekspos ulang agar aplikasi tidak perlu menambahkan `rustui-core` sebagai
+/// Diekspos ulang agar aplikasi tidak perlu menambahkan `silka-core` sebagai
 /// dependensi hanya untuk menyebut [`Dirty`] atau membaca [`Vsync`].
-pub use rustui_core::scheduler::{ClockSource, Dirty, FrameStats, FrameTiming, Vsync};
+pub use silka_core::scheduler::{ClockSource, Dirty, FrameStats, FrameTiming, Vsync};
 
-/// Kosakata aksesibilitas yang dipakai bersama `rustui-core` (§3.8).
+/// Kosakata aksesibilitas yang dipakai bersama `silka-core` (§3.8).
 ///
 /// Aplikasi menyusun [`AccessTree`] dari render tree-nya
 /// (`tree.access_tree(fokus)`) dan menyerahkannya lewat
 /// [`WindowConfig::on_access`]; permintaan dari teknologi bantu kembali sebagai
 /// [`AccessActionRequest`].
-pub use rustui_core::access::{AccessActionRequest, AccessTree};
+pub use silka_core::access::{AccessActionRequest, AccessTree};
 
 /// Re-export winit dengan versi yang dikunci framework.
 ///

@@ -37,8 +37,8 @@
 //!
 //! ```
 //! use std::time::{Duration, Instant};
-//! use rustui_core::animation::{AnimationDriver, Spring, SpringValue};
-//! use rustui_core::scheduler::Dirty;
+//! use silka_core::animation::{AnimationDriver, Spring, SpringValue};
+//! use silka_core::scheduler::Dirty;
 //!
 //! let mut driver = AnimationDriver::new();
 //! let mut offset = SpringValue::new(0.0).with_spring(Spring::snappy());

@@ -1,6 +1,6 @@
 //! Unit test diffing view → render tree: identitas, kunci, dan biaya.
 
-use rustui_paint::{Insets, Size};
+use silka_paint::{Insets, Size};
 
 use crate::scheduler::Dirty;
 use crate::tree::{BoxConstraints, FixedBox, RenderTree};

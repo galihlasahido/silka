@@ -24,14 +24,14 @@
 //! Yang **tidak** ada di berkas ini: `Scene` yang disusun tangan, aritmetika
 //! tata letak, dan angka warna. Semuanya token (§2.6, §2.7).
 
-use rustui_core::app::{component, BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use rustui_core::view::{column, constrained, row, View};
-use rustui_paint::Insets;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{button, button_variant, scroll_view, text, ButtonVariant, Fonts};
+use silka_core::app::{component, BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
+use silka_core::view::{column, constrained, row, View};
+use silka_paint::Insets;
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{button, button_variant, scroll_view, text, ButtonVariant, Fonts};
 
 /// Judul halaman.
 pub const JUDUL: &str = "Scroll view";
@@ -191,17 +191,17 @@ fn kendali(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::{AccessActions, AccessRole};
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::{AccessActions, AccessRole};
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent, PointerId,
         PointerPhase, ScrollDelta, ScrollEvent, ScrollPhase,
     };
-    use rustui_core::scheduler::Dirty;
-    use rustui_paint::{Point, Rect, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
-    use rustui_widgets::scroll_view::{nodes, ScrollView};
+    use silka_core::scheduler::Dirty;
+    use silka_paint::{Point, Rect, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
+    use silka_widgets::scroll_view::{nodes, ScrollView};
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(900.0, 700.0);
@@ -218,9 +218,9 @@ mod tests {
     }
 
     /// Satu frame lengkap termasuk detak animasi — urutan yang sama dengan
-    /// shell (`rustui_platform::run_app_with`).
+    /// shell (`silka_platform::run_app_with`).
     fn frame(ui: &mut AppRuntime, waktu: Instant) -> Dirty {
-        let dirty = ui.animate_at(waktu, rustui_widgets::advance);
+        let dirty = ui.animate_at(waktu, silka_widgets::advance);
         ui.frame();
         dirty
     }
@@ -411,9 +411,7 @@ mod tests {
                     .commands()
                     .iter()
                     .filter_map(|c| match c {
-                        rustui_paint::Command::Quad(q)
-                            if q.background == t.color.surface_sunken =>
-                        {
+                        silka_paint::Command::Quad(q) if q.background == t.color.surface_sunken => {
                             Some(q.clone())
                         }
                         _ => None,

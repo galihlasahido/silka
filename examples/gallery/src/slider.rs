@@ -21,8 +21,8 @@
 //!   menjelaskan tidak pernah dimatikan).
 //!
 //! ```text
-//! cargo run -p rustui-gallery -- --page slider
-//! cargo run -p rustui-gallery -- --page slider --preset tailwind --appearance light
+//! cargo run -p silka-gallery -- --page slider
+//! cargo run -p silka-gallery -- --page slider --preset tailwind --appearance light
 //! ```
 //!
 //! Setiap baris adalah **komponennya sendiri**: menggeser satu slider hanya
@@ -30,15 +30,15 @@
 //! angkanya boleh ditampilkan sebagai teks tanpa membuat seluruh halaman
 //! dihitung ulang enam puluh kali per detik.
 
-use rustui_core::access::AccessRole;
-use rustui_core::app::{component, BuildCtx, ScaleFactor};
-use rustui_core::signals::{use_signal, Signal};
-use rustui_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use rustui_core::view::{column, constrained, row, Builder, LayoutProps, View};
-use rustui_paint::Insets;
-use rustui_text::FontWeight;
-use rustui_theme::Theme;
-use rustui_widgets::{range_slider, slider, text, Fonts};
+use silka_core::access::AccessRole;
+use silka_core::app::{component, BuildCtx, ScaleFactor};
+use silka_core::signals::{use_signal, Signal};
+use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
+use silka_core::view::{column, constrained, row, Builder, LayoutProps, View};
+use silka_paint::Insets;
+use silka_text::FontWeight;
+use silka_theme::Theme;
+use silka_widgets::{range_slider, slider, text, Fonts};
 
 /// Judul halaman.
 pub const JUDUL: &str = "Slider";
@@ -227,17 +227,17 @@ fn baris_mati(fonts: &Fonts, t: &Theme) -> View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::access::AccessActions;
-    use rustui_core::animation::Motion;
-    use rustui_core::app::AppRuntime;
-    use rustui_core::input::{
+    use silka_core::access::AccessActions;
+    use silka_core::animation::Motion;
+    use silka_core::app::AppRuntime;
+    use silka_core::input::{
         Event, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
     };
-    use rustui_core::scheduler::Dirty;
-    use rustui_paint::{Command, Point, Rect, Size};
-    use rustui_platform::headless_app;
-    use rustui_theme::{Appearance, Preset};
-    use rustui_widgets::slider::sliders;
+    use silka_core::scheduler::Dirty;
+    use silka_paint::{Command, Point, Rect, Size};
+    use silka_platform::headless_app;
+    use silka_theme::{Appearance, Preset};
+    use silka_widgets::slider::sliders;
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(720.0, 640.0);
@@ -298,7 +298,7 @@ mod tests {
         let mut now = Instant::now();
         let mut n = 0;
         while n < batas {
-            let dirty = ui.animate_at(now, rustui_widgets::advance);
+            let dirty = ui.animate_at(now, silka_widgets::advance);
             ui.frame();
             n += 1;
             if !dirty.contains(Dirty::ANIMATION) {
@@ -318,7 +318,7 @@ mod tests {
         for nama in [VOLUME, UKURAN, HARGA, MATI] {
             let (bounds, nilai, _) = slider_a11y(&ui, nama);
             assert!(
-                bounds.size.height >= rustui_widgets::MIN_HIT_TARGET,
+                bounds.size.height >= silka_widgets::MIN_HIT_TARGET,
                 "hit target {nama} cuma {:?}",
                 bounds.size
             );
@@ -405,7 +405,7 @@ mod tests {
         let f = fonts();
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         // Frame pertama memasang pompa animasi.
-        ui.animate_at(Instant::now(), rustui_widgets::advance);
+        ui.animate_at(Instant::now(), silka_widgets::advance);
         ui.frame();
 
         for _ in 0..2 {
@@ -417,12 +417,12 @@ mod tests {
 
         // Nilainya sudah di ujung, tapi thumb-nya masih di jalan.
         assert_eq!(nilai(&ui, UKURAN), 32.0);
-        assert!(rustui_widgets::is_animating(ui.tree()));
+        assert!(silka_widgets::is_animating(ui.tree()));
 
         let frame = sampai_diam(&mut ui, 600);
         assert!(frame > 1, "gerakan selesai seketika — itu lompatan");
         assert!(frame < 600, "spring tidak pernah settle");
-        assert!(!rustui_widgets::is_animating(ui.tree()));
+        assert!(!silka_widgets::is_animating(ui.tree()));
         assert!(ui.is_idle(), "GPU tidak kembali tidur setelah spring diam");
     }
 
@@ -444,7 +444,7 @@ mod tests {
         let n = sampai_diam(&mut ui, 600);
         assert!(n < 600, "gerakan yang menjelaskan ikut dimatikan");
         assert_eq!(nilai(&ui, UKURAN), 32.0);
-        assert!(!rustui_widgets::is_animating(ui.tree()));
+        assert!(!silka_widgets::is_animating(ui.tree()));
     }
 
     #[test]

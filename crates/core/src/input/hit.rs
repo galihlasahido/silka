@@ -5,17 +5,17 @@
 //! beberapa piksel di tiap pojok yang terlihat kosong tapi bisa diklik — jenis
 //! cacat yang tidak pernah dilaporkan orang tapi membuat aplikasi terasa
 //! murah. Karena itu bentuk yang diuji di sini adalah superellipse **yang sama
-//! persis** dengan yang dikirim ke shader ([`rustui_paint::Corners::contains`]).
+//! persis** dengan yang dikirim ke shader ([`silka_paint::Corners::contains`]).
 //!
 //! Lintasannya mengikuti Flutter: anak terakhir diperiksa lebih dulu (yang
 //! digambar paling atas menang), hasilnya berupa **jalur dari node terdalam ke
 //! akar** sehingga event bisa menggelembung ke atas.
 //!
 //! ```
-//! use rustui_core::input::hit_test;
-//! use rustui_core::tree::{BoxConstraints, RenderTree};
-//! use rustui_core::view::{column, fixed, reconcile};
-//! use rustui_paint::{Point, Size};
+//! use silka_core::input::hit_test;
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, reconcile};
+//! use silka_paint::{Point, Size};
 //!
 //! let mut tree = RenderTree::new();
 //! reconcile(&mut tree, column([fixed(100.0, 20.0), fixed(100.0, 20.0)]));
@@ -26,7 +26,7 @@
 //! assert!(hit_test(&tree, Point::new(50.0, 30.0)).is_empty());
 //! ```
 
-use rustui_paint::{Corners, Point, Size};
+use silka_paint::{Corners, Point, Size};
 
 use crate::tree::{NodeId, RenderTree};
 

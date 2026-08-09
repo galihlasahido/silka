@@ -1,13 +1,13 @@
 //! Sumber detak vsync per platform (REKOMENDASI §3.5).
 //!
-//! Scheduler di `rustui-core` memutuskan **apakah** perlu menggambar; modul ini
+//! Scheduler di `silka-core` memutuskan **apakah** perlu menggambar; modul ini
 //! memutuskan **kapan** — dan menjawabnya dengan bertanya ke OS, bukan dengan
 //! menebak.
 //!
 //! | Platform | Sumber detak | Interval |
 //! |---|---|---|
 //! | macOS | `CADisplayLink` di run loop utama | `targetTimestamp - timestamp` tiap tick — ikut ProMotion 120 Hz, adaptive refresh, dan perpindahan monitor |
-//! | lain | [`winit::window::Window::request_redraw`] | ditaksir dari jarak antar-frame nyata oleh [`rustui_core::scheduler::RefreshEstimator`] |
+//! | lain | [`winit::window::Window::request_redraw`] | ditaksir dari jarak antar-frame nyata oleh [`silka_core::scheduler::RefreshEstimator`] |
 //!
 //! **Tidak ada 16,6 ms di mana pun.** Kalau interval belum diketahui, ia
 //! bernilai `None` dan lapisan di atas menanganinya sebagai ketidaktahuan.
@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use rustui_core::scheduler::Vsync;
+use silka_core::scheduler::Vsync;
 use winit::window::Window;
 
 /// Dari mana detak frame datang di proses ini.
@@ -205,7 +205,7 @@ impl core::fmt::Debug for VsyncSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::scheduler::ClockSource;
+    use silka_core::scheduler::ClockSource;
 
     #[test]
     fn jam_kosong_tidak_mengarang_interval() {

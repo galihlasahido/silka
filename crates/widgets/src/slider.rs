@@ -2,9 +2,9 @@
 //! klik di track, dan keyboard; plus varian **range** dengan dua thumb.
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_theme::{Appearance, Theme};
-//! use rustui_widgets::{range_slider, slider};
+//! # use silka_core::signals::Runtime;
+//! # use silka_theme::{Appearance, Theme};
+//! use silka_widgets::{range_slider, slider};
 //!
 //! # let rt = Runtime::new();
 //! # let volume = rt.signal(40.0f32);
@@ -23,8 +23,8 @@
 //! `interactive`: nilainya kontinu, thumb-nya berpindah mengikuti jari, dan
 //! geometri tracknya harus dipahami hit-testing maupun keyboard. Karena itu ia
 //! sebuah [`RenderNode`] tersendiri — tapi kosakatanya tetap yang itu-itu juga:
-//! perintah gambar `rustui-paint`, node [`AccessNode`], dan spring
-//! `rustui-core`. Tidak ada satu pun angka warna atau tipe wgpu di berkas ini
+//! perintah gambar `silka-paint`, node [`AccessNode`], dan spring
+//! `silka-core`. Tidak ada satu pun angka warna atau tipe wgpu di berkas ini
 //! (§2.6, §3.2).
 //!
 //! ## Definition of Done (`KOMPONEN.md`) — bagaimana masing-masing dipenuhi
@@ -43,7 +43,7 @@
 //!
 //! Seluruh gerakan dimajukan di satu tempat: [`crate::motion::advance`], yang
 //! dipanggil aplikasi sekali per frame lewat
-//! [`rustui_core::app::AppRuntime::animate`] (atau `run_app_with`) — aturan
+//! [`silka_core::app::AppRuntime::animate`] (atau `run_app_with`) — aturan
 //! yang sama untuk setiap komponen beranimasi di crate ini, bukan siklus frame
 //! kedua milik slider.
 //!
@@ -56,22 +56,22 @@
 use std::ops::RangeInclusive;
 use std::rc::Rc;
 
-use rustui_core::access::{
+use silka_core::access::{
     AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole,
 };
-use rustui_core::animation::{Spring, SpringValue, Tick};
-use rustui_core::input::{
+use silka_core::animation::{Spring, SpringValue, Tick};
+use silka_core::input::{
     CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, NamedKey,
     PointerButton, PointerPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{
     BoxConstraints, LayoutCtx, NodeId, PaintCtx, RenderNode, RenderTree, TextDirection,
 };
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_paint::{Color, CornerRadii, CornerStyle, Corners, Quad, Rect, ShadowPair, Size};
-use rustui_theme::Theme;
+use silka_core::view::{Builder, View, ViewNode};
+use silka_paint::{Color, CornerRadii, CornerStyle, Corners, Quad, Rect, ShadowPair, Size};
+use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 
@@ -89,7 +89,7 @@ pub const PAGE_STEPS: f32 = 10.0;
 ///
 /// Selalu membawa **dua** nilai (awal, akhir) supaya slider biasa dan slider
 /// range memakai satu jalur yang sama; slider satu thumb mengirim nilainya di
-/// kedua posisi. Sifatnya persis [`rustui_core::Callback`]: `Clone` murah,
+/// kedua posisi. Sifatnya persis [`silka_core::Callback`]: `Clone` murah,
 /// kesamaan berdasarkan identitas, dan yang boleh dilakukannya hanyalah
 /// menulis signal.
 #[derive(Clone)]
@@ -569,7 +569,7 @@ impl Slider {
     /// Callback disalin keluar dulu: ia hampir selalu menulis signal, dan
     /// tulisan signal boleh memicu apa saja — yang tidak boleh adalah ia
     /// berjalan sambil node ini masih dipinjam `&mut` (pola yang sama dengan
-    /// [`rustui_core::tree::Interactive`]).
+    /// [`silka_core::tree::Interactive`]).
     fn beritahu(&self) {
         if let Some(cb) = self.on_change.clone() {
             let (a, b) = self.values();
@@ -744,7 +744,7 @@ impl RenderNode for Slider {
             if self.focused && !self.disabled && self.active == i {
                 let ring = self.style.focus_ring_width;
                 if ring > 0.0 && self.style.focus_ring.a > 0.0 {
-                    let luar = rect.deflate(rustui_paint::Insets::all(-ring));
+                    let luar = rect.deflate(silka_paint::Insets::all(-ring));
                     ctx.quad(
                         Quad::new(luar)
                             .corners(Corners::new(
@@ -1218,12 +1218,12 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
 /// sudah dilakukan adapter platform sebelum sampai ke sini.
 ///
 /// ```
-/// # use rustui_core::access::{AccessAction, AccessActionRequest};
-/// # use rustui_core::tree::{BoxConstraints, RenderTree};
-/// # use rustui_core::view::reconcile;
-/// # use rustui_paint::Size;
-/// # use rustui_theme::{Appearance, Theme};
-/// use rustui_widgets::slider::{apply_access_action, slider, sliders};
+/// # use silka_core::access::{AccessAction, AccessActionRequest};
+/// # use silka_core::tree::{BoxConstraints, RenderTree};
+/// # use silka_core::view::reconcile;
+/// # use silka_paint::Size;
+/// # use silka_theme::{Appearance, Theme};
+/// use silka_widgets::slider::{apply_access_action, slider, sliders};
 ///
 /// let t = Theme::cupertino(Appearance::Dark);
 /// let mut tree = RenderTree::new();
@@ -1253,11 +1253,11 @@ pub fn apply_access_action(tree: &mut RenderTree, request: &AccessActionRequest)
 mod tests {
     use super::*;
     use crate::motion::{advance, is_animating, settle};
-    use rustui_core::animation::Motion;
-    use rustui_core::input::{Event, InputRouter, KeyEvent, Modifiers, PointerEvent, PointerPhase};
-    use rustui_core::view::{reconcile, View};
-    use rustui_paint::{Command, Point, Scene};
-    use rustui_theme::{Appearance, Preset};
+    use silka_core::animation::Motion;
+    use silka_core::input::{Event, InputRouter, KeyEvent, Modifiers, PointerEvent, PointerPhase};
+    use silka_core::view::{reconcile, View};
+    use silka_paint::{Command, Point, Scene};
+    use silka_theme::{Appearance, Preset};
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::time::Duration;

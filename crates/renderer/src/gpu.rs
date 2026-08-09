@@ -9,8 +9,8 @@ use crate::surface::WindowSurface;
 /// Target window untuk pembuatan surface.
 ///
 /// Sengaja dinyatakan lewat `raw-window-handle`, bukan lewat tipe winit:
-/// `rustui-renderer` tidak boleh tahu shell mana yang memakainya, dan
-/// `rustui-platform` tidak boleh tahu API grafis mana yang dipakai.
+/// `silka-renderer` tidak boleh tahu shell mana yang memakainya, dan
+/// `silka-platform` tidak boleh tahu API grafis mana yang dipakai.
 pub trait WindowTarget:
     raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync + 'static
 {
@@ -48,7 +48,7 @@ impl Gpu {
     /// # Platform
     ///
     /// Di macOS pemanggilan ini harus terjadi di main thread — batasan Metal,
-    /// bukan batasan kita. `rustui-platform` memanggilnya dari `resumed()`
+    /// bukan batasan kita. `silka-platform` memanggilnya dari `resumed()`
     /// event loop winit, jadi syarat itu otomatis terpenuhi.
     pub fn with_surface<W: WindowTarget>(
         target: Arc<W>,
@@ -102,7 +102,7 @@ impl Gpu {
         adapter: wgpu::Adapter,
     ) -> Result<Self, RendererError> {
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("rustui.device"),
+            label: Some("silka.device"),
             required_features: wgpu::Features::empty(),
             // Downlevel defaults menjaga jalur Linux/GL tetap terbuka
             // (REKOMENDASI §3.2), dinaikkan resolusinya mengikuti adapter agar

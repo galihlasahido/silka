@@ -1,5 +1,5 @@
 [package]
-name = "rustui-text"
+name = "silka-text"
 description = "Wrapper cosmic-text: shaping, glyph atlas, dan measure untuk layout"
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-rustui-paint.workspace = true
+silka-paint.workspace = true
 # Stack text lengkap: fontdb + rustybuzz + swash + line breaking (§3.3).
 # Kontrak: cosmic-text tidak pernah bocor ke API publik crate ini.
 cosmic-text.workspace = true

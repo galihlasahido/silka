@@ -11,14 +11,14 @@ use super::*;
 use std::cell::Cell;
 use std::time::Duration;
 
-use rustui_core::animation::{Motion, Tick};
-use rustui_core::input::{
+use silka_core::animation::{Motion, Tick};
+use silka_core::input::{
     Event, FocusDirection, InputRouter, KeyCode, KeyEvent, PointerEvent, PointerPhase,
 };
-use rustui_core::tree::{NodeId, RenderTree};
-use rustui_core::view::{reconcile, View};
-use rustui_paint::{Command, Scene};
-use rustui_theme::{Appearance, Preset};
+use silka_core::tree::{NodeId, RenderTree};
+use silka_core::view::{reconcile, View};
+use silka_paint::{Command, Scene};
+use silka_theme::{Appearance, Preset};
 
 const RUANG: Size = Size::new(400.0, 200.0);
 /// 120 Hz — datang dari display link, bukan dari konstanta 16,6 ms (§3.5).
@@ -110,7 +110,7 @@ fn s_inset(theme: &Theme) -> f32 {
     SwitchStyle::from_theme(theme).inset
 }
 
-fn quads(tree: &mut RenderTree, theme: &Theme) -> Vec<rustui_paint::Quad> {
+fn quads(tree: &mut RenderTree, theme: &Theme) -> Vec<silka_paint::Quad> {
     let mut scene = Scene::new(theme.color.background);
     tree.paint_into(&mut scene);
     scene

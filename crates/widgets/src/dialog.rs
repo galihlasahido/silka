@@ -1,10 +1,10 @@
 //! `dialog()` dan `alert()` — komponen Tier 4 pertama (`KOMPONEN.md`).
 //!
 //! ```
-//! # use rustui_core::signals::Runtime;
-//! # use rustui_core::view::fixed;
-//! # use rustui_theme::{Appearance, Theme};
-//! use rustui_widgets::{dialog, overlay_layer, Fonts};
+//! # use silka_core::signals::Runtime;
+//! # use silka_core::view::fixed;
+//! # use silka_theme::{Appearance, Theme};
+//! use silka_widgets::{dialog, overlay_layer, Fonts};
 //!
 //! # let rt = Runtime::new();
 //! # let terbuka = rt.signal(true);
@@ -55,7 +55,7 @@
 //!   sebagai namanya, isinya dibacakan, dan konten di belakang benar-benar
 //!   inert.
 //! - **Dark mode**, **hit target ≥ 44pt** (tombolnya [`crate::button`]), dan
-//!   **reduced-motion** (transisinya [`rustui_core::animation::MotionRole`]
+//!   **reduced-motion** (transisinya [`silka_core::animation::MotionRole`]
 //!   `Essential`: pantulan dibuang, gerakan yang menjelaskan dipertahankan).
 //!
 //! ## Enter tanpa fokus
@@ -67,19 +67,19 @@
 //! pasangannya untuk Return, dan shell memanggilnya dengan syarat yang sama:
 //! **hanya** saat router menjawab tidak ada yang menangani.
 
-use rustui_core::access::{AccessNode, AccessRole};
-use rustui_core::animation::Spring;
-use rustui_core::input::{Event, EventCtx, NamedKey};
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{
+use silka_core::access::{AccessNode, AccessRole};
+use silka_core::animation::Spring;
+use silka_core::input::{Event, EventCtx, NamedKey};
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{
     BoxConstraints, CrossAlign, LayoutCtx, MainAlign, NodeId, RenderNode, RenderTree,
 };
-use rustui_core::view::{column, constrained, row, Builder, View, ViewNode};
-use rustui_core::Callback;
-use rustui_paint::{Insets, Point, Size};
-use rustui_text::FontWeight;
-use rustui_theme::{Theme, TypeStyle};
+use silka_core::view::{column, constrained, row, Builder, View, ViewNode};
+use silka_core::Callback;
+use silka_paint::{Insets, Point, Size};
+use silka_text::FontWeight;
+use silka_theme::{Theme, TypeStyle};
 
 use crate::button::{button_variant, ButtonVariant};
 use crate::fonts::Fonts;
@@ -146,7 +146,7 @@ impl ButtonOrder {
     /// tanpa GPU, dan untuk **kedua** platform sekaligus (§9.5).
     ///
     /// ```
-    /// use rustui_widgets::dialog::{action, ButtonOrder};
+    /// use silka_widgets::dialog::{action, ButtonOrder};
     ///
     /// let urut = ButtonOrder::ConfirmLast.arrange(vec![
     ///     action("Simpan").confirm(),
@@ -317,7 +317,7 @@ impl DialogPanel {
     /// Callback disalin keluar dulu — ia hampir selalu menulis signal, dan
     /// tulisan signal boleh memicu apa saja; yang tidak boleh adalah ia
     /// berjalan sambil node ini masih dipinjam `&mut` (pola yang sama dengan
-    /// [`rustui_core::tree::Interactive`]).
+    /// [`silka_core::tree::Interactive`]).
     pub fn activate_default(&mut self) -> bool {
         if !self.open {
             return false;
@@ -411,10 +411,10 @@ impl ViewNode for DialogPanelProps {
 /// menjawab tidak ada yang menangani:
 ///
 /// ```
-/// # use rustui_core::input::{Event, InputRouter, KeyEvent, KeyCode, NamedKey};
-/// # use rustui_core::tree::RenderTree;
+/// # use silka_core::input::{Event, InputRouter, KeyEvent, KeyCode, NamedKey};
+/// # use silka_core::tree::RenderTree;
 /// # use std::time::Duration;
-/// # use rustui_widgets::dialog::activate_default;
+/// # use silka_widgets::dialog::activate_default;
 /// # let mut tree = RenderTree::new();
 /// # let mut router = InputRouter::new();
 /// let enter = Event::Key(KeyEvent::pressed(

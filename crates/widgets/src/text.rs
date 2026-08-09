@@ -2,8 +2,8 @@
 //! tampil** di dalam render tree.
 //!
 //! ```
-//! # use rustui_widgets::{text, Fonts};
-//! # use rustui_theme::{Appearance, Theme};
+//! # use silka_widgets::{text, Fonts};
+//! # use silka_theme::{Appearance, Theme};
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! text(&fonts, "Nilai: 3")
@@ -18,7 +18,7 @@
 //!    (atau dari wadah flex/grid) dipakai apa adanya untuk membungkus baris,
 //!    dan ukuran hasilnya naik ke induk.
 //! 2. **Menggambar dalam koordinat lokal.** Glyph dirasterisasi dari `(0, 0)`
-//!    sudut kiri-atas node; [`rustui_core::tree::PaintCtx`] yang menaikkannya
+//!    sudut kiri-atas node; [`silka_core::tree::PaintCtx`] yang menaikkannya
 //!    ke koordinat absolut — jadi memindahkan teks tidak menyentuh satu baris
 //!    pun kode gambar (§3.2).
 //! 3. **Bisa dibacakan screen reader.** Isi teksnya adalah `name` node a11y,
@@ -27,13 +27,13 @@
 //! Yang **tidak** ada di sini: nama `cosmic-text`, nama `wgpu`, dan angka warna
 //! — semuanya token (§2.6, §3.2, §3.3).
 
-use rustui_core::access::{AccessNode, AccessRole};
-use rustui_core::scheduler::Dirty;
-use rustui_core::signals::Key;
-use rustui_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use rustui_core::view::{Builder, View, ViewNode};
-use rustui_paint::{Color, GlyphRun, Point, Size};
-use rustui_text::{FontWeight, TextConstraints, TextStyle, TextWrap};
+use silka_core::access::{AccessNode, AccessRole};
+use silka_core::scheduler::Dirty;
+use silka_core::signals::Key;
+use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::view::{Builder, View, ViewNode};
+use silka_paint::{Color, GlyphRun, Point, Size};
+use silka_text::{FontWeight, TextConstraints, TextStyle, TextWrap};
 
 use crate::fonts::Fonts;
 
@@ -343,12 +343,12 @@ impl From<Text> for View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rustui_core::tree::RenderTree;
-    use rustui_core::view::reconcile;
-    use rustui_paint::{Command, Scene};
-    use rustui_text::TextConstraints;
+    use silka_core::tree::RenderTree;
+    use silka_core::view::reconcile;
+    use silka_paint::{Command, Scene};
+    use silka_text::TextConstraints;
 
-    fn pohon(view: impl Into<rustui_core::view::View>, batas: BoxConstraints) -> RenderTree {
+    fn pohon(view: impl Into<silka_core::view::View>, batas: BoxConstraints) -> RenderTree {
         let mut tree = RenderTree::new();
         reconcile(&mut tree, view);
         tree.layout(batas);

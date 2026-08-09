@@ -14,18 +14,18 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-use rustui_core::access::{AccessActions, AccessRole};
-use rustui_core::animation::Motion;
-use rustui_core::app::{app, AppRuntime};
-use rustui_core::input::{
+use silka_core::access::{AccessActions, AccessRole};
+use silka_core::animation::Motion;
+use silka_core::app::{app, AppRuntime};
+use silka_core::input::{
     CursorIcon, Event, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent,
     PointerId, PointerPhase, ScrollDelta, ScrollEvent, ScrollPhase,
 };
-use rustui_core::scheduler::Dirty;
-use rustui_core::tree::{NodeId, RenderTree};
-use rustui_core::view::{fixed, View};
-use rustui_paint::{Point, Size};
-use rustui_theme::{Appearance, Preset, Theme};
+use silka_core::scheduler::Dirty;
+use silka_core::tree::{NodeId, RenderTree};
+use silka_core::view::{fixed, View};
+use silka_paint::{Point, Size};
+use silka_theme::{Appearance, Preset, Theme};
 
 use super::*;
 use crate::fonts::Fonts;
@@ -255,7 +255,7 @@ impl Uji {
     }
 }
 
-fn hitung<T: rustui_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> usize {
+fn hitung<T: silka_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> usize {
     usize::from(tree.node_ref::<T>(id).is_some())
         + tree
             .children(id)
@@ -920,7 +920,7 @@ fn benar_di_kedua_preset_dan_kedua_appearance() {
                     .commands()
                     .iter()
                     .filter_map(|c| match c {
-                        rustui_paint::Command::Quad(q) => Some(q.background),
+                        silka_paint::Command::Quad(q) => Some(q.background),
                         _ => None,
                     })
                     .collect();
@@ -1042,7 +1042,7 @@ fn biaya_per_frame_tidak_tumbuh_bersama_jarak_guliran() {
 /// saat ada yang curiga:
 ///
 /// ```text
-/// cargo test -p rustui-widgets --release --lib probe_frame_time -- --ignored --nocapture
+/// cargo test -p silka-widgets --release --lib probe_frame_time -- --ignored --nocapture
 /// ```
 #[test]
 #[ignore = "probe manual: mengukur jam dinding, bukan invarian"]
