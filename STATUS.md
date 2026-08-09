@@ -67,6 +67,13 @@ args: {"phase":"fase2", "only":["widget:table","chart-lib"]}
 
 ---
 
+## Git
+
+- Repositori lokal aktif di branch `main`. Remote: `https://github.com/galihlasahido/silka.git` (**PUBLIK**).
+- Riwayat sudah digabung dengan commit awal remote (LICENSE MIT — Advance Dynamic Software). `.gitignore` menyatukan template Rust GitHub + entri editor/OS. `target/` (12 GB) terabaikan.
+- **BELUM DI-PUSH** — sesuai keputusan 10 Agu 2026: push dilakukan setelah (1) Fase 2 selesai dan (2) rename `rustui-*` → `silka-*`, supaya repo publik tampil konsisten sejak commit pertama yang terlihat publik.
+- **ATURAN COMMIT/PR: dilarang mencantumkan Anthropic, Claude, atau Claude Code** di pesan commit, PR, komentar kode, atau dokumen. Tanpa trailer `Co-Authored-By`, tanpa baris "Generated with".
+
 ## Pekerjaan tertunda yang harus diingat
 
 1. **Rename `rustui-*` → `silka-*`** — sapuan mekanis (semua `Cargo.toml` + setiap `use rustui_*`). Jadwal: setelah Fase 2, saat tidak ada agen aktif.
