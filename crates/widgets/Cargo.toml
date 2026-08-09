@@ -1,0 +1,13 @@
+[package]
+name = "rustui-widgets"
+description = "Katalog komponen sesuai KOMPONEN.md: API gaya Dart + styling utility ala Tailwind"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustui-core.workspace = true
+rustui-theme.workspace = true
+rustui-paint.workspace = true
+rustui-text.workspace = true

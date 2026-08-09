@@ -1,0 +1,9 @@
+[package]
+name = "rustui-paint"
+description = "Abstraksi perintah gambar UI: rect/glyph/shadow/blur — tanpa tipe wgpu di API publik"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]

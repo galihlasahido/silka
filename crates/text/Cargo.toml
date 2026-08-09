@@ -1,0 +1,20 @@
+[package]
+name = "rustui-text"
+description = "Wrapper cosmic-text: shaping, glyph atlas, dan measure untuk layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustui-paint.workspace = true
+# Stack text lengkap: fontdb + rustybuzz + swash + line breaking (§3.3).
+# Kontrak: cosmic-text tidak pernah bocor ke API publik crate ini.
+cosmic-text.workspace = true
+# Dipakai untuk memuat font bundel ke database milik cosmic-text; versi
+# dikunci sama dengan yang dipakai cosmic-text agar tipe `fontdb::ID` sama.
+fontdb.workspace = true
+# Grapheme cluster + batas kata (UAX #29): dasar gerakan caret dan seleksi
+# kata di `crate::edit`. Menulis tabelnya sendiri = jebakan yang sama dengan
+# menulis shaper sendiri.
+unicode-segmentation.workspace = true

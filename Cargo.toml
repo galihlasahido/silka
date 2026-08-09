@@ -1,0 +1,72 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/paint",
+    "crates/renderer",
+    "crates/text",
+    "crates/core",
+    "crates/theme",
+    "crates/widgets",
+    "crates/platform",
+    "examples/gallery",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = ""
+rust-version = "1.80"
+
+[workspace.dependencies]
+# Crate internal — selalu dirujuk lewat workspace agar versi konsisten.
+rustui-paint = { path = "crates/paint" }
+rustui-renderer = { path = "crates/renderer" }
+rustui-text = { path = "crates/text" }
+rustui-core = { path = "crates/core" }
+rustui-theme = { path = "crates/theme" }
+rustui-widgets = { path = "crates/widgets" }
+rustui-platform = { path = "crates/platform" }
+
+# Dependensi eksternal terpilih (REKOMENDASI §3) — dikunci di sini agar
+# seluruh workspace seragam; diaktifkan per-crate sesuai batas arsitektur.
+wgpu              = "29"      # renderer (HANYA di crates/renderer, §3.2)
+winit             = "0.30"    # platform shell (§3.1)
+raw-window-handle = "0.6"     # jembatan platform <-> renderer tanpa saling tahu
+pollster          = "0.4"     # menunggu future wgpu di init; bukan async runtime app
+# Front-end WGSL milik wgpu — HANYA dev-dependency crates/renderer, untuk
+# memvalidasi shader SDF di unit test tanpa GPU (§9.5). Versi dikunci sama
+# dengan wgpu agar tidak ada dua naga di pohon dependensi.
+naga              = { version = "29", features = ["wgsl-in"] }
+
+# Escape hatch macOS (INTEGRASI-NATIVE §8) — dipakai untuk CADisplayLink
+# (vsync ProMotion-aware, §3.5). Hanya dikompilasi di target Apple.
+objc2             = "0.6"
+objc2-foundation  = { version = "0.3", default-features = false, features = ["std", "NSObjCRuntime", "NSRunLoop", "NSString"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CADisplayLink", "objc2-core-foundation"] }
+
+# Text stack (§3.3) — HANYA di crates/text; crate lain berbicara lewat
+# `rustui-text`, tidak pernah menyentuh cosmic-text/fontdb langsung.
+cosmic-text       = "0.17"
+fontdb            = { version = "0.23", default-features = false }  # versi wajib sama dengan yang dipakai cosmic-text
+# Segmentasi UAX #29 (grapheme cluster + batas kata) — HANYA di crates/text,
+# dipakai gerakan caret per grapheme dan klik-ganda per kata di `text_field`
+# (§3.3). Versi dikunci sama dengan yang sudah dipakai cosmic-text agar tidak
+# ada dua pohon tabel Unicode di satu binary.
+unicode-segmentation = "1.13"
+
+# Flex/Grid layout (§3.4) — HANYA di crates/core, dan di sana pun hanya di
+# dalam satu modul (`tree::taffy_box`). Kosakata gaya milik kita sendiri
+# (`tree::style`) dipetakan ke tipe Taffy di modul itu saja, jadi kode widget
+# tidak pernah menyebut `taffy::` — aturan yang sama seperti wgpu (§3.2) dan
+# cosmic-text (§3.3). `block_layout`/`float_layout`/`calc` dimatikan: kita
+# membangun UI toolkit, bukan browser.
+taffy             = { version = "0.13", default-features = false, features = ["std", "taffy_tree", "flexbox", "grid", "content_size"] }
+
+# Accessibility (§3.8) — output first-class dari render tree, bukan susulan.
+# `accesskit` (kosakata node) hidup di crates/core di balik modul `access`;
+# `accesskit_winit` (adapter platform) HANYA di crates/platform, sejajar dengan
+# aturan "wgpu hanya di crates/renderer" (§3.2). Versi dikunci di sini supaya
+# tidak pernah ada dua pohon accesskit di satu binary.
+accesskit         = "0.24"
+accesskit_winit   = "0.33"

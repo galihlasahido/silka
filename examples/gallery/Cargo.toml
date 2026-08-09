@@ -1,0 +1,23 @@
+[package]
+name = "rustui-gallery"
+description = "Gallery app: demo interaktif setiap komponen sekaligus alat uji visual manual"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+# Rendering headless untuk golden/snapshot test halaman gallery (§9.5):
+# halaman yang sama yang tampil di window digambar ke tekstur offscreen lalu
+# dihitung pikselnya. Hanya dev-dependency — aplikasi sendiri tidak pernah
+# menyentuh backend langsung, ia lewat `rustui-platform`.
+rustui-renderer.workspace = true
+
+[dependencies]
+rustui-widgets.workspace = true
+rustui-core.workspace = true
+rustui-theme.workspace = true
+rustui-platform.workspace = true
+rustui-paint.workspace = true
+rustui-text.workspace = true

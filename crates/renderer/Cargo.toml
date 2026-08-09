@@ -1,0 +1,28 @@
+[package]
+name = "rustui-renderer"
+description = "Backend wgpu (shader SDF khusus UI) yang mengimplementasikan abstraksi rustui-paint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustui-paint.workspace = true
+# Satu-satunya crate di workspace yang boleh bergantung pada wgpu (§3.2).
+wgpu.workspace = true
+# Window handle sebagai batas: renderer tidak pernah tahu apa itu winit.
+raw-window-handle.workspace = true
+# Hanya untuk menunggu future inisialisasi adapter/device — bukan runtime async
+# aplikasi (cerita async ada di §9.6).
+pollster.workspace = true
+
+[dev-dependencies]
+# Front-end WGSL milik wgpu sendiri: dipakai unit test untuk mem-parse dan
+# MEMVALIDASI `shaders/sdf.wgsl` tanpa GPU, sehingga shader yang rusak
+# ketahuan di `cargo test` di CI — bukan saat pengguna membuka window.
+naga.workspace = true
+# HANYA dev-dependency: uji rasterisasi teks memakai glyph sungguhan dari font
+# bundel supaya yang dibuktikan adalah jalur lengkap (shaping → atlas → tekstur
+# → piksel), bukan atlas buatan test. Kode renderer sendiri tetap TIDAK boleh
+# menyebut `rustui_text`: ia hanya berbicara lewat `rustui_paint::GlyphSource`.
+rustui-text.workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "rustui-core"
+description = "Signals, view-diff, arena render tree, box constraints, spring, input, scheduler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+# Jembatan ke kosakata `accesskit` (§3.8). Menyala secara bawaan: emisi node
+# aksesibilitas adalah bagian kontrak, bukan tambahan opsional. Bisa dimatikan
+# untuk build headless/embedded yang tidak punya teknologi bantu sama sekali —
+# pass a11y-nya sendiri tetap jalan, hanya konversinya yang hilang.
+default = ["accesskit"]
+accesskit = ["dep:accesskit"]
+
+[dependencies]
+rustui-paint.workspace = true
+rustui-text.workspace = true
+taffy.workspace = true         # widget Flex/Grid (§3.4), dipakai `tree::taffy_box` saja
+accesskit = { workspace = true, optional = true }

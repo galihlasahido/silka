@@ -1,0 +1,27 @@
+[package]
+name = "rustui-platform"
+description = "Shell winit, escape hatch raw_handle, dan integrasi native per platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+rustui-core.workspace = true
+rustui-renderer.workspace = true
+rustui-paint.workspace = true
+rustui-theme.workspace = true
+winit.workspace = true
+
+# Adapter aksesibilitas per platform (§3.8): UIA di Windows, NSAccessibility
+# di macOS, AT-SPI di Linux. Kosakata node-nya sendiri (`accesskit`) TIDAK
+# didaftarkan di sini — ia datang lewat re-export `rustui_core::access`
+# supaya tidak pernah ada dua versi accesskit di satu binary.
+accesskit_winit.workspace = true
+
+# Vsync macOS: CADisplayLink lewat objc2 (§3.5). Di OS lain jalur ini tidak
+# ada sama sekali — fallback-nya `request_redraw` winit.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation.workspace = true
+objc2-quartz-core.workspace = true
