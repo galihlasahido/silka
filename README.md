@@ -1,86 +1,85 @@
 # silka
 
-Framework GUI desktop untuk Rust dengan model widget deklaratif dan kualitas
-visual bergaya Apple. Target v1: **macOS, Windows, dan Linux** (X11/Wayland).
+A desktop GUI framework for Rust with a declarative widget model and
+Apple-grade visual polish. Targets **macOS, Windows, and Linux** (X11/Wayland).
 
-> Status: dalam pengembangan aktif. API masih berubah.
+> Status: under active development. The API is still changing.
 
-## Filosofi
+## Philosophy
 
-Silka dibangun di atas tiga keyakinan:
+Silka is built on three convictions:
 
-1. **Menulis UI harus terasa enak.** API-nya berupa komposisi bersarang dengan
-   method chaining — mendekati rasa menulis widget di Flutter, tetapi tetap
-   idiomatis Rust dan aman di waktu kompilasi.
-2. **Gerakan adalah bagian dari desain.** Semua animasi memakai pegas (spring)
-   yang menyimpan posisi dan kecepatan, sehingga bisa diarahkan ulang di
-   tengah jalan tanpa patah — bukan kurva easing yang kaku.
-3. **Detail kecil menentukan rasa.** Sudut squircle, bayangan berlapis, dan
-   tipografi dengan optical sizing bukan hiasan, melainkan alasan sebuah
-   antarmuka terasa halus.
+1. **Writing UI should feel good.** The API is nested composition with method
+   chaining — close to the feel of writing Flutter widgets, while staying
+   idiomatic Rust and checked at compile time.
+2. **Motion is part of the design.** Every animation is a spring that carries
+   both position and velocity, so it can be retargeted mid-flight without
+   snapping — not a rigid easing curve.
+3. **Small details decide how it feels.** Squircle corners, layered shadows,
+   and optical-size typography are not decoration; they are the reason an
+   interface feels smooth.
 
-## Contoh
+## Example
 
 ```rust
-let jumlah = use_signal(|| 0);
+let count = use_signal(|| 0);
 
 column((
-    text(format!("Nilai: {}", jumlah.get())),
-    button("Tambah").on_press(move || jumlah.set(jumlah.get() + 1)),
+    text(format!("Count: {}", count.get())),
+    button("Increment").on_press(move || count.set(count.get() + 1)),
 ))
 .spacing(12.0)
 .padding(16.0)
 ```
 
-Gaya penataan mengikuti pola utility seperti Tailwind, tetapi berupa method
-yang diperiksa kompilator — salah tulis menjadi galat kompilasi, bukan diam
-tanpa efek.
+Styling follows a utility-first pattern like Tailwind, but as compiler-checked
+methods — a typo is a build error, not a silent no-op.
 
-## Tema
+## Theming
 
-Setiap komponen ditulis satu kali terhadap token semantik, lalu tampil sesuai
-tema yang aktif:
+Every component is written once against semantic tokens, then renders according
+to the active preset:
 
-| Preset | Karakter |
+| Preset | Character |
 | --- | --- |
-| **Cupertino** (bawaan) | Sudut squircle, palet Apple HIG, bayangan berlapis ambient + key |
-| **Tailwind** | Sudut busur biasa, palet slate/blue, bayangan gaya Tailwind |
+| **Cupertino** (default) | Squircle corners, Apple HIG palette, layered ambient + key shadows |
+| **Tailwind** | Plain arc corners, slate/blue palette, Tailwind-style shadows |
 
-Keduanya mendukung mode terang dan gelap, dan keduanya memakai animasi pegas
-yang sama — kehalusan gerak adalah identitas framework, bukan milik satu tema.
+Both support light and dark mode, and both use the same spring animations —
+smooth motion is the framework's identity, not a property of one theme.
 
-## Arsitektur
+## Architecture
 
-| Crate | Tanggung jawab |
+| Crate | Responsibility |
 | --- | --- |
-| `paint` | Kosakata perintah gambar (kotak, bayangan, glyph, clip), bebas dari tipe GPU |
-| `renderer` | Backend wgpu dengan shader SDF; seluruh scene digambar dalam satu draw call |
-| `text` | Shaping teks, atlas glyph, dan pengukuran untuk layout |
-| `core` | Signals, pohon render berbasis arena, constraint layout, animasi, input, aksesibilitas |
-| `theme` | Token semantik dan preset tema |
-| `widgets` | Kumpulan komponen siap pakai |
-| `platform` | Shell jendela, siklus hidup aplikasi, dan integrasi sistem operasi |
+| `paint` | Drawing command vocabulary (quads, shadows, glyphs, clips), free of GPU types |
+| `renderer` | wgpu backend with SDF shaders; the whole scene renders in a single draw call |
+| `text` | Text shaping, glyph atlas, and measurement for layout |
+| `core` | Signals, arena-backed render tree, constraint layout, animation, input, accessibility |
+| `theme` | Semantic tokens and theme presets |
+| `widgets` | The component library |
+| `platform` | Window shell, application lifecycle, and OS integration |
 
-Kode widget tidak pernah menyentuh tipe GPU secara langsung. Semuanya melewati
-lapisan `paint`, sehingga backend penggambaran dapat diganti tanpa menyentuh
-satu pun komponen.
+Widget code never touches GPU types directly. Everything goes through the
+`paint` layer, so the rendering backend can be swapped without changing a
+single component.
 
-## Aksesibilitas
+## Accessibility
 
-Setiap komponen menerbitkan simpul aksesibilitas sebagai bagian dari kontraknya,
-bukan sebagai tambahan menyusul. Navigasi papan ketik, cincin fokus, dan
-penghormatan terhadap pengaturan *reduce motion* adalah syarat kelulusan sebuah
-komponen, bukan fitur opsional.
+Every component emits an accessibility node as part of its contract, not as a
+later addition. Keyboard navigation, focus rings, and honoring the system
+*reduce motion* setting are requirements for a component to be considered
+done — not optional extras.
 
-## Menjalankan contoh
+## Running the gallery
 
 ```bash
 cargo run -p silka-gallery
 ```
 
-Galeri menampilkan komponen yang tersedia beserta variasinya, lengkap dengan
-pengalih tema dan mode gelap.
+The gallery showcases the available components and their variants, with a theme
+switcher and dark mode toggle.
 
-## Lisensi
+## License
 
 MIT
