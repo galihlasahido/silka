@@ -217,9 +217,7 @@ pub fn sync_virtual<N: Virtualized>(tree: &mut RenderTree) -> Dirty {
         }
 
         // 2. Reveal yang tertunda (panah keyboard, fokus yang baru mendarat).
-        let reveal = tree
-            .node_mut_ref::<N>(id)
-            .and_then(N::take_virtual_reveal);
+        let reveal = tree.node_mut_ref::<N>(id).and_then(N::take_virtual_reveal);
         if let Some(index) = reveal {
             let m = tree
                 .node_ref::<N>(id)

@@ -549,7 +549,11 @@ mod tests {
             .iter()
             .filter(|e| e.node.role == AccessRole::Row)
             .count();
-        assert!(baris > 1, "tidak ada baris di pohon a11y:\n{}", pohon.dump());
+        assert!(
+            baris > 1,
+            "tidak ada baris di pohon a11y:\n{}",
+            pohon.dump()
+        );
         let sel = pohon
             .entries()
             .iter()
@@ -620,10 +624,11 @@ mod tests {
         assert_eq!(body(&ui).selection().len(), 3);
         let pohon = ui.access_tree();
         assert!(
-            pohon
-                .entries()
-                .iter()
-                .any(|e| e.node.label.as_deref().is_some_and(|l| l.contains("3 baris"))),
+            pohon.entries().iter().any(|e| e
+                .node
+                .label
+                .as_deref()
+                .is_some_and(|l| l.contains("3 baris"))),
             "status tidak melaporkan seleksi jamak:\n{}",
             pohon.dump()
         );
@@ -671,7 +676,10 @@ mod tests {
             "jendela tidak ikut melompat: {}",
             body(&ui).first()
         );
-        assert!(sel_di_pohon(&ui) < 4 * 40, "jendela membengkak setelah lompat");
+        assert!(
+            sel_di_pohon(&ui) < 4 * 40,
+            "jendela membengkak setelah lompat"
+        );
     }
 
     #[test]

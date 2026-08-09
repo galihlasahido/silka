@@ -664,7 +664,8 @@ impl TableBody {
             c if c.is(NamedKey::Home) => Some(0),
             c if c.is(NamedKey::End) => Some(terakhir),
             c if (c.is(NamedKey::Enter) || c.is(NamedKey::Space)) && m.is_empty() => {
-                let (Some(i), Some(aksi)) = (self.selection.lead(), self.on_activate.clone()) else {
+                let (Some(i), Some(aksi)) = (self.selection.lead(), self.on_activate.clone())
+                else {
                     return;
                 };
                 aksi.call(i);
@@ -821,7 +822,12 @@ impl RenderNode for TableBody {
                     if Some(i) == lead {
                         continue;
                     }
-                    self.sorot(ctx, self.metrics.row_top(i), warna, self.sel_alpha.position());
+                    self.sorot(
+                        ctx,
+                        self.metrics.row_top(i),
+                        warna,
+                        self.sel_alpha.position(),
+                    );
                 }
             }
             // Baris aktif: inilah yang meluncur antar baris.
@@ -1402,8 +1408,13 @@ impl RenderNode for TableHeaderBox {
                 };
                 if warna.a > 0.0 {
                     ctx.quad(
-                        Quad::new(Rect::new(self.hover_x.position(), 0.0, *w, bounds.size.height))
-                            .background(warna.with_alpha(warna.a * alpha.clamp(0.0, 1.0))),
+                        Quad::new(Rect::new(
+                            self.hover_x.position(),
+                            0.0,
+                            *w,
+                            bounds.size.height,
+                        ))
+                        .background(warna.with_alpha(warna.a * alpha.clamp(0.0, 1.0))),
                     );
                 }
             }
@@ -1414,8 +1425,7 @@ impl RenderNode for TableHeaderBox {
         // Garis antar kolom + pegangan resize yang sedang disorot.
         if self.style.separator_width > 0.0 && self.style.separator.a > 0.0 {
             for k in 0..widths.len().saturating_sub(1) {
-                let x = self.column_x(&widths, k)
-                    + if self.rtl { 0.0 } else { widths[k] }
+                let x = self.column_x(&widths, k) + if self.rtl { 0.0 } else { widths[k] }
                     - if self.rtl {
                         self.style.separator_width
                     } else {

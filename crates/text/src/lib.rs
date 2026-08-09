@@ -114,8 +114,8 @@ pub mod measure;
 pub mod style;
 
 pub use atlas::{AtlasFormat, AtlasRect, GlyphAtlas};
-pub use edit::{Movement, Preedit, Selection, TextEdit};
 pub use cache::{FontId, GlyphCache, GlyphImage, GlyphKey, GlyphLookup, RasterGlyph, SubpixelBin};
+pub use edit::{Movement, Preedit, Selection, TextEdit};
 pub use engine::TextEngine;
 pub use font::{FontOptions, BUNDLED_UI_FONT};
 pub use layout::{Caret, LineMetrics, TextLayout};

@@ -635,7 +635,10 @@ impl TableBuilder {
         let selection = self.state.selection();
         let sort = self.state.sort();
         let columns = self.resolved_columns();
-        let active = self.state.active_column().min(columns.len().saturating_sub(1));
+        let active = self
+            .state
+            .active_column()
+            .min(columns.len().saturating_sub(1));
         // Dibaca **hanya** supaya komponen ini berlangganan: `scroll_to` dari
         // sebuah event handler harus menjadwalkan frame, dan frame itulah yang
         // menjalankan `sync`.
@@ -673,7 +676,11 @@ impl TableBuilder {
         }
         if self.count == 0 {
             if let Some(kosong) = &self.empty {
-                children.push(pad(Insets::ZERO, kosong()).key(Key::text("table:empty")).into());
+                children.push(
+                    pad(Insets::ZERO, kosong())
+                        .key(Key::text("table:empty"))
+                        .into(),
+                );
             }
         }
         if self.header {

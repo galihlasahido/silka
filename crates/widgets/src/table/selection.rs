@@ -406,7 +406,11 @@ mod tests {
         let mut s = Selection::default();
         s.apply_click(0, Modifiers::NONE, SelectionMode::Multiple);
         s.apply_click(10, Modifiers::COMMAND, SelectionMode::Multiple);
-        s.apply_click(14, Modifiers::SHIFT | Modifiers::COMMAND, SelectionMode::Multiple);
+        s.apply_click(
+            14,
+            Modifiers::SHIFT | Modifiers::COMMAND,
+            SelectionMode::Multiple,
+        );
         assert_eq!(s.ranges(), &[(0, 0), (10, 14)]);
     }
 

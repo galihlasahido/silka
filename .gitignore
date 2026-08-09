@@ -13,3 +13,6 @@ target
 .DS_Store
 .idea/
 .vscode/
+
+# Catatan kerja internal (rancangan, status, skrip orkestrasi) — tidak dipublikasikan
+/catatan/

@@ -227,17 +227,13 @@ impl Uji {
         ));
         for i in 1..=langkah {
             let t = i as f32 / langkah as f32;
-            let p = Point::new(
-                dari.x + (ke.x - dari.x) * t,
-                dari.y + (ke.y - dari.y) * t,
-            );
+            let p = Point::new(dari.x + (ke.x - dari.x) * t, dari.y + (ke.y - dari.y) * t);
             self.jam += Duration::from_millis(8);
-            self.ui
-                .dispatch(&Event::Pointer(PointerEvent::new(
-                    PointerPhase::Move,
-                    p,
-                    self.jam,
-                )));
+            self.ui.dispatch(&Event::Pointer(PointerEvent::new(
+                PointerPhase::Move,
+                p,
+                self.jam,
+            )));
             self.frame();
         }
         self.jam += Duration::from_millis(8);
@@ -269,11 +265,7 @@ fn hitung<T: rustui_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> us
 }
 
 /// Bangun sebuah tabel uji; `hias` memasang sifat tambahannya.
-fn uji(
-    theme: Theme,
-    count: usize,
-    hias: impl Fn(TableBuilder) -> TableBuilder + 'static,
-) -> Uji {
+fn uji(theme: Theme, count: usize, hias: impl Fn(TableBuilder) -> TableBuilder + 'static) -> Uji {
     let state = Rc::new(Cell::new(None::<TableState>));
     let jejak = Rc::new(Jejak::default());
     let aktivasi = Rc::new(RefCell::new(Vec::new()));
@@ -344,7 +336,10 @@ fn seratus_ribu_baris_hanya_menjadi_belasan_node() {
         "seratus ribu baris menjadi {} node — virtualisasi bocor",
         u.baris_di_pohon()
     );
-    assert!(u.baris_di_pohon() >= terlihat - 1, "jendela tidak menutup layar");
+    assert!(
+        u.baris_di_pohon() >= terlihat - 1,
+        "jendela tidak menutup layar"
+    );
     assert_eq!(u.body().metrics().count, 100_000);
 
     // Ukuran jendela **tidak** tumbuh bersama data.
@@ -665,7 +660,9 @@ fn mode_tunggal_tidak_pernah_memilih_dua_baris() {
 
 #[test]
 fn tabel_tanpa_seleksi_menyerahkan_tab_ke_wadah_gulirnya() {
-    let mut u = uji(Theme::cupertino(Appearance::Dark), 500, |b| b.no_selection());
+    let mut u = uji(Theme::cupertino(Appearance::Dark), 500, |b| {
+        b.no_selection()
+    });
     u.klik(u.titik_baris(1, 0));
     assert!(u.body().selection().is_empty());
     assert!(!u.body().is_focused());
@@ -854,7 +851,11 @@ fn sel_boleh_berisi_widget_apa_pun() {
         .iter()
         .filter(|e| e.node.role == AccessRole::Cell)
         .count();
-    assert!(sel >= 3, "sel tidak muncul di pohon a11y:\n{}", pohon.dump());
+    assert!(
+        sel >= 3,
+        "sel tidak muncul di pohon a11y:\n{}",
+        pohon.dump()
+    );
     assert!(pohon.find_label("sel 0:0").is_some());
 }
 
@@ -914,16 +915,15 @@ fn benar_di_kedua_preset_dan_kedua_appearance() {
             assert!(u.body().selection().contains(1));
             // Tidak ada satu pun angka warna di modul tabel: semua yang
             // digambar harus bisa ditelusuri ke token theme.
-            let warna: Vec<_> = u
-                .ui
-                .scene()
-                .commands()
-                .iter()
-                .filter_map(|c| match c {
-                    rustui_paint::Command::Quad(q) => Some(q.background),
-                    _ => None,
-                })
-                .collect();
+            let warna: Vec<_> =
+                u.ui.scene()
+                    .commands()
+                    .iter()
+                    .filter_map(|c| match c {
+                        rustui_paint::Command::Quad(q) => Some(q.background),
+                        _ => None,
+                    })
+                    .collect();
             assert!(!warna.is_empty());
         }
     }
@@ -983,7 +983,12 @@ fn tinggi_baris_dinaikkan_ke_hit_target_hig() {
     padat.frame();
     let id = nodes(padat.tree())[0];
     assert_eq!(
-        padat.tree().node_ref::<TableBody>(id).unwrap().metrics().extent,
+        padat
+            .tree()
+            .node_ref::<TableBody>(id)
+            .unwrap()
+            .metrics()
+            .extent,
         20.0
     );
 }
