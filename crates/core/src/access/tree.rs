@@ -1,8 +1,8 @@
-//! Pass emisi: render tree → pohon aksesibilitas.
+//! The emission pass: render tree → accessibility tree.
 //!
-//! Sejajar dengan pass layout dan pass paint — bukan lapisan susulan
-//! (§3.8, §5 failure mode #2). Yang keluar adalah snapshot lengkap: setiap
-//! node membawa peran, nama, nilai, aksi, **dan kotak hasil layout**.
+//! On a par with the layout pass and the paint pass — not an afterthought
+//! (§3.8, §5 failure mode #2). What comes out is a complete snapshot: every
+//! node carries its role, name, value, actions, **and its box from layout**.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -13,35 +13,37 @@ use crate::tree::{NodeId, RenderTree, TreeId};
 
 use super::node::{AccessActions, AccessNode, AccessRole};
 
-/// Satu node di pohon aksesibilitas: isi dari widget + geometri dari layout.
+/// One node in the accessibility tree: content from the widget, geometry from
+/// layout.
 ///
-/// Pemisahan field inilah kontraknya: widget mengisi [`AccessEntry::node`],
-/// mesin mengisi sisanya. Widget secara struktural **tidak bisa** berbohong
-/// tentang `bounds` — ia tidak pernah memegang tipe ini.
+/// The split between the fields is the contract: the widget fills in
+/// [`AccessEntry::node`], the engine fills in the rest. A widget structurally
+/// **cannot** lie about `bounds` — it never holds this type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessEntry {
-    /// Node render asalnya — id yang sama dipakai layout, hit-testing, dan
-    /// (nanti) Taffy. Satu ruang identitas untuk semuanya.
+    /// The render node it came from — the same id used by layout, hit-testing
+    /// and (later) Taffy. One identity space for everything.
     pub id: NodeId,
-    /// Induk di pohon a11y (`None` hanya untuk akar).
+    /// The parent in the a11y tree (`None` only for the root).
     pub parent: Option<NodeId>,
-    /// Bagian yang diisi widget.
+    /// The part filled in by the widget.
     pub node: AccessNode,
-    /// Kotak absolut dalam **poin logis**, relatif sudut kiri-atas window.
+    /// The absolute box in **logical points**, relative to the window's
+    /// top-left corner.
     ///
-    /// Datang dari [`RenderTree::bounds`], jadi selalu setara dengan yang
-    /// benar-benar digambar frame ini.
+    /// It comes from [`RenderTree::bounds`], so it always matches what is
+    /// actually drawn this frame.
     pub bounds: Rect,
-    /// Anak-anak yang ikut terlihat teknologi bantu, urut.
+    /// The children that assistive technology can see, in order.
     pub children: Vec<NodeId>,
 }
 
-/// Snapshot lengkap pohon aksesibilitas satu window.
+/// A complete snapshot of one window's accessibility tree.
 ///
-/// Dihasilkan [`RenderTree::access_tree`]. Urutan `entries` adalah **DFS
-/// pre-order** — induk selalu mendahului anaknya, saudara urut sesuai urutan
-/// gambar. Itu yang membuat [`AccessTree::dump`] deterministik dan bisa
-/// dipakai sebagai golden test.
+/// Produced by [`RenderTree::access_tree`]. The order of `entries` is **DFS
+/// pre-order** — a parent always precedes its children, siblings follow paint
+/// order. That is what makes [`AccessTree::dump`] deterministic and usable as
+/// a golden test.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessTree {
     tree: TreeId,
@@ -52,18 +54,18 @@ pub struct AccessTree {
 }
 
 impl AccessTree {
-    /// Jalankan pass emisi atas sebuah render tree.
+    /// Run the emission pass over a render tree.
     ///
-    /// `focus` datang dari pemegang fokus yang sah
-    /// ([`crate::input::FocusManager`]), bukan dari pohon: fokus yang disimpan
-    /// di dua tempat cepat atau lambat berbeda di antara keduanya.
+    /// `focus` comes from the legitimate focus holder
+    /// ([`crate::input::FocusManager`]), not from the tree: focus stored in
+    /// two places will sooner or later differ between them.
     pub(crate) fn emit(tree: &RenderTree, focus: Option<NodeId>) -> Self {
         let root = tree.root();
         let mut entries: Vec<AccessEntry> = Vec::with_capacity(tree.len());
         let mut index: HashMap<NodeId, usize> = HashMap::with_capacity(tree.len());
 
-        // DFS iteratif: anak didorong terbalik supaya urutan pop-nya kembali
-        // sesuai urutan gambar.
+        // Iterative DFS: children are pushed in reverse so that the pop order
+        // comes back out in paint order.
         let mut stack: Vec<(NodeId, Option<NodeId>)> = vec![(root, None)];
         while let Some((id, parent)) = stack.pop() {
             let Some(render) = tree.render(id) else {
@@ -71,17 +73,18 @@ impl AccessTree {
             };
             let mut node = AccessNode::new();
             render.access(&mut node);
-            // "Bisa difokuskan" punya satu sumber kebenaran: kebijakan fokus
-            // yang juga dipakai Tab ([`crate::input`]). Kalau widget harus
-            // menyebutnya dua kali, cepat atau lambat ada widget yang bisa
-            // di-Tab tapi tidak diumumkan ke screen reader — atau sebaliknya.
+            // "Focusable" has exactly one source of truth: the focus policy
+            // that Tab also uses ([`crate::input`]). If a widget had to state
+            // it twice, sooner or later there would be a widget that can be
+            // tabbed to but is not announced to the screen reader — or the
+            // other way round.
             if render.focus_policy().focusable {
                 node.actions |= AccessActions::FOCUS;
             }
 
-            // `hidden` membuang node **beserta keturunannya** — sama seperti
-            // AccessKit. Akar dikecualikan: window yang hilang dari pohon
-            // membuat aplikasi tidak terlihat sama sekali oleh screen reader.
+            // `hidden` drops the node **and its descendants** — just like
+            // AccessKit. The root is exempt: a window missing from the tree
+            // makes the application entirely invisible to a screen reader.
             if node.hidden && parent.is_some() {
                 continue;
             }
@@ -99,9 +102,9 @@ impl AccessTree {
             }
         }
 
-        // Daftar anak dirakit belakangan karena node yang hidden baru ketahuan
-        // setelah `access()` dipanggil — dan `access()` hanya boleh dipanggil
-        // sekali per node per frame.
+        // The child lists are assembled afterwards because hidden nodes are
+        // only known once `access()` has been called — and `access()` may only
+        // be called once per node per frame.
         for slot in 0..entries.len() {
             let (id, parent) = (entries[slot].id, entries[slot].parent);
             if let Some(p) = parent {
@@ -111,8 +114,8 @@ impl AccessTree {
             }
         }
 
-        // Fokus wajib menunjuk node yang benar-benar ada di pohon a11y;
-        // kalau tidak, akarlah yang memegang fokus (aturan AccessKit).
+        // Focus must point at a node that really is in the a11y tree;
+        // otherwise it is the root that holds focus (the AccessKit rule).
         let focus = focus.filter(|id| index.contains_key(id)).unwrap_or(root);
 
         Self {
@@ -124,68 +127,69 @@ impl AccessTree {
         }
     }
 
-    /// Identitas render tree asal (satu per window).
+    /// The identity of the render tree it came from (one per window).
     pub fn tree_id(&self) -> TreeId {
         self.tree
     }
 
-    /// Node akar (selalu ada).
+    /// The root node (always present).
     pub fn root(&self) -> NodeId {
         self.root
     }
 
-    /// Node yang memegang fokus keyboard; akar bila tidak ada yang spesifik.
+    /// The node holding keyboard focus; the root when nothing more specific
+    /// does.
     pub fn focus(&self) -> NodeId {
         self.focus
     }
 
-    /// Jumlah node yang terlihat teknologi bantu.
+    /// The number of nodes assistive technology can see.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Benar bila hanya akar yang tersisa.
+    /// True when only the root is left.
     pub fn is_empty(&self) -> bool {
         self.entries.len() <= 1
     }
 
-    /// Seluruh node, urut DFS pre-order.
+    /// Every node, in DFS pre-order.
     pub fn entries(&self) -> &[AccessEntry] {
         &self.entries
     }
 
-    /// Node tertentu.
+    /// A particular node.
     pub fn get(&self, id: NodeId) -> Option<&AccessEntry> {
         self.index.get(&id).map(|slot| &self.entries[*slot])
     }
 
-    /// Benar bila node terlihat teknologi bantu.
+    /// True when the node is visible to assistive technology.
     pub fn contains(&self, id: NodeId) -> bool {
         self.index.contains_key(&id)
     }
 
-    /// Anak-anak sebuah node di pohon a11y.
+    /// A node's children in the a11y tree.
     pub fn children(&self, id: NodeId) -> &[NodeId] {
         self.get(id).map(|e| e.children.as_slice()).unwrap_or(&[])
     }
 
-    /// Node pertama (urutan pre-order) dengan peran tertentu.
+    /// The first node (in pre-order) with a given role.
     pub fn find_role(&self, role: AccessRole) -> Option<&AccessEntry> {
         self.entries.iter().find(|e| e.node.role == role)
     }
 
-    /// Node pertama (urutan pre-order) dengan nama tertentu.
+    /// The first node (in pre-order) with a given name.
     pub fn find_label(&self, label: &str) -> Option<&AccessEntry> {
         self.entries
             .iter()
             .find(|e| e.node.label.as_deref() == Some(label))
     }
 
-    /// Urutan fokus keyboard: node fokusabel, urut sesuai urutan baca.
+    /// The keyboard focus order: focusable nodes, in reading order.
     ///
-    /// Navigasi Tab adalah "definition of done" tiap komponen
-    /// (`KOMPONEN.md`), dan urutan bacanya tidak boleh ditebak dari koordinat —
-    /// ia jatuh langsung dari urutan pohon.
+    /// Tab navigation is part of every component's "definition of done"
+    /// (`KOMPONEN.md`), and the reading order must not be guessed from
+    /// coordinates — it falls straight out of tree order.
     pub fn focus_order(&self) -> impl Iterator<Item = NodeId> + '_ {
         self.entries
             .iter()
@@ -193,10 +197,11 @@ impl AccessTree {
             .map(|e| e.id)
     }
 
-    /// Dump teks deterministik seluruh pohon — alat verifikasi utama a11y.
+    /// A deterministic text dump of the whole tree — the primary verification
+    /// tool for a11y.
     ///
-    /// Formatnya sengaja dibuat enak dibaca manusia **dan** stabil sebagai
-    /// golden test: satu baris per node, indentasi = kedalaman.
+    /// The format is deliberately pleasant for humans to read **and** stable
+    /// as a golden test: one line per node, indentation = depth.
     ///
     /// ```text
     /// window [0,0 400x400] *focus
@@ -255,12 +260,12 @@ impl AccessTree {
         }
     }
 
-    /// Perubahan dibanding snapshot sebelumnya.
+    /// The changes relative to a previous snapshot.
     ///
-    /// Teknologi bantu tidak boleh dibanjiri seluruh pohon tiap frame: yang
-    /// dikirim hanya node baru/berubah. `previous` `None` (atau dari window
-    /// lain) berarti pohon penuh — itulah yang diminta adapter saat screen
-    /// reader baru dinyalakan.
+    /// Assistive technology must not be flooded with the whole tree every
+    /// frame: only new or changed nodes are sent. A `previous` of `None` (or
+    /// one from another window) means the full tree — which is exactly what
+    /// the adapter asks for when a screen reader has just been switched on.
     pub fn changes_since(&self, previous: Option<&AccessTree>) -> AccessUpdate {
         let previous = previous.filter(|p| p.tree == self.tree && p.root == self.root);
         let Some(previous) = previous else {
@@ -298,35 +303,36 @@ impl AccessTree {
     }
 }
 
-/// Perubahan pohon a11y antara dua frame.
+/// The changes to the a11y tree between two frames.
 ///
-/// Node yang dibuang tidak perlu dikirim satu per satu ke platform: cukup
-/// induknya ikut di `changed` dengan daftar anak yang baru. `removed` tetap
-/// ada karena berguna untuk log, test, dan backend lain.
+/// Discarded nodes do not have to be sent to the platform one by one: it is
+/// enough that their parent appears in `changed` with a new child list.
+/// `removed` is still provided because it is useful for logs, tests and other
+/// backends.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessUpdate {
-    /// Akar pohon.
+    /// The root of the tree.
     pub root: NodeId,
-    /// Node yang memegang fokus — **wajib dikirim ulang tiap update**.
+    /// The node holding focus — **must be resent with every update**.
     pub focus: NodeId,
-    /// Benar bila fokus berpindah sejak snapshot sebelumnya.
+    /// True when focus moved since the previous snapshot.
     ///
-    /// Perpindahan fokus adalah perubahan yang sah **tanpa** satu pun node
-    /// berubah isinya — kalau ini tidak dibedakan, Tab yang berpindah antar
-    /// tombol tidak akan pernah diumumkan.
+    /// A focus move is a legitimate change **without** any node changing its
+    /// content — if this were not distinguished, tabbing between buttons would
+    /// never be announced.
     pub focus_changed: bool,
-    /// Node baru atau berubah.
+    /// New or changed nodes.
     pub changed: Vec<AccessEntry>,
-    /// Node yang hilang dari pohon.
+    /// Nodes that disappeared from the tree.
     pub removed: Vec<NodeId>,
-    /// Benar bila ini pohon penuh, bukan delta.
+    /// True when this is a full tree rather than a delta.
     pub full: bool,
 }
 
 impl AccessUpdate {
-    /// Benar bila tidak ada yang perlu dikirim sama sekali.
+    /// True when there is nothing at all to send.
     ///
-    /// Frame yang hanya menggerakkan animasi warna tidak boleh membangunkan
+    /// A frame that only moves a colour animation along must not wake the
     /// screen reader.
     pub fn is_empty(&self) -> bool {
         self.changed.is_empty() && self.removed.is_empty() && !self.focus_changed

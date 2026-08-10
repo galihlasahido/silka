@@ -1,9 +1,9 @@
-//! Test lintas-modul untuk lapisan input: hit-testing, routing, fokus, IME.
+//! Cross-module tests for the input layer: hit-testing, routing, focus, IME.
 //!
-//! Yang diuji di sini adalah **perilaku yang dijanjikan dokumen**, bukan
-//! detail implementasi: squircle memotong sudut, viewport memotong isinya,
-//! capture bertahan sampai tombol dilepas, Tab berputar di dalam scope, dan
-//! IME hanya hidup selama ada yang fokus.
+//! What is tested here is the **behaviour the documents promise**, not
+//! implementation details: squircles clip their corners, viewports clip their
+//! contents, capture survives until the button is released, Tab cycles inside
+//! a scope, and the IME only lives while something has focus.
 
 use std::time::Duration;
 
@@ -22,7 +22,7 @@ use crate::tree::{
 use crate::view::{column, fixed, interactive, pad, reconcile, viewport, View};
 
 // ---------------------------------------------------------------------------
-// Bantuan
+// Helpers
 // ---------------------------------------------------------------------------
 
 fn ms(v: u64) -> Duration {
@@ -64,7 +64,7 @@ fn aktivasi(tree: &RenderTree, node: NodeId) -> u32 {
         .unwrap_or(0)
 }
 
-/// Node uji yang mencatat setiap event yang sampai kepadanya.
+/// A test node that records every event that reaches it.
 #[derive(Debug, Default)]
 struct Perekam {
     terima: Vec<String>,
@@ -114,7 +114,7 @@ fn hit_test_memilih_node_terdalam_lebih_dulu() {
 
     let hasil = hit_test(&tree, Point::new(20.0, 20.0));
     assert_eq!(hasil.target(), Some(tombol));
-    // Leluhur ikut di jalur, urut ke atas — inilah rute penggelembungan.
+    // Ancestors join the path, ordered upwards — this is the bubbling route.
     assert!(hasil.contains(padding));
     assert_eq!(hasil.local_of(tombol), Some(Point::new(10.0, 10.0)));
     assert_eq!(hasil.path().last().map(|e| e.node), Some(tree.root()));
@@ -128,8 +128,8 @@ fn di_luar_semua_node_tidak_kena_apa_pun() {
 
 #[test]
 fn wadah_struktural_tidak_mencuri_klik() {
-    // `pad` dan `column` bawaannya DeferToChild: klik di celah antar anak
-    // tidak boleh dianggap mengenai apa pun.
+    // `pad` and `column` default to DeferToChild: a click in the gap between
+    // children must not count as hitting anything.
     let tree = pohon(
         column([
             interactive(fixed(40.0, 20.0)),
@@ -154,12 +154,13 @@ fn sudut_squircle_memotong_area_sentuh() {
         Size::new(200.0, 200.0),
     );
 
-    // Tepat di titik pojok: kosong di kedua preset.
+    // Right on the corner point: empty in both presets.
     assert!(hit_test(&arc, Point::new(0.5, 0.5)).is_empty());
     assert!(hit_test(&squircle, Point::new(0.5, 0.5)).is_empty());
 
-    // Titik yang jatuh di luar busur lingkaran tapi di dalam superellipse:
-    // inilah beda yang terlihat mata dan yang wajib diikuti hit-testing.
+    // A point that falls outside the circular arc but inside the superellipse:
+    // this is the difference the eye can see, and the one hit-testing must
+    // follow.
     let p = Point::new(4.0, 4.0);
     assert!(hit_test(&arc, p).is_empty(), "arc harus menolak {p:?}");
     assert!(
@@ -167,7 +168,7 @@ fn sudut_squircle_memotong_area_sentuh() {
         "squircle harus menerima {p:?}"
     );
 
-    // Tengah: keduanya kena.
+    // The centre: both are hit.
     assert!(!hit_test(&arc, Point::new(50.0, 50.0)).is_empty());
 }
 
@@ -184,7 +185,7 @@ fn viewport_memotong_isi_yang_tergulir_keluar() {
     tree.layout(BoxConstraints::tight(Size::new(100.0, 60.0)));
 
     let kedua = anak(&tree, &[0, 0, 1]);
-    // Anak kedua ada di y = 50..100, viewport hanya setinggi 60.
+    // The second child sits at y = 50..100, the viewport is only 60 tall.
     assert!(hit_test(&tree, Point::new(50.0, 55.0)).contains(kedua));
     assert!(
         hit_test(&tree, Point::new(50.0, 80.0)).is_empty(),
@@ -220,7 +221,7 @@ fn hit_shape_default_adalah_kotak_penuh() {
 }
 
 // ---------------------------------------------------------------------------
-// Routing penunjuk
+// Pointer routing
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -245,14 +246,14 @@ fn tarik_keluar_lalu_lepas_membatalkan_aktivasi() {
     let mut router = InputRouter::new();
 
     router.dispatch(&mut tree, &tekan(Point::new(50.0, 22.0), ms(0)));
-    // Penunjuk ditangkap: gerakan di luar tetap sampai ke tombol…
+    // The pointer is captured: movement outside still reaches the button…
     router.dispatch(&mut tree, &gerak(Point::new(180.0, 150.0), ms(30)));
     assert_eq!(
         router.capture_of(PointerId::MOUSE),
         Some(tombol),
         "capture harus bertahan selama tombol ditahan"
     );
-    // …tapi melepas di luar bentuknya bukan klik.
+    // …but releasing outside its shape is not a click.
     router.dispatch(&mut tree, &lepas(Point::new(180.0, 150.0), ms(60)));
     assert_eq!(aktivasi(&tree, tombol), 0);
     assert_eq!(router.capture_of(PointerId::MOUSE), None);
@@ -288,7 +289,7 @@ fn hover_masuk_dan_keluar_sekali_saja() {
     assert!(tree.node_ref::<Interactive>(tombol).unwrap().hovered);
     assert!(router.hover_of(PointerId::MOUSE).contains(&tombol));
 
-    // Bergerak di dalam node yang sama tidak menghasilkan enter/leave lagi.
+    // Moving within the same node does not produce another enter/leave.
     let hasil = router.dispatch(&mut tree, &gerak(Point::new(20.0, 20.0), ms(16)));
     assert!(
         hasil.dirty.is_empty(),
@@ -316,12 +317,11 @@ fn kursor_diambil_dari_node_yang_di_hover() {
     assert_eq!(keluar.cursor, Some(CursorIcon::Default));
 }
 
-/// Node yang bentuk kursornya bergantung pada **posisi penunjuk di dalam
-/// dirinya sendiri** — persis pegangan resize kolom `table`, dan nanti
-/// `split_view`.
+/// A node whose cursor shape depends on **where the pointer is inside it** —
+/// exactly like the column resize handle in `table`, and later `split_view`.
 #[derive(Debug, Default)]
 struct Pegangan {
-    /// Penunjuk sedang berada di pita kanan selebar 8pt.
+    /// The pointer is inside the 8 pt band on the right.
     di_pegangan: bool,
     width: f32,
 }
@@ -371,14 +371,14 @@ fn kursor_ikut_berubah_saat_bergerak_di_dalam_satu_node() {
     let masuk = router.dispatch(&mut tree, &gerak(Point::new(10.0, 10.0), ms(0)));
     assert_eq!(masuk.cursor.unwrap_or_default(), CursorIcon::Default);
 
-    // Rantai hover-nya **sama** — yang berubah hanya titiknya. Tanpa
-    // menanyakan ulang kursor setelah event sampai ke node, pegangan resize
-    // tidak akan pernah mengumumkan dirinya.
+    // The hover chain is **the same** — only the point changed. Without
+    // re-asking for the cursor after the event reaches the node, a resize
+    // handle would never announce itself.
     let geser = router.dispatch(&mut tree, &gerak(Point::new(196.0, 10.0), ms(16)));
     assert_eq!(geser.cursor, Some(CursorIcon::ResizeHorizontal));
     assert_eq!(router.cursor(), CursorIcon::ResizeHorizontal);
 
-    // Dan kembali lagi begitu penunjuk menjauh dari pitanya.
+    // And back again as soon as the pointer moves away from the band.
     let balik = router.dispatch(&mut tree, &gerak(Point::new(100.0, 10.0), ms(32)));
     assert_eq!(balik.cursor, Some(CursorIcon::Default));
 }
@@ -469,14 +469,14 @@ fn klik_beruntun_dilaporkan_ke_node() {
     router.dispatch(&mut tree, &tekan(Point::new(50.0, 50.0), ms(200)));
     assert_eq!(tree.node_ref::<Penghitung>(node).unwrap().terakhir, 3);
 
-    // Jauh dari klik sebelumnya (jarak) → mulai lagi dari satu.
+    // Far from the previous click (distance) → start again from one.
     router.dispatch(&mut tree, &lepas(Point::new(50.0, 50.0), ms(210)));
     router.dispatch(&mut tree, &tekan(Point::new(90.0, 90.0), ms(240)));
     assert_eq!(tree.node_ref::<Penghitung>(node).unwrap().terakhir, 1);
 }
 
 // ---------------------------------------------------------------------------
-// Guliran
+// Scrolling
 // ---------------------------------------------------------------------------
 
 fn guliran(pos: Point, dy: f32, phase: ScrollPhase) -> Event {
@@ -506,7 +506,7 @@ fn roda_menggulir_viewport_dan_dibatasi_isinya() {
     assert!(hasil.dirty.contains(crate::scheduler::Dirty::LAYOUT));
     assert_eq!(tree.node_ref::<Viewport>(vp).unwrap().scroll, 40.0);
 
-    // Mentok di bawah: 300 − 100 = 200.
+    // Hitting the bottom: 300 − 100 = 200.
     for _ in 0..20 {
         router.dispatch(
             &mut tree,
@@ -515,7 +515,7 @@ fn roda_menggulir_viewport_dan_dibatasi_isinya() {
     }
     assert_eq!(tree.node_ref::<Viewport>(vp).unwrap().scroll, 200.0);
 
-    // Sudah mentok → tidak ditangani, supaya wadah di atasnya bisa mengambil.
+    // Already at the end → not handled, so an outer container can take over.
     let mentok = router.dispatch(
         &mut tree,
         &guliran(Point::new(50.0, 50.0), -100.0, ScrollPhase::Wheel),
@@ -539,7 +539,7 @@ fn momentum_os_tetap_menggulir() {
 }
 
 // ---------------------------------------------------------------------------
-// Fokus & tab-order
+// Focus & tab order
 // ---------------------------------------------------------------------------
 
 fn tiga_tombol() -> RenderTree {
@@ -643,7 +643,7 @@ fn fokus_terperangkap_di_dalam_scope() {
     router.focus_node(&mut tree, Some(d1));
     router.dispatch(&mut tree, &tab(false));
     assert_eq!(router.focus().focused(), Some(d2));
-    // Melingkar di dalam dialog, tidak pernah keluar ke tombol "luar".
+    // It cycles inside the dialog, never escaping to the "luar" button.
     router.dispatch(&mut tree, &tab(false));
     assert_eq!(router.focus().focused(), Some(d1));
     assert_eq!(crate::input::enclosing_scope(&tree, d1), scope);
@@ -717,7 +717,7 @@ fn fokus_dibersihkan_saat_node_hilang() {
     router.focus_node(&mut tree, Some(b));
     assert_eq!(router.focus().focused(), Some(b));
 
-    // Rebuild tanpa "b".
+    // Rebuild without "b".
     reconcile(&mut tree, column([interactive(fixed(80.0, 30.0)).key("a")]));
     let hasil = router.sync(&mut tree);
     assert_eq!(router.focus().focused(), None);
@@ -744,7 +744,7 @@ fn a11y_node_interaktif_mengumumkan_klik_dan_fokus() {
 // IME
 // ---------------------------------------------------------------------------
 
-/// Kolom teks minimal: cukup untuk membuktikan jalur IME sampai ke widget.
+/// A minimal text field: enough to prove the IME path reaches the widget.
 #[derive(Debug, Default)]
 struct KolomTeks {
     isi: String,
@@ -777,7 +777,8 @@ impl RenderNode for KolomTeks {
 
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         match event {
-            // Fokus datang → IME dinyalakan dengan area caret; pergi → dimatikan.
+            // Focus arrives → the IME is switched on with a caret area; focus
+            // leaves → it is switched off.
             Event::Focus(crate::input::FocusEvent::Gained) => {
                 self.caret = silka_paint::Rect::new(
                     ctx.bounds().origin.x,
@@ -804,7 +805,8 @@ impl RenderNode for KolomTeks {
                 ctx.request_paint();
                 ctx.handled();
             }
-            // Selama komposisi berjalan, jalur key normal ditahan (§3.8).
+            // While a composition is running, the normal key path is held back
+            // (§3.8).
             Event::Key(k) if k.is_pressed() && !self.preedit.is_empty() => ctx.handled(),
             Event::Key(k) if k.is_pressed() => {
                 if let Some(t) = &k.text {
@@ -863,7 +865,7 @@ fn preedit_dan_commit_sampai_ke_kolom_terfokus() {
     );
     assert_eq!(tree.node_ref::<KolomTeks>(field).unwrap().preedit, "にほ");
 
-    // Selama komposisi, tombol biasa tidak boleh menyisipkan teks sendiri.
+    // During composition an ordinary key must not insert text of its own.
     let mut k = KeyEvent::pressed(KeyCode::Character('a'), ms(0));
     k.text = Some("a".into());
     router.dispatch(&mut tree, &Event::Key(k));
@@ -909,14 +911,14 @@ fn area_ime_hanya_dikirim_ulang_saat_berubah() {
         router.focus_node(&mut tree, Some(field)).ime,
         Some(ImeRequest::Enable { .. })
     ));
-    // Fokus ke node yang sama: tidak ada perubahan apa pun.
+    // Focusing the same node again: nothing changes at all.
     let lagi = router.focus_node(&mut tree, Some(field));
     assert_eq!(lagi.ime, None);
     assert!(!lagi.focus.changed());
 }
 
 // ---------------------------------------------------------------------------
-// Velocity di router
+// Velocity in the router
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -970,7 +972,7 @@ fn fling_diserahkan_ke_spring_membawa_velocity() {
     let mut tree = pohon(interactive(fixed(200.0, 400.0)), Size::new(200.0, 400.0));
     let mut router = InputRouter::new();
 
-    // Satu lemparan ke atas, seperti melempar daftar.
+    // One upward fling, like throwing a list.
     router.dispatch(&mut tree, &tekan(Point::new(100.0, 300.0), ms(0)));
     for i in 1..=5 {
         router.dispatch(
@@ -983,7 +985,8 @@ fn fling_diserahkan_ke_spring_membawa_velocity() {
     let v = router.velocity(PointerId::MOUSE).clamp_magnitude(4000.0);
     assert!(v.y < -1000.0, "lemparan ke atas: {v:?}");
 
-    // Inilah handoff §3.5: spring melanjutkan gerakan jari tanpa patahan.
+    // This is the §3.5 handoff: the spring continues the finger's motion with
+    // no seam.
     let mut offset = SpringValue::new(Point::new(0.0, 0.0));
     offset.set_target(Point::new(0.0, -320.0));
     offset.hand_off(v);
@@ -992,7 +995,7 @@ fn fling_diserahkan_ke_spring_membawa_velocity() {
 }
 
 // ---------------------------------------------------------------------------
-// on_press + tampilan per state (milestone `demo-end-to-end`)
+// on_press + per-state appearance (the `demo-end-to-end` milestone)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -1016,7 +1019,8 @@ fn on_press_dipanggil_sekali_per_aktivasi_klik_maupun_keyboard() {
     router.dispatch(&mut tree, &lepas(Point::new(50.0, 20.0), ms(40)));
     assert_eq!(n.get(), 1);
 
-    // Space mengaktifkan node yang sedang fokus — keyboard bukan warga kelas dua.
+    // Space activates the focused node — the keyboard is not a second-class
+    // citizen.
     router.dispatch(
         &mut tree,
         &Event::Key(KeyEvent::pressed(KeyCode::Named(NamedKey::Space), ms(80))),
@@ -1089,7 +1093,7 @@ fn latar_mengikuti_state_dan_bentuk_sudutnya_selalu_bentuk_sentuh() {
             .dekorasi_aktif()
     };
     assert_eq!(dekorasi(&tree).background, diam);
-    // Bentuk yang digambar = bentuk yang diuji hit-test (§3.6).
+    // The shape that is drawn = the shape that is hit-tested (§3.6).
     assert_eq!(dekorasi(&tree).corners, sudut);
 
     router.dispatch(&mut tree, &gerak(Point::new(50.0, 20.0), ms(0)));

@@ -1,19 +1,21 @@
-//! Jembatan ke kosakata `accesskit` — **satu-satunya** berkas di seluruh
-//! framework yang menyebut tipe AccessKit.
+//! The bridge to the `accesskit` vocabulary — the **only** file in the entire
+//! framework that names an AccessKit type.
 //!
-//! Disiplinnya sama dengan wgpu di `crates/renderer` (§3.2): kode widget
-//! berbicara dalam kosakata kita sendiri ([`super::node`]), dan kalau suatu
-//! saat backend aksesibilitas diganti, yang ditulis ulang hanya berkas ini.
+//! The discipline is the same as for wgpu in `crates/renderer` (§3.2): widget
+//! code speaks our own vocabulary ([`super::node`]), and if the accessibility
+//! backend is ever replaced, this file is the only thing that gets rewritten.
 //!
-//! Dua hal yang mudah salah dan diselesaikan di sini sekali untuk selamanya:
+//! Two things that are easy to get wrong are settled here once and for all:
 //!
-//! 1. **Satuan.** Pohon kita hidup dalam poin logis (§geometri `silka-paint`);
-//!    AccessKit menuntut piksel fisik relatif sudut window. Konversinya terjadi
-//!    di [`AccessTree::to_tree_update`], bukan di widget.
-//! 2. **Identitas.** [`NodeId`] kita bergenerasi (indeks + generasi) supaya
-//!    slot arena yang dipakai ulang tidak pernah tertukar; AccessKit hanya
-//!    punya `u64`. Keduanya dijembatani injektif oleh [`accesskit_id`], dan
-//!    arah baliknya divalidasi lewat peta pohon — bukan ditebak.
+//! 1. **Units.** Our tree lives in logical points (see `silka-paint`'s
+//!    geometry); AccessKit demands physical pixels relative to the window
+//!    corner. The conversion happens in [`AccessTree::to_tree_update`], not in
+//!    widgets.
+//! 2. **Identity.** Our [`NodeId`] is generational (index + generation) so
+//!    that a reused arena slot can never be mistaken for its old occupant;
+//!    AccessKit only has a `u64`. The two are bridged injectively by
+//!    [`accesskit_id`], and the reverse direction is validated against the
+//!    tree map — never guessed.
 
 use accesskit::{
     Action, Node, NodeId as AkNodeId, Rect as AkRect, Role, Toggled, Tree, TreeUpdate,
@@ -26,11 +28,11 @@ use super::node::{
 };
 use super::tree::{AccessEntry, AccessTree, AccessUpdate};
 
-/// Id AccessKit untuk sebuah node render.
+/// The AccessKit id for a render node.
 ///
-/// Indeks slot dan generasi digabung supaya slot yang dipakai ulang **tidak**
-/// mewarisi identitas penghuni lamanya — kalau tidak, screen reader akan
-/// mengira tombol yang baru adalah tombol lama yang berubah nama.
+/// The slot index and the generation are combined so that a reused slot does
+/// **not** inherit its previous occupant's identity — otherwise a screen
+/// reader would take the new button for the old one under a new name.
 pub fn accesskit_id(id: NodeId) -> AkNodeId {
     AkNodeId(((id.index() as u64) << 32) | id.generation() as u64)
 }
@@ -38,8 +40,8 @@ pub fn accesskit_id(id: NodeId) -> AkNodeId {
 impl From<AccessRole> for Role {
     fn from(role: AccessRole) -> Self {
         match role {
-            // `GenericContainer` = "saring aku dari pohon", persis maksud
-            // peran struktural kita.
+            // `GenericContainer` = "filter me out of the tree", exactly what
+            // our structural role means.
             AccessRole::Container => Role::GenericContainer,
             AccessRole::Window => Role::Window,
             AccessRole::Group => Role::Group,
@@ -84,11 +86,11 @@ impl From<AccessToggled> for Toggled {
 }
 
 impl AccessAction {
-    /// Terjemahkan aksi AccessKit ke kosakata kita.
+    /// Translate an AccessKit action into our vocabulary.
     ///
-    /// Aksi yang belum kita dukung (seleksi teks, scroll ke titik) kembali
-    /// `None` supaya berakhir sebagai penolakan yang jujur, bukan aksi lain
-    /// yang mirip-mirip.
+    /// Actions we do not support yet (text selection, scroll-to-point) come
+    /// back as `None` so they end up as an honest rejection rather than some
+    /// other, vaguely similar action.
     pub fn from_accesskit(action: Action) -> Option<Self> {
         Some(match action {
             Action::Click => AccessAction::Click,
@@ -110,7 +112,7 @@ impl AccessAction {
     }
 }
 
-/// Aksi AccessKit yang diumumkan untuk satu himpunan kemampuan.
+/// The AccessKit actions advertised for a given set of capabilities.
 fn accesskit_actions(actions: AccessActions) -> impl Iterator<Item = Action> {
     const MAP: [(AccessActions, &[Action]); 9] = [
         (AccessActions::CLICK, &[Action::Click]),
@@ -137,7 +139,7 @@ fn accesskit_actions(actions: AccessActions) -> impl Iterator<Item = Action> {
         .flat_map(|(_, list)| list.iter().copied())
 }
 
-/// Rakit satu node AccessKit dari hasil pass emisi.
+/// Assemble one AccessKit node from the emission pass result.
 fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
     let AccessNode {
         role,
@@ -157,7 +159,7 @@ fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
     if let Some(value) = value {
         node.set_value(value.clone());
     }
-    // Poin logis → piksel fisik, sesuai yang diminta AccessKit.
+    // Logical points → physical pixels, as AccessKit requires.
     let b = entry.bounds;
     node.set_bounds(AkRect::new(
         b.origin.x as f64 * scale,
@@ -191,10 +193,11 @@ fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
 }
 
 impl AccessTree {
-    /// Seluruh pohon sebagai `TreeUpdate` AccessKit.
+    /// The whole tree as an AccessKit `TreeUpdate`.
     ///
-    /// `scale_factor` adalah scale factor window (2.0 di layar Retina):
-    /// AccessKit menuntut koordinat piksel fisik relatif sudut window.
+    /// `scale_factor` is the window's scale factor (2.0 on a Retina display):
+    /// AccessKit demands physical pixel coordinates relative to the window
+    /// corner.
     pub fn to_tree_update(&self, scale_factor: f64) -> TreeUpdate {
         let mut tree = Tree::new(accesskit_id(self.root()));
         tree.toolkit_name = Some("silka".into());
@@ -211,11 +214,11 @@ impl AccessTree {
         }
     }
 
-    /// Node render yang dimaksud sebuah id AccessKit.
+    /// The render node an AccessKit id refers to.
     ///
-    /// Divalidasi terhadap pohon yang **benar-benar sudah dikirim**: id yang
-    /// tidak dikenal (node sudah mati satu frame lalu) kembali `None`, bukan
-    /// [`NodeId`] tebakan yang menunjuk penghuni slot berikutnya.
+    /// Validated against the tree that was **actually sent**: an unknown id (a
+    /// node that died one frame ago) comes back as `None`, not as a guessed
+    /// [`NodeId`] pointing at the slot's next occupant.
     pub fn node_for(&self, id: AkNodeId) -> Option<NodeId> {
         self.entries()
             .iter()
@@ -223,8 +226,8 @@ impl AccessTree {
             .find(|n| accesskit_id(*n) == id)
     }
 
-    /// Terjemahkan permintaan aksi AccessKit, dengan dua validasi:
-    /// node sasaran masih ada, dan aksinya memang diumumkan node itu.
+    /// Translate an AccessKit action request, with two validations: the target
+    /// node still exists, and the action really is advertised by that node.
     pub fn action_request(
         &self,
         request: &accesskit::ActionRequest,
@@ -249,11 +252,11 @@ impl AccessTree {
 }
 
 impl AccessUpdate {
-    /// Delta sebagai `TreeUpdate` AccessKit.
+    /// The delta as an AccessKit `TreeUpdate`.
     ///
-    /// Node yang dibuang tidak ikut dikirim: AccessKit membuangnya sendiri
-    /// begitu induknya muncul dengan daftar anak yang baru — dan induk itu
-    /// selalu ada di `changed` karena daftar anaknya ikut dibandingkan.
+    /// Discarded nodes are not sent: AccessKit drops them itself as soon as
+    /// their parent shows up with a new child list — and that parent is always
+    /// in `changed`, because its child list is part of the comparison.
     pub fn to_tree_update(&self, scale_factor: f64) -> TreeUpdate {
         let tree = self.full.then(|| {
             let mut tree = Tree::new(accesskit_id(self.root));

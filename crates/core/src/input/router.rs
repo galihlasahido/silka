@@ -1,24 +1,25 @@
-//! Routing event: dari satu event mentah menjadi node-node yang menanganinya.
+//! Event routing: from one raw event to the nodes that handle it.
 //!
-//! Empat aturan yang menentukan seluruh isi modul ini:
+//! Four rules determine everything in this module:
 //!
-//! 1. **Penunjuk mengikuti geometri** — rutenya adalah jalur hit-test
-//!    ([`super::hit_test`]), dari node terdalam ke akar, dan berhenti di node
-//!    pertama yang menyatakan event sudah ditangani.
-//! 2. **Keyboard mengikuti fokus** — rutenya jalur fokus ke akar, sehingga
-//!    pintasan di tingkat window tetap kebagian setelah widget menolak.
-//! 3. **Tekanan menangkap penunjuk** — begitu sebuah node menekan tombol dan
-//!    meminta capture, seluruh gerakan sampai tombol dilepas pergi ke node itu
-//!    walau kursor sudah keluar dari kotaknya. Tanpa ini, slider yang di-drag
-//!    cepat akan lepas di tengah jalan.
-//! 4. **IME milik yang fokus** — preedit/commit hanya dikirim ke node terfokus,
-//!    dan permintaan `set_ime_cursor_area` mengalir balik ke platform lewat
-//!    [`Response`] (REKOMENDASI §3.8).
+//! 1. **Pointers follow geometry** — the route is the hit-test path
+//!    ([`super::hit_test`]), from the innermost node to the root, stopping at
+//!    the first node that declares the event handled.
+//! 2. **The keyboard follows focus** — the route is the focus path up to the
+//!    root, so window-level shortcuts still get their turn after a widget
+//!    declines.
+//! 3. **A press captures the pointer** — once a node presses a button and asks
+//!    for capture, every movement until the button is released goes to that
+//!    node even when the cursor has left its box. Without this, a slider
+//!    dragged quickly would come loose halfway.
+//! 4. **The IME belongs to whoever has focus** — preedit/commit are delivered
+//!    only to the focused node, and the `set_ime_cursor_area` request flows
+//!    back to the platform through [`Response`] (REKOMENDASI §3.8).
 //!
-//! Node **tidak** boleh mengubah struktur pohon dari dalam handler event: yang
-//! tersedia hanyalah mengubah dirinya sendiri dan menitipkan permintaan lewat
-//! [`EventCtx`]. Struktur hanya berubah lewat view-diff (§2) — itulah yang
-//! menjaga arena tetap konsisten walau event datang di tengah frame.
+//! A node may **not** change the tree structure from inside an event handler:
+//! all it can do is change itself and leave requests behind through
+//! [`EventCtx`]. Structure only changes through the view diff (§2) — that is
+//! what keeps the arena consistent even when events arrive mid-frame.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -37,60 +38,61 @@ use super::hit::{hit_test, HitEntry, HitTestResult};
 use super::velocity::{Velocity, VelocityTracker};
 
 // ---------------------------------------------------------------------------
-// Kursor
+// Cursor
 // ---------------------------------------------------------------------------
 
-/// Bentuk kursor yang diminta sebuah node.
+/// The cursor shape a node asks for.
 ///
-/// Kosakata sendiri, dipetakan ke `winit::window::CursorIcon` di
-/// `silka-platform` — alasan yang sama dengan seluruh modul input: kode widget
-/// tidak menyentuh tipe pustaka luar.
+/// Our own vocabulary, mapped to `winit::window::CursorIcon` in
+/// `silka-platform` — the same reason as for the whole input module: widget
+/// code does not touch third-party types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum CursorIcon {
-    /// Panah biasa.
+    /// The ordinary arrow.
     #[default]
     Default,
-    /// Tangan menunjuk (tautan, tombol di web-style).
+    /// A pointing hand (links, web-style buttons).
     Pointer,
-    /// Caret teks.
+    /// A text caret.
     Text,
-    /// Sedang menunggu.
+    /// Busy.
     Wait,
-    /// Bisa digenggam (scroll pan, drag handle).
+    /// Grabbable (scroll pan, drag handle).
     Grab,
-    /// Sedang digenggam.
+    /// Currently grabbed.
     Grabbing,
-    /// Ubah ukuran horizontal (split view vertikal).
+    /// Horizontal resize (a vertical split view).
     ResizeHorizontal,
-    /// Ubah ukuran vertikal.
+    /// Vertical resize.
     ResizeVertical,
-    /// Aksi tidak diizinkan.
+    /// The action is not allowed.
     NotAllowed,
 }
 
 // ---------------------------------------------------------------------------
-// Permintaan IME
+// IME requests
 // ---------------------------------------------------------------------------
 
-/// Permintaan ke shell platform terkait IME.
+/// An IME-related request to the platform shell.
 ///
-/// Diterjemahkan `silka-platform` menjadi `set_ime_allowed` +
-/// `set_ime_cursor_area` — dua panggilan winit yang menentukan apakah jendela
-/// kandidat CJK muncul di tempat yang benar (REKOMENDASI §3.8).
+/// `silka-platform` translates it into `set_ime_allowed` +
+/// `set_ime_cursor_area` — the two winit calls that decide whether the CJK
+/// candidate window appears in the right place (REKOMENDASI §3.8).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ImeRequest {
-    /// Nyalakan IME dan taruh area kandidat di `area` (poin logis, global).
+    /// Enable the IME and put the candidate area at `area` (logical points,
+    /// global).
     Enable {
-        /// Kotak caret/preedit yang menjadi jangkar jendela kandidat.
+        /// The caret/preedit box the candidate window anchors to.
         area: Rect,
     },
-    /// IME sudah menyala; hanya areanya yang berpindah (caret bergerak).
+    /// The IME is already on; only its area moved (the caret moved).
     Update {
-        /// Kotak caret yang baru.
+        /// The new caret box.
         area: Rect,
     },
-    /// Matikan IME — tidak ada lagi yang bisa menerima teks.
+    /// Turn the IME off — there is nothing left that could receive text.
     Disable,
 }
 
@@ -98,25 +100,25 @@ pub enum ImeRequest {
 // Response
 // ---------------------------------------------------------------------------
 
-/// Hasil satu dispatch: apa yang harus dilakukan shell setelahnya.
+/// The result of one dispatch: what the shell has to do afterwards.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Response {
-    /// Alasan frame berikutnya dibutuhkan — langsung disambungkan ke
-    /// [`crate::scheduler::FrameScheduler::request`]. Kosong = tidak ada yang
-    /// perlu digambar, dan window tetap benar-benar idle (§3.5).
+    /// Why a next frame is needed — wired straight into
+    /// [`crate::scheduler::FrameScheduler::request`]. Empty = nothing needs
+    /// drawing, and the window stays genuinely idle (§3.5).
     pub dirty: Dirty,
-    /// Benar bila ada node yang menyatakan event ini miliknya.
+    /// True when some node claimed this event as its own.
     pub handled: bool,
-    /// Perpindahan fokus yang terjadi.
+    /// The focus move that happened.
     pub focus: FocusChange,
-    /// Permintaan IME untuk shell.
+    /// An IME request for the shell.
     pub ime: Option<ImeRequest>,
-    /// Bentuk kursor baru (hanya diisi saat berubah).
+    /// A new cursor shape (only filled in when it changes).
     pub cursor: Option<CursorIcon>,
 }
 
 impl Response {
-    /// Benar bila dispatch ini tidak berdampak apa pun.
+    /// True when this dispatch had no effect at all.
     pub fn is_noop(&self) -> bool {
         self.dirty.is_empty()
             && !self.handled
@@ -130,24 +132,24 @@ impl Response {
 // EventCtx
 // ---------------------------------------------------------------------------
 
-/// Apa yang dititipkan node lewat [`EventCtx`], dikumpulkan sepanjang satu
-/// dispatch lalu diterapkan sekali di akhir.
+/// What nodes leave behind through [`EventCtx`], gathered across one dispatch
+/// and applied once at the end.
 #[derive(Debug, Default)]
 struct Sink {
     dirty: Dirty,
-    /// `Some(Some(n))` = minta fokus ke n, `Some(None)` = lepas fokus.
+    /// `Some(Some(n))` = focus requested for n, `Some(None)` = drop focus.
     focus: Option<Option<NodeId>>,
-    /// `Some(Some(n))` = tangkap penunjuk untuk n, `Some(None)` = lepaskan.
+    /// `Some(Some(n))` = capture the pointer for n, `Some(None)` = release it.
     capture: Option<Option<NodeId>>,
     ime: Option<(NodeId, Option<Rect>)>,
 }
 
-/// Akses terbatas ke dunia luar selama sebuah node menangani event.
+/// Limited access to the outside world while a node handles an event.
 ///
-/// Sengaja **tidak** memuat `&mut RenderTree`: node hanya boleh mengubah
-/// dirinya sendiri (lewat `&mut self`) dan menitipkan permintaan di sini.
-/// Konsekuensinya struktur pohon tidak mungkin berubah di tengah dispatch, dan
-/// tidak ada re-entrancy yang perlu dijaga.
+/// It deliberately does **not** carry a `&mut RenderTree`: a node may only
+/// change itself (through `&mut self`) and leave requests here. As a
+/// consequence the tree structure cannot possibly change mid-dispatch, and
+/// there is no re-entrancy to guard against.
 pub struct EventCtx<'a> {
     node: NodeId,
     local: Point,
@@ -159,106 +161,109 @@ pub struct EventCtx<'a> {
 }
 
 impl EventCtx<'_> {
-    /// Node yang sedang menangani event.
+    /// The node currently handling the event.
     pub fn node(&self) -> NodeId {
         self.node
     }
 
-    /// Posisi event dalam koordinat lokal node (poin logis).
+    /// The event position in the node's local coordinates (logical points).
     ///
-    /// Untuk event tanpa posisi (keyboard, IME, fokus) nilainya
+    /// For events without a position (keyboard, IME, focus) this is
     /// [`Point::ZERO`].
     pub fn local(&self) -> Point {
         self.local
     }
 
-    /// Ukuran node hasil layout terakhir.
+    /// The node's size from the last layout.
     pub fn size(&self) -> Size {
         self.size
     }
 
-    /// Kotak global node — dipakai menghitung area caret untuk IME.
+    /// The node's global box — used to compute the caret area for the IME.
     pub fn bounds(&self) -> Rect {
         self.bounds
     }
 
-    /// Benar bila node ini sedang memegang fokus keyboard.
+    /// True when this node currently holds keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// Nyatakan event sudah ditangani: penyampaian ke leluhur berhenti.
+    /// Declare the event handled: delivery to ancestors stops here.
     pub fn handled(&mut self) {
         *self.handled = true;
     }
 
-    /// Benar bila event sudah ditangani node yang lebih dalam.
+    /// True when a deeper node already handled the event.
     pub fn is_handled(&self) -> bool {
         *self.handled
     }
 
-    /// Minta node digambar ulang (hover, pressed, focus ring).
+    /// Ask for the node to be repainted (hover, pressed, focus ring).
     pub fn request_paint(&mut self) {
         self.sink.dirty |= Dirty::PAINT;
     }
 
-    /// Minta layout ulang (mis. posisi guliran berubah).
+    /// Ask for a relayout (e.g. the scroll position changed).
     pub fn request_layout(&mut self) {
         self.sink.dirty |= Dirty::LAYOUT | Dirty::PAINT;
     }
 
-    /// Minta frame berikutnya karena ada animasi berjalan (spring).
+    /// Ask for a next frame because an animation is running (a spring).
     pub fn request_animation(&mut self) {
         self.sink.dirty |= Dirty::ANIMATION;
     }
 
-    /// Minta fokus keyboard pindah ke node ini.
+    /// Ask for keyboard focus to move to this node.
     pub fn request_focus(&mut self) {
         self.sink.focus = Some(Some(self.node));
     }
 
-    /// Lepaskan fokus dari siapa pun yang memegangnya.
+    /// Release focus from whoever is holding it.
     pub fn release_focus(&mut self) {
         self.sink.focus = Some(None);
     }
 
-    /// Tangkap penunjuk: seluruh gerakan sampai tombol dilepas datang ke sini.
+    /// Capture the pointer: every movement until the button is released comes
+    /// here.
     pub fn capture_pointer(&mut self) {
         self.sink.capture = Some(Some(self.node));
     }
 
-    /// Lepaskan tangkapan penunjuk.
+    /// Release the pointer capture.
     pub fn release_pointer(&mut self) {
         self.sink.capture = Some(None);
     }
 
-    /// Minta IME menyala dengan area kandidat `area` (koordinat global).
+    /// Ask for the IME to be enabled with `area` as the candidate area (global
+    /// coordinates).
     ///
-    /// Dipanggil widget teks saat mendapat fokus dan setiap kali caret pindah.
+    /// Called by text widgets when they gain focus and every time the caret
+    /// moves.
     pub fn request_ime(&mut self, area: Rect) {
         self.sink.ime = Some((self.node, Some(area)));
     }
 
-    /// Matikan IME (widget teks kehilangan fokus).
+    /// Turn the IME off (a text widget lost focus).
     pub fn disable_ime(&mut self) {
         self.sink.ime = Some((self.node, None));
     }
 }
 
 // ---------------------------------------------------------------------------
-// Konfigurasi klik beruntun
+// Multi-click configuration
 // ---------------------------------------------------------------------------
 
-/// Ambang klik beruntun (ganda/tripel).
+/// The thresholds for consecutive clicks (double/triple).
 ///
-/// Angkanya milik framework, bukan platform: tiga OS melaporkannya dengan cara
-/// berbeda (dan Wayland tidak sama sekali), sementara pengguna mengharapkan
-/// perilaku yang sama di semuanya.
+/// The numbers belong to the framework, not the platform: the three operating
+/// systems report them in different ways (and Wayland not at all), while users
+/// expect the same behaviour everywhere.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClickConfig {
-    /// Jeda maksimum antar klik.
+    /// The maximum gap between clicks.
     pub interval: Duration,
-    /// Pergeseran maksimum antar klik, poin logis.
+    /// The maximum drift between clicks, in logical points.
     pub distance: f32,
 }
 
@@ -272,13 +277,13 @@ impl Default for ClickConfig {
 }
 
 // ---------------------------------------------------------------------------
-// State per penunjuk
+// Per-pointer state
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Default)]
 struct PointerState {
     position: Point,
-    /// Jalur node yang sedang di-hover, terdalam lebih dulu.
+    /// The path of nodes currently hovered, innermost first.
     hover: Vec<NodeId>,
     capture: Option<NodeId>,
     velocity: VelocityTracker,
@@ -290,11 +295,12 @@ struct PointerState {
 // InputRouter
 // ---------------------------------------------------------------------------
 
-/// Penyalur event untuk satu render tree (satu window).
+/// The event router for one render tree (one window).
 ///
-/// Menyimpan yang memang harus diingat antar-event: modifier terakhir, tombol
-/// yang ditahan, jalur hover, capture, velocity per penunjuk, fokus, dan state
-/// IME. Segala hal yang bisa dibaca ulang dari pohon **tidak** disimpan.
+/// It stores what genuinely has to be remembered between events: the last
+/// modifiers, the buttons held, the hover path, capture, per-pointer velocity,
+/// focus, and the IME state. Anything that can be re-read from the tree is
+/// **not** stored.
 #[derive(Debug, Default)]
 pub struct InputRouter {
     modifiers: Modifiers,
@@ -302,52 +308,53 @@ pub struct InputRouter {
     focus: FocusManager,
     click: ClickConfig,
     cursor: CursorIcon,
-    /// Node yang sedang memiliki sesi IME, beserta area caret terakhir.
+    /// The node that currently owns the IME session, plus its last caret area.
     ime: Option<(NodeId, Rect)>,
 }
 
 impl InputRouter {
-    /// Router baru tanpa fokus, tanpa hover, tanpa capture.
+    /// A new router: no focus, no hover, no capture.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Ambang klik beruntun.
+    /// The multi-click thresholds.
     pub fn click_config(&self) -> ClickConfig {
         self.click
     }
 
-    /// Ganti ambang klik beruntun (mis. mengikuti setting OS).
+    /// Change the multi-click thresholds (e.g. to follow an OS setting).
     pub fn set_click_config(&mut self, config: ClickConfig) {
         self.click = config;
     }
 
-    /// Modifier keyboard terakhir yang diketahui.
+    /// The last known keyboard modifiers.
     pub fn modifiers(&self) -> Modifiers {
         self.modifiers
     }
 
-    /// Perbarui modifier tanpa mengirim event (winit melaporkannya terpisah).
+    /// Update the modifiers without dispatching an event (winit reports them
+    /// separately).
     pub fn set_modifiers(&mut self, modifiers: Modifiers) {
         self.modifiers = modifiers;
     }
 
-    /// Pemegang fokus keyboard.
+    /// The keyboard focus holder.
     pub fn focus(&self) -> &FocusManager {
         &self.focus
     }
 
-    /// Kursor yang berlaku sekarang.
+    /// The cursor currently in effect.
     pub fn cursor(&self) -> CursorIcon {
         self.cursor
     }
 
-    /// Node yang sedang menangkap penunjuk `id`.
+    /// The node currently capturing pointer `id`.
     pub fn capture_of(&self, id: PointerId) -> Option<NodeId> {
         self.pointers.get(&id).and_then(|p| p.capture)
     }
 
-    /// Jalur hover penunjuk `id`, terdalam lebih dulu.
+    /// The hover path for pointer `id`, innermost first.
     pub fn hover_of(&self, id: PointerId) -> &[NodeId] {
         self.pointers
             .get(&id)
@@ -355,8 +362,8 @@ impl InputRouter {
             .unwrap_or(&[])
     }
 
-    /// Kecepatan penunjuk `id` saat ini — inilah nilai yang diserahkan ke
-    /// spring saat gesture dilepas (fling → spring, §3.5).
+    /// The current velocity of pointer `id` — this is the value handed to a
+    /// spring when the gesture is released (fling → spring, §3.5).
     pub fn velocity(&self, id: PointerId) -> Velocity {
         self.pointers
             .get(&id)
@@ -364,7 +371,7 @@ impl InputRouter {
             .unwrap_or(Velocity::ZERO)
     }
 
-    /// Fokuskan node tertentu dari luar (mis. setelah dialog terbuka).
+    /// Focus a particular node from the outside (e.g. after a dialog opens).
     pub fn focus_node(&mut self, tree: &mut RenderTree, node: Option<NodeId>) -> Response {
         let mut out = Response::default();
         let change = self.focus.focus(tree, node);
@@ -372,7 +379,7 @@ impl InputRouter {
         out
     }
 
-    /// Pindahkan fokus satu langkah (Tab / Shift+Tab yang dipicu program).
+    /// Move focus one step (a programmatically triggered Tab / Shift+Tab).
     pub fn move_focus(&mut self, tree: &mut RenderTree, direction: FocusDirection) -> Response {
         let mut out = Response::default();
         let change = self.focus.move_focus(tree, direction);
@@ -380,17 +387,17 @@ impl InputRouter {
         out
     }
 
-    /// Selaraskan state input dengan pohon setelah view-diff.
+    /// Reconcile the input state with the tree after a view diff.
     ///
-    /// Node bisa lenyap kapan saja; fokus, capture, hover, dan sesi IME yang
-    /// menunjuk kuburan harus dibersihkan **sebelum** event berikutnya datang —
-    /// kalau tidak, keyboard diam total dan jendela kandidat IME menggantung di
-    /// tempat yang salah.
+    /// Nodes can vanish at any moment; focus, capture, hover and IME sessions
+    /// pointing at a grave must be cleaned up **before** the next event
+    /// arrives — otherwise the keyboard goes completely dead and the IME
+    /// candidate window hangs in the wrong place.
     pub fn sync(&mut self, tree: &mut RenderTree) -> Response {
         let mut out = Response::default();
-        // Node yang **masih hidup** tapi berhenti focusable (mis. tombol baru
-        // saja di-disable) tetap diberi tahu lewat `Focus::Lost`; yang sudah
-        // lenyap tidak bisa, dan `kirim_satu` melewatinya dengan tenang.
+        // A node that is **still alive** but stopped being focusable (e.g. a
+        // button that was just disabled) is still told through `Focus::Lost`;
+        // one that has vanished cannot be, and `kirim_satu` skips it quietly.
         let change = self.focus.prune(tree);
         self.terapkan_fokus(tree, change, &mut out);
         for state in self.pointers.values_mut() {
@@ -410,26 +417,27 @@ impl InputRouter {
         out
     }
 
-    /// Salurkan satu event ke pohon.
+    /// Route one event into the tree.
     pub fn dispatch(&mut self, tree: &mut RenderTree, event: &Event) -> Response {
         match event {
             Event::Pointer(e) => self.pointer(tree, e),
             Event::Scroll(e) => self.scroll(tree, e),
             Event::Key(e) => self.key(tree, e),
             Event::Ime(e) => self.ime_event(tree, e),
-            // Event fokus lahir di router, tidak pernah disuntikkan dari luar.
+            // Focus events are born in the router, never injected from outside.
             Event::Focus(_) => Response::default(),
         }
     }
 
-    // -- penunjuk ---------------------------------------------------------
+    // -- pointer ----------------------------------------------------------
 
     fn pointer(&mut self, tree: &mut RenderTree, event: &PointerEvent) -> Response {
         self.modifiers = event.modifiers;
         let mut out = Response::default();
         let click = self.click;
 
-        // Riwayat gerak: dasar velocity tracker untuk handoff ke spring.
+        // Movement history: the basis of the velocity tracker for the spring
+        // handoff.
         {
             let state = self.pointers.entry(event.id).or_default();
             state.position = event.position;
@@ -448,8 +456,9 @@ impl InputRouter {
             }
         }
 
-        // Hover: dihitung dari geometri, bukan dari capture — tombol yang
-        // ditekan lalu ditarik keluar memang harus berhenti terlihat hover.
+        // Hover is computed from geometry, not from capture — a button that is
+        // pressed and then dragged away from really should stop looking
+        // hovered.
         let hit = if event.phase == PointerPhase::Leave {
             HitTestResult::new()
         } else {
@@ -473,9 +482,9 @@ impl InputRouter {
         let handled = self.kirim(tree, &rute, &Event::Pointer(event.clone()), &mut sink);
         out.handled = handled;
 
-        // Tombol dilepas/dibatalkan selalu mengakhiri capture, apa pun kata
-        // node — kalau tidak, penunjuk bisa tersangkut selamanya di node yang
-        // lupa melepaskannya.
+        // A release or a cancel always ends the capture, whatever the node
+        // says — otherwise a pointer could stay stuck forever on a node that
+        // forgot to let go.
         if matches!(event.phase, PointerPhase::Up | PointerPhase::Cancel)
             && sink.capture.is_none()
             && event.buttons.is_empty()
@@ -484,12 +493,12 @@ impl InputRouter {
         }
         self.terapkan(tree, sink, Some(event.id), &mut out);
 
-        // Kursor ditanya **setelah** event sampai ke node, bukan sebelumnya:
-        // node yang bentuk kursornya bergantung pada posisi penunjuk di dalam
-        // dirinya sendiri (pegangan resize kolom `table`, nanti `split_view`)
-        // baru tahu jawabannya setelah menerima gerakan itu. Menanyakannya
-        // lebih dulu berarti kursor panah tetap panah tepat di atas pegangan
-        // yang bisa diseret — dan pengguna tidak pernah menemukan bahwa ia ada.
+        // The cursor is asked for **after** the event reaches the node, not
+        // before: a node whose cursor shape depends on where the pointer is
+        // inside it (the column resize handle in `table`, later `split_view`)
+        // only knows the answer once it has received that movement. Asking
+        // first would mean the arrow cursor stays an arrow right on top of a
+        // draggable handle — and the user never discovers it exists.
         self.perbarui_kursor(tree, event.id, &mut out);
         out
     }
@@ -512,8 +521,9 @@ impl InputRouter {
         for node in lama.iter().filter(|n| !baru.contains(n)) {
             let mut e = event.clone();
             e.phase = PointerPhase::Leave;
-            // Koordinat lokal tetap bermakna walau titiknya sudah di luar node
-            // — widget yang menghitung "keluar lewat sisi mana" butuh itu.
+            // The local coordinates still mean something even though the point
+            // is now outside the node — a widget working out "which side did
+            // it leave by" needs them.
             let origin = tree.global_offset(*node);
             let local = Point::new(e.position.x - origin.x, e.position.y - origin.y);
             self.kirim_satu(tree, *node, local, &Event::Pointer(e), &mut sink);
@@ -528,12 +538,13 @@ impl InputRouter {
         self.perbarui_kursor(tree, event.id, out);
     }
 
-    /// Tanyakan ulang bentuk kursor ke rantai hover, dan laporkan bila berubah.
+    /// Re-ask the hover chain for the cursor shape, and report it when it
+    /// changed.
     ///
-    /// Kursor **ditanya** ke node, tidak pernah disimpan router — jadi node
-    /// yang bentuk kursornya bergantung pada keadaannya sendiri (atau pada
-    /// posisi penunjuk di dalam dirinya) cukup memperbarui keadaan itu di
-    /// `event`, dan jawabannya sudah benar di sini pada event yang sama.
+    /// The cursor is **asked for** from the node, never cached in the router —
+    /// so a node whose cursor shape depends on its own state (or on where the
+    /// pointer is inside it) only has to update that state in `event`, and the
+    /// answer here is already right within the same event.
     fn perbarui_kursor(&mut self, tree: &RenderTree, id: PointerId, out: &mut Response) {
         let kursor = self
             .hover_of(id)
@@ -546,7 +557,7 @@ impl InputRouter {
         }
     }
 
-    // -- guliran ----------------------------------------------------------
+    // -- scroll -----------------------------------------------------------
 
     fn scroll(&mut self, tree: &mut RenderTree, event: &ScrollEvent) -> Response {
         self.modifiers = event.modifiers;
@@ -586,9 +597,9 @@ impl InputRouter {
         out.handled = self.kirim(tree, &rute, &Event::Key(event.clone()), &mut sink);
         self.terapkan(tree, sink, None, &mut out);
 
-        // Tab adalah navigasi fokus **hanya** bila tidak ada yang mengambilnya
-        // (text area memakai Tab untuk indentasi) dan hanya polos/Shift —
-        // ⌘Tab dan Ctrl+Tab milik OS/aplikasi, bukan traversal widget.
+        // Tab is focus navigation **only** when nobody else claims it (a text
+        // area uses Tab for indentation) and only bare or with Shift — ⌘Tab
+        // and Ctrl+Tab belong to the OS/application, not to widget traversal.
         if !out.handled && event.is_pressed() && event.code.is(NamedKey::Tab) {
             let arah = if event.modifiers.is_exactly(Modifiers::SHIFT) {
                 Some(FocusDirection::Previous)
@@ -611,7 +622,8 @@ impl InputRouter {
     fn ime_event(&mut self, tree: &mut RenderTree, event: &ImeEvent) -> Response {
         let mut out = Response::default();
         let Some(fokus) = self.focus.focused() else {
-            // Tidak ada tujuan komposisi: jangan biarkan IME menyala sendirian.
+            // No destination for the composition: do not leave the IME on by
+            // itself.
             if self.ime.take().is_some() {
                 out.ime = Some(ImeRequest::Disable);
             }
@@ -627,9 +639,10 @@ impl InputRouter {
         out
     }
 
-    // -- mesin penyampaian -------------------------------------------------
+    // -- the delivery machinery -------------------------------------------
 
-    /// Kirim event menyusuri rute (terdalam dulu) sampai ada yang menanganinya.
+    /// Send an event along a route (innermost first) until something handles
+    /// it.
     fn kirim(
         &mut self,
         tree: &mut RenderTree,
@@ -647,7 +660,7 @@ impl InputRouter {
         handled
     }
 
-    /// Kirim ke satu node saja (enter/leave, fokus, IME).
+    /// Send to a single node only (enter/leave, focus, IME).
     fn kirim_satu(
         &mut self,
         tree: &mut RenderTree,
@@ -669,8 +682,9 @@ impl InputRouter {
         sink: &mut Sink,
         handled: &mut bool,
     ) {
-        // Node dikeluarkan sementara dari arena — pola yang sama dengan layout,
-        // dan alasan yang sama: handler tidak boleh melihat dirinya di pohon.
+        // The node is temporarily taken out of the arena — the same pattern as
+        // layout, and for the same reason: a handler must not see itself in
+        // the tree.
         let Some(mut render) = tree.take_render(node) else {
             return;
         };
@@ -687,10 +701,11 @@ impl InputRouter {
         tree.put_render(node, render);
     }
 
-    /// Terapkan titipan node: fokus, capture, IME, dan alasan dirty.
+    /// Apply what the nodes left behind: focus, capture, IME and dirty
+    /// reasons.
     ///
-    /// `pointer` adalah penunjuk yang sedang diproses; capture hanya berlaku
-    /// untuknya — jari kedua di layar sentuh tidak boleh ikut tertangkap.
+    /// `pointer` is the pointer being processed; capture applies to it alone —
+    /// a second finger on a touch screen must not get captured too.
     fn terapkan(
         &mut self,
         tree: &mut RenderTree,
@@ -740,12 +755,13 @@ impl InputRouter {
             );
         }
         out.dirty |= sink.dirty;
-        // Node yang kehilangan fokus biasanya mematikan IME, dan yang mendapat
-        // fokus menyalakannya — keduanya lewat titipan yang sama.
+        // A node losing focus usually turns the IME off and one gaining focus
+        // turns it on — both through the same request slot.
         if let Some((node, area)) = sink.ime {
             self.terapkan_ime(node, area, out);
         }
-        // Sesi IME milik node yang sudah tidak fokus tidak boleh menggantung.
+        // An IME session owned by a node that no longer has focus must not be
+        // left hanging.
         if let Some((owner, _)) = self.ime {
             if !self.focus.is_focused(owner) {
                 self.ime = None;
@@ -782,8 +798,8 @@ impl InputRouter {
     }
 }
 
-/// Rute dari sebuah node ke akar, dengan koordinat lokal dihitung dari offset
-/// global — dipakai saat penunjuk sedang ditangkap.
+/// The route from a node up to the root, with local coordinates computed from
+/// the global offset — used while a pointer is captured.
 fn rute_dari_node(tree: &RenderTree, node: NodeId, position: Point) -> Vec<HitEntry> {
     let mut rute = Vec::new();
     let mut cur = Some(node);

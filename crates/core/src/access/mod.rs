@@ -1,30 +1,30 @@
-//! **Emisi node aksesibilitas sebagai pass render tree** (REKOMENDASI §3.8,
+//! **Accessibility node emission as a render-tree pass** (REKOMENDASI §3.8,
 //! §5 failure mode #2).
 //!
-//! Accessibility di sini bukan lapisan yang ditempel belakangan, melainkan
-//! *keluaran* pohon render — sejajar dengan layout dan paint. Riset di §7.2
-//! menemukan hal yang menentukan sikap ini: dari seluruh framework GUI Rust
-//! native, screen reader hanya benar-benar berfungsi di Slint; GPUI, iced,
-//! Floem, dan Makepad buta total. Semuanya karena alasan yang sama —
-//! accessibility di-retrofit setelah model widget beku.
+//! Accessibility here is not a layer glued on afterwards, it is an *output* of
+//! the render tree — on a par with layout and paint. The research in §7.2
+//! found the thing that settles this stance: across every native Rust GUI
+//! framework, screen readers genuinely work only in Slint; GPUI, iced, Floem
+//! and Makepad are completely blind. All for the same reason — accessibility
+//! was retrofitted after the widget model had frozen.
 //!
-//! Karena itu kontraknya dipasang di titik yang tidak bisa dilewati:
-//! [`crate::tree::RenderNode::access`] adalah **method wajib**. Widget baru
-//! yang lupa memikirkan screen reader tidak akan pernah lolos compile.
+//! So the contract is placed where it cannot be bypassed:
+//! [`crate::tree::RenderNode::access`] is a **required method**. A new widget
+//! that forgot to think about screen readers will never compile.
 //!
-//! ## Pembagian kerja
+//! ## Division of labour
 //!
-//! | Diisi widget ([`AccessNode`]) | Diisi mesin ([`AccessEntry`]) |
+//! | Filled by the widget ([`AccessNode`]) | Filled by the engine ([`AccessEntry`]) |
 //! |---|---|
-//! | role, label, value, actions | bounds (dari layout) |
-//! | hidden, disabled, toggled | induk & daftar anak |
-//! | | fokus, urutan baca |
+//! | role, label, value, actions | bounds (from layout) |
+//! | hidden, disabled, toggled | parent & child list |
+//! | | focus, reading order |
 //!
-//! Pembagian itu ditegakkan **oleh tipe**: widget tidak pernah memegang
-//! [`AccessEntry`], jadi `bounds` yang basi terhadap layout secara struktural
-//! mustahil.
+//! That division is enforced **by the types**: a widget never holds an
+//! [`AccessEntry`], so `bounds` going stale with respect to layout is
+//! structurally impossible.
 //!
-//! ## Satu frame
+//! ## One frame
 //!
 //! ```
 //! use silka_core::tree::{BoxConstraints, RenderTree};
@@ -39,8 +39,8 @@
 //! );
 //! tree.layout(BoxConstraints::loose(Size::new(200.0, 100.0)));
 //!
-//! // Fokus dititipkan pemanggil (biasanya dari `InputRouter`); `None` =
-//! // window sendiri yang memegangnya.
+//! // Focus is supplied by the caller (usually from `InputRouter`); `None` =
+//! // the window itself holds it.
 //! let a11y = tree.access_tree(None);
 //! assert_eq!(
 //!     a11y.dump(),
@@ -49,17 +49,17 @@
 //!          label \"Judul\" [10,10 120x24]\n"
 //! );
 //!
-//! // Yang dikirim ke platform hanyalah selisihnya.
+//! // Only the difference is sent to the platform.
 //! let update = a11y.changes_since(None);
 //! assert!(update.full);
 //! ```
 //!
-//! ## Ke platform
+//! ## To the platform
 //!
-//! [`AccessTree::to_tree_update`] (fitur `accesskit`, menyala bawaan)
-//! menerjemahkan snapshot ke `accesskit::TreeUpdate`; `silka-platform`
-//! menyambungkannya ke `accesskit_winit` sehingga UIA (Windows),
-//! NSAccessibility (macOS), dan AT-SPI (Linux) mendapat pohon yang sama.
+//! [`AccessTree::to_tree_update`] (the `accesskit` feature, on by default)
+//! translates a snapshot into an `accesskit::TreeUpdate`; `silka-platform`
+//! wires that to `accesskit_winit` so that UIA (Windows), NSAccessibility
+//! (macOS) and AT-SPI (Linux) all receive the same tree.
 
 mod node;
 mod tree;
@@ -78,10 +78,10 @@ pub use tree::{AccessEntry, AccessTree, AccessUpdate};
 #[cfg(feature = "accesskit")]
 pub use bridge::accesskit_id;
 
-/// Re-export `accesskit` dengan versi yang dikunci framework.
+/// Re-export of `accesskit` at the version the framework pins.
 ///
-/// Adapter platform memakai re-export ini, bukan dependensi sendiri: dua
-/// versi `accesskit` di satu binary berarti dua pohon aksesibilitas yang
-/// saling tidak kenal.
+/// Platform adapters use this re-export rather than a dependency of their own:
+/// two versions of `accesskit` in one binary means two accessibility trees
+/// that know nothing about each other.
 #[cfg(feature = "accesskit")]
 pub use accesskit;

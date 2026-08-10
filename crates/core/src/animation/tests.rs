@@ -1,5 +1,6 @@
-//! Unit test sistem spring: parameter, kebenaran solusi closed-form,
-//! konvergensi, retarget, reduced-motion, dan sambungan ke scheduler dirty.
+//! Unit tests for the spring system: parameters, correctness of the
+//! closed-form solution, convergence, retargeting, reduced motion, and the
+//! seam with the scheduler's dirty flags.
 
 use std::time::{Duration, Instant};
 
@@ -12,11 +13,11 @@ use super::{
     Animatable, AnimationDriver, Motion, MotionRole, Propagator, Spring, SpringValue, Tolerance,
 };
 
-/// Satu frame di layar 120 Hz — angkanya datang dari display link, bukan
-/// konstanta 16,6 ms.
+/// One frame on a 120 Hz display — the number comes from the display link, not
+/// from a hard-coded 16.6 ms.
 const FRAME: Duration = Duration::from_micros(8_333);
 
-/// Jalankan sampai berhenti; mengembalikan jumlah frame.
+/// Run until settled; returns the number of frames.
 fn jalankan(value: &mut SpringValue<f32>, motion: Motion) -> usize {
     let mut n = 0;
     while value.advance(FRAME, motion) {
@@ -26,9 +27,9 @@ fn jalankan(value: &mut SpringValue<f32>, motion: Motion) -> usize {
     n
 }
 
-/// Integrasi numerik RK4 di f64 sebagai pembanding independen untuk solusi
-/// closed-form. Sengaja bukan langkah kecil dari rumus yang sama — kalau
-/// rumusnya salah, tes ini yang menangkapnya.
+/// RK4 numerical integration in f64 as an independent cross-check on the
+/// closed-form solution. Deliberately not small steps of the same formula — if
+/// the formula is wrong, this is the test that catches it.
 fn integrasi(spring: Spring, x0: f64, v0: f64, t: f64) -> (f64, f64) {
     let w = spring.angular_frequency() as f64;
     let z = spring.damping_ratio() as f64;
@@ -48,7 +49,7 @@ fn integrasi(spring: Spring, x0: f64, v0: f64, t: f64) -> (f64, f64) {
 }
 
 // ---------------------------------------------------------------------------
-// Parameter
+// Parameters
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -60,7 +61,7 @@ fn preset_mengikuti_wwdc23() {
     ] {
         assert!((s.duration() - 0.5).abs() < 1e-6, "{s:?}");
         assert!((s.bounce() - bounce).abs() < 1e-6, "{s:?}");
-        // ζ = 1 − bounce, ω = 2π / durasi.
+        // ζ = 1 − bounce, ω = 2π / duration.
         assert!((s.damping_ratio() - (1.0 - bounce)).abs() < 1e-6, "{s:?}");
         let w = core::f32::consts::TAU / 0.5;
         assert!((s.angular_frequency() - w).abs() < 1e-4, "{s:?}");
@@ -77,7 +78,7 @@ fn bounce_negatif_berarti_overdamped() {
     // ζ = 1 / (1 + bounce) = 2.
     assert!((s.damping_ratio() - 2.0).abs() < 1e-5, "{s:?}");
     assert!(!s.overshoots());
-    // Membuang pantulan dari spring yang memang tidak memantul = tanpa efek.
+    // Dropping the bounce of a spring that never bounces is a no-op.
     assert_eq!(s.without_bounce(), s);
 }
 
@@ -87,7 +88,8 @@ fn parameter_fisik_bolak_balik() {
         let s = Spring::physical(m, k, c);
         assert!((s.stiffness() - k / m).abs() < 1e-2, "{s:?}");
         assert!((s.damping() - c / m).abs() < 1e-2, "{s:?}");
-        // Bolak-balik lewat representasi perceptual tidak mengubah fisiknya.
+        // A round trip through the perceptual representation leaves the
+        // physics unchanged.
         let ulang = Spring::new(s.duration(), s.bounce());
         assert!((ulang.damping_ratio() - s.damping_ratio()).abs() < 1e-5);
     }
@@ -115,7 +117,7 @@ fn parameter_gila_dijepit_bukan_memanik() {
 }
 
 // ---------------------------------------------------------------------------
-// Kebenaran solusi closed-form
+// Correctness of the closed-form solution
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -128,7 +130,7 @@ fn propagator_nol_detik_adalah_identitas() {
 
 #[test]
 fn closed_form_cocok_dengan_integrasi_numerik() {
-    // Ketiga rezim: underdamped, critically damped, overdamped.
+    // All three regimes: underdamped, critically damped, overdamped.
     let springs = [
         Spring::bouncy(),
         Spring::smooth(),
@@ -155,7 +157,8 @@ fn closed_form_cocok_dengan_integrasi_numerik() {
 
 #[test]
 fn hasil_tidak_bergantung_ukuran_langkah() {
-    // Sifat khas closed-form: frame yang di-drop tidak menggeser animasi.
+    // The signature property of the closed form: dropped frames do not shift
+    // the animation.
     for s in [Spring::bouncy(), Spring::smooth(), Spring::new(0.4, -0.3)] {
         let (x_sekali, v_sekali) = s.solve(1.0, 200.0, 0.3);
         let (mut x, mut v) = (1.0f32, 200.0f32);
@@ -170,7 +173,7 @@ fn hasil_tidak_bergantung_ukuran_langkah() {
 }
 
 // ---------------------------------------------------------------------------
-// Konvergensi
+// Convergence
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -181,10 +184,10 @@ fn semua_preset_konvergen_tepat_ke_target() {
         assert!(v.is_animating());
         let n = jalankan(&mut v, Motion::Full);
         assert!(!v.is_animating(), "{spring:?}");
-        // Berhenti berarti benar-benar berhenti: tidak ada sisa 0,3 poin.
+        // Stopping means really stopping: no leftover 0.3 pt.
         assert_eq!(v.position(), 100.0, "{spring:?}");
         assert_eq!(v.velocity(), 0.0, "{spring:?}");
-        // Durasi perceptual 0,5 s: settle di bawah dua detik di 120 Hz.
+        // Perceptual duration of 0.5 s: settles in under two seconds at 120 Hz.
         assert!(n < 240, "{spring:?} butuh {n} frame");
         assert!(n > 30, "{spring:?} settle terlalu cepat ({n} frame)");
     }
@@ -237,18 +240,18 @@ fn taksiran_waktu_settle_adalah_batas_atas_yang_ketat() {
         v.set_target(100.0);
         let taksiran = v.settling_duration(Motion::Full).as_secs_f32();
         let nyata = jalankan(&mut v, Motion::Full) as f32 * FRAME.as_secs_f32();
-        // Batas atas: simulasi tidak pernah lebih lama dari taksiran.
+        // Upper bound: the simulation never takes longer than the estimate.
         assert!(
             nyata <= taksiran + FRAME.as_secs_f32(),
             "{spring:?}: nyata {nyata} melampaui taksiran {taksiran}"
         );
-        // Tapi tetap ketat — bukan angka asal yang kebesaran.
+        // But still tight — not some arbitrarily inflated number.
         assert!(
             taksiran <= nyata * 1.5 + 0.05,
             "{spring:?}: taksiran {taksiran} terlalu longgar vs nyata {nyata}"
         );
     }
-    // Yang sudah diam tidak punya sisa waktu.
+    // Something already at rest has no time left.
     assert_eq!(
         SpringValue::new(1.0f32).settling_duration(Motion::Full),
         Duration::ZERO
@@ -257,8 +260,8 @@ fn taksiran_waktu_settle_adalah_batas_atas_yang_ketat() {
 
 #[test]
 fn langkah_raksasa_langsung_mendarat() {
-    // Closed-form tidak bisa meledak seperti integrator numerik: `dt` sepuluh
-    // detik hanya berarti nilainya sudah sampai.
+    // The closed form cannot blow up the way a numerical integrator would: a
+    // `dt` of ten seconds simply means the value has arrived.
     let mut v = SpringValue::new(0.0).with_spring(Spring::bouncy());
     v.set_target(500.0);
     assert!(!v.advance(Duration::from_secs(10), Motion::Full));
@@ -284,7 +287,7 @@ fn toleransi_longgar_berhenti_lebih_cepat() {
     halus.set_target(100.0);
     kasar.set_target(100.0);
     assert!(jalankan(&mut kasar, Motion::Full) < jalankan(&mut halus, Motion::Full));
-    // Berapa pun toleransinya, nilai akhir tetap dikunci ke target.
+    // Whatever the tolerance, the final value is still snapped to the target.
     assert_eq!(kasar.position(), 100.0);
 }
 
@@ -314,8 +317,8 @@ fn retarget_membawa_velocity_tanpa_patahan() {
     let (p, kecepatan) = (v.position(), v.velocity());
     assert!(kecepatan > 1.0, "harus sedang bergerak: {kecepatan}");
 
-    // Inti WWDC23: retarget tidak membatalkan apa pun — posisi dan velocity
-    // frame ini tetap persis sama sesudahnya.
+    // The heart of WWDC23: retargeting cancels nothing — this frame's position
+    // and velocity are still exactly the same afterwards.
     v.set_target(-50.0);
     assert_eq!(v.position(), p);
     assert_eq!(v.velocity(), kecepatan);
@@ -334,9 +337,9 @@ fn retarget_ke_posisi_sekarang_tidak_membekukan_gerakan() {
         v.advance(FRAME, Motion::Full);
     }
     let p = v.position();
-    // Target dipindahkan tepat ke posisi sekarang: momentum harus tetap
-    // membawanya lewat, lalu kembali. Kalau velocity dibuang, nilai akan
-    // berhenti mendadak — patahan yang terlihat mata.
+    // The target is moved exactly onto the current position: momentum must
+    // still carry it past and then back. If velocity were dropped, the value
+    // would stop dead — a seam the eye can see.
     v.set_target(p);
     assert!(v.is_animating());
     assert!(v.advance(FRAME, Motion::Full));
@@ -348,7 +351,8 @@ fn retarget_ke_posisi_sekarang_tidak_membekukan_gerakan() {
 
 #[test]
 fn retarget_setiap_frame_tetap_konvergen() {
-    // Pola menyeret: target mengikuti jari tiap frame, lalu jari berhenti.
+    // The dragging pattern: the target follows the finger every frame, then
+    // the finger stops.
     let mut v = SpringValue::new(0.0).with_spring(Spring::smooth());
     let mut jari = 0.0f32;
     for _ in 0..60 {
@@ -370,7 +374,7 @@ fn retarget_ke_target_yang_sama_tidak_mengubah_lintasan() {
     b.set_target(50.0);
     for _ in 0..40 {
         a.advance(FRAME, Motion::Full);
-        b.set_target(50.0); // idempoten
+        b.set_target(50.0); // idempotent
         b.advance(FRAME, Motion::Full);
         assert_eq!(a.position(), b.position());
         assert_eq!(a.velocity(), b.velocity());
@@ -379,8 +383,8 @@ fn retarget_ke_target_yang_sama_tidak_mengubah_lintasan() {
 
 #[test]
 fn handoff_fling_menjadi_spring() {
-    // Velocity tracker menyerahkan kecepatan jari saat dilepas; spring
-    // meneruskannya dari nilai yang sudah diam di target.
+    // The velocity tracker hands over the finger's speed at release; the
+    // spring carries it on from a value that was resting on its target.
     let mut v = SpringValue::new(0.0).with_spring(Spring::smooth());
     assert!(!v.is_animating());
     v.set_velocity(400.0);
@@ -400,7 +404,7 @@ fn dorongan_velocity_bertumpuk() {
     v.set_velocity(100.0);
     v.add_velocity(50.0);
     assert_eq!(v.velocity(), 150.0);
-    // Nilai tak masuk akal diabaikan, tidak menjalar sebagai NaN.
+    // Nonsensical values are ignored rather than spreading as NaN.
     v.set_velocity(f32::NAN);
     assert_eq!(v.velocity(), 150.0);
     v.set_target(f32::INFINITY);
@@ -447,18 +451,19 @@ fn ganti_peran_di_tengah_gerakan_tidak_mengguncang_keadaan() {
     }
     let (p, kecepatan) = (v.position(), v.velocity());
 
-    // Pasangan `&mut` dari `decorative()`, dipakai jalur `update` sebuah view.
+    // The `&mut` counterpart of `decorative()`, used on a view's `update` path.
     assert_eq!(v.role(), MotionRole::Essential);
     v.set_role(MotionRole::Decorative);
     assert_eq!(v.role(), MotionRole::Decorative);
     assert_eq!(v.position(), p, "posisi tidak boleh melompat");
     assert_eq!(v.velocity(), kecepatan, "velocity harus terbawa");
 
-    // Peran barunya langsung berlaku: reduced-motion memakan sisa gerakannya.
+    // The new role takes effect immediately: reduced motion eats what is left
+    // of the movement.
     assert!(!v.advance(FRAME, Motion::Reduced));
     assert_eq!(v.position(), 100.0);
 
-    // Dan bisa dikembalikan.
+    // And it can be put back.
     v.set_role(MotionRole::Essential);
     assert_eq!(v.role(), MotionRole::Essential);
 }
@@ -494,7 +499,7 @@ fn reduced_motion_mematikan_gerakan_dekoratif() {
     assert_eq!(v.velocity(), 0.0);
     assert_eq!(v.settling_duration(Motion::Reduced), Duration::ZERO);
 
-    // Dengan gerakan penuh, nilai dekoratif yang sama tetap beranimasi.
+    // Under full motion the same decorative value still animates.
     let mut w = SpringValue::new(0.0)
         .with_spring(Spring::bouncy())
         .decorative();
@@ -516,7 +521,7 @@ fn motion_dari_flag_platform() {
 }
 
 // ---------------------------------------------------------------------------
-// Nilai vektor
+// Vector values
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -540,7 +545,7 @@ fn spring_bekerja_untuk_point_size_dan_color() {
 
 #[test]
 fn sumbu_vektor_tidak_pernah_keluar_sinkron() {
-    // Satu propagator untuk semua komponen: lintasan diagonal tetap lurus.
+    // One propagator for every component: a diagonal path stays straight.
     let mut p = SpringValue::new(Point::ZERO).with_spring(Spring::bouncy());
     p.set_target(Point::new(100.0, 50.0));
     while p.advance(FRAME, Motion::Full) {
@@ -550,7 +555,7 @@ fn sumbu_vektor_tidak_pernah_keluar_sinkron() {
 }
 
 // ---------------------------------------------------------------------------
-// Sambungan ke scheduler
+// Seam with the scheduler
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -559,7 +564,7 @@ fn driver_meminta_frame_hanya_selama_ada_yang_bergerak() {
     let mut v = SpringValue::new(0.0).with_spring(Spring::snappy());
     let mut now = Instant::now();
 
-    // Tidak ada yang bergerak: tidak ada frame yang diminta.
+    // Nothing is moving: no frame is requested.
     let tick = d.begin_frame(now);
     let _ = tick.advance(&mut v);
     assert_eq!(d.end_frame(tick), Dirty::NONE);
@@ -596,13 +601,13 @@ fn driver_melupakan_jam_setelah_idle() {
     tick.advance(&mut v);
     assert_eq!(d.end_frame(tick), Dirty::ANIMATION);
 
-    // Frame kedua berjarak satu frame: dt jujur.
+    // The second frame is one frame away: an honest dt.
     let tick = d.begin_frame(now + FRAME);
     assert_eq!(tick.dt(), FRAME);
     tick.advance(&mut v);
     d.end_frame(tick);
 
-    // Selesaikan animasi, lalu diam lama.
+    // Finish the animation, then sit idle for a long time.
     loop {
         let tick = d.begin_frame(now + Duration::from_secs(1));
         tick.advance(&mut v);
@@ -610,7 +615,8 @@ fn driver_melupakan_jam_setelah_idle() {
             break;
         }
     }
-    // Animasi baru setelah lima detik idle mulai dari dt nol, bukan lima detik.
+    // A new animation after five idle seconds starts from dt zero, not five
+    // seconds.
     let tick = d.begin_frame(now + Duration::from_secs(6));
     assert_eq!(tick.dt(), Duration::ZERO);
     d.end_frame(tick);
@@ -623,7 +629,7 @@ fn driver_meminta_frame_saat_preferensi_gerakan_berubah() {
     assert_eq!(d.set_motion(Motion::Full), Dirty::NONE);
     assert_eq!(d.set_motion(Motion::Reduced), Dirty::ANIMATION);
     assert_eq!(d.motion(), Motion::Reduced);
-    // Tick mewarisi preferensi yang berlaku.
+    // The tick inherits the preference in effect.
     let tick = d.begin_frame(Instant::now());
     assert_eq!(tick.motion(), Motion::Reduced);
     assert!(!tick.is_active());
@@ -651,12 +657,12 @@ fn reset_membuang_jam() {
 }
 
 // ---------------------------------------------------------------------------
-// Handoff gesture -> spring
+// Gesture handoff -> spring
 // ---------------------------------------------------------------------------
 
 #[test]
 fn velocity_gesture_jadi_velocity_spring_tanpa_tertukar_sumbu() {
-    // Sumbu tidak boleh tertukar: x tetap x, y tetap y (positif = ke bawah).
+    // The axes must not be swapped: x stays x, y stays y (positive = down).
     let p = Point::from(Velocity::new(-120.0, 900.0));
     assert_eq!(p, Point::new(-120.0, 900.0));
 }
@@ -666,13 +672,13 @@ fn handoff_fling_meneruskan_gerakan_tanpa_patahan() {
     let mut v = SpringValue::new(Point::new(0.0, 0.0)).with_spring(Spring::smooth());
     v.set_target(Point::new(0.0, -300.0));
 
-    // Beberapa frame lebih dulu: gesture diserahkan di *tengah* gerakan.
+    // A few frames first: the gesture is handed over *mid*-motion.
     v.advance(FRAME, Motion::Full);
     let sebelum = v.position();
 
     v.hand_off(Velocity::new(0.0, -2000.0));
     assert_eq!(v.velocity(), Point::new(0.0, -2000.0));
-    // Posisi tidak melompat — hanya kecepatannya yang berganti.
+    // The position does not jump — only the velocity is replaced.
     assert_eq!(v.position(), sebelum);
     assert!(v.is_animating());
 

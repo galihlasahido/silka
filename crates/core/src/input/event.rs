@@ -1,18 +1,18 @@
-//! Kosakata event input — **milik kita sendiri**, bukan tipe winit.
+//! The input event vocabulary — **our own**, not winit's types.
 //!
-//! Alasannya sama dengan alasan `silka-paint` tidak memuat tipe wgpu
-//! (REKOMENDASI §3.2): kode widget berbicara dalam kosakata ini, dan
-//! `silka-platform` adalah satu-satunya tempat yang tahu winit. Backend shell
-//! lain (uji headless, replay rekaman input, nanti mungkin platform baru) cukup
-//! menghasilkan tipe-tipe di modul ini.
+//! The reason is the same as the reason `silka-paint` carries no wgpu types
+//! (REKOMENDASI §3.2): widget code speaks this vocabulary, and
+//! `silka-platform` is the only place that knows about winit. Any other shell
+//! backend (headless tests, replaying recorded input, perhaps a new platform
+//! later) only has to produce the types in this module.
 //!
-//! Semua koordinat dalam **poin logis** dan **global terhadap window** — DPI
-//! sudah diselesaikan di lapisan platform, dan konversi ke koordinat lokal node
-//! dilakukan hit-testing ([`crate::input::hit`]).
+//! All coordinates are in **logical points** and **global to the window** —
+//! DPI has already been resolved in the platform layer, and the conversion to
+//! node-local coordinates is done by hit-testing ([`crate::input::hit`]).
 //!
-//! Semua stempel waktu adalah [`Duration`] sejak window dibuka, bukan
-//! `Instant`. Dengan begitu velocity tracker bisa diuji secara deterministik
-//! tanpa menyentuh jam sistem.
+//! All timestamps are a [`Duration`] since the window opened, not an
+//! `Instant`. That way the velocity tracker can be tested deterministically
+//! without touching the system clock.
 
 use core::fmt;
 use std::time::Duration;
@@ -23,16 +23,16 @@ use silka_paint::Point;
 // Modifiers
 // ---------------------------------------------------------------------------
 
-/// Tombol pengubah yang sedang ditahan, sebagai bitset.
+/// The modifier keys currently held, as a bitset.
 ///
-/// [`Modifiers::COMMAND`] adalah alias yang menunjuk tombol "aksi utama" OS:
-/// ⌘ di macOS, Ctrl di Windows/Linux. Widget menulis pintasan sekali memakai
-/// itu dan otomatis benar di ketiga platform.
+/// [`Modifiers::COMMAND`] is an alias for the OS "primary action" key: ⌘ on
+/// macOS, Ctrl on Windows/Linux. Widgets write a shortcut once against it and
+/// get the right behaviour on all three platforms.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Modifiers(u8);
 
 impl Modifiers {
-    /// Tidak ada modifier.
+    /// No modifiers.
     pub const NONE: Self = Self(0);
     /// Shift.
     pub const SHIFT: Self = Self(1 << 0);
@@ -40,13 +40,13 @@ impl Modifiers {
     pub const CONTROL: Self = Self(1 << 1);
     /// Alt / Option.
     pub const ALT: Self = Self(1 << 2);
-    /// Meta: ⌘ di macOS, tombol Windows di PC.
+    /// Meta: ⌘ on macOS, the Windows key on a PC.
     pub const META: Self = Self(1 << 3);
 
-    /// Tombol "aksi utama" per platform: ⌘ di macOS, Ctrl selain itu.
+    /// The per-platform "primary action" key: ⌘ on macOS, Ctrl elsewhere.
     #[cfg(target_os = "macos")]
     pub const COMMAND: Self = Self::META;
-    /// Tombol "aksi utama" per platform: ⌘ di macOS, Ctrl selain itu.
+    /// The per-platform "primary action" key: ⌘ on macOS, Ctrl elsewhere.
     #[cfg(not(target_os = "macos"))]
     pub const COMMAND: Self = Self::CONTROL;
 
@@ -57,39 +57,39 @@ impl Modifiers {
         (Self::META, "meta"),
     ];
 
-    /// Bit mentah.
+    /// The raw bits.
     pub const fn bits(self) -> u8 {
         self.0
     }
 
-    /// Benar bila tidak ada modifier sama sekali.
+    /// True when no modifier at all is held.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
-    /// Benar bila seluruh bit `other` ada di sini.
+    /// True when every bit of `other` is present here.
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
-    /// Gabungan dua himpunan.
+    /// The union of two sets.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
-    /// Tambahkan modifier.
+    /// Add a modifier.
     pub fn insert(&mut self, other: Self) {
         self.0 |= other.0;
     }
 
-    /// Buang modifier.
+    /// Remove a modifier.
     pub fn remove(&mut self, other: Self) {
         self.0 &= !other.0;
     }
 
-    /// Benar bila **persis** modifier ini yang ditahan (tidak lebih).
+    /// True when **exactly** these modifiers are held (no more).
     ///
-    /// Dipakai pintasan: `Tab` polos tidak boleh cocok dengan `Ctrl+Tab`.
+    /// Used by shortcuts: a bare `Tab` must not match `Ctrl+Tab`.
     pub const fn is_exactly(self, other: Self) -> bool {
         self.0 == other.0
     }
@@ -132,49 +132,49 @@ impl fmt::Debug for Modifiers {
 // Pointer
 // ---------------------------------------------------------------------------
 
-/// Identitas satu penunjuk. Mouse selalu [`PointerId::MOUSE`]; sentuhan dan
-/// pena mendapat id per jari/alat sehingga multi-touch bisa dilacak terpisah.
+/// The identity of one pointer. A mouse is always [`PointerId::MOUSE`]; touches
+/// and pens get an id per finger/tool so multi-touch can be tracked separately.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PointerId(pub u64);
 
 impl PointerId {
-    /// Penunjuk mouse — satu-satunya yang selalu ada di desktop.
+    /// The mouse pointer — the only one that is always present on desktop.
     pub const MOUSE: Self = Self(0);
 }
 
-/// Jenis alat penunjuk.
+/// The kind of pointing device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum PointerKind {
-    /// Mouse atau trackpad.
+    /// Mouse or trackpad.
     #[default]
     Mouse,
-    /// Jari di layar sentuh.
+    /// A finger on a touch screen.
     Touch,
-    /// Pena/stylus (bisa membawa tekanan).
+    /// A pen/stylus (may carry pressure).
     Pen,
 }
 
-/// Tombol penunjuk.
+/// A pointer button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PointerButton {
-    /// Tombol utama (kiri pada mouse tangan-kanan, sentuhan jari).
+    /// The primary button (left on a right-handed mouse, a finger touch).
     Primary,
-    /// Tombol sekunder (kanan) — menu konteks.
+    /// The secondary button (right) — context menus.
     Secondary,
-    /// Tombol tengah.
+    /// The middle button.
     Middle,
-    /// Navigasi mundur.
+    /// Navigate back.
     Back,
-    /// Navigasi maju.
+    /// Navigate forward.
     Forward,
-    /// Tombol lain menurut nomor OS.
+    /// Any other button, by OS number.
     Other(u16),
 }
 
 impl PointerButton {
-    /// Nomor bit untuk [`Buttons`]; tombol eksotis dipetakan ke bit terakhir.
+    /// The bit number for [`Buttons`]; exotic buttons map onto the last bit.
     const fn bit(self) -> u8 {
         match self {
             PointerButton::Primary => 1 << 0,
@@ -187,40 +187,40 @@ impl PointerButton {
     }
 }
 
-/// Himpunan tombol yang sedang ditahan.
+/// The set of buttons currently held.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Buttons(u8);
 
 impl Buttons {
-    /// Tidak ada tombol ditahan.
+    /// No button held.
     pub const NONE: Self = Self(0);
 
-    /// Bit mentah.
+    /// The raw bits.
     pub const fn bits(self) -> u8 {
         self.0
     }
 
-    /// Benar bila tidak ada tombol ditahan.
+    /// True when no button is held.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
-    /// Benar bila `button` sedang ditahan.
+    /// True when `button` is held.
     pub const fn contains(self, button: PointerButton) -> bool {
         self.0 & button.bit() != 0
     }
 
-    /// Tandai tombol sedang ditahan.
+    /// Mark a button as held.
     pub fn insert(&mut self, button: PointerButton) {
         self.0 |= button.bit();
     }
 
-    /// Tandai tombol sudah dilepas.
+    /// Mark a button as released.
     pub fn remove(&mut self, button: PointerButton) {
         self.0 &= !button.bit();
     }
 
-    /// Lepas semua tombol (dipakai saat pointer dibatalkan).
+    /// Release every button (used when a pointer is cancelled).
     pub fn clear(&mut self) {
         self.0 = 0;
     }
@@ -232,55 +232,58 @@ impl fmt::Debug for Buttons {
     }
 }
 
-/// Tahap hidup sebuah event penunjuk.
+/// The lifecycle phase of a pointer event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PointerPhase {
-    /// Penunjuk masuk ke area window.
+    /// The pointer entered the window area.
     Enter,
-    /// Penunjuk bergerak.
+    /// The pointer moved.
     Move,
-    /// Tombol ditekan.
+    /// A button was pressed.
     Down,
-    /// Tombol dilepas.
+    /// A button was released.
     Up,
-    /// Interaksi dibatalkan OS (window kehilangan fokus, gesture diambil alih).
+    /// The interaction was cancelled by the OS (the window lost focus, the
+    /// gesture was taken over).
     ///
-    /// Widget **wajib** memperlakukan ini seperti "batal", bukan seperti
-    /// [`PointerPhase::Up`]: tombol yang dibatalkan tidak menghasilkan klik.
+    /// Widgets **must** treat this as "cancelled", not as
+    /// [`PointerPhase::Up`]: a cancelled button does not produce a click.
     Cancel,
-    /// Penunjuk meninggalkan area window.
+    /// The pointer left the window area.
     Leave,
 }
 
-/// Satu event penunjuk.
+/// A single pointer event.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointerEvent {
-    /// Penunjuk mana.
+    /// Which pointer.
     pub id: PointerId,
-    /// Alat apa.
+    /// Which device.
     pub kind: PointerKind,
-    /// Tahap.
+    /// The phase.
     pub phase: PointerPhase,
-    /// Posisi global dalam poin logis.
+    /// The global position in logical points.
     pub position: Point,
-    /// Tombol yang memicu event ini (hanya pada [`PointerPhase::Down`]/`Up`).
+    /// The button that triggered this event (only on
+    /// [`PointerPhase::Down`]/`Up`).
     pub button: Option<PointerButton>,
-    /// Tombol yang sedang ditahan setelah event ini.
+    /// The buttons held after this event.
     pub buttons: Buttons,
-    /// Modifier keyboard saat event terjadi.
+    /// The keyboard modifiers at the moment of the event.
     pub modifiers: Modifiers,
-    /// Waktu sejak window dibuka.
+    /// Time since the window opened.
     pub time: Duration,
-    /// Nomor klik beruntun: 1 = klik tunggal, 2 = ganda, 3 = tripel.
+    /// The consecutive click number: 1 = single click, 2 = double, 3 = triple.
     ///
-    /// Diisi router, bukan platform — ambang waktu dan jaraknya milik
-    /// framework agar seragam di tiga OS.
+    /// Filled in by the router, not the platform — the time and distance
+    /// thresholds belong to the framework so they are uniform across all three
+    /// operating systems.
     pub click_count: u32,
 }
 
 impl PointerEvent {
-    /// Event penunjuk mouse sederhana; dipakai konstruktor platform dan test.
+    /// A simple mouse pointer event; used by platform constructors and tests.
     pub fn new(phase: PointerPhase, position: Point, time: Duration) -> Self {
         Self {
             id: PointerId::MOUSE,
@@ -295,19 +298,19 @@ impl PointerEvent {
         }
     }
 
-    /// Setel tombol pemicu.
+    /// Set the triggering button.
     pub fn button(mut self, button: PointerButton) -> Self {
         self.button = Some(button);
         self
     }
 
-    /// Setel modifier.
+    /// Set the modifiers.
     pub fn modifiers(mut self, modifiers: Modifiers) -> Self {
         self.modifiers = modifiers;
         self
     }
 
-    /// Benar bila event ini menekan/melepas tombol utama.
+    /// True when this event presses/releases the primary button.
     pub fn is_primary(&self) -> bool {
         self.button == Some(PointerButton::Primary)
     }
@@ -317,31 +320,31 @@ impl PointerEvent {
 // Scroll
 // ---------------------------------------------------------------------------
 
-/// Besaran guliran.
+/// A scroll amount.
 ///
-/// Roda mouse melapor dalam **baris**, trackpad dalam **poin logis**. Keduanya
-/// dibiarkan apa adanya sampai ke widget: hanya widget yang tahu berapa tinggi
-/// satu barisnya.
+/// A mouse wheel reports in **lines**, a trackpad in **logical points**. Both
+/// are passed through untouched all the way to the widget: only the widget
+/// knows how tall one of its lines is.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScrollDelta {
-    /// Kelipatan baris (roda mouse).
+    /// A multiple of lines (mouse wheel).
     Lines {
         /// Horizontal.
         x: f32,
-        /// Vertikal.
+        /// Vertical.
         y: f32,
     },
-    /// Poin logis (trackpad, layar sentuh).
+    /// Logical points (trackpad, touch screen).
     Points {
         /// Horizontal.
         x: f32,
-        /// Vertikal.
+        /// Vertical.
         y: f32,
     },
 }
 
 impl ScrollDelta {
-    /// Konversi ke poin logis dengan tinggi baris tertentu.
+    /// Convert to logical points given a line height.
     pub fn to_points(self, line_height: f32) -> Point {
         match self {
             ScrollDelta::Lines { x, y } => Point::new(x * line_height, y * line_height),
@@ -349,7 +352,7 @@ impl ScrollDelta {
         }
     }
 
-    /// Benar bila tidak ada pergerakan sama sekali.
+    /// True when there is no movement at all.
     pub fn is_zero(self) -> bool {
         match self {
             ScrollDelta::Lines { x, y } | ScrollDelta::Points { x, y } => x == 0.0 && y == 0.0,
@@ -357,51 +360,52 @@ impl ScrollDelta {
     }
 }
 
-/// Tahap gesture guliran.
+/// The phase of a scroll gesture.
 ///
-/// **momentum datang dari OS, bukan dari kita** (INTEGRASI-NATIVE §3): di macOS
-/// sistem mengirim sendiri ekor inersia setelah jari diangkat, dan menirunya di
-/// framework menghasilkan guliran ganda. Karena itu tahapnya dibawa sampai ke
-/// widget: scroll physics kita hanya boleh menyalakan simulasi inersia sendiri
-/// bila platform **tidak** menyediakannya.
+/// **Momentum comes from the OS, not from us** (INTEGRASI-NATIVE §3): on macOS
+/// the system sends its own inertial tail once the finger lifts, and imitating
+/// it in the framework produces double scrolling. That is why the phase is
+/// carried all the way to the widget: our scroll physics may only turn on its
+/// own inertia simulation when the platform does **not** provide one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ScrollPhase {
-    /// Roda mouse — diskret, tanpa awal/akhir gesture.
+    /// Mouse wheel — discrete, with no gesture start or end.
     Wheel,
-    /// Jari menyentuh trackpad.
+    /// A finger touched the trackpad.
     Began,
-    /// Jari bergerak.
+    /// The finger moved.
     Changed,
-    /// Jari diangkat; belum tentu diikuti momentum.
+    /// The finger lifted; momentum may or may not follow.
     Ended,
-    /// Ekor inersia **dari OS**.
+    /// The inertial tail **from the OS**.
     Momentum,
-    /// Ekor inersia OS selesai.
+    /// The OS inertial tail has finished.
     MomentumEnded,
 }
 
 impl ScrollPhase {
-    /// Benar bila guliran ini adalah inersia yang dihasilkan OS.
+    /// True when this scroll is OS-generated inertia.
     pub fn is_momentum(self) -> bool {
         matches!(self, ScrollPhase::Momentum | ScrollPhase::MomentumEnded)
     }
 }
 
-/// Satu event guliran.
+/// A single scroll event.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScrollEvent {
-    /// Penunjuk yang menggulir (untuk trackpad = mouse).
+    /// The pointer doing the scrolling (for a trackpad, the mouse).
     pub id: PointerId,
-    /// Posisi kursor saat menggulir — menentukan wadah mana yang menerima.
+    /// The cursor position while scrolling — it decides which container
+    /// receives the event.
     pub position: Point,
-    /// Besaran.
+    /// The amount.
     pub delta: ScrollDelta,
-    /// Tahap gesture.
+    /// The gesture phase.
     pub phase: ScrollPhase,
-    /// Modifier (⌘+scroll = zoom di banyak aplikasi).
+    /// Modifiers (⌘+scroll = zoom in many applications).
     pub modifiers: Modifiers,
-    /// Waktu sejak window dibuka.
+    /// Time since the window opened.
     pub time: Duration,
 }
 
@@ -409,17 +413,17 @@ pub struct ScrollEvent {
 // Keyboard
 // ---------------------------------------------------------------------------
 
-/// Tombol bernama (non-teks).
+/// A named (non-text) key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum NamedKey {
-    /// Tab — navigasi fokus.
+    /// Tab — focus navigation.
     Tab,
     /// Enter/Return.
     Enter,
     /// Escape.
     Escape,
-    /// Spasi (tetap bernama walau menghasilkan teks: ia mengaktifkan tombol).
+    /// Space (named even though it produces text: it activates controls).
     Space,
     /// Backspace.
     Backspace,
@@ -435,69 +439,71 @@ pub enum NamedKey {
     PageUp,
     /// Page Down.
     PageDown,
-    /// Panah kiri.
+    /// Left arrow.
     ArrowLeft,
-    /// Panah kanan.
+    /// Right arrow.
     ArrowRight,
-    /// Panah atas.
+    /// Up arrow.
     ArrowUp,
-    /// Panah bawah.
+    /// Down arrow.
     ArrowDown,
-    /// Tombol fungsi F1–F24.
+    /// Function keys F1–F24.
     Function(u8),
 }
 
-/// Tombol yang ditekan, dalam kosakata **logis** (sudah melewati layout
-/// keyboard OS).
+/// The key that was pressed, in the **logical** vocabulary (already through
+/// the OS keyboard layout).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum KeyCode {
-    /// Tombol yang menghasilkan karakter (sudah sesuai layout & dead key).
+    /// A key that produces a character (layout and dead keys already applied).
     Character(char),
-    /// Tombol bernama.
+    /// A named key.
     Named(NamedKey),
-    /// Tombol yang tidak bisa diterjemahkan; nomornya milik OS.
+    /// A key that could not be translated; the number belongs to the OS.
     Unidentified,
 }
 
 impl KeyCode {
-    /// Benar bila ini tombol bernama tertentu.
+    /// True when this is a particular named key.
     pub fn is(&self, named: NamedKey) -> bool {
         matches!(self, KeyCode::Named(n) if *n == named)
     }
 }
 
-/// Ditekan atau dilepas.
+/// Pressed or released.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyState {
-    /// Ditekan.
+    /// Pressed.
     Pressed,
-    /// Dilepas.
+    /// Released.
     Released,
 }
 
-/// Satu event keyboard.
+/// A single keyboard event.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyEvent {
-    /// Tombol logis.
+    /// The logical key.
     pub code: KeyCode,
-    /// Ditekan atau dilepas.
+    /// Pressed or released.
     pub state: KeyState,
-    /// Benar bila ini pengulangan otomatis karena tombol ditahan.
+    /// True when this is an auto-repeat from the key being held.
     pub repeat: bool,
-    /// Teks yang dihasilkan tombol ini, bila ada.
+    /// The text this key produces, if any.
     ///
-    /// **Selama komposisi IME nilainya diabaikan**: widget teks menahan jalur
-    /// key normal dan hanya mendengarkan [`ImeEvent`] (REKOMENDASI §3.8).
+    /// **During IME composition this value is ignored**: text widgets hold
+    /// back the normal key path and listen only to [`ImeEvent`] (REKOMENDASI
+    /// §3.8).
     pub text: Option<String>,
-    /// Modifier yang ditahan.
+    /// The modifiers held.
     pub modifiers: Modifiers,
-    /// Waktu sejak window dibuka.
+    /// Time since the window opened.
     pub time: Duration,
 }
 
 impl KeyEvent {
-    /// Event tombol ditekan tanpa modifier — dipakai test dan pintasan sintetis.
+    /// A key-press event with no modifiers — used by tests and synthetic
+    /// shortcuts.
     pub fn pressed(code: KeyCode, time: Duration) -> Self {
         Self {
             code,
@@ -509,7 +515,7 @@ impl KeyEvent {
         }
     }
 
-    /// Versi dilepas.
+    /// The released version.
     pub fn released(code: KeyCode, time: Duration) -> Self {
         Self {
             state: KeyState::Released,
@@ -517,13 +523,13 @@ impl KeyEvent {
         }
     }
 
-    /// Setel modifier.
+    /// Set the modifiers.
     pub fn modifiers(mut self, modifiers: Modifiers) -> Self {
         self.modifiers = modifiers;
         self
     }
 
-    /// Benar bila tombol sedang ditekan (bukan dilepas).
+    /// True when the key is being pressed (not released).
     pub fn is_pressed(&self) -> bool {
         self.state == KeyState::Pressed
     }
@@ -533,45 +539,46 @@ impl KeyEvent {
 // IME
 // ---------------------------------------------------------------------------
 
-/// Event komposisi IME (CJK, dead key, emoji picker).
+/// An IME composition event (CJK, dead keys, the emoji picker).
 ///
-/// Pemetaannya 1:1 dengan `winit::event::Ime` — sengaja, karena bentuk itu
-/// adalah bentuk yang sama di ketiga OS. Yang **tidak** boleh bocor ke sini
-/// adalah tipe winit-nya sendiri.
+/// It maps 1:1 onto `winit::event::Ime` — deliberately, because that shape is
+/// the same shape on all three operating systems. What must **not** leak in
+/// here is the winit type itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImeEvent {
-    /// IME dinyalakan untuk window ini.
+    /// The IME was enabled for this window.
     Enabled,
-    /// Teks komposisi berjalan; harus dirender **inline dengan garis bawah**.
+    /// Composition text is in progress; it must be rendered **inline and
+    /// underlined**.
     Preedit {
-        /// Teks komposisi saat ini (kosong = komposisi dibersihkan).
+        /// The current composition text (empty = the composition was cleared).
         text: String,
-        /// Rentang kursor di dalam `text`, dalam **indeks byte**.
+        /// The cursor range within `text`, in **byte indices**.
         cursor: Option<(usize, usize)>,
     },
-    /// Teks final yang harus disisipkan.
+    /// The final text to insert.
     Commit(String),
-    /// IME dimatikan; preedit yang tersisa harus dibuang.
+    /// The IME was disabled; any remaining preedit must be discarded.
     Disabled,
 }
 
 impl ImeEvent {
-    /// Benar bila event ini bagian dari komposisi yang sedang berjalan.
+    /// True when this event is part of a composition in progress.
     pub fn is_composing(&self) -> bool {
         matches!(self, ImeEvent::Preedit { text, .. } if !text.is_empty())
     }
 }
 
 // ---------------------------------------------------------------------------
-// Fokus
+// Focus
 // ---------------------------------------------------------------------------
 
-/// Perubahan fokus yang dikirim ke node yang bersangkutan.
+/// A focus change delivered to the node concerned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FocusEvent {
-    /// Node ini menjadi tujuan keyboard.
+    /// This node became the keyboard's destination.
     Gained,
-    /// Node ini berhenti menjadi tujuan keyboard.
+    /// This node stopped being the keyboard's destination.
     Lost,
 }
 
@@ -579,23 +586,24 @@ pub enum FocusEvent {
 // Event
 // ---------------------------------------------------------------------------
 
-/// Satu event input apa pun, sebagaimana dilihat render tree.
+/// Any input event at all, as the render tree sees it.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
-    /// Penunjuk (mouse/sentuh/pena).
+    /// Pointer (mouse/touch/pen).
     Pointer(PointerEvent),
-    /// Guliran.
+    /// Scroll.
     Scroll(ScrollEvent),
     /// Keyboard.
     Key(KeyEvent),
-    /// Komposisi IME.
+    /// IME composition.
     Ime(ImeEvent),
-    /// Fokus datang/pergi (dikirim langsung ke node, tidak menggelembung).
+    /// Focus arriving/leaving (delivered straight to the node, it does not
+    /// bubble).
     Focus(FocusEvent),
 }
 
 impl Event {
-    /// Posisi global event ini, bila ia punya posisi.
+    /// This event's global position, if it has one.
     pub fn position(&self) -> Option<Point> {
         match self {
             Event::Pointer(e) => Some(e.position),
@@ -604,7 +612,7 @@ impl Event {
         }
     }
 
-    /// Waktu event, bila ada.
+    /// The event time, if any.
     pub fn time(&self) -> Option<Duration> {
         match self {
             Event::Pointer(e) => Some(e.time),
@@ -663,7 +671,7 @@ mod tests {
 
     #[test]
     fn command_mengikuti_platform() {
-        // Bukan konstanta yang sama di semua OS — itulah gunanya.
+        // Not the same constant on every OS — that is the whole point.
         #[cfg(target_os = "macos")]
         assert_eq!(Modifiers::COMMAND, Modifiers::META);
         #[cfg(not(target_os = "macos"))]

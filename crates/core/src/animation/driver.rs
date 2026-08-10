@@ -1,4 +1,4 @@
-//! Sambungan animasi ke scheduler: siapa yang meminta frame berikutnya.
+//! The animation-to-scheduler seam: who asks for the next frame.
 
 use std::cell::Cell;
 use std::time::{Duration, Instant};
@@ -8,15 +8,15 @@ use crate::scheduler::Dirty;
 use super::motion::Motion;
 use super::value::{Animatable, SpringValue};
 
-/// Penggerak animasi satu window.
+/// The animation driver for a single window.
 ///
-/// Tugasnya cuma dua, dan keduanya penting justru karena kecil:
+/// It has only two jobs, and both matter precisely because they are small:
 ///
-/// 1. **Menghitung `dt` yang jujur** dari waktu frame yang diberikan platform —
-///    tidak pernah dari konstanta 16,6 ms (§3.5).
-/// 2. **Menjawab pertanyaan scheduler**: apakah masih ada yang bergerak? Kalau
-///    tidak ada satu pun spring yang melapor aktif, [`AnimationDriver::end_frame`]
-///    mengembalikan [`Dirty::NONE`] dan renderer benar-benar tidur.
+/// 1. **Compute an honest `dt`** from the frame time the platform provides —
+///    never from a hard-coded 16.6 ms (§3.5).
+/// 2. **Answer the scheduler's question**: is anything still moving? If not a
+///    single spring reports itself active, [`AnimationDriver::end_frame`]
+///    returns [`Dirty::NONE`] and the renderer truly goes to sleep.
 ///
 /// ```
 /// use std::time::{Duration, Instant};
@@ -34,8 +34,8 @@ use super::value::{Animatable, SpringValue};
 /// while !scheduler.is_idle() {
 ///     let start = scheduler.begin_frame(now);
 ///     let tick = driver.begin_frame(now);
-///     let _posisi = tick.advance(&mut x); // dipakai layout/paint frame ini
-///     let lagi = driver.end_frame(tick);  // ANIMATION atau NONE
+///     let _posisi = tick.advance(&mut x); // used by layout/paint this frame
+///     let lagi = driver.end_frame(tick);  // ANIMATION or NONE
 ///     scheduler.request(lagi);
 ///     scheduler.end_frame(start, now, true);
 ///     now += Duration::from_micros(8_333);
@@ -50,7 +50,7 @@ pub struct AnimationDriver {
 }
 
 impl AnimationDriver {
-    /// Penggerak baru: belum punya jam, belum ada yang bergerak.
+    /// A fresh driver: no clock yet, nothing moving yet.
     pub fn new() -> Self {
         Self {
             motion: Motion::Full,
@@ -59,16 +59,16 @@ impl AnimationDriver {
         }
     }
 
-    /// Preferensi gerakan yang berlaku.
+    /// The motion preference in effect.
     pub fn motion(&self) -> Motion {
         self.motion
     }
 
-    /// Laporkan setting reduced-motion dari OS.
+    /// Report the reduced-motion setting from the OS.
     ///
-    /// Mengembalikan [`Dirty::ANIMATION`] bila nilainya berubah: gerakan
-    /// dekoratif yang sedang berjalan perlu satu frame untuk menyelesaikan
-    /// dirinya, dan tanpa permintaan itu ia akan membeku di tengah jalan.
+    /// Returns [`Dirty::ANIMATION`] when the value changes: decorative motion
+    /// that is currently running needs one frame to finish itself off, and
+    /// without that request it would freeze halfway.
     pub fn set_motion(&mut self, motion: Motion) -> Dirty {
         if self.motion == motion {
             return Dirty::NONE;
@@ -77,25 +77,27 @@ impl AnimationDriver {
         Dirty::ANIMATION
     }
 
-    /// Benar bila frame sebelumnya masih ada yang bergerak.
+    /// True when something was still moving during the previous frame.
     pub fn is_animating(&self) -> bool {
         self.animating
     }
 
-    /// Buang jam (window pindah monitor, aplikasi baru bangun dari suspend).
+    /// Drop the clock (window moved to another monitor, app just woke from
+    /// suspend).
     ///
-    /// Frame berikutnya akan ber-`dt` nol, bukan selisih raksasa.
+    /// The next frame will have a `dt` of zero rather than a giant delta.
     pub fn reset(&mut self) {
         self.last = None;
     }
 
-    /// Mulai satu frame animasi pada `now`.
+    /// Begin one animation frame at `now`.
     ///
-    /// `dt` adalah jarak ke frame animasi sebelumnya. Setelah periode idle
-    /// jam sengaja dilupakan ([`AnimationDriver::end_frame`]), sehingga frame
-    /// pertama sebuah animasi selalu `dt = 0` — gerakan dimulai dari keadaan
-    /// yang benar-benar terlihat pengguna, bukan meloncat sejauh lamanya
-    /// aplikasi diam.
+    /// `dt` is the distance to the previous animation frame. After an idle
+    /// period the clock is deliberately forgotten
+    /// ([`AnimationDriver::end_frame`]), so the first frame of an animation
+    /// always has `dt = 0` — motion starts from the state the user can
+    /// actually see, instead of jumping ahead by however long the app sat
+    /// still.
     pub fn begin_frame(&mut self, now: Instant) -> Tick {
         let dt = match self.last {
             Some(prev) => now.saturating_duration_since(prev),
@@ -109,10 +111,11 @@ impl AnimationDriver {
         }
     }
 
-    /// Tutup frame; mengembalikan alasan dirty untuk frame berikutnya.
+    /// Close the frame; returns the dirty reason for the next one.
     ///
-    /// [`Dirty::ANIMATION`] bila masih ada yang bergerak, [`Dirty::NONE`] bila
-    /// semuanya sudah berhenti — dan begitu berhenti, jamnya dilupakan.
+    /// [`Dirty::ANIMATION`] while something is still moving, [`Dirty::NONE`]
+    /// once everything has stopped — and once it stops, the clock is
+    /// forgotten.
     pub fn end_frame(&mut self, tick: Tick) -> Dirty {
         self.animating = tick.active.get();
         if self.animating {
@@ -130,16 +133,16 @@ impl Default for AnimationDriver {
     }
 }
 
-/// Token satu frame animasi.
+/// A token for one animation frame.
 ///
-/// Dibagikan ke seluruh pohon selama frame berlangsung. Setiap nilai yang
-/// masih bergerak menandai dirinya di sini lewat [`Tick::advance`], dan
-/// penandaan itulah yang membuat frame berikutnya dijadwalkan — bukan sebuah
-/// timer yang berdetak terus-menerus.
+/// Shared across the whole tree while the frame lasts. Every value that is
+/// still moving flags itself here through [`Tick::advance`], and it is that
+/// flag which gets the next frame scheduled — not a timer ticking away
+/// endlessly.
 ///
-/// Penandaannya memakai [`Cell`] supaya `&Tick` cukup: kode paint memegangnya
-/// sebagai referensi bersama, tanpa perlu `&mut` yang akan menular ke seluruh
-/// tanda tangan fungsi widget.
+/// The flag lives in a [`Cell`] so that `&Tick` suffices: paint code holds it
+/// as a shared reference, without needing a `&mut` that would spread through
+/// every widget signature.
 #[derive(Debug)]
 pub struct Tick {
     dt: Duration,
@@ -148,7 +151,7 @@ pub struct Tick {
 }
 
 impl Tick {
-    /// Tick manual — untuk uji dan untuk pemanggil yang mengurus jamnya sendiri.
+    /// A manual tick — for tests and for callers that manage their own clock.
     pub fn manual(dt: Duration, motion: Motion) -> Self {
         Self {
             dt,
@@ -157,19 +160,19 @@ impl Tick {
         }
     }
 
-    /// Jarak waktu ke frame animasi sebelumnya.
+    /// Time elapsed since the previous animation frame.
     pub fn dt(&self) -> Duration {
         self.dt
     }
 
-    /// Preferensi gerakan yang berlaku frame ini.
+    /// The motion preference in effect this frame.
     pub fn motion(&self) -> Motion {
         self.motion
     }
 
-    /// Majukan sebuah nilai dan kembalikan posisinya untuk frame ini.
+    /// Advance a value and return its position for this frame.
     ///
-    /// Nilai yang masih bergerak otomatis meminta frame berikutnya.
+    /// A value that is still moving automatically requests the next frame.
     pub fn advance<T: Animatable>(&self, value: &mut SpringValue<T>) -> T {
         if value.advance(self.dt, self.motion) {
             self.active.set(true);
@@ -177,15 +180,15 @@ impl Tick {
         value.position()
     }
 
-    /// Minta frame berikutnya tanpa lewat [`SpringValue`].
+    /// Request the next frame without going through a [`SpringValue`].
     ///
-    /// Untuk sumber gerakan lain (video, indikator progres tak tentu) yang
-    /// tetap harus tunduk pada aturan yang sama.
+    /// For other sources of motion (video, indeterminate progress indicators)
+    /// that must still obey the same rules.
     pub fn keep_awake(&self) {
         self.active.set(true);
     }
 
-    /// Benar bila ada yang menandai dirinya masih bergerak.
+    /// True when something has flagged itself as still moving.
     pub fn is_active(&self) -> bool {
         self.active.get()
     }

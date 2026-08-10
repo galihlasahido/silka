@@ -1,4 +1,4 @@
-//! Nilai teranimasi: `(posisi, velocity)` yang bisa di-retarget kapan saja.
+//! Animated values: `(position, velocity)` that can be retargeted at any time.
 
 use std::time::Duration;
 
@@ -11,38 +11,40 @@ use super::spring::Spring;
 // Tolerance
 // ---------------------------------------------------------------------------
 
-/// Seberapa dekat ke target sudah boleh disebut "selesai".
+/// How close to the target counts as "done".
 ///
-/// Secara matematis spring tidak pernah benar-benar sampai — ia mendekat
-/// selamanya. Yang menentukan kapan renderer boleh kembali tidur adalah
-/// toleransi ini, dan karena itu ia bagian dari kontrak, bukan konstanta
-/// tersembunyi: satuan posisi berbeda antara poin logis dan kanal warna.
+/// Mathematically a spring never truly arrives — it approaches forever. What
+/// decides when the renderer may go back to sleep is this tolerance, and that
+/// is why it is part of the contract rather than a hidden constant: the units
+/// of position differ between logical points and colour channels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tolerance {
-    /// Jarak maksimum ke target yang masih dianggap sampai.
+    /// The largest distance to the target that still counts as arrived.
     pub distance: f32,
-    /// Laju maksimum yang masih dianggap diam (satuan posisi per detik).
+    /// The largest speed that still counts as at rest (position units per
+    /// second).
     pub velocity: f32,
 }
 
 impl Tolerance {
-    /// Toleransi untuk besaran dalam **poin logis** (posisi, ukuran, radius).
+    /// Tolerance for quantities in **logical points** (position, size,
+    /// radius).
     ///
-    /// 1/512 poin jauh di bawah satu piksel fisik bahkan di layar 3×, jadi
-    /// berhenti di sini tidak pernah terlihat.
+    /// 1/512 pt is far below a single physical pixel even on a 3× display, so
+    /// stopping here is never visible.
     pub const POINTS: Self = Self {
         distance: 1.0 / 512.0,
         velocity: 1.0 / 512.0,
     };
 
-    /// Toleransi untuk kanal warna 0..1 — di bawah satu langkah 8-bit
-    /// (1/255 ≈ 0,0039).
+    /// Tolerance for colour channels in 0..1 — below a single 8-bit step
+    /// (1/255 ≈ 0.0039).
     pub const COLOR: Self = Self {
         distance: 1.0 / 2048.0,
         velocity: 1.0 / 2048.0,
     };
 
-    /// Toleransi kustom.
+    /// A custom tolerance.
     pub fn new(distance: f32, velocity: f32) -> Self {
         Self {
             distance: distance.abs(),
@@ -50,11 +52,11 @@ impl Tolerance {
         }
     }
 
-    /// Benar bila simpangan **dan** laju sudah cukup kecil.
+    /// True when displacement **and** speed are both small enough.
     ///
-    /// Keduanya wajib: nilai yang kebetulan melintasi target dengan kecepatan
-    /// penuh belum selesai, dan nilai yang berhenti jauh dari target juga
-    /// belum.
+    /// Both are required: a value that happens to cross the target at full
+    /// speed is not done, and neither is a value that stopped far away from
+    /// it.
     pub fn settled(self, distance: f32, speed: f32) -> bool {
         distance <= self.distance && speed <= self.velocity
     }
@@ -70,32 +72,32 @@ impl Default for Tolerance {
 // Animatable
 // ---------------------------------------------------------------------------
 
-/// Nilai yang bisa dijalankan oleh spring.
+/// A value a spring can drive.
 ///
-/// Cukup ruang vektor: penjumlahan, pengurangan, perkalian skalar, dan sebuah
-/// besaran untuk menguji konvergensi. Karena solusinya linear
-/// ([`super::Propagator`]), semua komponen memakai koefisien yang sama — tidak
-/// ada spring terpisah per sumbu yang bisa keluar dari sinkron.
+/// A vector space is enough: addition, subtraction, scalar multiplication, and
+/// a magnitude to test convergence with. Because the solution is linear
+/// ([`super::Propagator`]), every component uses the same coefficients — there
+/// is no per-axis spring that could drift out of sync.
 pub trait Animatable: Copy + std::fmt::Debug {
-    /// Toleransi yang masuk akal untuk satuan tipe ini.
+    /// A sensible tolerance for this type's units.
     const TOLERANCE: Tolerance;
 
-    /// Elemen nol (dipakai sebagai kecepatan diam).
+    /// The zero element (used as the resting velocity).
     fn zero() -> Self;
 
-    /// Penjumlahan komponen demi komponen.
+    /// Component-wise addition.
     fn add(self, other: Self) -> Self;
 
-    /// Pengurangan komponen demi komponen.
+    /// Component-wise subtraction.
     fn sub(self, other: Self) -> Self;
 
-    /// Perkalian dengan skalar.
+    /// Multiplication by a scalar.
     fn scale(self, k: f32) -> Self;
 
-    /// Besaran (norm Euclid) — dipakai untuk menguji `settled`.
+    /// Magnitude (Euclidean norm) — used to test `settled`.
     fn magnitude(self) -> f32;
 
-    /// Benar bila seluruh komponen berhingga.
+    /// True when every component is finite.
     fn is_finite(self) -> bool;
 }
 
@@ -273,17 +275,19 @@ impl Animatable for Color {
 // SpringValue
 // ---------------------------------------------------------------------------
 
-/// Nilai yang dijalankan spring, menyimpan **posisi dan velocity**.
+/// A spring-driven value, storing **position and velocity**.
 ///
-/// Inilah unit animasi framework (REKOMENDASI §3.5). Dua sifat yang mengikat:
+/// This is the framework's unit of animation (REKOMENDASI §3.5). Two binding
+/// properties:
 ///
-/// - **Selalu interruptible.** Tidak ada "durasi tersisa" atau kurva yang harus
-///   diputar sampai habis; yang tersimpan hanya keadaan sekarang. Karena itu
-///   [`SpringValue::set_target`] boleh dipanggil di tengah gerakan berapa kali
-///   pun — velocity ikut terbawa dan tidak ada patahan yang terlihat (WWDC23).
-/// - **Berhenti benar-benar berhenti.** Begitu keadaan masuk toleransi, nilai
-///   dikunci ke target dan [`SpringValue::is_animating`] menjadi `false`,
-///   sehingga scheduler bisa kembali tidur (§3.5 "render hanya saat dirty").
+/// - **Always interruptible.** There is no "time remaining" and no curve that
+///   must be played to the end; all that is stored is the current state. That
+///   is why [`SpringValue::set_target`] may be called mid-motion as many times
+///   as you like — velocity carries over and no seam is visible (WWDC23).
+/// - **Stopping really means stopping.** As soon as the state falls inside the
+///   tolerance the value is snapped to the target and
+///   [`SpringValue::is_animating`] turns `false`, so the scheduler can go back
+///   to sleep (§3.5 "render only when dirty").
 ///
 /// ```
 /// use std::time::Duration;
@@ -292,7 +296,7 @@ impl Animatable for Color {
 /// let mut x = SpringValue::new(0.0).with_spring(Spring::smooth());
 /// x.set_target(100.0);
 ///
-/// let dt = Duration::from_micros(8_333); // 120 Hz — datang dari display link
+/// let dt = Duration::from_micros(8_333); // 120 Hz — from the display link
 /// while x.is_animating() {
 ///     x.advance(dt, Motion::Full);
 /// }
@@ -311,7 +315,7 @@ pub struct SpringValue<T: Animatable = f32> {
 }
 
 impl<T: Animatable> SpringValue<T> {
-    /// Nilai yang diam di `value`, memakai [`Spring::smooth`].
+    /// A value resting at `value`, using [`Spring::smooth`].
     pub fn new(value: T) -> Self {
         Self {
             spring: Spring::smooth(),
@@ -324,87 +328,88 @@ impl<T: Animatable> SpringValue<T> {
         }
     }
 
-    /// Pilih spring (biasanya salah satu preset).
+    /// Pick the spring (usually one of the presets).
     pub fn with_spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Tandai gerakan ini **dekoratif**: reduced-motion akan mematikannya
-    /// sepenuhnya, bukan sekadar membuang pantulannya.
+    /// Mark this motion as **decorative**: reduced motion will switch it off
+    /// entirely, not merely drop its bounce.
     ///
-    /// Pakai untuk gerakan yang tidak membawa informasi (parallax, bounce
-    /// hiasan). Gerakan yang *menjelaskan* — sheet naik, disclosure membuka —
-    /// biarkan [`MotionRole::Essential`] agar tetap terbaca.
+    /// Use it for motion that carries no information (parallax, ornamental
+    /// bounce). Motion that *explains* — a sheet rising, a disclosure opening
+    /// — should stay [`MotionRole::Essential`] so it remains legible.
     pub fn decorative(mut self) -> Self {
         self.role = MotionRole::Decorative;
         self
     }
 
-    /// Toleransi berhenti kustom.
+    /// A custom settling tolerance.
     pub fn with_tolerance(mut self, tolerance: Tolerance) -> Self {
         self.tolerance = tolerance;
         self
     }
 
-    /// Spring yang sedang dipakai.
+    /// The spring currently in use.
     pub fn spring(&self) -> Spring {
         self.spring
     }
 
-    /// Ganti spring **tanpa** mengganggu keadaan.
+    /// Swap the spring **without** disturbing the state.
     ///
-    /// Posisi dan velocity dibawa apa adanya, jadi mengganti preset di tengah
-    /// gerakan pun mulus.
+    /// Position and velocity carry over untouched, so swapping presets
+    /// mid-motion is seamless.
     pub fn set_spring(&mut self, spring: Spring) {
         self.spring = spring;
     }
 
-    /// Peran gerakan terhadap reduced-motion.
+    /// This motion's role with respect to reduced motion.
     pub fn role(&self) -> MotionRole {
         self.role
     }
 
-    /// Ganti peran gerakan **tanpa** mengganggu keadaan.
+    /// Swap the motion role **without** disturbing the state.
     ///
-    /// Pasangan `&mut` dari [`Self::decorative`], sama seperti [`Self::set_spring`]
-    /// terhadap [`Self::with_spring`]: dibutuhkan di jalur `update` sebuah view,
-    /// tempat node sudah terlanjur ada dan tidak bisa dibangun ulang. Posisi dan
-    /// velocity dibawa apa adanya, jadi peran boleh berubah di tengah gerakan.
+    /// The `&mut` counterpart of [`Self::decorative`], just as
+    /// [`Self::set_spring`] is to [`Self::with_spring`]: it is needed on a
+    /// view's `update` path, where the node already exists and cannot be
+    /// rebuilt. Position and velocity carry over untouched, so the role may
+    /// change mid-motion.
     pub fn set_role(&mut self, role: MotionRole) {
         self.role = role;
     }
 
-    /// Toleransi berhenti.
+    /// The settling tolerance.
     pub fn tolerance(&self) -> Tolerance {
         self.tolerance
     }
 
-    /// Nilai sekarang — inilah yang dipakai layout/paint frame ini.
+    /// The current value — this is what layout/paint uses this frame.
     pub fn position(&self) -> T {
         self.position
     }
 
-    /// Kecepatan sekarang (satuan posisi per detik).
+    /// The current velocity (position units per second).
     pub fn velocity(&self) -> T {
         self.velocity
     }
 
-    /// Target yang sedang dituju.
+    /// The target being animated towards.
     pub fn target(&self) -> T {
         self.target
     }
 
-    /// Benar bila masih bergerak dan frame berikutnya masih dibutuhkan.
+    /// True while the value is still moving and another frame is needed.
     pub fn is_animating(&self) -> bool {
         self.animating
     }
 
-    /// **Retarget**: arahkan ke tujuan baru sambil membawa velocity.
+    /// **Retarget**: aim at a new destination while carrying velocity along.
     ///
-    /// Boleh dipanggil kapan saja — saat diam, saat sedang bergerak, bahkan
-    /// setiap frame mengikuti jari yang menyeret. Tidak ada animasi yang
-    /// "dibatalkan": yang berubah hanya ke mana keadaan sekarang menuju.
+    /// May be called at any time — at rest, mid-motion, even every frame while
+    /// following a dragging finger. Nothing is ever "cancelled": all that
+    /// changes is where the current state is heading.
     pub fn set_target(&mut self, target: T) {
         if !target.is_finite() {
             return;
@@ -419,10 +424,10 @@ impl<T: Animatable> SpringValue<T> {
         }
     }
 
-    /// Lompat ke `value` seketika: posisi, target, dan velocity di-reset.
+    /// Jump to `value` instantly: position, target and velocity are all reset.
     ///
-    /// Untuk perubahan yang bukan animasi — memuat state baru, berpindah
-    /// halaman, membangun ulang widget dari nol.
+    /// For changes that are not animations — loading new state, navigating to
+    /// another page, rebuilding a widget from scratch.
     pub fn jump_to(&mut self, value: T) {
         self.position = value;
         self.target = value;
@@ -430,11 +435,11 @@ impl<T: Animatable> SpringValue<T> {
         self.animating = false;
     }
 
-    /// Setel velocity langsung.
+    /// Set the velocity directly.
     ///
-    /// Jalur **handoff gesture** (§3.5): velocity tracker di lapisan input
-    /// menyerahkan kecepatan jari saat dilepas, lalu spring meneruskannya —
-    /// fling berubah jadi spring tanpa patahan.
+    /// The **gesture handoff** path (§3.5): the velocity tracker in the input
+    /// layer hands over the finger's speed at release, and the spring carries
+    /// it on — a fling becomes a spring with no seam.
     pub fn set_velocity(&mut self, velocity: T) {
         if !velocity.is_finite() {
             return;
@@ -446,17 +451,18 @@ impl<T: Animatable> SpringValue<T> {
         }
     }
 
-    /// Tambahkan velocity ke yang sudah ada (dorongan berturut-turut).
+    /// Add to the existing velocity (successive shoves).
     pub fn add_velocity(&mut self, delta: T) {
         self.set_velocity(self.velocity.add(delta));
     }
 
-    /// Majukan `dt`; mengembalikan `true` bila masih butuh frame berikutnya.
+    /// Advance by `dt`; returns `true` when another frame is still needed.
     ///
-    /// `motion` datang dari setting aksesibilitas OS. Tidak ada penjepitan
-    /// `dt` di sini dan itu disengaja: solusi closed-form tidak bisa meledak
-    /// oleh langkah besar seperti integrator numerik — `dt` sepuluh detik
-    /// cuma berarti nilainya mendarat di target, yang memang jawaban benarnya.
+    /// `motion` comes from the OS accessibility setting. There is no clamping
+    /// of `dt` here, and that is deliberate: the closed-form solution cannot
+    /// blow up on a large step the way a numerical integrator would — a `dt`
+    /// of ten seconds simply means the value lands on its target, which is the
+    /// correct answer.
     pub fn advance(&mut self, dt: Duration, motion: Motion) -> bool {
         if !self.animating {
             return false;
@@ -467,16 +473,16 @@ impl<T: Animatable> SpringValue<T> {
         }
         let dt = dt.as_secs_f32();
         if dt <= 0.0 {
-            // Frame pertama sebuah animasi ber-`dt` nol (lihat
-            // `AnimationDriver::begin_frame`): belum bergerak, tapi jelas
-            // masih butuh frame berikutnya.
+            // The first frame of an animation has a `dt` of zero (see
+            // `AnimationDriver::begin_frame`): nothing has moved yet, but
+            // another frame is clearly still needed.
             return true;
         }
 
         let spring = motion.spring(self.spring);
         let p = spring.propagator(dt);
         if !p.is_finite() {
-            // Tidak boleh ada NaN yang menjalar ke layout.
+            // No NaN may ever be allowed to spread into layout.
             self.settle();
             return false;
         }
@@ -491,19 +497,21 @@ impl<T: Animatable> SpringValue<T> {
         true
     }
 
-    /// Selesaikan seketika: posisi = target, velocity = 0, berhenti animasi.
+    /// Finish instantly: position = target, velocity = 0, animation stopped.
     pub fn settle(&mut self) {
         self.position = self.target;
         self.velocity = T::zero();
         self.animating = false;
     }
 
-    /// **Batas atas** sisa waktu sampai berhenti, dengan `motion` yang berlaku.
+    /// An **upper bound** on the time left before settling, under the given
+    /// `motion`.
     ///
-    /// Untuk diagnostik dan uji — mesin animasi tidak memakainya untuk
-    /// memutuskan kapan berhenti. Konservatif dari dua arah: lihat
-    /// [`Spring::settling_time`], dan simpangan vektor diproyeksikan ke satu
-    /// sumbu lewat besarannya, seolah seluruh kecepatan menjauhi target.
+    /// For diagnostics and tests — the animation engine does not use it to
+    /// decide when to stop. Conservative from two directions: see
+    /// [`Spring::settling_time`], and note that a vector displacement is
+    /// projected onto a single axis through its magnitude, as if the entire
+    /// velocity were pointing away from the target.
     pub fn settling_duration(&self, motion: Motion) -> Duration {
         if !self.animating {
             return Duration::ZERO;
@@ -526,15 +534,16 @@ impl<T: Animatable + Default> Default for SpringValue<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Handoff gesture -> spring
+// Gesture handoff -> spring
 // ---------------------------------------------------------------------------
 
-/// Kecepatan jari sebagai kecepatan spring.
+/// Finger velocity as spring velocity.
 ///
-/// [`VelocityTracker`](crate::input::VelocityTracker) melapor dalam poin logis
-/// per detik, satuan yang persis sama dengan velocity sebuah
-/// `SpringValue<Point>`. Tanpa konversi ini setiap pemanggil menyalin `x`/`y`
-/// sendiri — pekerjaan sepele yang justru gampang tertukar sumbunya.
+/// [`VelocityTracker`](crate::input::VelocityTracker) reports in logical
+/// points per second, exactly the same unit as the velocity of a
+/// `SpringValue<Point>`. Without this conversion every caller would copy
+/// `x`/`y` by hand — trivial work that is nevertheless easy to get the axes
+/// wrong in.
 impl From<crate::input::Velocity> for Point {
     fn from(v: crate::input::Velocity) -> Self {
         Point::new(v.x, v.y)
@@ -542,18 +551,18 @@ impl From<crate::input::Velocity> for Point {
 }
 
 impl SpringValue<Point> {
-    /// **Handoff fling → spring** (REKOMENDASI §3.5).
+    /// **Fling → spring handoff** (REKOMENDASI §3.5).
     ///
-    /// Dipanggil saat jari dilepas: kecepatan dari
+    /// Called when the finger lifts: the velocity from
     /// [`VelocityTracker::velocity`](crate::input::VelocityTracker::velocity)
-    /// diserahkan apa adanya, lalu spring meneruskan gerakannya ke `target`
-    /// tanpa patahan. Sama sekali bukan animasi baru — hanya keadaan
-    /// `(posisi, velocity)` yang sama dengan velocity yang disuntik.
+    /// is handed over as-is, and the spring carries the motion on to `target`
+    /// with no seam. This is not a new animation at all — it is the same
+    /// `(position, velocity)` state with the velocity injected.
     ///
-    /// Batasi besarannya lebih dulu dengan
+    /// Clamp the magnitude first with
     /// [`Velocity::clamp_magnitude`](crate::input::Velocity::clamp_magnitude):
-    /// satu sampel gila dari driver trackpad tidak boleh melempar konten
-    /// ribuan poin.
+    /// one insane sample from a trackpad driver must not fling content
+    /// thousands of points away.
     ///
     /// ```
     /// use silka_core::animation::SpringValue;

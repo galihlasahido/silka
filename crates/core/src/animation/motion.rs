@@ -1,44 +1,45 @@
-//! Reduced-motion: setting aksesibilitas OS sebagai bagian kontrak animasi.
+//! Reduced motion: the OS accessibility setting as part of the animation contract.
 
 use super::spring::Spring;
 
-/// Peran sebuah gerakan — menentukan apa yang terjadi saat reduced-motion aktif.
+/// The role a motion plays — decides what happens when reduced motion is on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum MotionRole {
-    /// Gerakan yang **menjelaskan sesuatu**: sheet naik dari bawah, disclosure
-    /// membuka, thumb toggle bergeser. Menghapusnya berarti menghapus
-    /// informasi, jadi di bawah reduced-motion ia tetap bergerak — hanya
-    /// pantulannya yang dibuang.
+    /// Motion that **explains something**: a sheet rising from the bottom, a
+    /// disclosure opening, a toggle thumb sliding across. Removing it removes
+    /// information, so under reduced motion it keeps moving — only its bounce
+    /// is dropped.
     #[default]
     Essential,
-    /// Gerakan **dekoratif**: parallax, bounce hiasan, wiggle. Tidak membawa
-    /// informasi apa pun, jadi di bawah reduced-motion ia dimatikan total.
+    /// **Decorative** motion: parallax, ornamental bounce, wiggle. It carries
+    /// no information at all, so under reduced motion it is switched off
+    /// entirely.
     Decorative,
 }
 
-/// Preferensi gerakan pengguna, datang dari setting aksesibilitas OS.
+/// The user's motion preference, coming from the OS accessibility settings.
 ///
 /// macOS: "Reduce motion"; Windows: `PostAnimationsEnabled`; GNOME:
-/// `gtk-enable-animations`. Lapisan platform yang membacanya; di sini ia cuma
-/// dua keadaan, dan **setiap** nilai teranimasi wajib melewatinya
-/// (KOMPONEN.md, definition of done).
+/// `gtk-enable-animations`. The platform layer reads it; here it is just two
+/// states, and **every** animated value must pass through it (KOMPONEN.md,
+/// definition of done).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Motion {
-    /// Gerakan penuh seperti yang ditulis penulis widget.
+    /// Full motion, exactly as the widget author wrote it.
     #[default]
     Full,
-    /// Pengguna meminta gerakan dikurangi.
+    /// The user has asked for reduced motion.
     ///
-    /// Aturannya (INTEGRASI-NATIVE §"Reduced motion"): **matikan pantulan**,
-    /// jangan matikan gerakan yang menjelaskan. Spring tetap berjalan tapi
-    /// dijadikan critically damped, sehingga transisi tetap terbaca tanpa
-    /// osilasi yang memicu vertigo. Gerakan [`MotionRole::Decorative`] hilang
-    /// sepenuhnya.
+    /// The rule (INTEGRASI-NATIVE §"Reduced motion"): **kill the bounce**, do
+    /// not kill motion that explains. Springs keep running but become
+    /// critically damped, so transitions stay legible without the oscillation
+    /// that triggers vertigo. [`MotionRole::Decorative`] motion disappears
+    /// completely.
     Reduced,
 }
 
 impl Motion {
-    /// Bangun dari flag boolean milik platform.
+    /// Build from the platform's boolean flag.
     pub fn from_reduced(reduced: bool) -> Self {
         if reduced {
             Motion::Reduced
@@ -47,12 +48,12 @@ impl Motion {
         }
     }
 
-    /// Benar bila pengguna meminta gerakan dikurangi.
+    /// True when the user has asked for reduced motion.
     pub fn is_reduced(self) -> bool {
         matches!(self, Motion::Reduced)
     }
 
-    /// Spring yang benar-benar dipakai di bawah preferensi ini.
+    /// The spring that is actually used under this preference.
     pub fn spring(self, spring: Spring) -> Spring {
         match self {
             Motion::Full => spring,
@@ -60,12 +61,12 @@ impl Motion {
         }
     }
 
-    /// Benar bila gerakan dengan peran ini harus dihilangkan sama sekali.
+    /// True when motion in this role should be suppressed entirely.
     pub fn suppresses(self, role: MotionRole) -> bool {
         self.is_reduced() && role == MotionRole::Decorative
     }
 
-    /// Nama pendek untuk log.
+    /// Short name for logs.
     pub const fn label(self) -> &'static str {
         match self {
             Motion::Full => "full",

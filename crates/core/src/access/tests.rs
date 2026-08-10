@@ -1,13 +1,14 @@
-//! Unit test pass emisi a11y.
+//! Unit tests for the a11y emission pass.
 //!
-//! Alat verifikasi utamanya adalah **tree dump**: satu string yang memuat
-//! peran, nama, kotak hasil layout, aksi, dan fokus sekaligus. Kalau ada yang
-//! bergeser — node hilang, kotak salah, aksi lupa diumumkan — dump-nya berubah
-//! dan test gagal dengan diff yang bisa dibaca manusia.
+//! The primary verification tool is the **tree dump**: a single string that
+//! carries roles, names, layout boxes, actions and focus all at once. If
+//! anything shifts — a node disappears, a box is wrong, an action was left
+//! unadvertised — the dump changes and the test fails with a diff a human can
+//! read.
 //!
-//! Wadah yang dipakai di sini adalah [`Stack`] milik test ini sendiri, bukan
-//! `column`/`row` bawaan: yang sedang diuji adalah **pass a11y**, dan test-nya
-//! tidak boleh ikut gagal setiap kali mesin flex di bawahnya disetel ulang.
+//! The container used here is this test's own [`Stack`], not the built-in
+//! `column`/`row`: what is under test is the **a11y pass**, and its tests must
+//! not fail every time the flex engine underneath is retuned.
 
 use silka_paint::{Insets, Point, Size};
 
@@ -21,10 +22,10 @@ use crate::view::{fixed, pad, reconcile, viewport, Builder, View, ViewNode};
 use super::{AccessAction, AccessEntry};
 
 // ---------------------------------------------------------------------------
-// Bahan uji
+// Test fixtures
 // ---------------------------------------------------------------------------
 
-/// Wadah sederhana: menumpuk anak pada satu sumbu, tanpa jarak.
+/// A simple container: stacks its children along one axis, with no spacing.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Stack {
     axis: Axis,
@@ -97,8 +98,9 @@ fn baris<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<StackP
     tumpuk(Axis::Horizontal, children)
 }
 
-/// Daun yang berperilaku seperti kontrol sungguhan: punya nama, nilai, aksi,
-/// dan keadaan. Mewakili apa yang harus diisi setiap widget di `KOMPONEN.md`.
+/// A leaf that behaves like a real control: it has a name, a value, actions
+/// and state. It stands in for what every widget in `KOMPONEN.md` must fill
+/// in.
 #[derive(Debug, Clone, PartialEq)]
 struct Control {
     size: Size,
@@ -241,7 +243,7 @@ window [0,0 200x100]
 }
 
 // ---------------------------------------------------------------------------
-// Bounds datang dari layout
+// Bounds come from layout
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -255,7 +257,8 @@ fn bounds_datang_dari_hasil_layout_bukan_dari_widget() {
     assert_eq!(entri.bounds.origin, Point::new(10.0, 10.0));
     assert_eq!(entri.bounds.size, Size::new(120.0, 32.0));
 
-    // Geser isinya: kotak a11y wajib ikut, tanpa widget mengubah apa pun.
+    // Move the content: the a11y box must follow, without the widget changing
+    // anything.
     reconcile(&mut tree, pad(Insets::all(40.0), kolom([tombol("Simpan")])));
     tree.perform_layout(window(400.0, 400.0));
     let a11y = tree.access_tree(None);
@@ -291,7 +294,7 @@ fn kotak_a11y_mengikuti_guliran_viewport() {
 }
 
 // ---------------------------------------------------------------------------
-// Kontrak node
+// The node contract
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -352,7 +355,7 @@ fn node_hidden_menghapus_seluruh_subtree() {
         a11y.find_role(AccessRole::Image).is_none(),
         "keturunannya ikut hilang"
     );
-    // Pohon render tetap utuh — yang hilang hanya pandangan a11y.
+    // The render tree is still intact — only the a11y view loses them.
     assert!(tree.len() > a11y.len());
 }
 
@@ -367,7 +370,7 @@ fn akar_tidak_pernah_hilang_meski_pohon_kosong() {
 }
 
 // ---------------------------------------------------------------------------
-// Fokus
+// Focus
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -378,7 +381,7 @@ fn fokus_jatuh_ke_akar_bila_nodenya_mati() {
     let b = anak(&tree, anak(&tree, tree.root(), 0), 1);
     assert_eq!(tree.access_tree(Some(b)).focus(), b);
 
-    // Rebuild tanpa tombol B: fokus tidak boleh menunjuk hantu.
+    // Rebuild without button B: focus must not point at a ghost.
     reconcile(&mut tree, kolom([tombol("A")]));
     tree.perform_layout(window(200.0, 200.0));
     assert_eq!(tree.access_tree(Some(b)).focus(), tree.root());
@@ -414,7 +417,7 @@ fn urutan_fokus_mengikuti_urutan_baca_bukan_koordinat() {
 }
 
 // ---------------------------------------------------------------------------
-// Delta
+// Deltas
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -525,7 +528,7 @@ fn pohon_dari_window_lain_dianggap_pohon_baru() {
 }
 
 // ---------------------------------------------------------------------------
-// Kosakata
+// Vocabulary
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -561,7 +564,7 @@ fn node_default_adalah_wadah_tanpa_nama() {
 }
 
 // ---------------------------------------------------------------------------
-// Jembatan AccessKit
+// The AccessKit bridge
 // ---------------------------------------------------------------------------
 
 #[cfg(feature = "accesskit")]
@@ -596,7 +599,7 @@ mod accesskit_bridge {
         assert_eq!(node.label(), Some("Simpan"));
         assert!(node.supports_action(accesskit::Action::Click));
         assert!(node.supports_action(accesskit::Action::Focus));
-        // Poin logis (10,10) 120×32 pada layar Retina.
+        // Logical points (10,10) 120×32 on a Retina display.
         assert_eq!(
             node.bounds(),
             Some(accesskit::Rect::new(20.0, 20.0, 260.0, 84.0))
@@ -673,7 +676,7 @@ mod accesskit_bridge {
         assert_eq!(req.target, tombol_id);
         assert_eq!(req.action, AccessAction::Click);
 
-        // Aksi yang tidak diumumkan node itu ditolak, bukan diteruskan.
+        // An action that node does not advertise is rejected, not forwarded.
         let tak_sah = accesskit::ActionRequest {
             action: accesskit::Action::Increment,
             target_tree: accesskit::TreeId::ROOT,
@@ -682,7 +685,7 @@ mod accesskit_bridge {
         };
         assert!(a11y.action_request(&tak_sah).is_none());
 
-        // Node yang sudah mati satu frame lalu juga ditolak.
+        // A node that died one frame ago is rejected too.
         let hantu = accesskit::ActionRequest {
             action: accesskit::Action::Click,
             target_tree: accesskit::TreeId::ROOT,

@@ -1,26 +1,28 @@
-//! Fokus keyboard & tab-order.
+//! Keyboard focus & tab order.
 //!
-//! "Navigasi keyboard penuh + focus ring" adalah **definition of done** setiap
-//! komponen (`KOMPONEN.md`), jadi mesinnya hidup di inti, bukan di masing-masing
-//! widget. Dua hal yang disediakan di sini:
+//! "Full keyboard navigation + focus ring" is part of the **definition of
+//! done** for every component (`KOMPONEN.md`), so the machinery lives in the
+//! core rather than in each individual widget. Two things are provided here:
 //!
-//! 1. **Urutan tab** dihitung dari render tree — sumber kebenaran yang sama
-//!    dengan yang dipakai layout dan AccessKit, jadi tidak mungkin melenceng
-//!    dari yang terlihat di layar.
-//! 2. **Focus scope** — perangkap fokus untuk dialog/sheet/popover: selama
-//!    fokus berada di dalam sebuah scope, Tab tidak pernah keluar darinya
-//!    (INTEGRASI-NATIVE §2, KOMPONEN.md Tier 4).
+//! 1. **Tab order** is computed from the render tree — the same source of
+//!    truth that layout and AccessKit use, so it cannot drift away from what
+//!    is on screen.
+//! 2. **Focus scopes** — focus traps for dialogs/sheets/popovers: as long as
+//!    focus is inside a scope, Tab never leaves it (INTEGRASI-NATIVE §2,
+//!    KOMPONEN.md Tier 4).
 //!
-//! Urutan traversal:
+//! Traversal order:
 //!
-//! - Node dengan urutan eksplisit ([`FocusPolicy::order`]) datang lebih dulu,
-//!   menaik; seri diputus oleh urutan pohon.
-//! - Sisanya mengikuti urutan pohon (DFS pre-order) — yaitu urutan baca.
-//! - Subtree yang ditandai [`FocusPolicy::skip_subtree`] dilewati seluruhnya
-//!   (accordion tertutup, tab yang tidak aktif).
+//! - Nodes with an explicit order ([`FocusPolicy::order`]) come first,
+//!   ascending; ties are broken by tree order.
+//! - Everything else follows tree order (DFS pre-order) — that is, reading
+//!   order.
+//! - Subtrees marked [`FocusPolicy::skip_subtree`] are skipped entirely (a
+//!   collapsed accordion, an inactive tab).
 //!
-//! Aturan ini sengaja sama dengan `tabindex` HTML, karena itulah yang sudah ada
-//! di kepala orang — dan karena AccessKit memetakan ke konsep yang sama.
+//! These rules deliberately match HTML's `tabindex`, because that is what
+//! people already have in their heads — and because AccessKit maps onto the
+//! same concepts.
 
 use crate::tree::{NodeId, RenderTree};
 
@@ -28,25 +30,27 @@ use crate::tree::{NodeId, RenderTree};
 // FocusPolicy
 // ---------------------------------------------------------------------------
 
-/// Peran sebuah node dalam navigasi fokus.
+/// A node's role in focus navigation.
 ///
-/// Bagian dari kontrak [`crate::tree::RenderNode`], sama seperti emisi a11y:
-/// widget yang lupa mengisinya tidak akan pernah bisa dijangkau keyboard, dan
-/// itu harus terlihat saat menulis widget-nya — bukan saat QA memakai Tab.
+/// Part of the [`crate::tree::RenderNode`] contract, just like a11y emission:
+/// a widget that forgets to fill it in can never be reached by keyboard, and
+/// that has to be visible while writing the widget — not when QA reaches for
+/// Tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct FocusPolicy {
-    /// Bisa menerima fokus keyboard.
+    /// Can take keyboard focus.
     pub focusable: bool,
-    /// Urutan eksplisit; `None` = ikut urutan pohon.
+    /// Explicit order; `None` = follow tree order.
     pub order: Option<i32>,
-    /// Node ini adalah perangkap fokus (dialog, sheet, popover).
+    /// This node is a focus trap (dialog, sheet, popover).
     pub scope: bool,
-    /// Seluruh subtree dilewati traversal (isi yang sedang tersembunyi).
+    /// The whole subtree is skipped during traversal (currently hidden
+    /// content).
     pub skip_subtree: bool,
 }
 
 impl FocusPolicy {
-    /// Tidak ikut navigasi fokus sama sekali.
+    /// Takes no part in focus navigation at all.
     pub const NONE: Self = Self {
         focusable: false,
         order: None,
@@ -54,32 +58,32 @@ impl FocusPolicy {
         skip_subtree: false,
     };
 
-    /// Bisa difokuskan, mengikuti urutan pohon.
+    /// Focusable, following tree order.
     pub const FOCUSABLE: Self = Self {
         focusable: true,
         ..Self::NONE
     };
 
-    /// Perangkap fokus untuk overlay modal.
+    /// A focus trap for a modal overlay.
     pub const SCOPE: Self = Self {
         scope: true,
         ..Self::NONE
     };
 
-    /// Versi dengan urutan eksplisit.
+    /// The same policy with an explicit order.
     pub const fn order(mut self, order: i32) -> Self {
         self.order = Some(order);
         self
     }
 
-    /// Versi yang subtree-nya dilewati traversal.
+    /// The same policy with its subtree skipped during traversal.
     pub const fn skip_subtree(mut self) -> Self {
         self.skip_subtree = true;
         self
     }
 }
 
-/// Arah perpindahan fokus.
+/// The direction focus moves in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FocusDirection {
     /// Tab.
@@ -88,43 +92,44 @@ pub enum FocusDirection {
     Previous,
 }
 
-/// Apa yang berubah pada satu operasi fokus.
+/// What changed during one focus operation.
 ///
-/// Dikembalikan alih-alih langsung mengirim event supaya pemanggil bisa
-/// memutuskan urutannya sendiri (yang kehilangan fokus diberi tahu lebih dulu).
+/// Returned rather than dispatched directly so the caller can decide the order
+/// itself (whoever lost focus is told first).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FocusChange {
-    /// Node yang kehilangan fokus.
+    /// The node that lost focus.
     pub lost: Option<NodeId>,
-    /// Node yang mendapat fokus.
+    /// The node that gained focus.
     pub gained: Option<NodeId>,
 }
 
 impl FocusChange {
-    /// Tidak ada yang berubah.
+    /// Nothing changed.
     pub const NONE: Self = Self {
         lost: None,
         gained: None,
     };
 
-    /// Benar bila fokus benar-benar berpindah.
+    /// True when focus actually moved.
     pub fn changed(self) -> bool {
         self.lost.is_some() || self.gained.is_some()
     }
 }
 
 // ---------------------------------------------------------------------------
-// Urutan tab
+// Tab order
 // ---------------------------------------------------------------------------
 
-/// Kumpulkan urutan tab di dalam `scope`, sesuai aturan di dokumentasi modul.
+/// Collect the tab order inside `scope`, following the rules in the module
+/// documentation.
 ///
-/// `scope` sendiri tidak pernah ikut — ia adalah wadah, bukan tujuan.
+/// `scope` itself is never included — it is a container, not a destination.
 pub fn tab_order(tree: &RenderTree, scope: NodeId) -> Vec<NodeId> {
     let mut kandidat: Vec<(NodeId, Option<i32>, usize)> = Vec::new();
     let mut urutan_pohon = 0usize;
     kumpulkan(tree, scope, true, &mut kandidat, &mut urutan_pohon);
-    // Stabil: urutan eksplisit menaik lebih dulu, sisanya urutan pohon.
+    // Stable: explicit orders ascending first, everything else in tree order.
     kandidat.sort_by_key(|(_, order, dfs)| (order.is_none(), order.unwrap_or(0), *dfs));
     kandidat.into_iter().map(|(id, _, _)| id).collect()
 }
@@ -152,10 +157,10 @@ fn kumpulkan(
     }
 }
 
-/// Scope terdekat yang membungkus `node` (akar bila tidak ada).
+/// The nearest scope enclosing `node` (the root when there is none).
 ///
-/// Inilah yang membuat Tab di dalam dialog tidak pernah mendarat di tombol
-/// window di belakangnya.
+/// This is what keeps Tab inside a dialog from ever landing on a window button
+/// behind it.
 pub fn enclosing_scope(tree: &RenderTree, node: NodeId) -> NodeId {
     let mut cur = Some(node);
     while let Some(id) = cur {
@@ -171,7 +176,7 @@ pub fn enclosing_scope(tree: &RenderTree, node: NodeId) -> NodeId {
     tree.root()
 }
 
-/// Benar bila node masih hidup dan masih bisa menerima fokus.
+/// True when the node is still alive and can still take focus.
 pub fn is_focusable(tree: &RenderTree, node: NodeId) -> bool {
     tree.render(node)
         .map(|r| r.focus_policy().focusable)
@@ -182,35 +187,38 @@ pub fn is_focusable(tree: &RenderTree, node: NodeId) -> bool {
 // FocusManager
 // ---------------------------------------------------------------------------
 
-/// Pemegang fokus keyboard untuk satu render tree (satu window).
+/// The keyboard focus holder for one render tree (one window).
 ///
-/// Ia hanya menyimpan **satu** `NodeId`; segala hal lain (apakah masih hidup,
-/// masih focusable, di scope mana) selalu dibaca ulang dari pohon. Dengan
-/// begitu tidak ada state fokus yang bisa basi terhadap struktur pohon.
+/// It stores exactly **one** `NodeId`; everything else (whether it is still
+/// alive, still focusable, which scope it is in) is always re-read from the
+/// tree. That way no focus state can go stale with respect to the tree
+/// structure.
 #[derive(Debug, Clone, Default)]
 pub struct FocusManager {
     focused: Option<NodeId>,
 }
 
 impl FocusManager {
-    /// Tanpa fokus.
+    /// No focus.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Node yang sedang fokus.
+    /// The node that currently has focus.
     pub fn focused(&self) -> Option<NodeId> {
         self.focused
     }
 
-    /// Benar bila `node` sedang memegang fokus.
+    /// True when `node` currently holds focus.
     pub fn is_focused(&self, node: NodeId) -> bool {
         self.focused == Some(node)
     }
 
-    /// Jalur fokus dari node terfokus ke akar — rute event keyboard.
+    /// The focus path from the focused node to the root — the route keyboard
+    /// events take.
     ///
-    /// Kosong bila tidak ada yang fokus; pemanggil lalu mengirim ke akar saja.
+    /// Empty when nothing has focus; the caller then dispatches to the root
+    /// alone.
     pub fn path(&self, tree: &RenderTree) -> Vec<NodeId> {
         let mut jalur = Vec::new();
         let mut cur = self.focused;
@@ -224,7 +232,7 @@ impl FocusManager {
         jalur
     }
 
-    /// Pindahkan fokus ke `node` (harus focusable), atau lepas bila `None`.
+    /// Move focus to `node` (which must be focusable), or drop it on `None`.
     pub fn focus(&mut self, tree: &RenderTree, node: Option<NodeId>) -> FocusChange {
         let target = node.filter(|n| is_focusable(tree, *n));
         if target == self.focused {
@@ -238,7 +246,7 @@ impl FocusManager {
         }
     }
 
-    /// Lepas fokus sepenuhnya.
+    /// Drop focus entirely.
     pub fn clear(&mut self) -> FocusChange {
         match self.focused.take() {
             Some(lost) => FocusChange {
@@ -249,10 +257,11 @@ impl FocusManager {
         }
     }
 
-    /// Buang fokus yang menunjuk node mati atau yang berhenti focusable.
+    /// Drop focus that points at a dead node or one that stopped being
+    /// focusable.
     ///
-    /// Dipanggil setelah setiap diff: node bisa hilang kapan saja, dan fokus
-    /// yang menunjuk kuburan membuat keyboard diam total.
+    /// Called after every diff: nodes can disappear at any time, and focus
+    /// pointing at a grave leaves the keyboard completely dead.
     pub fn prune(&mut self, tree: &RenderTree) -> FocusChange {
         match self.focused {
             Some(id) if !tree.contains(id) || !is_focusable(tree, id) => self.clear(),
@@ -260,10 +269,11 @@ impl FocusManager {
         }
     }
 
-    /// Pindahkan fokus satu langkah sesuai `direction`, **di dalam scope aktif**.
+    /// Move focus one step in `direction`, **within the active scope**.
     ///
-    /// Melingkar di ujung: dari yang terakhir kembali ke yang pertama. Tanpa
-    /// fokus awal, Tab mendarat di elemen pertama dan Shift+Tab di terakhir.
+    /// Wraps around at the ends: from the last back to the first. With no
+    /// starting focus, Tab lands on the first element and Shift+Tab on the
+    /// last.
     pub fn move_focus(&mut self, tree: &RenderTree, direction: FocusDirection) -> FocusChange {
         let scope = match self.focused {
             Some(id) if tree.contains(id) => enclosing_scope(tree, id),
@@ -285,9 +295,9 @@ impl FocusManager {
         self.focus(tree, Some(berikutnya))
     }
 
-    /// Fokuskan elemen pertama pada urutan tab sebuah scope.
+    /// Focus the first element in a scope's tab order.
     ///
-    /// Dipakai saat dialog terbuka: fokus harus langsung pindah ke dalamnya.
+    /// Used when a dialog opens: focus must move inside it right away.
     pub fn focus_first(&mut self, tree: &RenderTree, scope: NodeId) -> FocusChange {
         match tab_order(tree, scope).first().copied() {
             Some(n) => self.focus(tree, Some(n)),

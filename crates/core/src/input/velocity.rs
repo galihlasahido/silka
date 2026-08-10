@@ -1,18 +1,19 @@
-//! Velocity tracker — **prasyarat gesture handoff** (REKOMENDASI §3.5).
+//! Velocity tracker — **a prerequisite for gesture handoff** (REKOMENDASI
+//! §3.5).
 //!
-//! Janji §3.5: "semua animasi harus interruptible; nilai animasi menyimpan
-//! `(posisi, velocity)` dan bisa di-retarget kapan saja sambil membawa
-//! velocity — gesture handoff (fling → spring) butuh velocity tracker di input
-//! layer". Modul ini adalah bagian "di input layer"-nya: ia mengubah rentetan
-//! sampel posisi menjadi satu angka kecepatan yang bisa diserahkan ke spring
-//! saat jari diangkat.
+//! The promise in §3.5: "every animation must be interruptible; animated
+//! values store `(position, velocity)` and can be retargeted at any time while
+//! carrying velocity along — gesture handoff (fling → spring) needs a velocity
+//! tracker in the input layer". This module is the "in the input layer" part:
+//! it turns a stream of position samples into a single velocity that can be
+//! handed to a spring when the finger lifts.
 //!
-//! Cara menaksirnya mengikuti Flutter (`VelocityTracker`): **regresi kuadrat
-//! terkecil berderajat dua** atas sampel dalam jendela waktu pendek. Kenapa
-//! bukan sekadar `(p₁ − p₀) / Δt`: dua sampel terakhir sangat berisik, dan
-//! justru di akhir gesture-lah jari biasanya melambat — turunan dari fit
-//! kuadratik menangkap perlambatan itu, sedangkan beda hingga menangkap
-//! kebisingan.
+//! The estimator follows Flutter (`VelocityTracker`): a **second-degree least
+//! squares regression** over the samples in a short time window. Why not
+//! simply `(p₁ − p₀) / Δt`: the last two samples are very noisy, and the end
+//! of a gesture is precisely where the finger usually decelerates — the
+//! derivative of a quadratic fit captures that deceleration, whereas a finite
+//! difference captures the noise.
 //!
 //! ```
 //! use std::time::Duration;
@@ -20,7 +21,7 @@
 //! use silka_paint::Point;
 //!
 //! let mut t = VelocityTracker::new();
-//! // Bergerak 600 poin/detik ke bawah selama 50 ms.
+//! // Moving downwards at 600 points/second for 50 ms.
 //! for i in 0..6 {
 //!     let ms = i * 10;
 //!     t.add(Duration::from_millis(ms), Point::new(0.0, 0.6 * ms as f32));
@@ -34,42 +35,43 @@ use std::time::Duration;
 
 use silka_paint::Point;
 
-/// Jendela waktu sampel yang ikut diperhitungkan.
+/// The time window of samples taken into account.
 ///
-/// Lebih panjang = lebih halus tapi lamban bereaksi pada perubahan arah;
-/// 100 ms adalah angka yang dipakai Flutter dan Android.
+/// Longer = smoother but slower to react to a change of direction; 100 ms is
+/// the number Flutter and Android use.
 pub const HORIZON: Duration = Duration::from_millis(100);
 
-/// Jumlah sampel maksimum yang disimpan.
+/// The maximum number of samples retained.
 pub const MAX_SAMPLES: usize = 20;
 
-/// Kecepatan dalam **poin logis per detik**.
+/// A velocity in **logical points per second**.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Velocity {
-    /// Komponen horizontal.
+    /// The horizontal component.
     pub x: f32,
-    /// Komponen vertikal (positif = ke bawah).
+    /// The vertical component (positive = downwards).
     pub y: f32,
 }
 
 impl Velocity {
-    /// Diam.
+    /// At rest.
     pub const ZERO: Velocity = Velocity { x: 0.0, y: 0.0 };
 
-    /// Kecepatan baru.
+    /// A new velocity.
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 
-    /// Besaran (panjang vektor).
+    /// The magnitude (vector length).
     pub fn magnitude(self) -> f32 {
         (self.x * self.x + self.y * self.y).sqrt()
     }
 
-    /// Versi yang besarannya dibatasi `max`, arah dipertahankan.
+    /// The same velocity with its magnitude capped at `max`, direction
+    /// preserved.
     ///
-    /// Wajib dipakai sebelum menyerahkan ke spring: satu sampel gila dari
-    /// driver trackpad tidak boleh melempar konten ribuan poin.
+    /// Must be applied before handing over to a spring: one insane sample from
+    /// a trackpad driver must not fling content thousands of points away.
     pub fn clamp_magnitude(self, max: f32) -> Self {
         let m = self.magnitude();
         if m <= max || m == 0.0 {
@@ -79,7 +81,7 @@ impl Velocity {
         Velocity::new(self.x * k, self.y * k)
     }
 
-    /// Benar bila cukup cepat untuk dianggap lemparan, bukan sekadar lepas.
+    /// True when fast enough to count as a fling rather than a mere release.
     pub fn is_fling(self, min_speed: f32) -> bool {
         self.magnitude() >= min_speed
     }
@@ -91,43 +93,43 @@ struct Sample {
     position: Point,
 }
 
-/// Pelacak kecepatan satu penunjuk.
+/// The velocity tracker for a single pointer.
 ///
-/// Satu instance per [`crate::input::PointerId`]; router membuat dan
-/// membuangnya mengikuti hidup penunjuk.
+/// One instance per [`crate::input::PointerId`]; the router creates and
+/// discards them along with the pointer's lifetime.
 #[derive(Debug, Clone, Default)]
 pub struct VelocityTracker {
     samples: VecDeque<Sample>,
 }
 
 impl VelocityTracker {
-    /// Pelacak kosong.
+    /// An empty tracker.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Kosongkan riwayat — dipanggil di awal setiap gesture baru.
+    /// Clear the history — called at the start of every new gesture.
     ///
-    /// Tanpa ini, jari yang menyentuh lagi setelah jeda panjang akan mewarisi
-    /// kecepatan gesture sebelumnya.
+    /// Without this, a finger touching down again after a long pause would
+    /// inherit the previous gesture's velocity.
     pub fn reset(&mut self) {
         self.samples.clear();
     }
 
-    /// Jumlah sampel tersimpan.
+    /// The number of samples retained.
     pub fn len(&self) -> usize {
         self.samples.len()
     }
 
-    /// Benar bila belum ada sampel.
+    /// True when there are no samples yet.
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
 
-    /// Catat satu posisi.
+    /// Record one position.
     ///
-    /// Sampel yang mundur ke belakang (jam melompat, event terlambat) memulai
-    /// riwayat baru alih-alih menghasilkan kecepatan negatif palsu.
+    /// A sample that goes backwards in time (a clock jump, a late event)
+    /// starts a fresh history instead of producing a bogus negative velocity.
     pub fn add(&mut self, time: Duration, position: Point) {
         if let Some(terakhir) = self.samples.back() {
             if time < terakhir.time {
@@ -144,17 +146,17 @@ impl VelocityTracker {
         }
     }
 
-    /// Taksiran kecepatan pada sampel terakhir.
+    /// The estimated velocity at the most recent sample.
     ///
-    /// [`Velocity::ZERO`] bila sampelnya belum cukup — bukan tebakan.
+    /// [`Velocity::ZERO`] when there are not enough samples — never a guess.
     pub fn velocity(&self) -> Velocity {
         let sampel: Vec<&Sample> = self.samples.iter().collect();
         if sampel.len() < 2 {
             return Velocity::ZERO;
         }
         let akhir = sampel[sampel.len() - 1];
-        // Waktu relatif terhadap sampel terakhir (≤ 0), dalam detik. Dengan
-        // begitu kecepatan yang dicari adalah koefisien linier di t = 0.
+        // Time relative to the last sample (≤ 0), in seconds. That way the
+        // velocity we want is the linear coefficient at t = 0.
         let t: Vec<f32> = sampel
             .iter()
             .map(|s| -(akhir.time.saturating_sub(s.time).as_secs_f32()))
@@ -164,17 +166,17 @@ impl VelocityTracker {
         Velocity::new(turunan_di_nol(&t, &x), turunan_di_nol(&t, &y))
     }
 
-    /// Kecepatan yang sudah dibatasi besarannya.
+    /// The velocity with its magnitude already capped.
     pub fn velocity_clamped(&self, max: f32) -> Velocity {
         self.velocity().clamp_magnitude(max)
     }
 }
 
-/// Koefisien linier `c₁` dari fit `p(t) = c₀ + c₁t + c₂t²`, yaitu kecepatan di
-/// `t = 0` (sampel terakhir).
+/// The linear coefficient `c₁` of the fit `p(t) = c₀ + c₁t + c₂t²`, i.e. the
+/// velocity at `t = 0` (the last sample).
 ///
-/// Turun sendiri ke fit linier saat sampelnya kurang dari tiga atau saat
-/// sistem persamaannya singular (semua sampel pada waktu yang sama).
+/// Falls back to a linear fit when there are fewer than three samples or when
+/// the normal equations are singular (all samples at the same instant).
 fn turunan_di_nol(t: &[f32], p: &[f32]) -> f32 {
     debug_assert_eq!(t.len(), p.len());
     if t.len() >= 3 {
@@ -188,15 +190,15 @@ fn turunan_di_nol(t: &[f32], p: &[f32]) -> f32 {
     }
 }
 
-/// Kuadrat terkecil untuk polinom berderajat `N-1` lewat persamaan normal.
+/// Least squares for a polynomial of degree `N-1` via the normal equations.
 ///
-/// `N` kecil (2 atau 3), jadi eliminasi Gauss dengan pivot parsial di matriks
-/// `N×N` sudah lebih dari cukup — dan bebas alokasi.
+/// `N` is small (2 or 3), so Gaussian elimination with partial pivoting on an
+/// `N×N` matrix is more than enough — and allocation-free.
 fn kuadrat_terkecil<const N: usize>(t: &[f32], p: &[f32]) -> Option<[f32; N]> {
     if t.len() < N {
         return None;
     }
-    // Persamaan normal: (AᵀA)c = Aᵀp dengan A_ij = t_i^j.
+    // Normal equations: (AᵀA)c = Aᵀp with A_ij = t_i^j.
     let mut a = [[0.0f64; N]; N];
     let mut b = [0.0f64; N];
     for (ti, pi) in t.iter().zip(p.iter()) {
@@ -215,7 +217,7 @@ fn kuadrat_terkecil<const N: usize>(t: &[f32], p: &[f32]) -> Option<[f32; N]> {
         }
     }
 
-    // Eliminasi Gauss dengan pivot parsial.
+    // Gaussian elimination with partial pivoting.
     for i in 0..N {
         let mut pivot = i;
         for r in (i + 1)..N {
@@ -309,8 +311,8 @@ mod tests {
 
     #[test]
     fn perlambatan_terbaca_bukan_rata_rata() {
-        // p(t) = v₀t + ½at² dengan v₀ = 1000, a = −4000 → di t = 60 ms
-        // kecepatan sesungguhnya 760, sedangkan rata-rata sepanjang gerak 880.
+        // p(t) = v₀t + ½at² with v₀ = 1000, a = −4000 → at t = 60 ms the true
+        // velocity is 760, whereas the average over the motion is 880.
         let mut t = VelocityTracker::new();
         for i in 0..=6 {
             let detik = i as f32 * 0.01;
@@ -327,11 +329,11 @@ mod tests {
     #[test]
     fn sampel_di_luar_horizon_dibuang() {
         let mut t = VelocityTracker::new();
-        // Gerakan lama yang cepat…
+        // An old, fast movement…
         for i in 0..5 {
             t.add(ms(i * 5), Point::new(0.0, 10.0 * i as f32));
         }
-        // …lalu jeda panjang dan gerakan lambat.
+        // …then a long pause and a slow one.
         for i in 0..5 {
             let waktu = 500 + i * 10;
             t.add(ms(waktu), Point::new(0.0, 100.0 + i as f32));
@@ -376,7 +378,8 @@ mod tests {
     fn jumlah_sampel_dibatasi() {
         let mut t = VelocityTracker::new();
         for i in 0..(MAX_SAMPLES as u64 * 3) {
-            // Waktu rapat supaya bukan horizon yang membuangnya.
+            // Tightly spaced in time so it is not the horizon doing the
+            // discarding.
             t.add(Duration::from_micros(i * 200), Point::new(i as f32, 0.0));
         }
         assert!(t.len() <= MAX_SAMPLES);
@@ -384,11 +387,11 @@ mod tests {
 
     #[test]
     fn clamp_menjaga_arah() {
-        let v = Velocity::new(300.0, 400.0); // besaran 500
+        let v = Velocity::new(300.0, 400.0); // magnitude 500
         let c = v.clamp_magnitude(100.0);
         assert!((c.magnitude() - 100.0).abs() < 1e-3);
         assert!((c.x / c.y - 0.75).abs() < 1e-4);
-        // Yang sudah di bawah batas tidak disentuh.
+        // Anything already below the cap is left untouched.
         assert_eq!(
             Velocity::new(3.0, 4.0).clamp_magnitude(100.0),
             Velocity::new(3.0, 4.0)

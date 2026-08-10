@@ -1,15 +1,15 @@
-//! Hit-testing di render tree — **sadar geometri squircle** (REKOMENDASI §3.6).
+//! Hit-testing over the render tree — **squircle-aware** (REKOMENDASI §3.6).
 //!
-//! Aturan yang mengikat dari §3.6: "geometri sudut merembet ke hit-testing".
-//! Kalau tombol digambar sebagai squircle tapi diuji sebagai persegi, ada pita
-//! beberapa piksel di tiap pojok yang terlihat kosong tapi bisa diklik — jenis
-//! cacat yang tidak pernah dilaporkan orang tapi membuat aplikasi terasa
-//! murah. Karena itu bentuk yang diuji di sini adalah superellipse **yang sama
-//! persis** dengan yang dikirim ke shader ([`silka_paint::Corners::contains`]).
+//! The binding rule from §3.6: "corner geometry propagates into hit-testing".
+//! If a button is drawn as a squircle but tested as a rectangle, each corner
+//! gets a band a few pixels wide that looks empty yet is clickable — the kind
+//! of flaw nobody ever reports but that makes an application feel cheap. So
+//! the shape tested here is **exactly the same** superellipse that is sent to
+//! the shader ([`silka_paint::Corners::contains`]).
 //!
-//! Lintasannya mengikuti Flutter: anak terakhir diperiksa lebih dulu (yang
-//! digambar paling atas menang), hasilnya berupa **jalur dari node terdalam ke
-//! akar** sehingga event bisa menggelembung ke atas.
+//! The traversal follows Flutter: the last child is checked first (whatever is
+//! drawn on top wins), and the result is a **path from the innermost node up
+//! to the root** so that events can bubble.
 //!
 //! ```
 //! use silka_core::input::hit_test;
@@ -21,8 +21,8 @@
 //! reconcile(&mut tree, column([fixed(100.0, 20.0), fixed(100.0, 20.0)]));
 //! tree.layout(BoxConstraints::loose(Size::new(200.0, 200.0)));
 //!
-//! // Daun default tidak "menangkap" apa pun (DeferToChild) — yang kena hanya
-//! // node yang memang mengaku menutupi areanya.
+//! // A default leaf does not "catch" anything (DeferToChild) — only nodes
+//! // that claim to cover their area are hit.
 //! assert!(hit_test(&tree, Point::new(50.0, 30.0)).is_empty());
 //! ```
 
@@ -30,22 +30,23 @@ use silka_paint::{Corners, Point, Size};
 
 use crate::tree::{NodeId, RenderTree};
 
-/// Bentuk area sentuh sebuah node.
+/// The shape of a node's touch area.
 ///
-/// Bentuk ini datang dari [`crate::tree::RenderNode::hit_shape`] dan **harus**
-/// sama dengan bentuk yang digambar: token theme yang sama mengisi keduanya.
+/// It comes from [`crate::tree::RenderNode::hit_shape`] and **must** match the
+/// shape that is drawn: the same theme token feeds both.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum HitShape {
-    /// Seluruh kotak node.
+    /// The node's whole box.
     #[default]
     Rect,
-    /// Kotak dengan sudut melengkung — arc di preset Tailwind, squircle di
-    /// preset Cupertino, keduanya lewat [`Corners`] yang sama.
+    /// A box with rounded corners — arcs in the Tailwind preset, squircles in
+    /// the Cupertino preset, both through the same [`Corners`].
     Rounded(Corners),
 }
 
 impl HitShape {
-    /// Benar bila `local` (relatif sudut kiri-atas node) ada di dalam bentuk.
+    /// True when `local` (relative to the node's top-left corner) lies inside
+    /// the shape.
     pub fn contains(self, size: Size, local: Point) -> bool {
         match self {
             HitShape::Rect => {
@@ -56,78 +57,80 @@ impl HitShape {
     }
 }
 
-/// Bagaimana sebuah node berperilaku terhadap event penunjuk.
+/// How a node behaves towards pointer events.
 ///
-/// Sepadan dengan `HitTestBehavior` Flutter, dengan satu tambahan
-/// ([`HitBehavior::Ignore`]) untuk lapisan dekoratif seperti bayangan atau
-/// overlay yang tidak boleh mencuri klik.
+/// The counterpart of Flutter's `HitTestBehavior`, with one addition
+/// ([`HitBehavior::Ignore`]) for decorative layers such as shadows or overlays
+/// that must not steal clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum HitBehavior {
-    /// Ikut jalur **hanya** bila salah satu anaknya kena.
+    /// Joins the path **only** when one of its children is hit.
     ///
-    /// Bawaan untuk semua node struktural (padding, flex, align): mereka tidak
-    /// punya kepentingan sendiri terhadap klik.
+    /// The default for every structural node (padding, flex, align): they have
+    /// no interest of their own in a click.
     #[default]
     DeferToChild,
-    /// Menutupi areanya: kena walau tanpa anak, dan menghalangi saudara di
-    /// bawahnya.
+    /// Covers its area: hit even without children, and blocks siblings
+    /// underneath.
     Opaque,
-    /// Kena, tapi **tidak** menghalangi node di bawahnya (overlay tembus).
+    /// Hit, but does **not** block nodes underneath (a see-through overlay).
     Translucent,
-    /// Tidak pernah kena, dan anak-anaknya tidak diperiksa sama sekali.
+    /// Never hit, and its children are not examined at all.
     Ignore,
 }
 
-/// Satu simpul pada jalur hit-test.
+/// One entry on a hit-test path.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HitEntry {
-    /// Node yang kena.
+    /// The node that was hit.
     pub node: NodeId,
-    /// Posisi event dalam koordinat lokal node (relatif sudut kiri-atasnya).
+    /// The event position in the node's local coordinates (relative to its
+    /// top-left corner).
     pub local: Point,
 }
 
-/// Hasil satu hit-test: jalur dari node terdalam ke akar.
+/// The result of one hit test: the path from the innermost node to the root.
 ///
-/// Urutannya penting — inilah urutan penyampaian event: target dulu, lalu
-/// leluhurnya, sampai ada yang menandai event sudah ditangani.
+/// The order matters — it is the order of delivery: the target first, then its
+/// ancestors, until something marks the event as handled.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HitTestResult {
     entries: Vec<HitEntry>,
 }
 
 impl HitTestResult {
-    /// Hasil kosong.
+    /// An empty result.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Jalur lengkap, terdalam lebih dulu.
+    /// The full path, innermost first.
     pub fn path(&self) -> &[HitEntry] {
         &self.entries
     }
 
-    /// Node terdalam yang kena (target event).
+    /// The innermost node hit (the event target).
     pub fn target(&self) -> Option<NodeId> {
         self.entries.first().map(|e| e.node)
     }
 
-    /// Benar bila tidak ada satu pun node yang kena.
+    /// True when no node at all was hit.
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
-    /// Jumlah node pada jalur.
+    /// The number of nodes on the path.
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
-    /// Benar bila `node` ada di jalur.
+    /// True when `node` is on the path.
     pub fn contains(&self, node: NodeId) -> bool {
         self.entries.iter().any(|e| e.node == node)
     }
 
-    /// Koordinat lokal event pada `node`, bila node itu ada di jalur.
+    /// The event's local coordinates within `node`, if that node is on the
+    /// path.
     pub fn local_of(&self, node: NodeId) -> Option<Point> {
         self.entries
             .iter()
@@ -135,7 +138,7 @@ impl HitTestResult {
             .map(|e| e.local)
     }
 
-    /// Daftar node saja, terdalam lebih dulu.
+    /// Just the nodes, innermost first.
     pub fn nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
         self.entries.iter().map(|e| e.node)
     }
@@ -145,23 +148,23 @@ impl HitTestResult {
     }
 }
 
-/// Apa yang terjadi pada satu cabang saat ditelusuri.
+/// What happened to one branch as it was walked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Outcome {
-    /// Tidak kena sama sekali.
+    /// Not hit at all.
     Miss,
-    /// Kena, tapi tidak menghalangi saudara di bawahnya.
+    /// Hit, but does not block siblings underneath.
     Pass,
-    /// Kena dan menyerap: saudara di bawahnya tidak perlu diperiksa lagi.
+    /// Hit and absorbing: siblings underneath need not be examined.
     Absorb,
 }
 
-/// Uji satu titik global (poin logis) terhadap seluruh pohon.
+/// Test one global point (in logical points) against the whole tree.
 ///
-/// Node yang memotong isinya ([`crate::tree::RenderNode::clips_children`],
-/// mis. viewport) menghentikan pencarian begitu titik jatuh di luar kotaknya —
-/// itulah yang membuat baris yang sudah tergulir keluar layar tidak bisa
-/// diklik.
+/// A node that clips its contents
+/// ([`crate::tree::RenderNode::clips_children`], e.g. a viewport) stops the
+/// search as soon as the point falls outside its box — that is what makes rows
+/// scrolled off-screen unclickable.
 pub fn hit_test(tree: &RenderTree, point: Point) -> HitTestResult {
     let mut result = HitTestResult::new();
     let root = tree.root();
@@ -170,9 +173,10 @@ pub fn hit_test(tree: &RenderTree, point: Point) -> HitTestResult {
     result
 }
 
-/// Uji satu titik terhadap subtree `node`; `local` relatif sudut kiri-atas node.
+/// Test one point against the subtree rooted at `node`; `local` is relative to
+/// that node's top-left corner.
 ///
-/// Dipakai overlay/popup yang punya akar sendiri, dan oleh [`hit_test`].
+/// Used by overlays/popups that have their own root, and by [`hit_test`].
 pub fn hit_test_subtree(
     tree: &RenderTree,
     node: NodeId,
@@ -192,13 +196,14 @@ fn hit_node(tree: &RenderTree, id: NodeId, local: Point, out: &mut HitTestResult
     }
     let size = tree.size(id);
     let di_dalam = render.hit_shape().contains(size, local);
-    // Node yang memotong isinya: di luar kotaknya, anak-anaknya tidak ada.
+    // A node that clips its contents: outside its box, its children do not
+    // exist.
     if render.clips_children() && !di_dalam {
         return Outcome::Miss;
     }
 
     let mut anak = Outcome::Miss;
-    // Terbalik: yang digambar terakhir ada di paling atas, jadi ia menang.
+    // Reversed: whatever is drawn last sits on top, so it wins.
     for child in tree.children(id).iter().rev() {
         let offset = tree.offset(*child);
         let child_local = Point::new(local.x - offset.x, local.y - offset.y);
@@ -216,7 +221,8 @@ fn hit_node(tree: &RenderTree, id: NodeId, local: Point, out: &mut HitTestResult
     if anak == Outcome::Miss && !diri {
         return Outcome::Miss;
     }
-    // Anak dulu, baru diri sendiri → jalur otomatis tersusun terdalam-dulu.
+    // Children first, then ourselves → the path comes out innermost-first for
+    // free.
     out.push(id, local);
     if anak == Outcome::Absorb || (diri && behavior == HitBehavior::Opaque) {
         Outcome::Absorb
