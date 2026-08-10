@@ -1,76 +1,69 @@
 //! # silka-gallery
 //!
 //! A Flutter Gallery-style app — **a product, not a side example**
-//! (REKOMENDASI §9.9): one interactive demo page per component listed in
-//! `KOMPONEN.md`, doubling as the day-to-day manual visual test harness.
+//! (REKOMENDASI §9.9): every component of `KOMPONEN.md` on its own interactive
+//! page, inside one application with a sidebar, and doubling as the day-to-day
+//! manual visual test harness.
 //!
-//! Once components start landing, the gallery carries these jobs:
+//! Started without arguments, it opens the shell ([`shell`]):
 //!
-//! - Show every component in **both presets** (Cupertino and Tailwind/shadcn)
-//!   plus light/dark, so token regressions surface immediately (§2.7).
-//! - Serve as the place to check the Definition of Done by hand: spring
-//!   transitions, keyboard navigation + focus ring, reduced motion.
-//! - Serve as the first target for golden/snapshot visual tests and frame-time
-//!   benchmarks in CI (§9.5).
-//!
-//! ## Status: `window-wgpu` milestone
-//!
-//! What this empty page proves is exactly the part that is most expensive to
-//! get wrong: a winit window with a wgpu surface (Metal on macOS), correct
-//! resize and DPI handling, live OS dark mode, and a **background color that
-//! comes from theme tokens** — not from a literal in this file.
-//!
-//! Command-line arguments for visual QA:
+//! - a **sidebar listing every component**, grouped by the tiers of
+//!   `KOMPONEN.md` — the answer to "what does this framework have?" is a look,
+//!   not a source dive;
+//! - a **live preset switcher** (Cupertino ⇄ Tailwind) and a light/dark/system
+//!   switcher, both applied without a restart, so a token regression is two
+//!   clicks away instead of two rebuilds away (§2.7);
+//! - a **reduced-motion switch**, so that line of every component's Definition
+//!   of Done can be checked by hand;
+//! - and the **spring playground** ([`spring`]), the one page that exists to
+//!   make the thing a screenshot cannot show — motion — visible and touchable.
 //!
 //! ```text
+//! cargo run -p silka-gallery                             # the gallery
+//! cargo run -p silka-gallery -- --page table             # opened on one page
+//! cargo run -p silka-gallery -- --page table --solo      # that page, no chrome
 //! cargo run -p silka-gallery -- --preset tailwind --appearance dark
+//! cargo run -p silka-gallery -- --page teks              # legacy scene pages
 //! cargo run -p silka-gallery -- --page kartu
-//! cargo run -p silka-gallery -- --page reaktif
-//! cargo run -p silka-gallery -- --page counter
-//! cargo run -p silka-gallery -- --page tabs
-//! cargo run -p silka-gallery -- --page dialog
-//! cargo run -p silka-gallery -- --page tombol
-//! cargo run -p silka-gallery -- --page centang
-//! cargo run -p silka-gallery -- --page slider
-//! cargo run -p silka-gallery -- --page pilihan
-//! cargo run -p silka-gallery -- --page gulir
-//! cargo run -p silka-gallery -- --page tabel
-//! cargo run -p silka-gallery -- --page chart
 //! ```
 //!
-//! Available pages: `teks` (typography specimen, the default), `kartu`
-//! (squircle vs arc + layered shadows), `reaktif` — the same grid as `kartu`
-//! but driven **entirely through the reactive lifecycle** (`run_app`): no
-//! hand-assembled `Scene`, no layout arithmetic in the page code — and
-//! `counter`, **an end-to-end integration test you can see with your own
-//! eyes**: text that is genuinely readable, a button that is genuinely
-//! clickable, and a number on screen that genuinely changes as a result.
-//! `dialog` adds the overlay layer: a modal with a dimmed backdrop, button
-//! order following OS convention, full keyboard support (Esc/Return), and
-//! spring transitions that can be retargeted mid-flight. `gulir` is the page
-//! that most needs to be **tried by hand**: rubber banding, the OS trackpad's
-//! own momentum, a bounce that inherits the fling velocity, and a
-//! self-fading overlay scrollbar — native feel that no unit test can prove.
+//! `--preset` and `--appearance` set the **starting** theme; from then on the
+//! top bar owns it. Without `--appearance` the gallery follows OS dark mode
+//! live (INTEGRASI-NATIVE §6).
+//!
+//! `--solo` drops the chrome and gives a single page the whole window: the
+//! shape wanted for pixel-level QA, where a sidebar would only be noise.
+//!
+//! Two pages predate the widget layer and still assemble a `Scene` by hand —
+//! the typography specimen (`--page teks`) and the squircle-vs-arc comparison
+//! (`--page kartu`). They are not part of the shell; their content lives on in
+//! the `Teks & kontainer` page, which shows the same two things through the
+//! widget layer.
 
 mod button;
 mod cards;
+mod catalog;
 mod chart;
 mod checkbox;
 mod counter;
 mod dialog;
 mod list;
+mod primitives;
 mod reactive;
 mod scroll_view;
 mod select;
+mod shell;
 mod slider;
+mod spring;
 mod switch;
 mod table;
 mod tabs;
 mod text_field;
 mod typography;
 
-use silka_platform::{run_app, run_app_with, window, PlatformError};
-use silka_theme::{Appearance, Preset};
+use catalog::Halaman;
+use silka_platform::{window, PlatformError};
+use silka_theme::{Appearance, Preset, Theme};
 use silka_widgets::Fonts;
 
 fn main() -> Result<(), PlatformError> {
@@ -80,16 +73,14 @@ fn main() -> Result<(), PlatformError> {
     // expensive, and the glyph atlas must be shared so the same glyph is not
     // rasterized twice (REKOMENDASI §3.3).
     //
-    // The same engine is used twice per frame: to assemble the scene (here),
-    // then to upload the atlas to the GPU (inside the backend, via
-    // `.glyphs(…)`). That is why it is shared through `Rc<RefCell<…>>`.
+    // The same engine is used twice per frame: to assemble the scene, then to
+    // upload the atlas to the GPU (inside the backend, via `.glyphs(…)`). That
+    // is why it is shared through `Rc<RefCell<…>>`.
     let fonts = Fonts::new();
-    let untuk_scene = fonts.shared();
-    let halaman = opsi.halaman;
 
     let mut config = window("silka — Gallery")
-        .size(1024.0, 720.0)
-        .min_size(640.0, 480.0)
+        .size(1280.0, 860.0)
+        .min_size(720.0, 520.0)
         .preset(opsi.preset);
 
     config = match opsi.appearance {
@@ -99,270 +90,64 @@ fn main() -> Result<(), PlatformError> {
         None => config.follow_system_appearance(),
     };
 
-    // The reactive and counter pages do not assemble a scene themselves: both
-    // hand over a view tree, and `run_app` drives the
-    // signals → view-diff → layout → paint cycle.
-    match halaman {
-        Halaman::Reaktif => return run_app(config, reactive::halaman),
-        Halaman::Counter => {
-            // The same glyph atlas is used twice per frame: while building the
-            // view (measuring + rasterizing) and while drawing (uploading to
-            // the GPU). Without `.glyphs(...)` the `GlyphRun` commands have no
-            // bitmaps and the page renders blank.
-            let untuk_view = fonts.clone();
-            return run_app(config.glyphs(fonts.shared()), move |cx| {
-                counter::halaman(cx, &untuk_view)
-            });
-        }
-        Halaman::Tombol => {
-            let untuk_view = fonts.clone();
-            // `run_app_with` = `run_app` + the animation driver: `advance` is
-            // what steps every widget spring once per frame (§3.5). Without
-            // this third argument the buttons still behave correctly, but
-            // their transitions freeze on the first frame.
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| button::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Centang => {
-            // The check stroke is a spring like the rest, so this page uses
-            // `run_app_with` too. Without `advance` the checkmark is still
-            // correct — it just pops into place instead of being drawn.
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| checkbox::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Dialog => {
-            // As on the button page, transitions are driven by `advance`: here
-            // what moves is the dialog panel and the backdrop's opacity, and
-            // both stop on their own once their springs settle (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| dialog::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Pilihan => {
-            // Select uses the overlay system for its popup and a spring for
-            // every state transition, so its page uses `run_app_with`:
-            // `silka_widgets::advance` steps both once per frame and the shell
-            // stops requesting frames once everything settles (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| select::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Sakelar => {
-            // The switch is the component you notice most when its spring is
-            // dead: the thumb has to **follow your finger**, not teleport.
-            // Hence `run_app_with` — `silka_widgets::advance` steps the thumb
-            // position, track color, and focus ring once per frame, then stops
-            // on its own once everything settles (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| switch::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Slider => {
-            // The slider animates, so its page uses `run_app_with`:
-            // `silka_widgets::advance` steps every widget spring once per
-            // frame, and the shell stops requesting frames once everything
-            // settles (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| slider::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::KolomTeks => {
-            // The text field animates (hover + focus ring) and **needs IME**:
-            // both go through the shell's official path — `advance` steps the
-            // springs once per frame, and the `set_ime_cursor_area` request
-            // comes from the node via `EventCtx::request_ime` (§3.5, §3.8).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| text_field::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Tabs => {
-            // The tab indicator slides on a spring, so this page uses
-            // `run_app_with`: `silka_widgets::advance` steps every widget
-            // spring once per frame and stops on its own once everything
-            // settles (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| tabs::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Daftar => {
-            // A virtualized list: scrolling, the selection highlight, and hover
-            // are all springs stepped by `advance` once per frame (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| list::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Tabel => {
-            // A virtualized table: the sliding selection highlight, the column
-            // header highlight, and the column-drag drop indicator are all
-            // springs stepped by `advance` once per frame (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| table::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Chart => {
-            // Two `advance` functions, because charts live in their own crate
-            // and `silka-widgets` must not learn about them. The buttons on the
-            // page belong to the widget catalogue, the marks belong to
-            // `silka-chart`, and a single frame drives both (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| chart::halaman(cx, &untuk_view),
-                |tree, tick| silka_widgets::advance(tree, tick) | silka_chart::advance(tree, tick),
-            );
-        }
-        Halaman::Gulir => {
-            // Scrolling is a spring like the rest — rubber banding, the bounce,
-            // and the scrollbar fade are all stepped by `advance` once per
-            // frame. Without this third argument the list still scrolls, but
-            // its content stays stretched past the edge and never springs back
-            // (§3.5).
-            let untuk_view = fonts.clone();
-            return run_app_with(
-                config.glyphs(fonts.shared()),
-                move |cx| scroll_view::halaman(cx, &untuk_view),
-                silka_widgets::advance,
-            );
-        }
-        Halaman::Teks | Halaman::Kartu => {}
+    // The two legacy pages still assemble their own scene, because both show
+    // off things that had no widget when they were written.
+    if let Some(halaman) = opsi.scene {
+        let untuk_scene = fonts.shared();
+        return config
+            .on_frame(move |frame| {
+                let mut mesin = untuk_scene.borrow_mut();
+                // Text is rasterized at the real screen resolution; the logical
+                // sizes do not change with it (§3.3 subpixel positioning).
+                mesin.set_scale_factor(frame.scale_factor() as f32);
+                match halaman {
+                    HalamanScene::Kartu => cards::scene(frame.theme(), frame.size()),
+                    HalamanScene::Teks => {
+                        typography::scene(&mut mesin, frame.theme(), frame.size())
+                    }
+                }
+            })
+            // Without this line the `GlyphRun` commands have no bitmaps and the
+            // text page renders blank — the atlas is what crosses over to the
+            // GPU.
+            .glyphs(fonts.shared())
+            .run();
     }
 
-    // The older pages still assemble their own scene because both show off
-    // things that have no widget yet (typography specimen, corner comparison).
-    config
-        .on_frame(move |frame| {
-            let mut mesin = untuk_scene.borrow_mut();
-            // Text is rasterized at the real screen resolution; the logical
-            // sizes above do not change with it (§3.3 subpixel positioning).
-            mesin.set_scale_factor(frame.scale_factor() as f32);
-            match halaman {
-                Halaman::Kartu => cards::scene(frame.theme(), frame.size()),
-                // `Reaktif` and `Counter` are already handled above via
-                // `run_app`.
-                Halaman::Teks
-                | Halaman::Tabs
-                | Halaman::Reaktif
-                | Halaman::Counter
-                | Halaman::Tombol
-                | Halaman::KolomTeks
-                | Halaman::Centang
-                | Halaman::Dialog
-                | Halaman::Sakelar
-                | Halaman::Slider
-                | Halaman::Pilihan
-                | Halaman::Gulir
-                | Halaman::Tabel
-                | Halaman::Chart
-                | Halaman::Daftar => typography::scene(&mut mesin, frame.theme(), frame.size()),
-            }
-        })
-        // Without this line the `GlyphRun` commands have no bitmaps and the
-        // text page renders blank — the atlas is what crosses over to the GPU.
-        .glyphs(fonts.shared())
-        .run()
+    let tema = Theme::new(opsi.preset, opsi.appearance.unwrap_or_default());
+    shell::jalankan(config, tema, fonts, opsi.halaman(), opsi.solo)
 }
 
-/// The demo page currently on screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum Halaman {
+/// The two pages that predate the widget layer and draw straight into a
+/// `Scene`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HalamanScene {
     /// Typography specimen (`glyph-atlas` milestone).
-    #[default]
     Teks,
-    /// A long list inside a `scroll_view`: rubber banding, OS momentum,
-    /// an auto-hiding overlay scrollbar, and scroll-to (`KOMPONEN.md` Tier 1).
-    Gulir,
-    /// A **virtualized** list of a hundred thousand rows: row windowing,
-    /// sticky header, spring-driven selection, and full keyboard support
-    /// (`KOMPONEN.md` Tier 1).
-    Daftar,
-    /// A **virtualized** table of a hundred thousand rows in columns: per-column
-    /// sorting, column resize and reorder by dragging, multi-selection
-    /// (⇧/⌘), sticky header, custom cells, and keyboard navigation between
-    /// cells — all on top of the same virtualization as `list`
-    /// (`KOMPONEN.md` Tier 5).
-    Tabel,
     /// Squircle vs arc card grid (`sdf-shader` milestone).
     Kartu,
-    /// A row of tabs: three variants (segmented/underline/enclosed) with a
-    /// spring-driven indicator, a single keyboard stop, and declarative panels
-    /// (`KOMPONEN.md` Tier 3).
-    Tabs,
-    /// The same grid, but through the reactive lifecycle (`reactive-glue`
-    /// milestone).
-    Reaktif,
-    /// An interactive counter: text, a button, and a number that changes when
-    /// clicked (`demo-end-to-end` milestone).
-    Counter,
-    /// Modal dialogs & alerts: dimmed backdrop, per-OS button order, full
-    /// keyboard support, and retargetable spring transitions
-    /// (`KOMPONEN.md` Tier 4).
-    Dialog,
-    /// The `button` component catalog: five variants, every interactive state
-    /// driven by springs, loading, keyboard + focus ring (`KOMPONEN.md` Tier 2).
-    Tombol,
-    /// The `text_field` component catalog: per-grapheme caret/selection,
-    /// double-click word selection, drag-select, undo/redo, and **inline IME
-    /// preedit** (`KOMPONEN.md` Tier 2 — the hardest component in the whole
-    /// catalog).
-    KolomTeks,
-    /// The `checkbox` component catalog: tri-state values (including
-    /// indeterminate), a check stroke that is **drawn** by a spring, Space +
-    /// focus ring, and a hit target of ≥ 44pt (`KOMPONEN.md` Tier 2).
-    Centang,
-    /// The `select` component catalog: an anchored popup with auto-flip, full
-    /// keyboard support + typeahead, a long scrollable list, and a disabled
-    /// control (`KOMPONEN.md` Tier 2).
-    Pilihan,
-    /// The `switch`/`toggle` component catalog: a **draggable** thumb with
-    /// velocity handoff to the spring, a track color that crosses over with it,
-    /// Space + arrow keys, and a hit target of ≥ 44pt (`KOMPONEN.md` Tier 2).
-    Sakelar,
-    /// The `slider` component catalog: drag + click on the track, snapping to
-    /// steps, a two-thumb range variant, full keyboard support, and a thumb
-    /// that catches up via a spring (`KOMPONEN.md` Tier 2).
-    Slider,
-    /// The `silka-chart` catalog: line, area, grouped bars, stacked horizontal
-    /// bars, and sparklines — with a colorblind-safe categorical palette,
-    /// locale-aware axis labels, spring data transitions, and a tooltip riding
-    /// the overlay system.
-    Chart,
 }
 
+impl HalamanScene {
+    fn dari_nama(nama: &str) -> Option<HalamanScene> {
+        match nama {
+            "teks" | "typography" | "text" => Some(HalamanScene::Teks),
+            "kartu" | "cards" => Some(HalamanScene::Kartu),
+            _ => None,
+        }
+    }
+}
+
+/// The command line, parsed.
 struct Opsi {
     preset: Preset,
     appearance: Option<Appearance>,
-    halaman: Halaman,
+    /// The page the shell opens on, if `--page` named one.
+    awal: Option<Halaman>,
+    /// A legacy scene page, which bypasses the shell entirely.
+    scene: Option<HalamanScene>,
+    /// `--solo`: that page alone, without the shell's chrome.
+    solo: bool,
 }
 
 impl Opsi {
@@ -370,7 +155,9 @@ impl Opsi {
         let mut opsi = Opsi {
             preset: Preset::Cupertino,
             appearance: None,
-            halaman: Halaman::default(),
+            awal: None,
+            scene: None,
+            solo: false,
         };
         let args: Vec<String> = args.collect();
         let mut i = 0;
@@ -397,27 +184,16 @@ impl Opsi {
                 }
                 "--page" | "--halaman" => {
                     if let Some(v) = args.get(i + 1) {
-                        opsi.halaman = match v.as_str() {
-                            "kartu" | "cards" => Halaman::Kartu,
-                            "tabs" | "tab" => Halaman::Tabs,
-                            "reaktif" | "reactive" => Halaman::Reaktif,
-                            "counter" | "pencacah" => Halaman::Counter,
-                            "slider" | "penggeser" => Halaman::Slider,
-                            "sakelar" | "switch" | "toggle" => Halaman::Sakelar,
-                            "pilihan" | "select" | "dropdown" => Halaman::Pilihan,
-                            "dialog" | "alert" => Halaman::Dialog,
-                            "tombol" | "button" => Halaman::Tombol,
-                            "gulir" | "scroll" | "scroll_view" => Halaman::Gulir,
-                            "daftar" | "list" => Halaman::Daftar,
-                            "tabel" | "table" => Halaman::Tabel,
-                            "centang" | "checkbox" => Halaman::Centang,
-                            "chart" | "grafik" | "bagan" => Halaman::Chart,
-                            "kolom-teks" | "text_field" | "text-field" => Halaman::KolomTeks,
-                            _ => Halaman::Teks,
-                        };
+                        // The catalogue is asked first, so a page can never be
+                        // shadowed by a legacy name.
+                        opsi.awal = Halaman::dari_nama(v);
+                        if opsi.awal.is_none() {
+                            opsi.scene = HalamanScene::dari_nama(v);
+                        }
                         i += 1;
                     }
                 }
+                "--solo" | "--tanpa-kerangka" => opsi.solo = true,
                 _ => {}
             }
             i += 1;
@@ -425,9 +201,14 @@ impl Opsi {
         opsi
     }
 
+    /// The page the shell should open on.
+    fn halaman(&self) -> Halaman {
+        self.awal.unwrap_or(Halaman::AWAL)
+    }
+
     #[cfg(test)]
-    fn theme(&self) -> silka_theme::Theme {
-        silka_theme::Theme::new(self.preset, self.appearance.unwrap_or_default())
+    fn theme(&self) -> Theme {
+        Theme::new(self.preset, self.appearance.unwrap_or_default())
     }
 }
 
@@ -444,6 +225,14 @@ mod tests {
         let o = opsi(&[]);
         assert_eq!(o.preset, Preset::Cupertino);
         assert!(o.appearance.is_none());
+    }
+
+    #[test]
+    fn tanpa_argumen_membuka_galeri_bukan_satu_halaman() {
+        let o = opsi(&[]);
+        assert!(o.scene.is_none(), "galeri, bukan halaman scene lama");
+        assert!(!o.solo, "kerangka galeri ikut tampil");
+        assert_eq!(o.halaman(), Halaman::AWAL);
     }
 
     #[test]
@@ -467,44 +256,68 @@ mod tests {
     }
 
     #[test]
-    fn halaman_default_adalah_spesimen_teks() {
-        assert_eq!(opsi(&[]).halaman, Halaman::Teks);
+    fn halaman_bisa_dipilih_lewat_argumen() {
+        for (arg, halaman) in [
+            ("kartu", None),
+            ("tabs", Some(Halaman::Tabs)),
+            ("tab", Some(Halaman::Tabs)),
+            ("reaktif", Some(Halaman::Reaktif)),
+            ("reactive", Some(Halaman::Reaktif)),
+            ("counter", Some(Halaman::Counter)),
+            ("pencacah", Some(Halaman::Counter)),
+            ("dialog", Some(Halaman::Dialog)),
+            ("gulir", Some(Halaman::Gulir)),
+            ("daftar", Some(Halaman::Daftar)),
+            ("list", Some(Halaman::Daftar)),
+            ("tabel", Some(Halaman::Tabel)),
+            ("table", Some(Halaman::Tabel)),
+            ("scroll", Some(Halaman::Gulir)),
+            ("centang", Some(Halaman::Centang)),
+            ("sakelar", Some(Halaman::Sakelar)),
+            ("switch", Some(Halaman::Sakelar)),
+            ("toggle", Some(Halaman::Sakelar)),
+            ("checkbox", Some(Halaman::Centang)),
+            ("alert", Some(Halaman::Dialog)),
+            ("pilihan", Some(Halaman::Pilihan)),
+            ("select", Some(Halaman::Pilihan)),
+            ("dropdown", Some(Halaman::Pilihan)),
+            ("spring", Some(Halaman::Animasi)),
+            ("chart", Some(Halaman::Chart)),
+        ] {
+            assert_eq!(opsi(&["--page", arg]).awal, halaman, "--page {arg}");
+        }
     }
 
     #[test]
-    fn halaman_bisa_dipilih_lewat_argumen() {
-        assert_eq!(opsi(&["--page", "kartu"]).halaman, Halaman::Kartu);
-        assert_eq!(opsi(&["--page", "tabs"]).halaman, Halaman::Tabs);
-        assert_eq!(opsi(&["--halaman", "tab"]).halaman, Halaman::Tabs);
-        assert_eq!(opsi(&["--page", "reaktif"]).halaman, Halaman::Reaktif);
-        assert_eq!(opsi(&["--page", "reactive"]).halaman, Halaman::Reaktif);
-        assert_eq!(opsi(&["--page", "counter"]).halaman, Halaman::Counter);
-        assert_eq!(opsi(&["--halaman", "pencacah"]).halaman, Halaman::Counter);
-        assert_eq!(opsi(&["--halaman", "cards"]).halaman, Halaman::Kartu);
-        assert_eq!(opsi(&["--page", "dialog"]).halaman, Halaman::Dialog);
-        assert_eq!(opsi(&["--page", "gulir"]).halaman, Halaman::Gulir);
-        assert_eq!(opsi(&["--page", "daftar"]).halaman, Halaman::Daftar);
-        assert_eq!(opsi(&["--page", "list"]).halaman, Halaman::Daftar);
-        assert_eq!(opsi(&["--page", "tabel"]).halaman, Halaman::Tabel);
-        assert_eq!(opsi(&["--halaman", "table"]).halaman, Halaman::Tabel);
-        assert_eq!(opsi(&["--page", "scroll"]).halaman, Halaman::Gulir);
-        assert_eq!(opsi(&["--page", "centang"]).halaman, Halaman::Centang);
-        assert_eq!(opsi(&["--page", "sakelar"]).halaman, Halaman::Sakelar);
-        assert_eq!(opsi(&["--page", "switch"]).halaman, Halaman::Sakelar);
-        assert_eq!(opsi(&["--halaman", "toggle"]).halaman, Halaman::Sakelar);
-        assert_eq!(opsi(&["--halaman", "checkbox"]).halaman, Halaman::Centang);
-        assert_eq!(opsi(&["--halaman", "alert"]).halaman, Halaman::Dialog);
-        assert_eq!(opsi(&["--page", "pilihan"]).halaman, Halaman::Pilihan);
-        assert_eq!(opsi(&["--halaman", "select"]).halaman, Halaman::Pilihan);
-        assert_eq!(opsi(&["--page", "dropdown"]).halaman, Halaman::Pilihan);
-        assert_eq!(opsi(&["--page", "teks"]).halaman, Halaman::Teks);
-        assert_eq!(opsi(&["--page", "ngawur"]).halaman, Halaman::Teks);
+    fn halaman_scene_lama_masih_bisa_dibuka() {
+        assert_eq!(opsi(&["--page", "teks"]).scene, Some(HalamanScene::Teks));
+        assert_eq!(opsi(&["--page", "kartu"]).scene, Some(HalamanScene::Kartu));
+        assert_eq!(
+            opsi(&["--halaman", "cards"]).scene,
+            Some(HalamanScene::Kartu)
+        );
+        // …and they never claim a shell page at the same time.
+        assert!(opsi(&["--page", "teks"]).awal.is_none());
+    }
+
+    #[test]
+    fn nama_halaman_ngawur_tetap_membuka_galeri() {
+        let o = opsi(&["--page", "ngawur"]);
+        assert!(o.awal.is_none());
+        assert!(o.scene.is_none());
+        assert_eq!(o.halaman(), Halaman::AWAL);
+    }
+
+    #[test]
+    fn solo_dikenali() {
+        assert!(opsi(&["--page", "table", "--solo"]).solo);
+        assert!(!opsi(&["--page", "table"]).solo);
     }
 
     #[test]
     fn argumen_bisa_digabung() {
         let o = opsi(&["--preset", "tailwind", "--appearance", "dark"]);
-        assert_eq!(o.theme(), silka_theme::Theme::tailwind(Appearance::Dark));
+        assert_eq!(o.theme(), Theme::tailwind(Appearance::Dark));
     }
 
     #[test]

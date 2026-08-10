@@ -24,7 +24,7 @@
 //!
 //! The popup **must not** live where its trigger stands: it has to paint over
 //! other content and be free to spill past its parent's box. The infrastructure
-//! for that already exists, built once for ten components ([`crate::overlay`],
+//! for that already exists, built once for ten components ([`mod@crate::overlay`],
 //! `KOMPONEN.md` rule #3), and it takes the shape of a layer at the root of the
 //! page. Since there is no "portal" mechanism yet that could hand a panel from
 //! deep in the tree up to that layer, select hands back two pieces mounted in
@@ -46,7 +46,7 @@
 //! | Requirement | Where |
 //! |---|---|
 //! | Correct in both presets | Every value flows through [`SelectTriggerStyle`]/[`SelectOptionStyle`], filled from tokens |
-//! | Interactive states via springs | Background, focus ring, and disclosure triangle ([`trigger`]); row background ([`option`]) |
+//! | Interactive states via springs | Background, focus ring, and disclosure triangle (`trigger`); row background (`option`) |
 //! | Full keyboard + focus ring | Space/Enter/arrows/Home/End/Esc + typeahead, all on the trigger that holds focus |
 //! | AccessKit nodes | Trigger = `Button` + value + `Expand`/`Collapse`; row = `MenuItem` + `toggled` |
 //! | Dark mode | Tokens; not a single color literal in this file |

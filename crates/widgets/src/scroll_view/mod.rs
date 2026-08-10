@@ -39,7 +39,7 @@
 //!
 //! ## Driving the animation
 //!
-//! Just like [`crate::overlay`]: every spring is advanced in **one** place,
+//! Just like [`mod@crate::overlay`]: every spring is advanced in **one** place,
 //! [`advance`], called by the app's frame cycle before layout. What it returns
 //! is the reason for the dirty flags — and once nothing is moving anymore it
 //! comes back empty and the GPU truly sleeps (§3.5).

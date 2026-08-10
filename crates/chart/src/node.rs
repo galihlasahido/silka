@@ -9,14 +9,14 @@
 //!   tall the plot is, which depends on the category axis's labels. Resolving
 //!   that as a parent/child layout means a node reaching into its sibling's
 //!   measurements — precisely what box constraints forbid. Resolving it inside
-//!   one node is two passes and a comment (see [`ChartBox::rebuild`]).
+//!   one node is two passes and a comment (see `ChartBox::rebuild`).
 //! - **A chart is one thing to a reader and one node to a screen reader.**
 //!   Eight hundred child nodes, one per data point, would be eight hundred
 //!   items to tab through.
 //!
 //! What that costs is that text has to be rasterised **in layout** rather than
 //! in paint — `paint` takes `&self` and glyph rasterisation needs the atlas
-//! mutably. That is the same seam [`silka_widgets::text`] sits on, for the same
+//! mutably. That is the same seam [`silka_widgets::text()`] sits on, for the same
 //! reason, and it has a pleasant consequence: hovering re-paints without
 //! re-shaping a single label.
 //!

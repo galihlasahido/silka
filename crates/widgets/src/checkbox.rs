@@ -207,7 +207,7 @@ impl core::fmt::Debug for ChangeCallback {
 /// The engine never has an opinion about color or size (§2.6, §2.7): the
 /// Cupertino and Tailwind presets swap over by filling in this struct,
 /// without a single line changing in [`CheckboxNode`]. A third preset (a
-/// custom brand) simply hands this struct over through [`Builder::style`].
+/// custom brand) simply hands this struct over through [`Checkbox::style`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CheckboxStyle {
     /// Side of the drawn box, in logical points.

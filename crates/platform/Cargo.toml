@@ -19,9 +19,43 @@ winit.workspace = true
 # supaya tidak pernah ada dua versi accesskit di satu binary.
 accesskit_winit.workspace = true
 
-# Vsync macOS: CADisplayLink lewat objc2 (§3.5). Di OS lain jalur ini tidak
-# ada sama sekali — fallback-nya `request_redraw` winit.
+# Integrasi native P0 (INTEGRASI-NATIVE §1–§2). Lintas platform, jadi didaftar
+# di sini dan bukan di blok per-target; masing-masing crate sudah menggating
+# implementasinya sendiri per OS.
+muda.workspace = true
+tray-icon.workspace = true
+rfd.workspace = true
+arboard.workspace = true
+window-vibrancy.workspace = true
+# Dipakai `dialog`/`titlebar` untuk menyerahkan handle window winit ke rfd dan
+# window-vibrancy; versinya wajib sama dengan yang dipakai winit.
+raw-window-handle.workspace = true
+
+# Vsync macOS: CADisplayLink lewat objc2 (§3.5), plus re-export escape hatch
+# `platform::macos` (§8). Di OS lain jalur ini tidak ada sama sekali —
+# fallback-nya `request_redraw` winit.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
-objc2-foundation.workspace = true
 objc2-quartz-core.workspace = true
+# `NSGeometry` menambah NSPoint/NSRect — dibutuhkan reposisi traffic light.
+objc2-foundation = { workspace = true, features = ["NSGeometry"] }
+# Tambahan di atas fitur workspace, khusus pekerjaan titlebar (§1) dan
+# "reduce transparency" (§6): tombol traffic light adalah `NSButton`, dan
+# preferensi aksesibilitas dibaca dari `NSWorkspace`.
+objc2-app-kit = { workspace = true, features = [
+    "NSButton",
+    "NSControl",
+    "NSWorkspace",
+    "NSAccessibility",
+] }
+
+# Escape hatch Windows (§8): windows-rs di-re-export apa adanya lewat
+# `platform::windows`, versi dikunci workspace.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows.workspace = true
+
+# Escape hatch Linux/BSD (§8): zbus di-re-export lewat `platform::linux`.
+# `target_vendor = "apple"` dikecualikan supaya macOS/iOS tidak ikut menarik
+# runtime D-Bus.
+[target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
+zbus.workspace = true

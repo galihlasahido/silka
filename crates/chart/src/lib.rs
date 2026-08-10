@@ -16,7 +16,7 @@
 //! | The paint abstraction; **wgpu is never named** (§3.2) | [`stroke`] turns a polyline into `silka-paint` boxes |
 //! | Spring animation, retargetable, reduced-motion aware (§3.5) | data transitions in [`node::ChartBox::advance`], driven by [`advance`] |
 //! | An **AccessKit node** as part of the widget contract (§3.8) | [`node::ChartBox::summary`] — a description, not a bare "image" |
-//! | The overlay system is built once and ridden by all (`KOMPONEN.md` #3) | [`tooltip`] returns an `OverlayBuilder`; it computes no positions |
+//! | The overlay system is built once and ridden by all (`KOMPONEN.md` #3) | [`tooltip()`] returns an `OverlayBuilder`; it computes no positions |
 //! | Dart-style API: constructor + method chain (§2.5) | [`line_chart`], [`bar_chart`], [`area_chart`], [`sparkline`] |
 //!
 //! ```

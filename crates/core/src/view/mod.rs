@@ -77,7 +77,7 @@ pub trait ViewNode: 'static {
 /// One node of the view tree: props + key + children.
 ///
 /// Lightweight and single-use. Built through constructor functions
-/// ([`column`], [`fixed`], …), never by filling in fields.
+/// ([`column()`], [`fixed`], …), never by filling in fields.
 pub struct View {
     key: Option<Key>,
     type_id: TypeId,

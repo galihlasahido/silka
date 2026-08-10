@@ -12,7 +12,7 @@
 //! ```
 //!
 //! A button is a **composition**, not a new primitive: what is assembled
-//! here is a flex container holding a [`crate::text`] inside a node
+//! here is a flex container holding a [`crate::text()`] inside a node
 //! ([`ButtonBox`]) that owns the entire interaction contract — squircle
 //! hit-testing, hover/press/focus, Space/Enter, a11y emission — **plus** the
 //! one thing [`silka_core::tree::Interactive`] does not have: every state

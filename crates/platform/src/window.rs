@@ -31,15 +31,27 @@ use silka_paint::{Color, GlyphSource, Scene, Size};
 use silka_renderer::{FrameOutcome, Gpu, SurfaceGeometry, WindowSurface};
 use silka_theme::{Appearance, Preset, Theme};
 use winit::application::ApplicationHandler;
-use winit::dpi::{LogicalSize, PhysicalSize};
+use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
-use crate::access::{AccessAdapter, AccessEvent, AccessOutcome};
+use crate::access::{AccessAdapter, AccessOutcome};
 use crate::appearance::{appearance_from_winit, winit_theme_from_appearance, AppearanceSource};
 use crate::error::PlatformError;
+use crate::event::{forward_native_events, ShellEvent};
 use crate::input::{cursor_to_winit, ime_area_to_winit, WinitInput};
+use crate::lifecycle::{
+    restore_placement, AccentSource, MonitorArea, QuitContext, QuitReason, SessionState,
+    StateStore, SystemSettings, WindowPlacement,
+};
+use crate::menu::{InstalledMenu, MenuActivation, MenuBar};
+use crate::platform::{NativeEvent, NativeFlow, NativeWindow};
+use crate::titlebar::{
+    apply_material, apply_titlebar_style, set_traffic_light_inset, Material, MaterialState,
+    TitlebarStyle,
+};
+use crate::tray::{Tray, TrayActivation, TrayConfig};
 use crate::vsync::VsyncSource;
 
 /// Everything about one frame that the scene builder is given.
@@ -55,6 +67,11 @@ pub struct FrameContext<'a> {
     elapsed: Duration,
     vsync: Vsync,
     animate: &'a Cell<bool>,
+    /// The platform window, when there is one — the escape hatch reached from
+    /// inside a frame (INTEGRASI-NATIVE §8). `None` headlessly.
+    native: Option<&'a NativeWindow>,
+    /// The OS settings in effect this frame (INTEGRASI-NATIVE §6).
+    settings: SystemSettings,
 }
 
 impl<'a> FrameContext<'a> {
@@ -103,6 +120,42 @@ impl<'a> FrameContext<'a> {
     pub fn request_animation_frame(&self) {
         self.animate.set(true);
     }
+
+    /// The OS lifecycle settings in effect this frame (INTEGRASI-NATIVE §6).
+    ///
+    /// The accent color and reduce-transparency setting are **already applied
+    /// to [`FrameContext::theme`]** — reading them here is for the rare case
+    /// that wants to know *why* a token looks the way it does. Reduced motion
+    /// is the one setting a scene builder still has to act on itself, and
+    /// [`FrameContext::motion`] is the shorter way to ask.
+    pub fn settings(&self) -> SystemSettings {
+        self.settings
+    }
+
+    /// The user's reduced-motion preference (INTEGRASI-NATIVE §6).
+    ///
+    /// [`run_app`] already hands this to the animation driver, so every
+    /// [`silka_core::animation::Tick`] carries it and ordinary widgets never
+    /// have to ask. It is exposed for the code that animates outside a spring
+    /// — a hand-rolled `on_frame` that moves something per elapsed time.
+    pub fn motion(&self) -> silka_core::animation::Motion {
+        self.settings.motion
+    }
+
+    /// The platform window behind this frame — the escape hatch
+    /// (INTEGRASI-NATIVE §8).
+    ///
+    /// Use it for native work that has to stay in step with the drawing: an
+    /// overlay layer, a native video surface, a `NSVisualEffectView` that must
+    /// follow a panel's geometry.
+    ///
+    /// `None` when there is no window at all — in [`headless_app`] and in the
+    /// integration tests that run the same page in CI (§9.5). That is exactly
+    /// why it is an `Option`: a test must never be able to reach a window that
+    /// does not exist.
+    pub fn native(&self) -> Option<&'a NativeWindow> {
+        self.native
+    }
 }
 
 type SceneFn = Box<dyn FnMut(&FrameContext<'_>) -> Scene>;
@@ -125,6 +178,31 @@ type AccessFn = Box<dyn FnMut() -> AccessTree>;
 
 /// Handler for action requests coming from assistive technology.
 type AccessActionFn = Box<dyn FnMut(AccessActionRequest)>;
+
+/// Called once, after the window exists and before it is ever shown — the
+/// moment platform polish belongs in (INTEGRASI-NATIVE §8).
+type NativeReadyFn = Box<dyn FnMut(&NativeWindow)>;
+
+/// Called for every window event, **before** the framework handles it (§8).
+type NativeEventFn = Box<dyn FnMut(&NativeEvent<'_>) -> NativeFlow>;
+
+/// Called once, when the application is closing — the last moment at which
+/// state can still be written (INTEGRASI-NATIVE §6).
+type QuitFn = Box<dyn FnMut(&mut QuitContext)>;
+
+/// Handler for a chosen menu item (INTEGRASI-NATIVE §2).
+///
+/// It returns [`Dirty`] for the same reason [`WindowConfig::on_input`] does:
+/// the shell has no way to know whether the handler changed anything, and
+/// "render only when dirty" (§3.5) has to survive contact with menus too. A
+/// handler that writes signals returns `Dirty::LAYOUT`; one that only opened a
+/// file dialog and got a cancel returns `Dirty::NONE` and the window stays
+/// asleep.
+type MenuFn = Box<dyn FnMut(&MenuActivation) -> Dirty>;
+
+/// Handler for a tray-icon gesture (INTEGRASI-NATIVE §2). Same contract as
+/// [`MenuFn`].
+type TrayFn = Box<dyn FnMut(&TrayActivation) -> Dirty>;
 
 /// The glyph atlas source shared with the scene builder.
 ///
@@ -151,6 +229,21 @@ pub struct WindowConfig {
     access_fn: Option<AccessFn>,
     access_action_fn: Option<AccessActionFn>,
     input_fn: Option<InputFn>,
+    native_ready_fn: Option<NativeReadyFn>,
+    native_event_fn: Option<NativeEventFn>,
+    accent: AccentSource,
+    settings: Option<SystemSettings>,
+    store: Option<Box<dyn StateStore>>,
+    quit_fn: Option<QuitFn>,
+    restore_geometry: bool,
+    menubar: Option<MenuBar>,
+    menu_fn: Option<MenuFn>,
+    tray: Option<TrayConfig>,
+    tray_fn: Option<TrayFn>,
+    titlebar: TitlebarStyle,
+    material: Material,
+    material_state: MaterialState,
+    traffic_light_inset: Option<silka_paint::Point>,
     frame_log_every: u64,
 }
 
@@ -171,6 +264,21 @@ pub fn window(title: impl Into<String>) -> WindowConfig {
         access_fn: None,
         access_action_fn: None,
         input_fn: None,
+        native_ready_fn: None,
+        native_event_fn: None,
+        accent: AccentSource::System,
+        settings: None,
+        store: None,
+        quit_fn: None,
+        restore_geometry: true,
+        menubar: None,
+        menu_fn: None,
+        tray: None,
+        tray_fn: None,
+        titlebar: TitlebarStyle::Native,
+        material: Material::None,
+        material_state: MaterialState::FollowsWindow,
+        traffic_light_inset: None,
         frame_log_every: DEFAULT_FRAME_LOG_EVERY,
     }
 }
@@ -333,6 +441,288 @@ impl WindowConfig {
         self
     }
 
+    /// The escape hatch's opening move: called once, after the window exists
+    /// and **before it is ever shown** (INTEGRASI-NATIVE §8).
+    ///
+    /// That moment is the point of this hook. A transparent titlebar, an
+    /// extended DWM frame, a window level, a vibrancy layer — all of them are
+    /// visible mistakes if applied one frame after the window appears, and
+    /// invisible if applied here. The surface and the accessibility adapter
+    /// already exist, so it is also the earliest safe place to attach a native
+    /// layer of one's own.
+    ///
+    /// ```no_run
+    /// # use silka_platform::window;
+    /// window("Editor")
+    ///     .on_native_ready(|native| {
+    ///         #[cfg(target_os = "macos")]
+    ///         if let Some(w) = native.ns_window() {
+    ///             w.setTitlebarAppearsTransparent(true);
+    ///         }
+    ///         #[cfg(target_os = "windows")]
+    ///         if let Some(hwnd) = native.hwnd() {
+    ///             // … DwmExtendFrameIntoClientArea(HWND(hwnd as *mut _), …) …
+    ///             let _ = hwnd;
+    ///         }
+    ///     })
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    ///
+    /// The [`NativeWindow`] handed over is cheap to clone and keeps the window
+    /// alive, so an application that needs the handle later stores **it**, not
+    /// the raw pointer.
+    pub fn on_native_ready(mut self, ready: impl FnMut(&NativeWindow) + 'static) -> Self {
+        self.native_ready_fn = Some(Box::new(ready));
+        self
+    }
+
+    /// Raw window events, **before** the framework processes them
+    /// (INTEGRASI-NATIVE §8).
+    ///
+    /// The hook sees every event in winit's own vocabulary — the one place the
+    /// framework hands out a winit type on purpose (§3.2 holds everywhere else)
+    /// — and decides what happens next with [`NativeFlow`]:
+    ///
+    /// ```no_run
+    /// # use silka_platform::{window, NativeFlow};
+    /// # let ada_perubahan_belum_disimpan = || true;
+    /// window("Editor")
+    ///     .on_native_event(move |e| {
+    ///         if e.is_close_requested() && ada_perubahan_belum_disimpan() {
+    ///             // The window stays open; the application shows its own
+    ///             // "save changes?" dialog.
+    ///             return NativeFlow::Consume;
+    ///         }
+    ///         NativeFlow::Continue
+    ///     })
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    ///
+    /// [`NativeFlow::Consume`] skips the shell's **own** handling of that event
+    /// — input routing, resize, redraw scheduling, closing the window. The
+    /// accessibility adapter still sees it: it only observes window focus and
+    /// geometry, and letting a hook silently corrupt the a11y tree would break
+    /// §3.8 in a way nobody would trace back to their own code. Consuming
+    /// [`NativeEvent::is_redraw_requested`] stops the frame from being drawn at
+    /// all — almost never what is meant.
+    ///
+    /// What this hook does *not* see: OS messages below winit's own level (an
+    /// `NSEvent` before AppKit dispatch, a `WM_` message before
+    /// `DefWindowProc`). Those are reached the way any native application
+    /// reaches them, starting from
+    /// [`NativeWindow::raw_handle`](crate::NativeWindow::raw_handle).
+    pub fn on_native_event(
+        mut self,
+        hook: impl FnMut(&NativeEvent<'_>) -> NativeFlow + 'static,
+    ) -> Self {
+        self.native_event_fn = Some(Box::new(hook));
+        self
+    }
+
+    /// Follow the **OS accent color** (INTEGRASI-NATIVE §6) — the default.
+    ///
+    /// What the OS reports replaces the whole accent family, not just one
+    /// token: hover, pressed, the soft badge fill, the focus ring, and the
+    /// content color that has to stay readable on top of it
+    /// ([`silka_theme::Theme::with_accent`]). When the OS has no accent — macOS
+    /// left on "Multicolor", a desktop with no such concept — the preset's own
+    /// accent applies, so there is never a hole.
+    pub fn follow_system_accent(mut self) -> Self {
+        self.accent = AccentSource::System;
+        self
+    }
+
+    /// Pin the accent to the preset's own color; the OS setting is ignored.
+    ///
+    /// This is what a **branded** application wants: a purple product does not
+    /// turn green because the user likes green.
+    pub fn preset_accent(mut self) -> Self {
+        self.accent = AccentSource::Preset;
+        self
+    }
+
+    /// Pin the accent to a specific color.
+    pub fn accent(mut self, accent: Color) -> Self {
+        self.accent = AccentSource::Custom(accent);
+        self
+    }
+
+    /// Pin the OS lifecycle settings by hand — nothing is read from the OS
+    /// afterwards.
+    ///
+    /// Two uses, both real: a screenshot/CI run that must produce the same
+    /// pixels on every machine (§9.5), and an application that reads a setting
+    /// the framework does not yet know how to read — Windows' colorization
+    /// color, `NSWorkspace`'s accessibility flags from inside a sandbox — and
+    /// hands the answer over through the escape hatch (§8).
+    ///
+    /// ```no_run
+    /// # use silka_platform::{window, SystemSettings};
+    /// # use silka_core::animation::Motion;
+    /// window("Cuplikan")
+    ///     .system_settings(SystemSettings {
+    ///         motion: Motion::Reduced,
+    ///         ..SystemSettings::DEFAULT
+    ///     })
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    pub fn system_settings(mut self, settings: SystemSettings) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    /// Remember this window's geometry and the application's own state between
+    /// runs (INTEGRASI-NATIVE §6, "session restore").
+    ///
+    /// The store is read once, before the window is created, and written once,
+    /// when the application quits. The window geometry is put in by the shell;
+    /// everything else comes from [`WindowConfig::on_quit`].
+    ///
+    /// ```no_run
+    /// # use silka_platform::{window, FileStore};
+    /// window("Galeri")
+    ///     .restore_state(FileStore::for_app("Galeri"))
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    ///
+    /// A saved position is only reused if it is still **reachable**: a window
+    /// last seen on a monitor that has since been unplugged comes back where
+    /// the OS puts it, not at `x = 3000` where nobody would ever find it
+    /// ([`restore_placement`]).
+    pub fn restore_state<S: StateStore + 'static>(mut self, store: S) -> Self {
+        self.store = Some(Box::new(store));
+        self
+    }
+
+    /// Whether a stored geometry is applied to the window at startup.
+    ///
+    /// `false` keeps the store for the application's own values while letting
+    /// the OS place the window — what a document window that always opens
+    /// cascaded wants.
+    pub fn restore_geometry(mut self, restore: bool) -> Self {
+        self.restore_geometry = restore;
+        self
+    }
+
+    /// The last moment before the application closes (INTEGRASI-NATIVE §6).
+    ///
+    /// The handler is given the [`SessionState`] that is about to be written —
+    /// with the window geometry already filled in — and may add to it. It runs
+    /// exactly once, whether the user closed the window, quit through the menu,
+    /// or the OS is logging them out.
+    ///
+    /// ```no_run
+    /// # use silka_platform::window;
+    /// # let dokumen_terbuka = || "/tmp/a.txt".to_string();
+    /// window("Editor")
+    ///     .on_quit(move |quit| quit.remember("dokumen", dokumen_terbuka()))
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    ///
+    /// A handler may also refuse the close with
+    /// [`QuitContext::cancel`] — but only when the quit is still cancellable
+    /// ([`QuitReason::can_cancel`]): vetoing an OS logout is not a right an
+    /// application has.
+    ///
+    /// Without a [`WindowConfig::restore_state`] store the handler still runs;
+    /// what it writes is simply thrown away, which keeps "does my quit path
+    /// work?" answerable without a file on disk.
+    pub fn on_quit(mut self, quit: impl FnMut(&mut QuitContext) + 'static) -> Self {
+        self.quit_fn = Some(Box::new(quit));
+        self
+    }
+
+    // -- native integration (INTEGRASI-NATIVE §1–§2) ------------------------
+
+    /// The application menubar.
+    ///
+    /// On macOS it belongs to the whole application, not to this window; the
+    /// window is simply the moment at which there is something to install it
+    /// from. Use [`crate::menu::menubar`] to get one that already carries the
+    /// standard Edit menu — without it ⌘C and ⌘V never reach a focused text
+    /// field, whatever the widget layer does.
+    ///
+    /// ```no_run
+    /// use silka_platform::menu::{item, menu, menubar};
+    /// use silka_platform::window;
+    ///
+    /// window("Editor")
+    ///     .menubar(menubar("Editor").menu(menu("File").item(item("file.new", "New"))))
+    ///     .on_menu(|a| {
+    ///         if a.is("file.new") { /* … */ }
+    ///         silka_platform::Dirty::LAYOUT
+    ///     })
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    pub fn menubar(mut self, menubar: MenuBar) -> Self {
+        self.menubar = Some(menubar);
+        self
+    }
+
+    /// Handler for menu items chosen by the user.
+    ///
+    /// What it returns decides whether a frame happens: [`Dirty::NONE`] leaves
+    /// the window asleep, anything else schedules a frame.
+    pub fn on_menu(mut self, handler: impl FnMut(&MenuActivation) -> Dirty + 'static) -> Self {
+        self.menu_fn = Some(Box::new(handler));
+        self
+    }
+
+    /// A tray / status-bar icon, created alongside the window.
+    pub fn tray(mut self, tray: TrayConfig) -> Self {
+        self.tray = Some(tray);
+        self
+    }
+
+    /// Handler for tray-icon gestures.
+    pub fn on_tray(mut self, handler: impl FnMut(&TrayActivation) -> Dirty + 'static) -> Self {
+        self.tray_fn = Some(Box::new(handler));
+        self
+    }
+
+    /// How much of the OS titlebar to keep (INTEGRASI-NATIVE §1).
+    ///
+    /// Titlebar shape is decided when the window is created, so this is a
+    /// window-configuration call and not something that can be changed later.
+    pub fn titlebar(mut self, style: TitlebarStyle) -> Self {
+        self.titlebar = style;
+        self
+    }
+
+    /// Translucency behind the window (REKOMENDASI §3.6).
+    ///
+    /// Honoured only while the OS is not asking for reduced transparency; see
+    /// [`crate::titlebar::apply_material`]. The window keeps its opaque token
+    /// background in that case, so there is always something correct to fall
+    /// back to.
+    pub fn material(mut self, material: Material) -> Self {
+        self.material = material;
+        self
+    }
+
+    /// Whether the material dims when the window loses focus.
+    pub fn material_state(mut self, state: MaterialState) -> Self {
+        self.material_state = state;
+        self
+    }
+
+    /// Move the macOS traffic lights, in logical points from the window's
+    /// top-left corner.
+    ///
+    /// Only meaningful together with a custom [`titlebar`](Self::titlebar). The
+    /// shell re-applies the inset after every resize, because AppKit puts the
+    /// buttons back where it wants them.
+    pub fn traffic_light_inset(mut self, x: f32, y: f32) -> Self {
+        self.traffic_light_inset = Some(silka_paint::Point::new(x, y));
+        self
+    }
+
     /// Interval between frame-time summaries in debug builds.
     ///
     /// `0` disables the periodic summary; frames that blow the vsync budget are
@@ -351,7 +741,7 @@ impl WindowConfig {
     pub fn run(self) -> Result<(), PlatformError> {
         // The event loop carries a *user event*: that is the accessibility
         // return path from any OS thread back to the UI thread (§3.8).
-        let event_loop = EventLoop::<AccessEvent>::with_user_event()
+        let event_loop = EventLoop::<ShellEvent>::with_user_event()
             .build()
             .map_err(|e| PlatformError::EventLoop(e.to_string()))?;
         let proxy = event_loop.create_proxy();
@@ -452,7 +842,8 @@ pub fn run_app_with(
 /// shows up in a window runs here, is fed input events through
 /// [`AppRuntime::dispatch`], and its [`AppRuntime::scene`] can then be rendered
 /// into an offscreen texture and have its pixels counted. Because `run_app`
-/// itself uses this function, the [`Env`] values the application sees cannot
+/// itself uses this function, the [`Env`](silka_core::app::Env) values the
+/// application sees cannot
 /// differ between "on screen" and "in CI".
 ///
 /// What is provided is identical to `run_app`:
@@ -522,6 +913,11 @@ fn sambungkan_app_with(
                 scale.set_if_changed(ScaleFactor(ctx.scale_factor() as f32));
             }
             ui.set_vsync(ctx.vsync());
+            // Reduced motion is part of the animation contract, not a widget's
+            // own business (§6): from here every `Tick` carries it, and a
+            // change asks for the one frame that lets decorative motion already
+            // in flight finish itself off.
+            ui.set_motion(ctx.motion());
 
             // Springs are advanced **before** the frame: the value that moves
             // becomes this frame's value, not the next frame's (§3.5). Its `dt`
@@ -542,6 +938,16 @@ fn sambungkan_app_with(
         .on_access(move || untuk_access.borrow().access_tree())
 }
 
+/// The theme the user actually sees: the configured theme with the OS
+/// settings folded in (INTEGRASI-NATIVE §6).
+///
+/// A free function rather than a method so the rule can be tested without a
+/// window — the shell is unreachable from a unit test, and "which theme does a
+/// frame get?" is exactly the kind of question that must not go untested.
+fn tema_efektif(theme: Theme, settings: SystemSettings, accent: AccentSource) -> Theme {
+    settings.apply(theme, accent)
+}
+
 fn latar_dari_token(ctx: &FrameContext<'_>) -> Scene {
     Scene::new(ctx.theme().color.background)
 }
@@ -560,6 +966,9 @@ fn pohon_window_saja(title: String) -> AccessFn {
 
 struct ShellState {
     window: Arc<Window>,
+    /// The installed menubar. Kept here because dropping it takes the menu
+    /// down with it (see [`InstalledMenu`]).
+    _menu: Option<InstalledMenu>,
     gpu: Gpu,
     surface: WindowSurface,
     vsync: VsyncSource,
@@ -578,9 +987,45 @@ struct Shell {
     access_fn: AccessFn,
     access_action_fn: Option<AccessActionFn>,
     input_fn: Option<InputFn>,
+    native_ready_fn: Option<NativeReadyFn>,
+    native_event_fn: Option<NativeEventFn>,
+    /// Where the accent color comes from (§6).
+    accent: AccentSource,
+    /// The OS settings in effect, re-read on the events the OS already sends.
+    settings: SystemSettings,
+    /// `Some` when the application pinned the settings by hand; then nothing
+    /// is ever read from the OS.
+    settings_pinned: bool,
+    store: Option<Box<dyn StateStore>>,
+    quit_fn: Option<QuitFn>,
+    restore_geometry: bool,
+    /// Whether the stored geometry has already been consumed. A window that is
+    /// rebuilt mid-session (`suspended` → `resumed`) must come back where the
+    /// user last dragged it, not where the *previous run* left it.
+    geometri_dipulihkan: bool,
+    /// The geometry the window would return to if it were unmaximized right
+    /// now — tracked live, because at quit time the window may be minimized
+    /// and reporting nonsense.
+    placement: WindowPlacement,
+    /// State is written exactly once, whichever path the quit takes.
+    state_saved: bool,
+    /// The menubar description, installed once the window exists.
+    menubar: Option<MenuBar>,
+    menu_fn: Option<MenuFn>,
+    /// The tray description, created once the event loop is running.
+    tray_config: Option<TrayConfig>,
+    tray_fn: Option<TrayFn>,
+    titlebar: TitlebarStyle,
+    material: Material,
+    material_state: MaterialState,
+    traffic_light_inset: Option<silka_paint::Point>,
+    /// Live tray icon. Dropping it removes the icon, so it is owned here for
+    /// the shell's whole life rather than by the window state, which is torn
+    /// down and rebuilt on suspend/resume.
+    tray: Option<Tray>,
     input: WinitInput,
     ime_aktif: bool,
-    proxy: EventLoopProxy<AccessEvent>,
+    proxy: EventLoopProxy<ShellEvent>,
     state: Option<ShellState>,
     started: Instant,
     scheduler: FrameScheduler,
@@ -589,7 +1034,7 @@ struct Shell {
 }
 
 impl Shell {
-    fn new(config: WindowConfig, proxy: EventLoopProxy<AccessEvent>) -> Self {
+    fn new(config: WindowConfig, proxy: EventLoopProxy<ShellEvent>) -> Self {
         let access_fn = config
             .access_fn
             .unwrap_or_else(|| pohon_window_saja(config.title.clone()));
@@ -607,6 +1052,26 @@ impl Shell {
             access_fn,
             access_action_fn: config.access_action_fn,
             input_fn: config.input_fn,
+            native_ready_fn: config.native_ready_fn,
+            native_event_fn: config.native_event_fn,
+            accent: config.accent,
+            settings: config.settings.unwrap_or(SystemSettings::DEFAULT),
+            settings_pinned: config.settings.is_some(),
+            store: config.store,
+            quit_fn: config.quit_fn,
+            restore_geometry: config.restore_geometry,
+            geometri_dipulihkan: false,
+            placement: WindowPlacement::sized(config.size),
+            state_saved: false,
+            menubar: config.menubar,
+            menu_fn: config.menu_fn,
+            tray_config: config.tray,
+            tray_fn: config.tray_fn,
+            titlebar: config.titlebar,
+            material: config.material,
+            material_state: config.material_state,
+            traffic_light_inset: config.traffic_light_inset,
+            tray: None,
             input: WinitInput::new(),
             ime_aktif: false,
             proxy,
@@ -616,6 +1081,137 @@ impl Shell {
             logger: FrameLogger::every(config.frame_log_every),
             error: None,
         }
+    }
+
+    /// The theme as the user actually sees it: preset + appearance, with the
+    /// OS accent and the transparency preference applied on top (§6).
+    ///
+    /// Derived rather than stored, so there is exactly one copy of the truth —
+    /// a cached effective theme is how "the accent changed but the focus ring
+    /// did not" happens.
+    fn tema_efektif(&self) -> Theme {
+        tema_efektif(self.theme, self.settings, self.accent)
+    }
+
+    /// Read the OS settings and adopt them, without asking for a frame.
+    ///
+    /// Used at startup, where the first frame is coming anyway.
+    fn baca_setelan(&mut self) {
+        if self.settings_pinned {
+            return;
+        }
+        self.settings = SystemSettings::read(self.theme.appearance);
+        #[cfg(debug_assertions)]
+        eprintln!("silka: setelan OS — {}", self.settings.label());
+    }
+
+    /// Re-read the OS settings and, if anything moved, schedule the frame that
+    /// shows it.
+    ///
+    /// Called on events the OS already sends — a theme change, the window
+    /// regaining focus after a trip to System Settings. **Never on a timer**:
+    /// polling would keep the process awake for a setting that changes twice a
+    /// year (§3.5).
+    fn segarkan_setelan(&mut self) {
+        if self.settings_pinned {
+            return;
+        }
+        let baru = SystemSettings::read(self.theme.appearance);
+        let dirty = self.settings.diff(&baru);
+        if dirty.is_empty() {
+            return;
+        }
+        self.settings = baru;
+        self.minta(dirty);
+    }
+
+    /// Load the saved geometry and turn it into something safe to open now.
+    fn pulihkan_geometri(&mut self, event_loop: &ActiveEventLoop) {
+        if !self.restore_geometry || self.geometri_dipulihkan {
+            return;
+        }
+        self.geometri_dipulihkan = true;
+        let Some(tersimpan) = self.store.as_ref().and_then(|s| s.load().placement()) else {
+            return;
+        };
+        let monitors: Vec<MonitorArea> = event_loop
+            .available_monitors()
+            .map(|m| {
+                let pos = m.position();
+                let size = m.size();
+                MonitorArea::new(pos.x, pos.y, size.width, size.height, m.scale_factor())
+            })
+            .collect();
+        let dipulihkan = restore_placement(tersimpan, &monitors);
+        self.size = dipulihkan.size;
+        self.placement = dipulihkan;
+    }
+
+    /// Write down where the window is *right now*.
+    ///
+    /// Two states are deliberately skipped: a minimized window (whose reported
+    /// geometry is meaningless) and a maximized one (whose geometry is the
+    /// screen, not the size the user chose). What gets remembered for a
+    /// maximized window is therefore the size it will return to — which is what
+    /// every well-behaved application does.
+    fn rekam_geometri(&mut self) {
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        if state.window.is_minimized().unwrap_or(false) {
+            return;
+        }
+        self.placement.maximized = state.window.is_maximized();
+        self.placement.scale = state.window.scale_factor();
+        if self.placement.maximized {
+            return;
+        }
+        let ukuran = state.surface.logical_size();
+        if ukuran.width > 0.0 && ukuran.height > 0.0 {
+            self.placement.size = ukuran;
+        }
+        if let Ok(pos) = state.window.outer_position() {
+            self.placement.position = Some((pos.x, pos.y));
+        }
+    }
+
+    /// The quit path: collect the state, offer it to the application, save it.
+    ///
+    /// Returns whether the application may actually close. Runs its handler and
+    /// its save **exactly once**, however many ways the same quit arrives — the
+    /// user closing the window is immediately followed by the event loop
+    /// exiting, and saving twice would mean the second, emptier save wins.
+    fn tutup(&mut self, reason: QuitReason) -> bool {
+        if self.state_saved {
+            return true;
+        }
+        // Loaded rather than built from scratch: values the application wrote
+        // in an earlier run, and has not touched this time, must survive.
+        let mut state: SessionState = self.store.as_ref().map(|s| s.load()).unwrap_or_default();
+        self.rekam_geometri();
+        state.set_placement(self.placement);
+
+        let mut ctx = QuitContext::new(reason, state);
+        if let Some(f) = self.quit_fn.as_mut() {
+            f(&mut ctx);
+        }
+        let (state, dibatalkan) = ctx.finish();
+        if dibatalkan {
+            // Nothing has been written and nothing has been marked done: a
+            // later, real quit still gets its turn.
+            return false;
+        }
+        self.state_saved = true;
+        if let Some(store) = self.store.as_ref() {
+            if let Err(_e) = store.save(&state) {
+                // A state file that cannot be written must never take the
+                // application down with it: what is lost is a window position,
+                // not the user's work.
+                #[cfg(debug_assertions)]
+                eprintln!("silka: {_e}");
+            }
+        }
+        true
     }
 
     /// Send the a11y tree to the adapter.
@@ -645,6 +1241,11 @@ impl Shell {
     }
 
     fn buat_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), PlatformError> {
+        // Session restore happens **before** the window is created: geometry is
+        // a window attribute, and applying it afterwards would show the window
+        // jumping into place (INTEGRASI-NATIVE §6).
+        self.pulihkan_geometri(event_loop);
+
         // Deliberately hidden at first: the accessibility adapter **must** be
         // attached before the window is ever visible (§3.8). The window is
         // shown once the adapter and the surface are ready.
@@ -663,6 +1264,15 @@ impl Shell {
         if self.appearance_source == AppearanceSource::Locked {
             attrs = attrs.with_theme(Some(winit_theme_from_appearance(self.theme.appearance)));
         }
+        // The titlebar shape is fixed at creation on macOS — after this point
+        // `fullSizeContentView` can no longer be turned on (§1).
+        attrs = apply_titlebar_style(attrs, self.titlebar);
+        if let Some((x, y)) = self.placement.position {
+            attrs = attrs.with_position(PhysicalPosition::new(x, y));
+        }
+        if self.placement.maximized {
+            attrs = attrs.with_maximized(true);
+        }
 
         let window = event_loop
             .create_window(attrs)
@@ -678,6 +1288,11 @@ impl Shell {
                 self.theme = self.theme.with_appearance(appearance_from_winit(t));
             }
         }
+
+        // …and only now the rest of the §6 settings: the OS accent is a
+        // light/dark **pair**, so reading it before the appearance is known
+        // would pick the wrong half of it.
+        self.baca_setelan();
 
         let PhysicalSize { width, height } = window.inner_size();
         // Input speaks logical points; its DPI divisor is learned here.
@@ -703,11 +1318,52 @@ impl Shell {
             vsync.kind().label(),
         );
 
+        // The escape hatch, at the only moment that is right for it: the window
+        // exists, its surface and a11y adapter exist, and nothing has been shown
+        // yet — so a transparent titlebar or an extended frame is applied
+        // *before* the first pixel instead of one frame late (§8).
+        if let Some(ready) = self.native_ready_fn.as_mut() {
+            ready(&NativeWindow::new(window.clone()));
+        }
+
+        // Native integration, still before the first pixel (INTEGRASI-NATIVE
+        // §1–§2). All three are cosmetic-or-nothing: a menubar the OS refuses
+        // or a material the OS has no support for must not stop an application
+        // from opening its window, so each failure is reported and stepped
+        // over rather than propagated.
+        forward_native_events(self.proxy.clone());
+
+        let menu = match self.menubar.as_ref().map(|bar| bar.install(&window)) {
+            Some(Ok(m)) => Some(m),
+            Some(Err(e)) => {
+                eprintln!("silka: menubar tidak terpasang — {e}");
+                None
+            }
+            None => None,
+        };
+
+        if self.material != Material::None {
+            if let Err(e) = apply_material(&window, self.material, self.material_state) {
+                eprintln!("silka: material tidak terpasang — {e}");
+            }
+        }
+        self.pasang_traffic_light(&window);
+
+        if self.tray.is_none() {
+            if let Some(cfg) = self.tray_config.take() {
+                match cfg.install() {
+                    Ok(t) => self.tray = Some(t),
+                    Err(e) => eprintln!("silka: tray tidak terpasang — {e}"),
+                }
+            }
+        }
+
         // Everything is ready — only now may the window become visible.
         window.set_visible(true);
 
         self.state = Some(ShellState {
             window,
+            _menu: menu,
             gpu,
             surface,
             vsync,
@@ -763,6 +1419,58 @@ impl Shell {
         }
     }
 
+    /// Offer one raw window event to the native hook (INTEGRASI-NATIVE §8).
+    ///
+    /// An application without a hook pays nothing at all: no `NativeWindow` is
+    /// built, not even the reference-count bump.
+    fn hook_native(&mut self, event: &WindowEvent) -> NativeFlow {
+        let Shell {
+            native_event_fn,
+            state,
+            ..
+        } = self;
+        let (Some(hook), Some(state)) = (native_event_fn.as_mut(), state.as_ref()) else {
+            return NativeFlow::Continue;
+        };
+        let native = NativeWindow::new(state.window.clone());
+        hook(&NativeEvent::new(&native, event))
+    }
+
+    /// Re-apply the traffic-light inset.
+    ///
+    /// Called at creation **and after every resize**: AppKit re-lays out the
+    /// titlebar container whenever the window changes size or enters
+    /// fullscreen, which puts the buttons back where it wants them. Doing this
+    /// only once at startup is the classic way to get a custom titlebar that
+    /// looks right until the user drags a corner.
+    fn pasang_traffic_light(&self, window: &Window) {
+        if let Some(inset) = self.traffic_light_inset {
+            set_traffic_light_inset(window, inset);
+        }
+    }
+
+    /// Route a menu activation into the application.
+    fn menu(&mut self, activation: MenuActivation) {
+        let Some(f) = self.menu_fn.as_mut() else {
+            return;
+        };
+        let dirty = f(&activation);
+        if !dirty.is_empty() {
+            self.minta(dirty);
+        }
+    }
+
+    /// Route a tray gesture into the application.
+    fn tray_event(&mut self, activation: TrayActivation) {
+        let Some(f) = self.tray_fn.as_mut() else {
+            return;
+        };
+        let dirty = f(&activation);
+        if !dirty.is_empty() {
+            self.minta(dirty);
+        }
+    }
+
     /// Mark dirty and — only when genuinely needed — wake the vsync source.
     fn minta(&mut self, dirty: Dirty) {
         if self.scheduler.request(dirty) == Wake::Schedule {
@@ -773,12 +1481,17 @@ impl Shell {
     }
 
     fn gambar(&mut self) -> Result<(), PlatformError> {
+        // The theme the frame is drawn with is the *effective* one — preset and
+        // appearance with the OS accent and transparency preference already
+        // folded in (§6). Computed here, once, so no caller can accidentally
+        // paint with the raw configured theme.
+        let efektif = self.tema_efektif();
+        let setelan = self.settings;
         let Shell {
             state,
             scheduler,
             scene_fn,
             glyphs,
-            theme,
             started,
             logger,
             ..
@@ -793,14 +1506,20 @@ impl Shell {
 
         let mut start = scheduler.begin_frame(Instant::now());
         let animate = Cell::new(false);
+        // One reference-count bump per frame buys the frame closure the escape
+        // hatch (§8) — and, because it is an owned handle, the guarantee that
+        // the window outlives every pointer read from it.
+        let native = NativeWindow::new(state.window.clone());
         let ctx = FrameContext {
-            theme,
+            theme: &efektif,
             size: state.surface.logical_size(),
             scale_factor: state.surface.scale_factor(),
             frame: start.index(),
             elapsed: started.elapsed(),
             vsync: scheduler.vsync(),
             animate: &animate,
+            native: Some(&native),
+            settings: setelan,
         };
         let scene = (scene_fn)(&ctx);
 
@@ -874,12 +1593,19 @@ impl Shell {
     }
 }
 
-impl ApplicationHandler<AccessEvent> for Shell {
+impl ApplicationHandler<ShellEvent> for Shell {
     /// The return path from assistive technology.
     ///
     /// `accesskit_winit` calls its handler on any thread; the winit event loop
     /// is the official channel back to the UI thread.
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AccessEvent) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ShellEvent) {
+        // Menus and the tray are application-wide, not window-owned: they are
+        // answered before the window-id check that accessibility needs.
+        let event = match event {
+            ShellEvent::Access(e) => e,
+            ShellEvent::Menu(a) => return self.menu(a),
+            ShellEvent::Tray(a) => return self.tray_event(a),
+        };
         let cocok = self
             .state
             .as_ref()
@@ -921,6 +1647,17 @@ impl ApplicationHandler<AccessEvent> for Shell {
         }
     }
 
+    /// The event loop is ending: Cmd+Q, a quit from the menu, or the OS
+    /// logging the user out (INTEGRASI-NATIVE §6).
+    ///
+    /// This is the last line of defence for session state — and the only one
+    /// on the paths that never produce a `CloseRequested`. Saving is idempotent
+    /// ([`Shell::tutup`]), so arriving here after a normal window close costs
+    /// nothing.
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        let _ = self.tutup(QuitReason::Exiting);
+    }
+
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
         // The surface is invalid while suspended (an Android rule; harmless on
         // desktop). It is rebuilt on the next `resumed`.
@@ -941,15 +1678,37 @@ impl ApplicationHandler<AccessEvent> for Shell {
             return;
         }
 
-        // The a11y adapter sees the event **before** the shell handles it:
-        // window focus and geometry are tracked from here.
+        // The escape hatch gets first refusal (INTEGRASI-NATIVE §8): the
+        // application sees the raw event before the framework acts on it, and
+        // may keep it.
+        let alur = self.hook_native(&event);
+
+        // The a11y adapter sees the event next — even when the hook consumed
+        // it. It only *observes* window focus and geometry; dropping it there
+        // would leave a screen reader with a tree that quietly drifts out of
+        // step with the window, a bug nobody would trace back to their own hook
+        // (§3.8).
         if let Some(state) = self.state.as_mut() {
             let window = state.window.clone();
             state.access.process_event(&window, &event);
         }
 
+        if alur.is_consumed() {
+            return;
+        }
+
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            // The one moment state can still be saved (§6). A handler may
+            // refuse — an unsaved document — and then the window simply stays.
+            WindowEvent::CloseRequested => {
+                if self.tutup(QuitReason::CloseRequested) {
+                    event_loop.exit();
+                }
+            }
+
+            // Where the window is now, remembered while it is still true: at
+            // quit time the window may be minimized and reporting nonsense.
+            WindowEvent::Moved(_) => self.rekam_geometri(),
 
             WindowEvent::Resized(PhysicalSize { width, height }) => {
                 if let Some(state) = self.state.as_mut() {
@@ -964,6 +1723,12 @@ impl ApplicationHandler<AccessEvent> for Shell {
                     .is_some_and(|s| s.surface.geometry().is_renderable());
                 self.set_terlihat(bisa_digambar);
                 if bisa_digambar {
+                    self.rekam_geometri();
+                    // AppKit moved the traffic lights back during its own
+                    // titlebar relayout; put them where the application asked.
+                    if let Some(window) = self.state.as_ref().map(|s| s.window.clone()) {
+                        self.pasang_traffic_light(&window);
+                    }
                     self.minta(Dirty::SURFACE | Dirty::LAYOUT);
                 }
             }
@@ -990,6 +1755,9 @@ impl ApplicationHandler<AccessEvent> for Shell {
                     self.theme = baru;
                     self.minta(Dirty::THEME);
                 }
+                // The accent is a light/dark pair, so it moves *with* the
+                // appearance even when the user changed nothing else (§6).
+                self.segarkan_setelan();
             }
 
             // The window is fully covered: do not burn GPU on pixels nobody
@@ -1044,6 +1812,12 @@ impl ApplicationHandler<AccessEvent> for Shell {
                     self.masukan(e);
                 }
             }
+
+            // Coming back from a trip to System Settings is exactly when the
+            // accent or the reduce-motion switch has just changed. Re-reading
+            // here is what makes those settings live without a single timer
+            // (§6, §3.5).
+            WindowEvent::Focused(true) => self.segarkan_setelan(),
 
             WindowEvent::RedrawRequested => {
                 if let Err(e) = self.gambar() {
@@ -1209,6 +1983,10 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless: there is no window, and a test must not be able to
+            // pretend there is one.
+            native: None,
+            settings: SystemSettings::DEFAULT,
         };
         let scene = latar_dari_token(&ctx);
         assert_eq!(scene.clear_color(), theme.color.background);
@@ -1229,6 +2007,10 @@ mod tests {
             elapsed: Duration::from_millis(120),
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless: there is no window, and a test must not be able to
+            // pretend there is one.
+            native: None,
+            settings: SystemSettings::DEFAULT,
         };
         assert_eq!(f(&ctx).clear_color(), theme.color.accent);
         assert_eq!(ctx.frame(), 7);
@@ -1278,6 +2060,20 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate,
+            native: None,
+            settings: SystemSettings::DEFAULT,
+        }
+    }
+
+    /// [`frame_ctx`] with the OS settings of the day (INTEGRASI-NATIVE §6).
+    fn frame_ctx_dengan<'a>(
+        theme: &'a Theme,
+        animate: &'a Cell<bool>,
+        settings: SystemSettings,
+    ) -> FrameContext<'a> {
+        FrameContext {
+            settings,
+            ..frame_ctx(theme, animate)
         }
     }
 
@@ -1405,6 +2201,324 @@ mod tests {
     }
 
     #[test]
+    fn tanpa_hook_native_aplikasi_tidak_membayar_apa_apa() {
+        // The escape hatch is opt-in: an application that never asks for it
+        // does not even get a `NativeWindow` built (INTEGRASI-NATIVE §8).
+        let c = window("Uji");
+        assert!(c.native_ready_fn.is_none());
+        assert!(c.native_event_fn.is_none());
+    }
+
+    #[test]
+    fn hook_native_terpasang_lewat_method_chaining() {
+        let c = window("Uji")
+            .on_native_ready(|_| {})
+            .on_native_event(|_| NativeFlow::Continue);
+        assert!(c.native_ready_fn.is_some());
+        assert!(c.native_event_fn.is_some());
+    }
+
+    #[test]
+    fn frame_headless_tidak_punya_window_native() {
+        // A test must never be able to reach a window that does not exist —
+        // hence `Option`, not a stub (§9.5).
+        let theme = Theme::cupertino(Appearance::Light);
+        let animate = Cell::new(false);
+        let ctx = frame_ctx(&theme, &animate);
+        assert!(ctx.native().is_none());
+    }
+
+    #[test]
+    fn nilai_bawaan_lifecycle_masuk_akal() {
+        let c = window("Uji");
+        // The OS accent is followed by default — an app that wants its own
+        // brand has to say so, which is the way round that makes the *silent*
+        // choice the native-looking one (§6).
+        assert_eq!(c.accent, AccentSource::System);
+        // Nothing is pinned, nothing is persisted, but a store that is added
+        // later restores geometry without further ceremony.
+        assert!(c.settings.is_none());
+        assert!(c.store.is_none());
+        assert!(c.quit_fn.is_none());
+        assert!(c.restore_geometry);
+    }
+
+    #[test]
+    fn sumber_aksen_diatur_lewat_method_chaining() {
+        assert_eq!(window("Uji").preset_accent().accent, AccentSource::Preset);
+        assert_eq!(
+            window("Uji").accent(Color::hex(0x7C3AED)).accent,
+            AccentSource::Custom(Color::hex(0x7C3AED))
+        );
+        assert_eq!(
+            window("Uji").preset_accent().follow_system_accent().accent,
+            AccentSource::System
+        );
+    }
+
+    #[test]
+    fn setelan_yang_dipatok_menggantikan_pembacaan_os() {
+        let dipatok = SystemSettings {
+            motion: silka_core::animation::Motion::Reduced,
+            ..SystemSettings::DEFAULT
+        };
+        let c = window("Cuplikan").system_settings(dipatok);
+        assert_eq!(c.settings, Some(dipatok));
+    }
+
+    #[test]
+    fn theme_frame_memakai_aksen_os() {
+        // The whole §6 accent path in one line: what the OS reported must be
+        // what the frame is painted with.
+        let settings = SystemSettings {
+            accent: Some(Color::hex(0xFF375F)),
+            ..SystemSettings::DEFAULT
+        };
+        let t = tema_efektif(
+            Theme::cupertino(Appearance::Dark),
+            settings,
+            AccentSource::System,
+        );
+        assert_eq!(t.color.accent, Color::hex(0xFF375F));
+        assert_eq!(t.color.focus_ring.with_alpha(1.0), Color::hex(0xFF375F));
+    }
+
+    #[test]
+    fn aplikasi_bermerek_tidak_ikut_berubah_dengan_aksen_os() {
+        let settings = SystemSettings {
+            accent: Some(Color::hex(0xFF375F)),
+            ..SystemSettings::DEFAULT
+        };
+        let asal = Theme::tailwind(Appearance::Light);
+        assert_eq!(tema_efektif(asal, settings, AccentSource::Preset), asal);
+        assert_eq!(
+            tema_efektif(asal, settings, AccentSource::Custom(Color::hex(0x7C3AED)))
+                .color
+                .accent,
+            Color::hex(0x7C3AED)
+        );
+    }
+
+    #[test]
+    fn reduce_transparency_sampai_ke_theme_frame() {
+        let settings = SystemSettings {
+            transparency: silka_theme::Transparency::Reduced,
+            ..SystemSettings::DEFAULT
+        };
+        let t = tema_efektif(
+            Theme::cupertino(Appearance::Dark),
+            settings,
+            AccentSource::System,
+        );
+        assert_eq!(
+            t.color.surface_hover.a, 1.0,
+            "tidak boleh tersisa tembus pandang"
+        );
+    }
+
+    #[test]
+    fn setelan_bawaan_tidak_menyentuh_theme_sama_sekali() {
+        for preset in [Preset::Cupertino, Preset::Tailwind] {
+            for appearance in [Appearance::Light, Appearance::Dark] {
+                let t = Theme::new(preset, appearance);
+                assert_eq!(
+                    tema_efektif(t, SystemSettings::DEFAULT, AccentSource::System),
+                    t
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn reduced_motion_os_sampai_ke_tick_yang_dilihat_widget() {
+        use silka_core::animation::Motion;
+        use silka_core::view::fixed;
+        use std::rc::Rc;
+
+        // The whole chain: the OS setting → `FrameContext::motion` →
+        // `AppRuntime::set_motion` → the `Tick` every animated widget reads.
+        let terlihat: Rc<Cell<Option<Motion>>> = Rc::default();
+        let catat = terlihat.clone();
+        let mut c = sambungkan_app_with(
+            window("Uji"),
+            |_cx| fixed(40.0, 20.0).into(),
+            move |_tree, tick| {
+                catat.set(Some(tick.motion()));
+                Dirty::NONE
+            },
+        );
+
+        let theme = Theme::cupertino(Appearance::Light);
+        let animate = Cell::new(false);
+        let f = c.scene_fn.as_mut().expect("scene_fn terpasang");
+
+        let _ = f(&frame_ctx_dengan(&theme, &animate, SystemSettings::DEFAULT));
+        assert_eq!(terlihat.get(), Some(Motion::Full));
+
+        let dikurangi = SystemSettings {
+            motion: Motion::Reduced,
+            ..SystemSettings::DEFAULT
+        };
+        let _ = f(&frame_ctx_dengan(&theme, &animate, dikurangi));
+        assert_eq!(
+            terlihat.get(),
+            Some(Motion::Reduced),
+            "widget harus melihat preferensi OS tanpa bertanya sendiri"
+        );
+    }
+
+    #[test]
+    fn perubahan_reduced_motion_diterapkan_dalam_frame_yang_sama() {
+        use silka_core::animation::Motion;
+        use silka_core::view::fixed;
+
+        // The motion preference is handed over *before* rebuild → layout →
+        // paint, so the frame that carries the change is already the frame that
+        // shows it. The window must therefore go straight back to idle: a
+        // setting the user changes twice a year may not leave the renderer
+        // ticking (§3.5).
+        //
+        // The other half — waking an idle window when the setting changes — is
+        // the shell's `segarkan_setelan`, and rests on
+        // `SystemSettings::diff` naming `Dirty::ANIMATION`
+        // (`lifecycle::tests::diff_hanya_menandai_yang_benar_benar_berubah`).
+        let mut c = sambungkan_app(window("Uji"), |_cx| fixed(40.0, 20.0).into());
+        let theme = Theme::cupertino(Appearance::Light);
+        let animate = Cell::new(false);
+        let f = c.scene_fn.as_mut().expect("scene_fn terpasang");
+
+        let _ = f(&frame_ctx_dengan(&theme, &animate, SystemSettings::DEFAULT));
+        assert!(!animate.get(), "tanpa perubahan, window kembali idle");
+
+        let dikurangi = SystemSettings {
+            motion: Motion::Reduced,
+            ..SystemSettings::DEFAULT
+        };
+        let _ = f(&frame_ctx_dengan(&theme, &animate, dikurangi));
+        assert!(
+            !animate.get(),
+            "perubahan setelan tidak boleh menyisakan frame yang berputar"
+        );
+    }
+
+    #[test]
+    fn frame_membawa_setelan_os_apa_adanya() {
+        let theme = Theme::cupertino(Appearance::Light);
+        let animate = Cell::new(false);
+        let settings = SystemSettings {
+            accent: Some(Color::hex(0x30D158)),
+            motion: silka_core::animation::Motion::Reduced,
+            ..SystemSettings::DEFAULT
+        };
+        let ctx = frame_ctx_dengan(&theme, &animate, settings);
+        assert_eq!(ctx.settings(), settings);
+        assert_eq!(ctx.motion(), silka_core::animation::Motion::Reduced);
+    }
+
+    #[test]
+    fn store_dan_handler_quit_terpasang_lewat_method_chaining() {
+        let c = window("Uji")
+            .restore_state(crate::lifecycle::MemoryStore::new())
+            .on_quit(|q| q.remember("halaman", "chart"))
+            .restore_geometry(false);
+        assert!(c.store.is_some());
+        assert!(c.quit_fn.is_some());
+        assert!(!c.restore_geometry);
+    }
+
+    #[test]
+    fn handler_quit_menulis_ke_state_yang_akan_disimpan() {
+        // The handler's shape, exercised without a window: what it writes is
+        // what the store would receive.
+        let mut c = window("Uji").on_quit(|q| {
+            q.remember("dokumen", "/tmp/a.txt");
+            if q.reason() == QuitReason::CloseRequested {
+                q.remember("lewat", "tombol tutup");
+            }
+        });
+        let f = c.quit_fn.as_mut().expect("on_quit terpasang");
+
+        let mut ctx = QuitContext::new(QuitReason::CloseRequested, SessionState::new());
+        f(&mut ctx);
+        let (state, dibatalkan) = ctx.finish();
+        assert!(!dibatalkan);
+        assert_eq!(state.get("dokumen"), Some("/tmp/a.txt"));
+        assert_eq!(state.get("lewat"), Some("tombol tutup"));
+    }
+
+    #[test]
+    fn nilai_bawaan_native_tidak_mengubah_apa_pun() {
+        // A window that asks for nothing native must look exactly like a plain
+        // window: no menubar installed, no tray icon, OS titlebar, no material.
+        let c = window("Uji");
+        assert!(c.menubar.is_none());
+        assert!(c.menu_fn.is_none());
+        assert!(c.tray.is_none());
+        assert!(c.tray_fn.is_none());
+        assert_eq!(c.titlebar, TitlebarStyle::Native);
+        assert_eq!(c.material, Material::None);
+        assert!(c.traffic_light_inset.is_none());
+    }
+
+    #[test]
+    fn menubar_terpasang_lewat_method_chaining_dengan_edit_menu() {
+        use crate::menu::{item, menu, menubar};
+        let c =
+            window("Uji").menubar(menubar("Uji").menu(menu("File").item(item("file.new", "New"))));
+        let bar = c.menubar.as_ref().expect("menubar tersimpan");
+        assert!(
+            bar.has_standard_edit_menu(),
+            "⌘C/⌘V butuh Edit menu standar"
+        );
+        assert!(bar.ids().iter().any(|i| i.as_str() == "file.new"));
+    }
+
+    #[test]
+    fn handler_menu_menentukan_apakah_ada_frame() {
+        use crate::menu::MenuActivation;
+        // The shell has no way to know whether a handler changed anything, so
+        // the handler says — and "nothing changed" must leave the window
+        // asleep (§3.5).
+        let mut c = window("Uji").on_menu(|a| {
+            if a.is("ubah") {
+                Dirty::LAYOUT
+            } else {
+                Dirty::NONE
+            }
+        });
+        let f = c.menu_fn.as_mut().expect("menu_fn terpasang");
+        assert_eq!(f(&MenuActivation::new("ubah")), Dirty::LAYOUT);
+        assert!(f(&MenuActivation::new("lain")).is_empty());
+    }
+
+    #[test]
+    fn handler_tray_memakai_kontrak_yang_sama() {
+        let mut c = window("Uji").on_tray(|_| Dirty::PAINT);
+        let f = c.tray_fn.as_mut().expect("tray_fn terpasang");
+        assert_eq!(
+            f(&TrayActivation::Leave { id: "utama".into() }),
+            Dirty::PAINT
+        );
+    }
+
+    #[test]
+    fn titlebar_dan_material_tersimpan_apa_adanya() {
+        let c = window("Uji")
+            .titlebar(TitlebarStyle::Transparent)
+            .material(Material::Sidebar)
+            .material_state(MaterialState::Active)
+            .traffic_light_inset(20.0, 24.0);
+        assert!(c.titlebar.is_custom());
+        assert!(c.titlebar.has_window_buttons());
+        assert_eq!(c.material, Material::Sidebar);
+        assert_eq!(c.material_state, MaterialState::Active);
+        assert_eq!(
+            c.traffic_light_inset,
+            Some(silka_paint::Point::new(20.0, 24.0))
+        );
+    }
+
+    #[test]
     fn interval_log_frame_bisa_diatur() {
         let c = window("Uji");
         assert_eq!(c.frame_log_every, DEFAULT_FRAME_LOG_EVERY);
@@ -1423,6 +2537,10 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless: there is no window, and a test must not be able to
+            // pretend there is one.
+            native: None,
+            settings: SystemSettings::DEFAULT,
         };
         assert!(!ctx.vsync().is_known());
         assert_eq!(ctx.vsync().budget(), None);
@@ -1440,6 +2558,10 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless: there is no window, and a test must not be able to
+            // pretend there is one.
+            native: None,
+            settings: SystemSettings::DEFAULT,
         };
         assert!(!animate.get(), "frame tanpa animasi harus kembali idle");
         ctx.request_animation_frame();

@@ -131,7 +131,7 @@ impl core::fmt::Debug for TextCallback {
 
 /// The render node behind a text field.
 ///
-/// It draws its own text (rather than through a [`crate::text`] child) because
+/// It draws its own text (rather than through a [`crate::text()`] child) because
 /// the caret, the selection, and the preedit must share **one** shaping result
 /// with the glyphs on screen. Two layout sources for one line of text = a caret
 /// off by half a pixel, and that shows.

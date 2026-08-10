@@ -1,0 +1,25 @@
+[package]
+name = "silka-testing"
+description = "Test harness: headless golden/snapshot rendering, input simulation, and frame-time budgets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The scene vocabulary and the app lifecycle a test drives.
+silka-core.workspace = true
+silka-paint.workspace = true
+# Token presets: a golden test is only meaningful per preset x appearance.
+silka-theme.workspace = true
+# `headless_app` — assembling the runtime EXACTLY the way `run_app` does, so a
+# test never drifts into testing a runtime no user ever runs.
+silka-platform.workspace = true
+# Headless rendering. This crate is allowed the renderer for the same reason
+# the gallery's tests are: it speaks only the renderer's own public vocabulary
+# (`Gpu`, `OffscreenTarget`, `Rgba8Image`) and never names a wgpu type (§3.2).
+silka-renderer.workspace = true
+
+[dev-dependencies]
+# The harness proves itself against real widgets rather than against toy views.
+silka-widgets.workspace = true

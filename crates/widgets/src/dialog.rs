@@ -23,7 +23,7 @@
 //! answered in this file:
 //!
 //! 1. **"Modal with a dimmed backdrop"** — not a new node: a dialog is a preset
-//!    on top of [`crate::overlay`], which was built once to serve ten
+//!    on top of [`mod@crate::overlay`], which was built once to serve ten
 //!    components (working rule #3). All that is picked here is
 //!    [`Barrier::Modal`], [`Placement::center`], and the `scrim` backdrop
 //!    token; geometry, dismissal, focus trapping, and the spring transition
@@ -40,7 +40,7 @@
 //! - **Both presets** via semantic tokens — not a single color, radius, or
 //!   spacing number is born in this file.
 //! - **A retargetable spring transition**: a dialog dismissed mid-open reverses
-//!   direction carrying its velocity ([`crate::overlay`] §3.5).
+//!   direction carrying its velocity ([`mod@crate::overlay`] §3.5).
 //! - **Full keyboard + focus ring**: Tab is trapped inside the panel (modal =
 //!   focus scope), Space activates the focused control, and **Esc** runs the
 //!   cancel action.
@@ -55,7 +55,7 @@
 //! - **AccessKit nodes**: the panel takes the [`AccessRole::Dialog`] role with
 //!   the title as its name, its contents are announced, and the content behind
 //!   it is genuinely inert.
-//! - **Dark mode**, **hit target ≥ 44pt** (the buttons are [`crate::button`]),
+//! - **Dark mode**, **hit target ≥ 44pt** (the buttons are [`crate::button()`]),
 //!   and **reduced-motion** (the transition is
 //!   [`silka_core::animation::MotionRole`] `Essential`: the bounce is dropped,
 //!   the motion that explains the change is kept).
@@ -283,7 +283,7 @@ impl DialogAction {
         self.disabled
     }
 
-    /// The [`crate::button`] visual variant for this role.
+    /// The [`mod@crate::button`] visual variant for this role.
     ///
     /// A mapping, not a color choice: every color still belongs to a token.
     pub fn variant(&self) -> ButtonVariant {

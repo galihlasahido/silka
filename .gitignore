@@ -16,3 +16,6 @@ target
 
 # Catatan kerja internal (rancangan, status, skrip orkestrasi) — tidak dipublikasikan
 /catatan/
+
+# Tangkapan uji golden yang gagal (dibuat ulang setiap kali gagal)
+**/tests/golden/actual/

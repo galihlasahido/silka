@@ -20,7 +20,7 @@
 //! range_slider(&t, 20.0, 80.0).range(0.0..=100.0).label("Harga");
 //! ```
 //!
-//! Unlike [`crate::button`], a slider is **not** a composition over
+//! Unlike [`mod@crate::button`], a slider is **not** a composition over
 //! `interactive`: its value is continuous, its thumb moves with the finger,
 //! and its track geometry has to be understood by hit-testing and by the
 //! keyboard alike. That is why it is a [`RenderNode`] of its own — but its

@@ -28,6 +28,7 @@
 //! | Semantic tokens | [`color`], [`radius`], [`shadow`], [`spacing`], [`typography`] | Roles (`surface`, `accent`, `radius_md`, `shadow_md`, 4pt scale, type scale). |
 //! | Resolution | [`token`] | [`Token`] — a value with no meaning until it meets the theme. |
 //! | Presets | [`preset`] | The only place tokens meet numbers. |
+//! | OS settings | [`system`] | [`Theme::with_accent`], [`Transparency`] — the OS reshaping the tokens. |
 //!
 //! ```
 //! use silka_theme::{Appearance, ColorToken, FontToken, Preset, RadiusToken, SpaceToken, Theme};
@@ -58,6 +59,7 @@ pub mod preset;
 pub mod radius;
 pub mod shadow;
 pub mod spacing;
+pub mod system;
 pub mod token;
 pub mod typography;
 
@@ -65,6 +67,7 @@ pub use color::{ColorToken, ColorTokens};
 pub use radius::{RadiusToken, RadiusTokens};
 pub use shadow::{ShadowToken, ShadowTokens};
 pub use spacing::{SpaceToken, SpacingTokens};
+pub use system::{contrast_ratio, flatten, relative_luminance, Transparency};
 pub use token::Token;
 pub use typography::{FontToken, TypeStyle, TypographyTokens};
 

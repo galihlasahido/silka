@@ -296,7 +296,7 @@ impl ViewNode for MeasuredProps {
 ///
 /// This is how text measurement enters the layout system: both our own box
 /// constraints engine and the flex/grid containers
-/// ([`row`]/[`column`]/[`grid`]) ask through the very same door. See the full
+/// ([`row`]/[`column()`]/[`grid`]) ask through the very same door. See the full
 /// example on [`silka_core::tree::MeasuredBox`](crate::tree::MeasuredBox).
 pub fn measured(measure: impl Fn(BoxConstraints) -> Size + 'static) -> Builder<MeasuredProps> {
     Builder::new(MeasuredProps {
@@ -324,7 +324,7 @@ impl Builder<MeasuredProps> {
 // row / column / grid
 // ---------------------------------------------------------------------------
 
-/// Props for a flex/grid container — one type for [`row`], [`column`], and
+/// Props for a flex/grid container — one type for [`row`], [`column()`], and
 /// [`grid`].
 ///
 /// One props type means one view type: turning `row(...)` into `column(...)`

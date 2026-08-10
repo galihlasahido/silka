@@ -30,6 +30,45 @@
 //! before the framework processes them. `#[cfg(target_os)]` code in a public
 //! API is normal here, not a disgrace.
 //!
+//! That contract lives in [`platform`], and it is three things:
+//!
+//! - [`NativeWindow`] — the window seen from the platform side:
+//!   [`raw_handle()`](NativeWindow::raw_handle), plus typed shortcuts per OS
+//!   ([`ns_window()`](NativeWindow::ns_window), `hwnd()`, `wl_surface()`). It
+//!   holds the window itself, so a pointer read out of it is valid for as long
+//!   as the value lives — the guarantee a bare `RawWindowHandle` cannot make.
+//! - [`WindowConfig::on_native_ready`] and [`WindowConfig::on_native_event`] —
+//!   the moment before the window is first shown (where titlebar and vibrancy
+//!   work belongs) and every window event **before** the framework sees it,
+//!   with [`NativeFlow::Consume`] to keep it.
+//! - `platform::macos` / `platform::windows` / `platform::linux` — objc2 +
+//!   AppKit, windows-rs, and zbus at versions pinned by the workspace, so the
+//!   application and the framework can never end up with two copies of the same
+//!   binding crate in one process.
+//!
+//! ```no_run
+//! use silka_platform::{window, NativeFlow};
+//!
+//! window("Editor")
+//!     .on_native_ready(|native| {
+//!         #[cfg(target_os = "macos")]
+//!         if let Some(w) = native.ns_window() {
+//!             w.setTitlebarAppearsTransparent(true);
+//!         }
+//!         println!("handle: {:?}", native.raw_handle());
+//!     })
+//!     // Unsaved work: refuse the close, show our own dialog instead.
+//!     .on_native_event(|e| match e.is_close_requested() {
+//!         true => NativeFlow::Consume,
+//!         false => NativeFlow::Continue,
+//!     })
+//!     .run()
+//!     .unwrap();
+//! ```
+//!
+//! `examples/escape_hatch.rs` is the same thing at full length, with the macOS,
+//! Windows, and Linux branches all written out.
+//!
 //! ## What exists today (milestone `window-wgpu`)
 //!
 //! A winit 0.30 window with a wgpu surface (Metal on macOS), correct resize and
@@ -94,7 +133,73 @@
 //! .unwrap();
 //! ```
 //!
-//! [`headless_app`] assembles the **exact same** [`silka_core::app::AppRuntime`]
+//! ## Milestone `native-p0` (INTEGRASI-NATIVE §1–§2)
+//!
+//! The "90/10 platform polish tail" made reachable by method chaining, in the
+//! framework's own vocabulary — no `muda`, `rfd`, `arboard`, `tray_icon`, or
+//! `window_vibrancy` type is ever visible above [`mod@menu`], [`dialog`],
+//! [`mod@clipboard`], [`mod@tray`], and [`titlebar`], exactly as no wgpu type is
+//! visible above `silka-renderer` (§3.2).
+//!
+//! ```no_run
+//! use silka_platform::{menu::{item, menu, menubar}, window, Dirty, Material, TitlebarStyle};
+//!
+//! window("Editor")
+//!     .titlebar(TitlebarStyle::Transparent)
+//!     .material(Material::Sidebar)
+//!     .traffic_light_inset(20.0, 24.0)
+//!     .menubar(menubar("Editor").menu(menu("File").item(item("file.new", "New"))))
+//!     .on_menu(|a| if a.is("file.new") { Dirty::LAYOUT } else { Dirty::NONE })
+//!     .run()
+//!     .unwrap();
+//! ```
+//!
+//! The one thing that is *not* optional here: [`menubar`] always ships the
+//! standard macOS Edit menu, because that is what puts cut/copy/paste on the
+//! responder chain. Everything else in this milestone is polish; that one is
+//! the difference between ⌘V working and not.
+//!
+//! ## Milestone `lifecycle` (INTEGRASI-NATIVE §6)
+//!
+//! The settings a native application is judged by, and the state it is
+//! expected to remember. All of them arrive as one value, [`SystemSettings`],
+//! and turn into a theme by a pure function — so what a window shows and what
+//! a headless test asserts cannot drift apart.
+//!
+//! | Setting | What it changes |
+//! |---|---|
+//! | Dark mode (live) | every color token, through the `Signal<Theme>` the frame writes |
+//! | Accent color | the whole accent family — hover, pressed, muted, focus ring, and the content color that has to stay readable on it |
+//! | Reduce motion | every [`silka_core::animation::Tick`]: springs lose their bounce, decorative motion disappears |
+//! | Reduce transparency | every translucent token, flattened once instead of blended per frame |
+//!
+//! ```no_run
+//! use silka_platform::{window, FileStore, StateStore};
+//!
+//! let store = FileStore::for_app("Galeri");
+//! // The application reads its own values; the framework only writes them.
+//! let halaman = store.load().get("halaman").unwrap_or("beranda").to_string();
+//!
+//! window("Galeri")
+//!     .follow_system_appearance()   // live dark mode
+//!     .follow_system_accent()       // the OS accent (this is also the default)
+//!     .restore_state(store)         // window geometry across runs
+//!     .on_quit(move |quit| quit.remember("halaman", halaman.clone()))
+//!     .run()
+//!     .unwrap();
+//! ```
+//!
+//! Two properties this milestone is built around:
+//!
+//! - **Nothing polls.** Settings are re-read on events the OS already sends —
+//!   a theme change, the window regaining focus after a trip to System
+//!   Settings — so an idle window stays idle (§3.5).
+//! - **A restored position must still be reachable.** A window last seen on a
+//!   monitor that has since been unplugged comes back where the OS puts it,
+//!   not at `x = 3000` where nobody would ever find it
+//!   ([`restore_placement`]).
+//!
+//! //! [`headless_app`] assembles the **exact same** [`silka_core::app::AppRuntime`]
 //! without a window and without a GPU — `run_app` itself uses it, and so do
 //! integration tests that run the same page in CI, feed it input events, and
 //! then count its pixels in an offscreen texture (§9.5). The [`Env`] values the
@@ -106,8 +211,17 @@
 
 pub mod access;
 pub mod appearance;
+pub mod clipboard;
+pub mod dialog;
 mod error;
+mod event;
+pub mod image;
 pub mod input;
+pub mod lifecycle;
+pub mod menu;
+pub mod platform;
+pub mod titlebar;
+pub mod tray;
 pub mod vsync;
 mod window;
 
@@ -116,10 +230,39 @@ pub use appearance::{
     appearance_from_winit, apply_system_appearance, winit_theme_from_appearance, AppearanceSource,
 };
 pub use error::PlatformError;
+
+/// The event loop's user event — the return path for every native callback
+/// that does not arrive as a window event (INTEGRASI-NATIVE §2, §3.8).
+pub use event::{forward_native_events, ShellEvent};
+
+/// Native integration P0 (INTEGRASI-NATIVE §1–§2).
+///
+/// Re-exported at the crate root because these are things an application
+/// reaches for while writing its first window, not corners of the API: a
+/// menubar, a file dialog, the clipboard, a tray icon, and the translucency
+/// that makes a window look like it belongs to the OS.
+pub use clipboard::{clipboard, Clipboard, ClipboardError};
+pub use dialog::{
+    file_dialog, message, FileDialog, MessageAnswer, MessageButtons, MessageDialog, MessageLevel,
+};
+pub use image::{ImageError, RgbaImage};
 pub use input::{
     button_from_winit, cursor_to_winit, ime_area_to_winit, ime_from_winit, key_from_winit,
     modifiers_from_winit, scroll_delta_from_winit, scroll_phase_from_winit, WinitInput,
 };
+pub use lifecycle::{
+    restore_placement, AccentSource, FileStore, MemoryStore, MonitorArea, QuitContext, QuitReason,
+    SessionState, StateStore, SystemSettings, WindowPlacement,
+};
+pub use menu::{
+    cmd, cmd_shift, item, menu, menubar, shortcut, MenuActivation, MenuBar, MenuEntry, MenuError,
+    MenuId, MenuItem, MenuKind, MenuRole, Shortcut,
+};
+pub use titlebar::{
+    apply_material, clear_material, system_reduces_transparency, Material, MaterialState,
+    TitlebarStyle, VibrancyError,
+};
+pub use tray::{tray, Tray, TrayActivation, TrayButton, TrayConfig, TrayError};
 pub use vsync::{VsyncClock, VsyncKind, VsyncSource};
 pub use window::{
     default_clear_color, headless_app, run_app, run_app_with, window, FrameContext, WindowConfig,
@@ -147,6 +290,15 @@ pub use silka_core::scheduler::{ClockSource, Dirty, FrameStats, FrameTiming, Vsy
 /// [`WindowConfig::on_access`]; requests from assistive technology come back as
 /// [`AccessActionRequest`].
 pub use silka_core::access::{AccessActionRequest, AccessTree};
+
+/// Escape hatch vocabulary (INTEGRASI-NATIVE §8).
+///
+/// Re-exported at the crate root because it is a **contract**, not a corner:
+/// `raw_handle()` and the native hooks are meant to be as easy to reach as
+/// `window()` itself. The per-OS bindings (objc2/AppKit, windows-rs, zbus) stay
+/// inside [`platform`], where they are marked by the `#[cfg(target_os)]` that
+/// applies to them.
+pub use platform::{NativeEvent, NativeFlow, NativeWindow};
 
 /// Re-export of winit at the version pinned by the framework.
 ///

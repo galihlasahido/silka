@@ -234,7 +234,7 @@ impl LayerBuilder {
     /// Push one more overlay on top of the ones already there.
     ///
     /// Accepts anything convertible into an [`OverlayBuilder`], so
-    /// component-level presets ([`crate::dialog`], and later
+    /// component-level presets ([`mod@crate::dialog`], and later
     /// sheet/popover/tooltip) can be written directly here without leaking the
     /// fact that there is an overlay inside them.
     pub fn overlay(mut self, overlay: impl Into<OverlayBuilder>) -> Self {

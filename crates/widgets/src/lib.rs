@@ -33,25 +33,25 @@
 //!
 //! ## What already exists
 //!
-//! - [`text`] (Tier 0) — a text leaf that **measures itself** through
+//! - [`mod@text`] (Tier 0) — a text leaf that **measures itself** through
 //!   `silka-text` and draws glyphs from the atlas; wrapping follows the width
 //!   handed down by the box constraints, and its content is the a11y node name.
-//! - [`button`] (Tier 2) — a complete control built on tokens:
+//! - [`mod@button`] (Tier 2) — a complete control built on tokens:
 //!   primary/secondary/ghost/destructive/link variants, hover/press/focus/
 //!   disabled/loading states that **all transition on springs**, a focus ring
 //!   that grows, Space/Enter, an AccessKit node, and a hit target ≥ 44pt.
-//! - [`checkbox`] (Tier 2) — a **tri-state** checkbox (indeterminate
+//! - [`mod@checkbox`] (Tier 2) — a **tri-state** checkbox (indeterminate
 //!   included): the check mark is genuinely *drawn* by a spring
 //!   ([`check_dots`]), the label is clickable too and doubles as the a11y
 //!   name, Space activates, and the hit target is ≥ 44pt even though the box
 //!   is 16pt.
-//! - [`switch`] / [`toggle`] (Tier 2) — an on/off switch you can **drag**, not
+//! - [`mod@switch`] / [`toggle`] (Tier 2) — an on/off switch you can **drag**, not
 //!   merely click: the thumb tracks the finger 1:1, the finger's velocity is
 //!   handed to the spring on release (handoff §3.5), the track color crosses
 //!   over exactly at the midpoint, Space plus left/right arrows, an AccessKit
 //!   node carrying the on/off state, and a hit target ≥ 44pt even though the
 //!   track is 32pt/24pt.
-//! - [`slider`] / [`range_slider`] (Tier 2) — value sliders: dragging that
+//! - [`mod@slider`] / [`range_slider`] (Tier 2) — value sliders: dragging that
 //!   sticks to the finger, click-on-track, **snapping to steps**, full
 //!   keyboard support (arrows/Home/End/PageUp), a two-thumb range variant, an
 //!   AccessKit node with the value plus increment/decrement actions, and a
@@ -62,7 +62,7 @@
 //!   (arrows/Home/End inside it, skipping disabled tabs, mirrored in RTL), a
 //!   focus ring that glides along, and AccessKit `TabList`/`Tab` nodes
 //!   complete with the selected state.
-//! - [`select`] (Tier 2) — a macOS pop-up button / shadcn Select: a popup that
+//! - [`mod@select`] (Tier 2) — a macOS pop-up button / shadcn Select: a popup that
 //!   **rides the overlay system** (anchored to the trigger, auto-flipping at
 //!   the screen edge), full keyboard support on the trigger, which keeps focus
 //!   (Space/Enter/arrows/Home/End/Esc), plus native-menu-style **typeahead**,
@@ -97,7 +97,7 @@
 //!   still a single entry, keyboard navigation between **cells** with a focus
 //!   ring around the active cell, custom cells (any widget inside a cell),
 //!   sticky headers, an empty state, and AccessKit `Table`/`Row`/`Cell` nodes.
-//! - [`text_field`] (Tier 2, **the hardest component in the whole catalogue**)
+//! - [`mod@text_field`] (Tier 2, **the hardest component in the whole catalogue**)
 //!   — a single-line text field: caret and selection **per grapheme cluster**
 //!   (UAX #29), double-click by word, triple-click for the whole content,
 //!   drag-select, undo/redo that coalesces consecutive typing, horizontal

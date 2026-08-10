@@ -30,10 +30,10 @@
 //! ## Who owns the value
 //!
 //! The application. The node **never** changes its own `on`: it reports what
-//! the user wants through [`Builder::on_change`], the application writes the
+//! the user wants through [`Switch::on_change`], the application writes the
 //! signal, and the new value comes back through a rebuild
-//! ([`SwitchProps::update`]) — the same rule as [`crate::checkbox`] and
-//! [`crate::button`]. If the node guessed first, a switch whose change the
+//! ([`SwitchProps::update`]) — the same rule as [`mod@crate::checkbox`] and
+//! [`mod@crate::button`]. If the node guessed first, a switch whose change the
 //! application rejects would look moved for a whole frame.
 //!
 //! What **belongs to the node** is presentation only: thumb position, track

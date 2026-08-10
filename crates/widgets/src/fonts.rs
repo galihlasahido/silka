@@ -5,7 +5,7 @@
 //! duplicated), so a single [`TextEngine`] lives for the lifetime of the
 //! application and is used in turn by two parties on the same UI thread:
 //!
-//! 1. **while building the view** — [`crate::text`] measures and rasterizes;
+//! 1. **while building the view** — [`crate::text()`] measures and rasterizes;
 //! 2. **while painting** — the backend uploads the changed part of the atlas
 //!    through [`silka_paint::GlyphSource`].
 //!

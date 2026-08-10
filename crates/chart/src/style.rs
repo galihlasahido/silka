@@ -17,7 +17,7 @@
 //! | Axis title, legend | `label` |
 //! | Empty state | `tertiary_label` |
 //! | Crosshair | `label`, faded |
-//! | Series marks | [`ChartPalette`](crate::palette::ChartPalette) |
+//! | Series marks | [`ChartPalette`] |
 //!
 //! Sizes come from the 4pt spacing scale and the type scale, so a chart in a
 //! dense table view and one on a dashboard are the same code at two token

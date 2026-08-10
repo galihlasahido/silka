@@ -2,7 +2,8 @@
 //! and the OS accessibility APIs (REKOMENDASI §3.8).
 //!
 //! The only thing that crosses from the framework into here is
-//! [`AccessTree`]/[`AccessUpdate`]: one tree snapshot plus its diff. The only
+//! [`AccessTree`]/[`AccessUpdate`](silka_core::AccessUpdate): one tree snapshot
+//! plus its diff. The only
 //! thing that crosses back is an already-validated [`AccessActionRequest`].
 //! `accesskit_winit` handles the rest per platform: UIA on Windows,
 //! NSAccessibility on macOS, AT-SPI on Linux.
@@ -74,10 +75,15 @@ impl AccessAdapter {
     ///
     /// **Must be called before the window is shown** — create the window with
     /// `with_visible(false)`, call this, then `set_visible(true)`.
-    pub fn new(
+    ///
+    /// The proxy's event type is only required to be *buildable from* an
+    /// accessibility event, so a shell whose loop also carries menu and tray
+    /// events (see [`crate::ShellEvent`]) can hand over the same proxy instead
+    /// of running a second one.
+    pub fn new<T: From<accesskit_winit::Event> + Send + 'static>(
         event_loop: &ActiveEventLoop,
         window: &Window,
-        proxy: EventLoopProxy<AccessEvent>,
+        proxy: EventLoopProxy<T>,
     ) -> Self {
         Self {
             inner: Adapter::with_event_loop_proxy(event_loop, window, proxy),

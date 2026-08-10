@@ -14,6 +14,13 @@ pub enum PlatformError {
     WindowCreation(String),
     /// The renderer backend failed.
     Renderer(RendererError),
+    /// Session state could not be written (INTEGRASI-NATIVE §6).
+    ///
+    /// Deliberately **not** produced when *reading* fails: a missing or
+    /// unreadable state file is a first run, and an application that refuses
+    /// to start because it cannot remember its window position would be a
+    /// worse bug than the one being reported.
+    State(String),
 }
 
 impl fmt::Display for PlatformError {
@@ -22,6 +29,7 @@ impl fmt::Display for PlatformError {
             PlatformError::EventLoop(m) => write!(f, "event loop gagal: {m}"),
             PlatformError::WindowCreation(m) => write!(f, "window gagal dibuat: {m}"),
             PlatformError::Renderer(e) => write!(f, "renderer gagal: {e}"),
+            PlatformError::State(m) => write!(f, "state sesi gagal disimpan: {m}"),
         }
     }
 }

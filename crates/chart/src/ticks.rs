@@ -34,7 +34,7 @@ use crate::date::Date;
 ///
 /// This is the case for any horizontal axis: neighbouring labels collide
 /// *widthwise*, and a label is far wider than it is tall. The number is the
-/// framework's, not the platform's — the same reasoning as [`ClickConfig`]
+/// framework's, not the platform's — the same reasoning as [`ClickConfig`](silka_core::input::ClickConfig)
 /// (`silka_core::input`): readers expect the same density on every OS.
 pub const MIN_TICK_SPACING: f32 = 48.0;
 

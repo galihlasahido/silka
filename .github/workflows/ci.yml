@@ -1,0 +1,116 @@
+# Continuous integration for silka.
+#
+# The shape follows REKOMENDASI §9.5: the same suite on macOS, Windows and
+# Linux, with the visual tests actually rendering (headless, via a software
+# Vulkan driver on Linux) and the frame-time gate running in release.
+#
+# Three deliberate choices worth knowing before editing this file:
+#
+#   * `SILKA_REQUIRE_GPU=1` on the runners we provision a driver for. The
+#     headless tests skip themselves when no adapter exists, which is right on
+#     a contributor's machine and wrong in CI: a runner whose driver silently
+#     disappeared would report a green visual suite that rendered nothing.
+#
+#   * Failing golden captures are uploaded as an artifact. A snapshot failure
+#     that a reviewer cannot look at is a snapshot failure that gets papered
+#     over with a wider tolerance.
+#
+#   * The benchmark gate is a separate job in release mode. An unoptimised
+#     build is five to twenty times slower, so gating on a debug build would
+#     mean either a meaningless threshold or a permanently red pipeline.
+#
+# Not here yet, on purpose: the X11 x Wayland axis §9.5 also asks for. Every
+# test in the suite today is headless, so both backends would run identical
+# code; the axis becomes meaningful the day a windowed smoke test exists, and
+# it needs Xvfb and a headless compositor to be worth anything.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  lint:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build dependencies
+        run: ./.github/scripts/linux-deps.sh
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: ./.github/scripts/linux-deps.sh
+
+      # lavapipe: a software Vulkan device, so the headless renderer has a real
+      # adapter on a runner with no GPU at all.
+      - name: Install a software Vulkan driver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
+          echo "VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json" >> "$GITHUB_ENV"
+          echo "WGPU_BACKEND=vulkan" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: cargo check --workspace --all-targets
+
+      - name: Test
+        env:
+          # macOS has Metal and Linux now has lavapipe; both must render rather
+          # than skip. Windows runners fall back to WARP, which is present but
+          # not something we provision, so there the skip stays allowed.
+          SILKA_REQUIRE_GPU: ${{ (runner.os == 'Windows' && '0') || '1' }}
+        run: cargo test --workspace
+
+      - name: Upload failing golden captures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-${{ matrix.os }}
+          path: |
+            crates/*/tests/golden/actual/**
+            examples/*/tests/golden/actual/**
+          if-no-files-found: ignore
+
+  frame-time:
+    name: frame-time gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build dependencies
+        run: ./.github/scripts/linux-deps.sh
+
+      # The budgets are written against a developer machine. A shared CI runner
+      # is slower and noisier, so the gate is relaxed by a fixed factor rather
+      # than by whatever makes today's build pass: it is a regression gate, and
+      # a regression is a change in the number, not the number itself.
+      - name: Frame-time budgets (release)
+        env:
+          SILKA_BENCH_SCALE: "3.0"
+        run: cargo test --release -p silka-testing --test waktu_frame -- --nocapture

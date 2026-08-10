@@ -345,7 +345,7 @@ impl RefreshEstimator {
         true
     }
 
-    /// How many samples were accepted (at most [`ESTIMATOR_CAPACITY`]).
+    /// How many samples were accepted (at most `ESTIMATOR_CAPACITY`).
     pub fn sample_count(&self) -> usize {
         self.len
     }

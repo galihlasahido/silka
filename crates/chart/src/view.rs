@@ -27,8 +27,8 @@
 //!
 //! ## Why `fonts` and `theme` come first
 //!
-//! Exactly as in [`button`](silka_widgets::button),
-//! [`table`](silka_widgets::table), and every other component: there is no
+//! Exactly as in [`button`](mod@silka_widgets::button),
+//! [`table`](mod@silka_widgets::table), and every other component: there is no
 //! ambient context for application-level dependencies yet, so the text engine
 //! and the theme are passed explicitly. `silka-widgets` documents the same debt
 //! for the same reason — when a context arrives, both crates lose the same two
