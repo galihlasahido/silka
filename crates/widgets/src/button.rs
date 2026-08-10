@@ -64,6 +64,32 @@ use crate::fonts::Fonts;
 use crate::text::text;
 
 /// Minimum size of a control's touch area, in logical points (Apple HIG).
+///
+/// It is a *floor on the hit area*, not on the drawing: a 16pt checkbox and a
+/// 4pt slider track both stay the size they look, and grow an invisible touch
+/// band around themselves. Part of the Definition of Done for every component
+/// (`KOMPONEN.md`).
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button, Fonts, MIN_HIT_TARGET};
+///
+/// assert_eq!(MIN_HIT_TARGET, 44.0);
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Even a one-character label produces a target a finger can hit.
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, button(&fonts, &theme, "x"));
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// let id = tree.children(tree.root())[0];
+/// assert!(tree.size(id).height >= MIN_HIT_TARGET);
+/// ```
 pub const MIN_HIT_TARGET: f32 = 44.0;
 
 /// Number of dots in the "loading" indicator.
@@ -75,6 +101,35 @@ const JUMLAH_TITIK: usize = 3;
 
 /// Visual variant of a button (`KOMPONEN.md`: primary/secondary/ghost/
 /// destructive/link).
+///
+/// The variant chooses which **tokens** a button reads, never a literal colour,
+/// which is why one enum serves both presets and both appearances.
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::ButtonVariant;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Primary is the default: one obvious action per view.
+/// assert_eq!(ButtonVariant::default(), ButtonVariant::Primary);
+///
+/// // Each variant resolves to its own role in the palette…
+/// let primary = ButtonVariant::Primary.style(&theme, Default::default());
+/// let destructive = ButtonVariant::Destructive.style(&theme, Default::default());
+/// assert_eq!(primary.rest, theme.color.accent);
+/// assert_eq!(destructive.rest, theme.color.destructive);
+///
+/// // …and the two "quiet" variants are transparent until interacted with.
+/// for quiet in [ButtonVariant::Ghost, ButtonVariant::Link] {
+///     assert_eq!(quiet.style(&theme, Default::default()).rest.a, 0.0);
+/// }
+///
+/// // The list is enumerable, which is what the gallery and the cross-variant
+/// // tests walk instead of keeping a second copy by hand.
+/// assert_eq!(ButtonVariant::ALL.len(), 5);
+/// assert_eq!(ButtonVariant::Primary.name(), "primary");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ButtonVariant {
     /// Primary action: `accent` background, `on_accent` text.
@@ -237,6 +292,21 @@ fn dorong(color: Color, theme: &Theme, jumlah: f32) -> Color {
 /// different places: this one belongs to the props and changes through a
 /// diff, that one belongs to the node and must not be swept away by a
 /// rebuild.
+///
+/// ```
+/// use silka_widgets::ButtonState;
+///
+/// // The ordinary case: usable.
+/// assert!(ButtonState::default().is_enabled());
+///
+/// // Both flags block activation, but they mean different things to a reader:
+/// // "you may not" versus "not yet".
+/// let disabled = ButtonState { disabled: true, loading: false };
+/// let working = ButtonState { disabled: false, loading: true };
+/// assert!(!disabled.is_enabled());
+/// assert!(!working.is_enabled());
+/// assert_ne!(disabled, working);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ButtonState {
     /// Unusable — still announced to screen readers as dimmed.
@@ -257,6 +327,34 @@ impl ButtonState {
 /// The engine never has an opinion about color (§2.6, §2.7): the Cupertino
 /// and Tailwind presets swap over by filling in this struct, without a single
 /// line changing in [`ButtonBox`].
+///
+/// ```
+/// use silka_paint::CornerStyle;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{ButtonState, ButtonVariant};
+///
+/// let cupertino = Theme::cupertino(Appearance::Dark);
+/// let tailwind = Theme::tailwind(Appearance::Dark);
+/// let rest = ButtonState::default();
+///
+/// let a = ButtonVariant::Primary.style(&cupertino, rest);
+/// let b = ButtonVariant::Primary.style(&tailwind, rest);
+///
+/// // The presets differ in every value they fill in…
+/// assert_ne!(a.rest, b.rest);
+/// assert_eq!(a.corners.style, CornerStyle::squircle());
+/// assert_eq!(b.corners.style, CornerStyle::Arc);
+///
+/// // …and the engine drawing them is identical, because it only ever reads
+/// // this struct. Hover is a distinct value, not a computed brightness.
+/// assert_ne!(a.rest, a.hover);
+/// assert_ne!(a.hover, a.pressed);
+///
+/// // The corner geometry here is the same value hit-testing uses, which is
+/// // why a squircle button is not clickable in the corners it excludes.
+/// let style = ButtonVariant::Secondary.style(&cupertino, rest);
+/// assert!(style.border_width > 0.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ButtonStyle {
     /// Background at rest.
@@ -329,11 +427,51 @@ impl ButtonStyle {
 // ---------------------------------------------------------------------------
 
 /// Render node of a button: the full input contract + four springs.
+///
+/// Applications build buttons with [`button()`]; this type is what a test or an
+/// inspector reaches for when it wants to assert on the *motion* rather than on
+/// the view that produced it.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button, ButtonBox, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, button(&fonts, &theme, "Save").on_press(|| {}));
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// let id = tree.children(tree.root())[0];
+/// let node = tree.node_ref::<ButtonBox>(id).expect("a button node");
+///
+/// // At rest: nothing hovered, nothing pressed, nothing moving — which is
+/// // what allows the GPU to sleep.
+/// assert!(!node.is_hovered());
+/// assert!(!node.is_pressed());
+/// assert_eq!(node.press_progress(), 0.0);
+/// assert_eq!(node.activations(), 0);
+///
+/// // The background is a spring value, and at rest it has reached its target.
+/// assert_eq!(node.background(), node.background_target());
+///
+/// // The hit target is at least 44pt even when the label is tiny (Apple HIG).
+/// assert!(tree.size(id).height >= silka_widgets::MIN_HIT_TARGET);
+/// ```
 #[derive(Debug)]
 pub struct ButtonBox {
     style: ButtonStyle,
     label: Option<String>,
     role: AccessRole,
+    /// On/off state, for a button that is really a **toggle** (a formatting
+    /// toolbar's bold button). `None` — the usual case — means "this button is
+    /// not a toggle", which is not the same as `Some(false)`: a screen reader
+    /// announcing "not pressed" for every ordinary button is noise.
+    toggled: Option<bool>,
     focus: FocusPolicy,
     on_press: Option<Callback>,
 
@@ -367,6 +505,7 @@ impl ButtonBox {
             style,
             label,
             role,
+            toggled: None,
             focus: FocusPolicy::FOCUSABLE,
             on_press: None,
             hovered: false,
@@ -650,6 +789,15 @@ impl RenderNode for ButtonBox {
     fn access(&self, node: &mut AccessNode) {
         node.role = self.role;
         node.label.clone_from(&self.label);
+        // A toggle button announces its state; an ordinary one says nothing
+        // about a concept it does not have.
+        node.toggled = self.toggled.map(|on| {
+            if on {
+                silka_core::access::AccessToggled::On
+            } else {
+                silka_core::access::AccessToggled::Off
+            }
+        });
         // A button that is loading **cannot** be pressed; to assistive
         // technology that means dimmed. (`AccessNode` has no `busy`
         // vocabulary yet — debt we acknowledge, not debt we hide.)
@@ -770,11 +918,41 @@ impl RenderNode for ButtonBox {
 // ---------------------------------------------------------------------------
 
 /// Button props — the view form of [`ButtonBox`].
+///
+/// Props are compared by value on every rebuild, and that comparison is what
+/// decides whether anything is dirty at all. Building the same button twice
+/// therefore costs nothing beyond the comparison.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, button(&fonts, &theme, "Save"));
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// // An identical rebuild reuses the node and reports nothing changed…
+/// let same = reconcile(&mut tree, button(&fonts, &theme, "Save"));
+/// assert!(same.is_noop());
+///
+/// // …while a changed label updates the very same node rather than
+/// // replacing it, so the springs inside it keep running.
+/// let changed = reconcile(&mut tree, button(&fonts, &theme, "Saved"));
+/// assert_eq!(changed.replaced, 0);
+/// assert!(changed.updated > 0);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ButtonProps {
     style: ButtonStyle,
     label: Option<String>,
     role: AccessRole,
+    toggled: Option<bool>,
     focus: FocusPolicy,
     spring: Spring,
     on_press: Option<Callback>,
@@ -783,6 +961,7 @@ pub struct ButtonProps {
 impl ViewNode for ButtonProps {
     fn build(&self) -> Box<dyn RenderNode> {
         let mut node = ButtonBox::new(self.style, self.label.clone(), self.role, self.spring);
+        node.toggled = self.toggled;
         node.focus = self.focus;
         node.on_press.clone_from(&self.on_press);
         Box::new(node)
@@ -816,6 +995,10 @@ impl ViewNode for ButtonProps {
             n.role = self.role;
             dirty |= Dirty::PAINT;
         }
+        if n.toggled != self.toggled {
+            n.toggled = self.toggled;
+            dirty |= Dirty::PAINT;
+        }
         if n.focus != self.focus {
             n.focus = self.focus;
             dirty |= Dirty::PAINT;
@@ -838,6 +1021,39 @@ impl ViewNode for ButtonProps {
 /// Keeps its raw ingredients (theme, label, variant, state) and only
 /// **resolves the tokens** once it becomes a [`View`] — that way a
 /// `.variant(…)` called later still changes the whole palette.
+///
+/// ```
+/// use silka_core::signals::Key;
+/// use silka_core::animation::Spring;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button, ButtonVariant, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Order in the chain does not matter, because nothing is resolved until
+/// // the builder becomes a view.
+/// let a = button(&fonts, &theme, "Delete")
+///     .variant(ButtonVariant::Destructive)
+///     .disabled(true);
+/// let b = button(&fonts, &theme, "Delete")
+///     .disabled(true)
+///     .variant(ButtonVariant::Destructive);
+/// assert_eq!(a.style(), b.style());
+///
+/// // The rest of the vocabulary: a toggle that announces its on/off state,
+/// // a slower spring, a keyboard-skipping decoration, and a stable identity
+/// // so a reorder moves the node instead of rebuilding it.
+/// let bold = button(&fonts, &theme, "B")
+///     .variant(ButtonVariant::Ghost)
+///     .toggled(true)
+///     .spring(Spring::smooth())
+///     .focusable(true)
+///     .tab_order(3)
+///     .key(Key::from("bold"))
+///     .on_press(|| {});
+/// # let _ = bold;
+/// ```
 #[derive(Debug, Clone)]
 pub struct Button {
     fonts: Fonts,
@@ -845,6 +1061,7 @@ pub struct Button {
     label: String,
     variant: ButtonVariant,
     state: ButtonState,
+    toggled: Option<bool>,
     spring: Spring,
     focus: FocusPolicy,
     on_press: Option<Callback>,
@@ -854,11 +1071,68 @@ pub struct Button {
 /// A text-labelled button — the `button` component (`KOMPONEN.md` Tier 2).
 ///
 /// `fonts` is the application's text engine, `theme` the source of every value.
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button, ButtonVariant, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let saving = rt.signal(false);
+///
+/// // The Dart-style shape: a constructor, then a method chain. Optional
+/// // properties are methods, never a struct of `Option`s at the call site.
+/// let save = button(&fonts, &theme, "Save")
+///     .on_press(move || saving.set(true))
+///     .loading(saving.get());
+///
+/// // Every colour comes from the theme, so the same call is correct under
+/// // both presets and in both appearances.
+/// assert_eq!(save.style().rest, theme.color.accent);
+///
+/// // A destructive action differs by one word, not by a second widget.
+/// let delete = button(&fonts, &theme, "Delete")
+///     .variant(ButtonVariant::Destructive)
+///     .on_press(|| {});
+/// assert_eq!(delete.style().rest, theme.color.destructive);
+///
+/// // Disabled is a state, not a different button: it is still announced to a
+/// // screen reader, just dimmed and unactivatable. The variant's palette is
+/// // unchanged — what changes is which entry of it gets drawn.
+/// let unavailable = button(&fonts, &theme, "Publish").disabled(true);
+/// let style = unavailable.style();
+/// assert_eq!(style.rest, theme.color.accent);
+/// assert_ne!(style.disabled, style.rest);
+/// ```
 pub fn button(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Button {
     button_variant(fonts, theme, label, ButtonVariant::default())
 }
 
 /// [`button`] with an explicit variant.
+///
+/// Useful when the variant is computed rather than written down — a toolbar
+/// that builds its buttons from data, or the gallery sweeping all five.
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button_variant, ButtonVariant, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Every variant, from the one list that defines them.
+/// for variant in ButtonVariant::ALL {
+///     let b = button_variant(&fonts, &theme, variant.name(), variant);
+///     let _ = b.style();
+/// }
+///
+/// // A ghost button has no background until it is hovered — which is what
+/// // makes it usable inside a dense toolbar or a list row.
+/// let ghost = button_variant(&fonts, &theme, "More", ButtonVariant::Ghost);
+/// assert_eq!(ghost.style().rest.a, 0.0);
+/// ```
 pub fn button_variant(
     fonts: &Fonts,
     theme: &Theme,
@@ -871,6 +1145,7 @@ pub fn button_variant(
         label: label.into(),
         variant,
         state: ButtonState::default(),
+        toggled: None,
         // `snappy` is the macOS control feel: arrives fast, with almost no
         // bounce (WWDC23).
         spring: Spring::snappy(),
@@ -890,6 +1165,16 @@ impl Button {
     /// What runs when the button is activated — a click **or** Space/Enter.
     pub fn on_press(mut self, f: impl Fn() + 'static) -> Self {
         self.on_press = Some(Callback::new(f));
+        self
+    }
+
+    /// Mark the button as a **toggle** and give it a state.
+    ///
+    /// Used by a formatting toolbar, where "bold" is not an action but a
+    /// switch: without this a screen reader announces the button and never
+    /// says whether it is currently on (§3.8).
+    pub fn toggled(mut self, on: bool) -> Self {
+        self.toggled = Some(on);
         self
     }
 
@@ -966,6 +1251,7 @@ impl From<Button> for View {
             style,
             label: Some(b.label),
             role: b.variant.role(),
+            toggled: b.toggled,
             focus: b.focus,
             spring: b.spring,
             on_press: b.on_press,

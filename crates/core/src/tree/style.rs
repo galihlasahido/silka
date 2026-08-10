@@ -15,16 +15,30 @@ use silka_paint::Insets;
 
 use super::primitives::Axis;
 
-/// One step on the spacing scale, in logical points.
+/// One step on the spacing scale, in logical points — the **fallback** unit.
 ///
-/// A mirror of `silka_theme::SpacingTokens::unit` — both presets (Cupertino and
-/// Tailwind/shadcn) use 4pt (§2.7). `silka-core` must not depend on the theme
-/// crate (the theme is built on top of core, not the other way round), so the
-/// number is repeated here and kept honest by a unit test in `silka-widgets`
-/// when that layer wires the two together.
+/// The authority is `silka_theme::SpacingTokens::unit`, which the spacing
+/// utilities ([`crate::view::div`] and friends) read from the ambient theme.
+/// This constant is what they fall back to when no theme is installed, and it
+/// is the value both first-party presets set (§2.7); a unit test below keeps
+/// the two from drifting apart.
+///
+/// Layout code that needs a number without a theme in reach — a default gap, a
+/// debug overlay — may use it directly. Application code should not: `p_4()` and
+/// `gap_3()` say the same thing and follow a brand preset that changes the unit.
 pub const SPACING_UNIT: f32 = 4.0;
 
 /// The algorithm a container uses to arrange its children.
+///
+/// The whole public vocabulary of this module is ours, not Taffy's: `taffy::`
+/// is confined to one module, exactly as wgpu is confined to one crate.
+///
+/// ```
+/// use silka_core::tree::{Axis, ContainerStyle, LayoutMode};
+///
+/// assert_eq!(ContainerStyle::flex(Axis::Horizontal).mode, LayoutMode::Flex);
+/// assert_eq!(ContainerStyle::grid().mode, LayoutMode::Grid);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LayoutMode {
     /// Flexbox — `row()` and `column()`.
@@ -35,6 +49,14 @@ pub enum LayoutMode {
 }
 
 /// Whether children may move to a new line when they run out of room.
+///
+/// ```
+/// use silka_core::tree::{Axis, ContainerStyle, FlexWrap};
+///
+/// // Not wrapping is the default — the Flutter `Row`/`Column` behaviour,
+/// // not the web's.
+/// assert_eq!(ContainerStyle::flex(Axis::Horizontal).wrap, FlexWrap::default());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FlexWrap {
     /// Stay on one line even when overflowing (Flutter's `Row`/`Column`
@@ -48,6 +70,15 @@ pub enum FlexWrap {
 }
 
 /// Alignment/space distribution along the main axis.
+///
+/// ```
+/// use silka_core::tree::MainAlign;
+///
+/// // The utility vocabulary spells these out: `justify_between()` and
+/// // friends set exactly this field.
+/// assert_eq!(MainAlign::default(), MainAlign::Start);
+/// assert_ne!(MainAlign::SpaceBetween, MainAlign::SpaceEvenly);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum MainAlign {
     /// Packed at the start of the axis.
@@ -67,6 +98,15 @@ pub enum MainAlign {
 }
 
 /// Alignment along the cross axis.
+///
+/// `Start` means *left in LTR and right in RTL* — direction-relative, not
+/// physical, which is what makes an Arabic UI mirror without a widget changing.
+///
+/// ```
+/// use silka_core::tree::CrossAlign;
+///
+/// assert_eq!(CrossAlign::default(), CrossAlign::Start);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CrossAlign {
     /// Packed at the start of the cross axis (left in LTR, right in RTL).
@@ -83,6 +123,16 @@ pub enum CrossAlign {
 }
 
 /// The cell-filling order for grid items that are not placed explicitly.
+///
+/// ```
+/// use silka_core::tree::GridFlow;
+///
+/// // Rows first, which is what a form or a card grid wants.
+/// assert_eq!(GridFlow::default(), GridFlow::Row);
+/// ```
+///
+/// The `Dense` variants backfill holes left by explicitly placed items, at the
+/// cost of items no longer appearing in source order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GridFlow {
     /// Fill rows first, moving right.
@@ -97,6 +147,9 @@ pub enum GridFlow {
 }
 
 /// The lower size bound of a grid track.
+///
+/// Half of a CSS `minmax()`; see [`Track`] for the constructors that cover the
+/// common cases without naming either half.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrackMin {
     /// As small as the content can possibly be.
@@ -112,6 +165,9 @@ pub enum TrackMin {
 }
 
 /// The upper size bound of a grid track.
+///
+/// [`TrackMax::Fraction`] is the CSS `fr` unit: a share of whatever space is
+/// left after the fixed tracks have taken theirs.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrackMax {
     /// As large as the content.
@@ -132,6 +188,20 @@ pub enum TrackMax {
 ///
 /// Its shape is always `minmax(min, max)` as in CSS; short constructors are
 /// provided for the common cases.
+///
+/// ```
+/// use silka_core::tree::{repeat, Track, TrackMax, TrackMin};
+///
+/// // A sidebar of fixed width beside content that takes the rest.
+/// let columns = [Track::fixed(240.0), Track::fr(1.0)];
+/// assert_eq!(columns[0].min, TrackMin::Fixed(240.0));
+/// assert_eq!(columns[1].max, TrackMax::Fraction(1.0));
+///
+/// // The general form is always available, and `repeat` covers the rest.
+/// let responsive = Track::minmax(TrackMin::Fixed(160.0), TrackMax::Fraction(1.0));
+/// assert_eq!(responsive.max, TrackMax::Fraction(1.0));
+/// assert_eq!(repeat(3, Track::fr(1.0)).len(), 3);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Track {
     /// The lower bound.
@@ -208,6 +278,15 @@ pub fn repeat(count: usize, track: Track) -> Vec<Track> {
 }
 
 /// One placement edge of a grid item.
+///
+/// ```
+/// use silka_core::tree::{GridLine, GridSpan};
+///
+/// // Automatic placement follows the flow; explicit placement does not.
+/// assert_eq!(GridSpan::AUTO.start, GridLine::Auto);
+/// assert_eq!(GridSpan::line(2).start, GridLine::Line(2));
+/// assert_eq!(GridSpan::span(3).end, GridLine::Span(3));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GridLine {
     /// Placed automatically, following [`GridFlow`].
@@ -220,6 +299,18 @@ pub enum GridLine {
 }
 
 /// An item's placement along one grid axis (row or column).
+///
+/// ```
+/// use silka_core::tree::{GridLine, GridSpan};
+///
+/// // "From line 1 to line 3" — a header spanning two columns.
+/// let header = GridSpan::between(1, 3);
+/// assert_eq!(header.start, GridLine::Line(1));
+/// assert_eq!(header.end, GridLine::Line(3));
+///
+/// // Negative line numbers count from the end, as in CSS.
+/// assert_eq!(GridSpan::between(1, -1).end, GridLine::Line(-1));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct GridSpan {
     /// The start edge.
@@ -264,6 +355,26 @@ impl GridSpan {
 ///
 /// Held by [`super::TaffyBox`]; the view layer copies it across verbatim from
 /// the Dart-flavoured method chain (`row()`/`column()`/`grid()`).
+///
+/// ```
+/// use silka_core::tree::{Axis, ContainerStyle, CrossAlign, MainAlign, SPACING_UNIT};
+///
+/// let mut style = ContainerStyle::flex(Axis::Horizontal);
+/// style.main = MainAlign::SpaceBetween;
+/// style.cross = CrossAlign::Center;
+///
+/// // Gaps are locked to the 4pt scale rather than to free-floating numbers.
+/// // "Spacing" means the gap along the main axis — here, horizontally.
+/// style.set_spacing(3.0 * SPACING_UNIT);
+/// assert_eq!(style.gap_x, 12.0);
+/// assert_eq!(style.gap_y, 0.0);
+///
+/// // A grid has no single main axis, so spacing sets both — which is what an
+/// // application author means by the word.
+/// let mut cards = ContainerStyle::grid();
+/// cards.set_spacing(4.0 * SPACING_UNIT);
+/// assert_eq!((cards.gap_x, cards.gap_y), (16.0, 16.0));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainerStyle {
     /// Flexbox or Grid.
@@ -354,6 +465,20 @@ impl ContainerStyle {
 /// belongs to the child, but the parent is what reads it. Carried by
 /// [`super::LayoutItem`] and picked up by the parent through
 /// [`super::LayoutCtx::child_layout_style`].
+///
+/// ```
+/// use silka_core::tree::ItemStyle;
+///
+/// // The default child does not grow and does not shrink — Flutter's
+/// // behaviour, not the web's.
+/// let plain = ItemStyle::DEFAULT;
+/// assert_eq!(plain.grow, 0.0);
+///
+/// // `expanded()` is grow = 1 with a zero basis; `flexible()` keeps the
+/// // content's natural size as its basis.
+/// let expanded = ItemStyle { grow: 1.0, basis: Some(0.0), ..ItemStyle::DEFAULT };
+/// assert!(expanded.grow > plain.grow);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ItemStyle {
     /// The share of leftover space requested (0 = does not grow).
@@ -460,5 +585,16 @@ mod tests {
     fn skala_spacing_empat_poin() {
         assert_eq!(SPACING_UNIT, 4.0);
         assert_eq!(SPACING_UNIT * 3.0, 12.0);
+    }
+
+    #[test]
+    fn fallback_sepakat_dengan_unit_setiap_preset() {
+        // The constant is only a fallback; if a preset ever moved off 4pt, a
+        // view built without a theme would silently disagree with one built
+        // inside `with_theme`.
+        for preset in silka_theme::Preset::ALL {
+            let t = silka_theme::Theme::new(preset, silka_theme::Appearance::Light);
+            assert_eq!(t.spacing.unit, SPACING_UNIT, "{preset:?}");
+        }
     }
 }

@@ -6,7 +6,7 @@
 //! # use silka_theme::{Appearance, Theme};
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
-//! text(&fonts, "Nilai: 3")
+//! text(&fonts, "Value: 3")
 //!     .size(t.typography.body_size * 2.0)
 //!     .color(t.color.label);
 //! ```
@@ -32,9 +32,10 @@ use silka_core::access::{AccessNode, AccessRole};
 use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
 use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use silka_core::view::{Builder, View, ViewNode};
+use silka_core::view::{active_theme, Builder, TextStyled, View, ViewNode};
 use silka_paint::{Color, GlyphRun, Point, Size};
 use silka_text::{FontWeight, TextConstraints, TextStyle, TextWrap};
+use silka_theme::{ColorToken, FontToken, Token};
 
 use crate::fonts::Fonts;
 
@@ -46,6 +47,37 @@ use crate::fonts::Fonts;
 ///
 /// The source is kept because that is what diffing compares; the shaping
 /// result is kept because shaping is the most expensive work in the whole
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_widgets::{text, Fonts, TextBox};
+///
+/// let fonts = Fonts::bundled_only();
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, text(&fonts, "the quick brown fox").size(15.0));
+///
+/// // Wrapping follows the width handed down by the constraints — the leaf
+/// // never decides its own width.
+/// tree.layout(BoxConstraints::tight(Size::new(60.0, 200.0)));
+/// let id = tree.children(tree.root())[0];
+/// let narrow = tree
+///     .node_ref::<TextBox>(id)
+///     .expect("a text node")
+///     .measured_size();
+///
+/// tree.layout(BoxConstraints::loose(Size::new(600.0, 200.0)));
+/// let wide = tree.node_ref::<TextBox>(id).unwrap().measured_size();
+/// assert!(narrow.height > wide.height);
+///
+/// // The node keeps both the source and the shaping result, so a repaint
+/// // never reshapes — the most expensive work in the framework happens once.
+/// let node = tree.node_ref::<TextBox>(id).unwrap();
+/// assert_eq!(node.text(), "the quick brown fox");
+/// assert!(node.glyph_count() > 0);
+/// ```
 /// framework and must not be redone every frame (§3.3).
 pub struct TextBox {
     text: String,
@@ -191,6 +223,30 @@ impl RenderNode for TextBox {
 // ---------------------------------------------------------------------------
 
 /// Props for the text leaf.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_widgets::{text, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let build = |s: &str| text(&fonts, s.to_string()).size(15.0);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, build("Count 0"));
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// // Identical text is compared, found equal, and nothing is reshaped.
+/// assert!(reconcile(&mut tree, build("Count 0")).is_noop());
+///
+/// // Different text updates the same node — which is what lets the shaping
+/// // cache stay warm across a counter ticking upward.
+/// let changed = reconcile(&mut tree, build("Count 1"));
+/// assert_eq!(changed.replaced, 0);
+/// assert!(changed.updated > 0);
+/// ```
+/// Props for the text leaf.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextProps {
     text: String,
@@ -239,6 +295,27 @@ impl ViewNode for TextProps {
 /// A Dart-style text builder (§2.5).
 ///
 /// Created through [`text`]; becomes a [`View`] as soon as it is placed into
+///
+/// ```
+/// use silka_core::signals::Key;
+/// use silka_core::view::column;
+/// use silka_theme::FontToken;
+/// use silka_widgets::{text, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+///
+/// // A builder becomes a view the moment it is placed in a container, so it
+/// // is never converted by hand.
+/// let page = column([
+///     text(&fonts, "Title").font(FontToken::Title3),
+///     text(&fonts, "Body").text_sm().max_lines(3),
+/// ]);
+/// # let _ = page;
+///
+/// // A key gives a line a stable identity across a reorder.
+/// let keyed = text(&fonts, "Row").key(Key::from("row-1"));
+/// # let _ = keyed;
+/// ```
 /// any container.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Text {
@@ -251,6 +328,34 @@ pub struct Text {
 /// `fonts` is the application's text engine ([`Fonts`]); it is passed
 /// explicitly for as long as there is no ambient context for
 /// application-level dependencies.
+///
+/// ```
+/// use silka_theme::{Appearance, FontToken, Theme};
+/// use silka_text::FontWeight;
+/// use silka_widgets::{text, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // A label: size and weight come from a *token*, so the same line is right
+/// // under both presets.
+/// let title = text(&fonts, "Inbox")
+///     .font(FontToken::Title2)
+///     .color(theme.color.label);
+///
+/// // Tailwind-style utilities are the same vocabulary under shorter names.
+/// let caption = text(&fonts, "3 unread")
+///     .text_xs()
+///     .font_medium()
+///     .color(theme.color.secondary_label);
+///
+/// // A single line that must not wrap — the shape a button label or a table
+/// // cell needs.
+/// let cell = text(&fonts, "a very long value that will not fit")
+///     .single_line()
+///     .max_width(120.0);
+/// # let _ = (title, caption, cell, FontWeight::MEDIUM);
+/// ```
 pub fn text(fonts: &Fonts, text: impl Into<String>) -> Text {
     Text {
         props: TextProps {
@@ -330,6 +435,128 @@ impl Text {
     /// The a11y role — [`AccessRole::Label`] by default.
     pub fn role(self, role: AccessRole) -> Self {
         self.map(move |p| p.role = role)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The typography vocabulary (§2.6)
+// ---------------------------------------------------------------------------
+
+/// The token half of the builder — the **normal** way to style text.
+///
+/// [`Text::size`]/[`Text::weight`]/[`Text::color`] above take resolved values
+/// and stay as the layer underneath; what an application writes is a **role**:
+///
+/// ```
+/// # use silka_widgets::{text, Fonts};
+/// # use silka_theme::{Appearance, ColorToken, FontToken, Theme};
+/// # use silka_core::view::with_theme;
+/// # let fonts = Fonts::bundled_only();
+/// with_theme(Theme::cupertino(Appearance::Dark), || {
+///     text(&fonts, "Value: 3")
+///         .font(FontToken::Title2)
+///         .text_color(ColorToken::Label);
+/// });
+/// ```
+///
+/// Four properties travel together in one call — size, line height, weight and
+/// tracking — because that is what a typographic role *is*; picking them apart
+/// is how a type scale drifts. Resolution happens against the ambient theme
+/// ([`silka_core::view::with_theme`]), which the frame installs, so the call
+/// site never names a theme (§2.5).
+impl Text {
+    /// The full text style of one typography token: size, line height, weight
+    /// and tracking at once.
+    pub fn font(self, token: FontToken) -> Self {
+        let gaya = token.resolve(&active_theme());
+        self.map(move |p| {
+            p.style.size = gaya.size;
+            p.style.line_height = gaya.line_height;
+            p.style.weight = FontWeight(gaya.weight);
+            p.style.tracking = gaya.tracking;
+        })
+    }
+
+    /// The smallest text — [`FontToken::Caption2`].
+    pub fn text_xs(self) -> Self {
+        self.font(FontToken::Caption2)
+    }
+
+    /// Small supporting text — [`FontToken::Footnote`].
+    pub fn text_sm(self) -> Self {
+        self.font(FontToken::Footnote)
+    }
+
+    /// The UI default — [`FontToken::Body`].
+    pub fn text_base(self) -> Self {
+        self.font(FontToken::Body)
+    }
+
+    /// A small title — [`FontToken::Title3`].
+    pub fn text_lg(self) -> Self {
+        self.font(FontToken::Title3)
+    }
+
+    /// A medium title — [`FontToken::Title2`].
+    pub fn text_xl(self) -> Self {
+        self.font(FontToken::Title2)
+    }
+
+    /// A large title — [`FontToken::Title1`].
+    pub fn text_2xl(self) -> Self {
+        self.font(FontToken::Title1)
+    }
+
+    /// A page title — [`FontToken::LargeTitle`].
+    pub fn text_3xl(self) -> Self {
+        self.font(FontToken::LargeTitle)
+    }
+
+    /// Weight 400 — body text.
+    pub fn font_regular(self) -> Self {
+        self.weight(FontWeight::REGULAR)
+    }
+
+    /// Weight 500 — control labels.
+    pub fn font_medium(self) -> Self {
+        self.weight(FontWeight::MEDIUM)
+    }
+
+    /// Weight 600 — HIG-style titles.
+    pub fn font_semibold(self) -> Self {
+        self.weight(FontWeight::SEMIBOLD)
+    }
+
+    /// Weight 700 — large titles.
+    pub fn font_bold(self) -> Self {
+        self.weight(FontWeight::BOLD)
+    }
+
+    /// The glyph color, named by its role (`Label`, `SecondaryLabel`,
+    /// `OnAccent`, …).
+    pub fn text_color(self, token: ColorToken) -> Self {
+        let warna = token.resolve(&active_theme());
+        self.map(move |p| p.color = warna)
+    }
+
+    /// **Escape hatch**: a glyph color that is not a token — syntax
+    /// highlighting, a user-picked label color. Spelled `_raw` so it shows up
+    /// in review (§2.6).
+    pub fn text_color_raw(self, color: Color) -> Self {
+        self.color(color)
+    }
+}
+
+/// The trait behind the vocabulary, implemented so that a `Builder<TextProps>`
+/// — the form these props take once they are inside a view tree — speaks it
+/// too.
+impl TextStyled for TextProps {
+    fn text_style_mut(&mut self) -> &mut TextStyle {
+        &mut self.style
+    }
+
+    fn text_color_mut(&mut self) -> &mut Color {
+        &mut self.color
     }
 }
 
@@ -494,5 +721,56 @@ mod tests {
         assert_eq!(e.node.role, AccessRole::Label);
         // The a11y bounds come from the layout result, not from the widget.
         assert_eq!(e.bounds.size, tree.size(e.id));
+    }
+
+    // -- the typography vocabulary (§2.6) ---------------------------------
+
+    #[test]
+    fn font_token_membawa_empat_properti_sekaligus() {
+        use silka_core::view::with_theme;
+        use silka_theme::{Appearance, Theme};
+
+        let f = Fonts::bundled_only();
+        let t = Theme::cupertino(Appearance::Light);
+        with_theme(t, || {
+            let v = text(&f, "Judul").font(FontToken::Title2);
+            let gaya = t.typography.title2;
+            assert_eq!(v.props.style.size, gaya.size);
+            assert_eq!(v.props.style.line_height, gaya.line_height);
+            assert_eq!(v.props.style.weight, FontWeight(gaya.weight));
+            assert_eq!(v.props.style.tracking, gaya.tracking);
+        });
+    }
+
+    #[test]
+    fn peran_yang_sama_berukuran_beda_di_tiap_preset() {
+        use silka_core::view::with_theme;
+        use silka_theme::{Appearance, Theme};
+
+        let f = Fonts::bundled_only();
+        let ukuran = |t: Theme| with_theme(t, || text(&f, "x").text_xl().props.style.size);
+        // One call site, two presets, two numbers — which is the whole point of
+        // naming the role instead of the size.
+        assert_ne!(
+            ukuran(Theme::cupertino(Appearance::Light)),
+            ukuran(Theme::tailwind(Appearance::Light))
+        );
+    }
+
+    #[test]
+    fn warna_teks_diresolusi_dari_token_bukan_dari_literal() {
+        use silka_core::view::with_theme;
+        use silka_theme::{Appearance, Theme};
+
+        let f = Fonts::bundled_only();
+        for t in [
+            Theme::cupertino(Appearance::Light),
+            Theme::cupertino(Appearance::Dark),
+        ] {
+            with_theme(t, || {
+                let v = text(&f, "x").text_color(ColorToken::SecondaryLabel);
+                assert_eq!(v.props.color, t.color.secondary_label);
+            });
+        }
     }
 }

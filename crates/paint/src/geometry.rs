@@ -3,8 +3,41 @@
 //! Everything in the framework above `silka-paint` speaks in logical points;
 //! only the surface layer in `silka-renderer` multiplies by the scale factor to
 //! get physical pixels. That way DPI never leaks into widget code.
+//!
+//! ```
+//! use silka_paint::{Insets, Point, Rect, Size};
+//!
+//! // A card laid out in points — the same numbers on a Retina display and on
+//! // a 1× monitor.
+//! let card = Rect::new(24.0, 24.0, 180.0, 96.0);
+//! assert_eq!(card.size, Size::new(180.0, 96.0));
+//! assert_eq!(card.center(), Point::new(114.0, 72.0));
+//!
+//! // Padding shrinks a rect, symmetrically around the same centre.
+//! let content = card.deflate(Insets::all(12.0));
+//! assert_eq!(content.size.width, 156.0);
+//! assert_eq!(content.origin.x, 36.0);
+//! assert_eq!(content.center(), card.center());
+//!
+//! // Hit testing is the other everyday use.
+//! assert!(card.contains(Point::new(30.0, 30.0)));
+//! assert!(!card.contains(Point::new(30.0, 200.0)));
+//!
+//! // Clipping is an intersection, and `None` means "nothing to draw at all" —
+//! // the cheapest possible answer for an off-screen node.
+//! assert_eq!(card.intersect(Rect::new(400.0, 0.0, 10.0, 10.0)), None);
+//! ```
 
 /// A point on the plane, in logical points.
+///
+/// ```
+/// use silka_paint::Point;
+///
+/// let p = Point::new(24.0, 16.0);
+/// assert_eq!(p.x, 24.0);
+/// // y grows downwards, the way every windowing system reports it.
+/// assert!(p.y > Point::ZERO.y);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
     /// Horizontal coordinate.
@@ -24,6 +57,18 @@ impl Point {
 }
 
 /// A size in logical points.
+///
+/// ```
+/// use silka_paint::Size;
+///
+/// let card = Size::new(180.0, 96.0);
+/// // The shorter side is what a corner radius may never exceed.
+/// assert_eq!(card.min_side(), 96.0);
+/// assert!(!card.is_empty());
+///
+/// // A minimized window reports a zero dimension; nothing should be drawn.
+/// assert!(Size::new(0.0, 720.0).is_empty());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Size {
     /// Width.
@@ -56,6 +101,27 @@ impl Size {
 }
 
 /// An axis-aligned rectangle, in logical points.
+///
+/// ```
+/// use silka_paint::{Insets, Point, Rect};
+///
+/// let card = Rect::new(24.0, 24.0, 180.0, 96.0);
+/// assert_eq!(card.max_x(), 204.0);
+/// assert_eq!(card.center(), Point::new(114.0, 72.0));
+///
+/// // Membership is half-open: the left/top edges are inside, right/bottom are not.
+/// assert!(card.contains(Point::new(24.0, 24.0)));
+/// assert!(!card.contains(Point::new(204.0, 72.0)));
+///
+/// // The paint pass lifts local coordinates into window coordinates this way —
+/// // a node never knows its own position.
+/// assert_eq!(card.translated(Point::new(0.0, 100.0)).min_y(), 124.0);
+///
+/// // Padding shrinks a rect; clipping intersects two of them.
+/// let content = card.deflate(Insets::all(12.0));
+/// assert_eq!(content.size.width, 156.0);
+/// assert_eq!(card.intersect(Rect::new(0.0, 0.0, 100.0, 100.0)), Some(Rect::new(24.0, 24.0, 76.0, 76.0)));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
     /// Top-left corner.
@@ -162,6 +228,19 @@ impl Rect {
 /// The field names use physical `left`/`right`; **RTL mirroring** (§9.8)
 /// happens one level up, when `start`/`end` tokens are resolved to physical
 /// sides.
+///
+/// ```
+/// use silka_paint::Insets;
+///
+/// let padding = Insets::all(12.0);
+/// assert_eq!(padding.horizontal(), 24.0);
+/// assert_eq!(padding.vertical(), 24.0);
+///
+/// // Asymmetric padding: a button is wider than it is tall.
+/// let button = Insets::symmetric(16.0, 8.0);
+/// assert_eq!(button.left, 16.0);
+/// assert_eq!(button.top, 8.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Insets {
     /// Distance from the top edge.

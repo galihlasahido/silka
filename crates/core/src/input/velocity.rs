@@ -45,6 +45,18 @@ pub const HORIZON: Duration = Duration::from_millis(100);
 pub const MAX_SAMPLES: usize = 20;
 
 /// A velocity in **logical points per second**.
+///
+/// This is the unit a spring's `set_velocity` takes, which is what makes the
+/// fling → spring handoff a straight hand-over rather than a conversion.
+///
+/// ```
+/// use silka_core::input::Velocity;
+///
+/// let flick = Velocity::new(0.0, -1_800.0); // upward, fast
+/// assert!(flick.y < 0.0);
+/// assert!(flick.magnitude() > 0.0);
+/// assert_eq!(Velocity::ZERO.magnitude(), 0.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Velocity {
     /// The horizontal component.
@@ -97,6 +109,33 @@ struct Sample {
 ///
 /// One instance per [`crate::input::PointerId`]; the router creates and
 /// discards them along with the pointer's lifetime.
+///
+/// It is Flutter's second-degree least-squares regression over a short horizon,
+/// not a last-two-samples difference — which is why a finger that pauses before
+/// lifting hands over a velocity near zero instead of whatever the last two
+/// jittery samples happened to say.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::animation::SpringValue;
+/// use silka_core::input::VelocityTracker;
+/// use silka_paint::Point;
+///
+/// let mut tracker = VelocityTracker::new();
+/// for i in 0..8u64 {
+///     tracker.add(Duration::from_millis(i * 8), Point::new(0.0, -(i as f32) * 12.0));
+/// }
+///
+/// // The gesture handoff (§3.5): the finger's speed at release becomes the
+/// // spring's starting velocity, so a fling has no seam in it.
+/// let velocity = tracker.velocity();
+/// assert!(velocity.y < 0.0);
+///
+/// let mut scroll = SpringValue::new(0.0);
+/// scroll.set_velocity(velocity.y);
+/// scroll.set_target(-400.0);
+/// assert!(scroll.is_animating());
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct VelocityTracker {
     samples: VecDeque<Sample>,

@@ -28,6 +28,40 @@ use std::rc::Rc;
 use silka_text::TextEngine;
 
 /// A `Clone`-able handle to the application's single [`TextEngine`].
+///
+/// One per application, not one per widget: creating an engine scans the
+/// system fonts and allocates a glyph atlas, so a second one would pay for
+/// both again and then rasterise every glyph twice.
+///
+/// It is passed explicitly to every constructor for as long as there is no
+/// ambient context for application-level dependencies — acknowledged debt, and
+/// the reason `fonts` is the first parameter of half this crate.
+///
+/// ```
+/// use silka_widgets::Fonts;
+///
+/// // Tests and CI want determinism: no system scan, so glyph metrics are the
+/// // same on every machine. Applications call `Fonts::new()` instead.
+/// let fonts = Fonts::bundled_only();
+///
+/// // Cloning is cheap and shares the engine, which is what makes passing it
+/// // into a dozen widgets free.
+/// let handle = fonts.clone();
+/// assert!(fonts.ptr_eq(&handle));
+///
+/// // Two engines are two atlases — which is exactly what to avoid.
+/// assert!(!fonts.ptr_eq(&Fonts::bundled_only()));
+///
+/// // The scale factor lives here, so text is rasterised at the resolution of
+/// // the screen it will appear on.
+/// fonts.set_scale_factor(2.0);
+/// assert_eq!(fonts.scale_factor(), 2.0);
+///
+/// // Direct access, for the few places that genuinely need the engine.
+/// let family = fonts.with(|engine| engine.ui_family().map(str::to_owned));
+/// assert!(family.is_some());
+/// ```
+/// A `Clone`-able handle to the application's single [`TextEngine`].
 #[derive(Clone)]
 pub struct Fonts(Rc<RefCell<TextEngine>>);
 

@@ -226,13 +226,21 @@ pub struct ListBuilder {
 /// `item` is called **only** for rows that are actually visible, so `count`
 /// may run into the hundreds of thousands:
 ///
-/// ```ignore
-/// let daftar = use_list_state();
-/// list(&t, daftar, transaksi.len(), move |i| baris(&transaksi[i]))
+/// ```
+/// # use silka_core::signals::Runtime;
+/// # use silka_core::view::{fixed, View};
+/// # use silka_theme::{Appearance, Theme};
+/// # use silka_widgets::{list, ListState};
+/// # let rt = Runtime::new();
+/// # let t = Theme::cupertino(Appearance::Dark);
+/// let state = ListState::new(&rt);
+///
+/// // A hundred thousand rows; only the visible dozen ever call `item`.
+/// list(&t, state, 100_000, |_i| View::from(fixed(240.0, 44.0)))
 ///     .item_extent(44.0)
 ///     .separators(t.space(0.25))
-///     .label("Transaksi")
-///     .on_activate(move |i| buka(i))
+///     .label("Transactions")
+///     .on_activate(|i| println!("open row {i}"));
 /// ```
 ///
 /// `theme` is the source of every value it uses (§2.6, §2.7); `state` is what

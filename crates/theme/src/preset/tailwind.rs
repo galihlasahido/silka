@@ -13,6 +13,24 @@
 //!
 //! What does **not** come along from the web: the CSS. No parser, no cascade,
 //! no selectors — only the numbers (§2.6).
+//!
+//! ```
+//! use silka_paint::CornerStyle;
+//! use silka_theme::{palette, Appearance, RadiusToken, Theme};
+//!
+//! let t = Theme::tailwind(Appearance::Dark);
+//!
+//! // `rounded-lg` really is 8px on a circular arc, as on the web.
+//! assert_eq!(t.radius_of(RadiusToken::Lg), 8.0);
+//! assert_eq!(t.corners_of(RadiusToken::Lg).style, CornerStyle::Arc);
+//!
+//! // The numbers come straight from the published ramps — the accent is not
+//! // an approximation of Tailwind blue, it *is* Tailwind blue.
+//! assert_eq!(t.color.accent, palette::tailwind::BLUE.get(palette::Step::S500));
+//!
+//! // And no optical sizing: this preset never pretends to be SF.
+//! assert!(!t.typography.optical_sizing);
+//! ```
 
 use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
@@ -152,6 +170,22 @@ pub fn shadows(appearance: Appearance) -> ShadowTokens {
 /// `text-sm` (14/20) is what becomes body — not `text-base` — because that is
 /// shadcn/ui's default for desktop UI, and because 16px feels large in a dense
 /// window.
+///
+/// ```
+/// use silka_theme::{preset::tailwind, FontToken};
+///
+/// let scale = tailwind::typography();
+///
+/// // `text-sm`, not `text-base`, is body — the decision this scale exists to
+/// // record.
+/// let body = scale.get(FontToken::Body);
+/// assert_eq!(body.size, 14.0);
+/// assert_eq!(body.line_height_px(), 20.0);
+///
+/// // Tailwind's scale carries no tracking and no optical axis at all.
+/// assert!(!scale.optical_sizing);
+/// assert_eq!(body.tracking, 0.0);
+/// ```
 pub fn typography() -> TypographyTokens {
     let gaya = |size: f32, line: f32, w: u16| TypeStyle::new(size, line).weight(w);
 

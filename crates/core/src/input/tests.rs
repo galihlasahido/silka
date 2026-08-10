@@ -1087,23 +1087,35 @@ fn latar_mengikuti_state_dan_bentuk_sudutnya_selalu_bentuk_sentuh() {
     let mut router = InputRouter::new();
     let tombol = anak(&tree, &[0]);
 
-    let dekorasi = |tree: &RenderTree| {
+    // The **target** the springs are aimed at: the state's colour, arrived at
+    // over several frames rather than cut to (see the spring tests in
+    // `tree::interactive_tests`).
+    let tujuan = |tree: &RenderTree| {
         tree.node_ref::<Interactive>(tombol)
             .expect("node tombol")
-            .dekorasi_aktif()
+            .target_decoration()
     };
-    assert_eq!(dekorasi(&tree).background, diam);
+    assert_eq!(tujuan(&tree).background, diam);
     // The shape that is drawn = the shape that is hit-tested (§3.6).
-    assert_eq!(dekorasi(&tree).corners, sudut);
+    assert_eq!(tujuan(&tree).corners, sudut);
 
     router.dispatch(&mut tree, &gerak(Point::new(50.0, 20.0), ms(0)));
-    assert_eq!(dekorasi(&tree).background, hover);
+    assert_eq!(tujuan(&tree).background, hover);
 
     router.dispatch(&mut tree, &tekan(Point::new(50.0, 20.0), ms(10)));
-    assert_eq!(dekorasi(&tree).background, tekan_warna);
+    assert_eq!(tujuan(&tree).background, tekan_warna);
 
     router.dispatch(&mut tree, &lepas(Point::new(50.0, 20.0), ms(30)));
-    assert_eq!(dekorasi(&tree).background, hover, "masih di atas tombol");
+    assert_eq!(tujuan(&tree).background, hover, "masih di atas tombol");
+
+    // And once the springs have settled, what is drawn equals that target.
+    tree.settle_motion();
+    let digambar = tree
+        .node_ref::<Interactive>(tombol)
+        .expect("node tombol")
+        .current_decoration();
+    assert_eq!(digambar.background, hover);
+    assert_eq!(digambar.corners, sudut);
 }
 
 #[test]
@@ -1137,5 +1149,9 @@ fn cincin_fokus_hanya_digambar_saat_node_memegang_fokus() {
             .unwrap()
             .focused
     );
+    // The ring grows in on a spring, so this test settles it first: what is
+    // being asserted here is *that it is drawn*, not how it arrives (that is
+    // `tree::interactive_tests`).
+    tree.settle_motion();
     assert_eq!(kotak_bergaris(&mut tree), 1, "cincin fokus muncul");
 }

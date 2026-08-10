@@ -36,6 +36,16 @@ use crate::date::Date;
 use crate::ticks::TimeUnit;
 
 /// Where a currency symbol sits relative to the number.
+///
+/// ```
+/// use silka_chart::format::{Locale, NumberFormat};
+///
+/// let amount = NumberFormat::currency("Rp");
+/// // Indonesian puts the symbol in front with a space…
+/// assert_eq!(amount.format(1500.0, &Locale::ID_ID), "Rp 1.500");
+/// // …American English puts it flush against the digits.
+/// assert_eq!(NumberFormat::currency("$").format(1500.0, &Locale::EN_US), "$1,500");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CurrencyPosition {
     /// `$1,500` — directly in front.
@@ -47,6 +57,16 @@ pub enum CurrencyPosition {
 }
 
 /// How dates are ordered when both day and month appear.
+///
+/// ```
+/// use silka_chart::{date::Date, format::Locale, ticks::TimeUnit};
+///
+/// let days = Date::new(2026, 8, 10).to_days() as f64;
+///
+/// // The same tick, two reading habits — decided by the locale, not the chart.
+/// assert_eq!(Locale::EN_US.date(days, TimeUnit::Day), "Aug 10");
+/// assert_eq!(Locale::ID_ID.date(days, TimeUnit::Day), "10 Agu");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DateOrder {
     /// `10 Aug` — most of the world.
@@ -56,6 +76,17 @@ pub enum DateOrder {
 }
 
 /// One word-scale abbreviation: the magnitude it starts at and its suffix.
+///
+/// Word scale is not a suffix table that can be translated word for word: some
+/// locales group by thousands and some do not, so each [`Locale`] carries its
+/// own list, largest magnitude first.
+///
+/// ```
+/// use silka_chart::format::{Locale, NumberFormat};
+///
+/// assert_eq!(NumberFormat::Compact.format(1.5e6, &Locale::EN_US), "1.5M");
+/// assert_eq!(NumberFormat::Compact.format(1.5e6, &Locale::ID_ID), "1,5 jt");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CompactUnit {
     /// The magnitude this suffix represents (1e3, 1e6, …).
@@ -69,6 +100,20 @@ pub struct CompactUnit {
 ///
 /// A plain value with `'static` contents, like [`Theme`](silka_theme::Theme):
 /// switching locale rebuilds it rather than invalidating hidden state.
+///
+/// ```
+/// use silka_chart::format::Locale;
+///
+/// // Separators are a locale property, never a constant in the chart code.
+/// assert_eq!(Locale::EN_US.number(1234567.0, 0), "1,234,567");
+/// assert_eq!(Locale::ID_ID.number(1234567.0, 0), "1.234.567");
+///
+/// // Group sizes are not always three: the last entry repeats.
+/// assert_eq!(Locale::EN_IN.number(1234567.0, 0), "12,34,567");
+///
+/// // Every built-in locale is available for a cross-locale test sweep.
+/// assert_eq!(Locale::ALL.len(), 4);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Locale {
     /// The BCP-47 tag, for debugging and for tests to name their case.
@@ -385,6 +430,23 @@ impl Default for Locale {
 }
 
 /// How one axis (or one series' values) is turned into text.
+///
+/// ```
+/// use silka_chart::format::{Locale, NumberFormat};
+///
+/// let id = Locale::ID_ID;
+///
+/// assert_eq!(NumberFormat::Fixed(2).format(3.14159, &id), "3,14");
+/// assert_eq!(NumberFormat::Percent(0).format(0.42, &id), "42%");
+/// assert_eq!(NumberFormat::Compact.format(1.2e9, &id), "1,2 M");
+/// assert_eq!(NumberFormat::currency("Rp").format(8e5, &id), "Rp 800.000");
+///
+/// // `Auto` is the default because a value axis only learns its magnitude at
+/// // layout time: the decimals come from the tick step.
+/// assert_eq!(NumberFormat::default(), NumberFormat::Auto);
+/// assert_eq!(NumberFormat::Auto.format_tick(0.25, 0.25, &id), "0,25");
+/// assert_eq!(NumberFormat::Auto.format_tick(2.0, 1.0, &id), "2");
+/// ```
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum NumberFormat {
     /// Decimal places chosen from the tick step — the default, and the right

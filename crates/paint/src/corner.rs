@@ -5,10 +5,60 @@
 //! plain circular **arc** in the Tailwind preset. That is why the corner shape
 //! flows through as a draw-command parameter all the way to the SDF shader — it
 //! must not be hardcoded in the renderer, and must not be chosen by widget code.
+//!
+//! ```
+//! use silka_paint::{CornerRadii, Corners, CornerStyle, Size};
+//!
+//! // The preset picks the curve; the widget only ever names a radius token.
+//! let cupertino = Corners::uniform(14.0, CornerStyle::squircle());
+//! let tailwind = Corners::uniform(14.0, CornerStyle::Arc);
+//!
+//! // Same nominal radius, different exponent travelling to the shader — which
+//! // is exactly why this is a parameter and not a constant.
+//! assert_eq!(tailwind.style.superellipse_exponent(), 2.0);
+//! assert_eq!(cupertino.style.superellipse_exponent(), 4.0);
+//!
+//! // Per-corner radii are how a segmented control keeps its outer edges round
+//! // and its inner seam square.
+//! let leading = Corners::new(
+//!     CornerRadii {
+//!         top_right: 0.0,
+//!         bottom_right: 0.0,
+//!         ..CornerRadii::all(8.0)
+//!     },
+//!     CornerStyle::squircle(),
+//! );
+//! assert_eq!(leading.radii.top_right, 0.0);
+//! assert_eq!(leading.radii.top_left, 8.0);
+//!
+//! // Radii are clamped to the box so a 4pt-tall track can never self-intersect.
+//! let clamped = Corners::uniform(40.0, CornerStyle::Arc).clamp_to(Size::new(60.0, 4.0));
+//! assert_eq!(clamped.radii.top_left, 2.0);
+//! ```
 
 use crate::geometry::{Point, Rect, Size};
 
 /// The curve shape of a corner.
+///
+/// Which of the two variants a widget gets is decided by the active preset, not
+/// by the widget: `RadiusToken::Lg` is a squircle under Cupertino and an arc
+/// under Tailwind.
+///
+/// ```
+/// use silka_paint::CornerStyle;
+///
+/// // The two numbers that travel to the shader as per-instance data.
+/// assert_eq!(CornerStyle::Arc.superellipse_exponent(), 2.0); // a circle
+/// assert_eq!(CornerStyle::squircle().superellipse_exponent(), 4.0); // the HIG superellipse
+///
+/// // A squircle's curve starts further from the corner point than an arc's,
+/// // which is why the same nominal radius looks softer.
+/// assert_eq!(CornerStyle::Arc.extent_factor(), 1.0);
+/// assert!(CornerStyle::squircle().extent_factor() > 1.5);
+///
+/// // Zero smoothing is exactly an arc — the presets are one continuum.
+/// assert_eq!(CornerStyle::Squircle { smoothing: 0.0 }.superellipse_exponent(), 2.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum CornerStyle {
     /// A plain circular arc (web-style `border-radius` / the Tailwind preset).
@@ -69,6 +119,22 @@ impl CornerStyle {
 }
 
 /// Per-corner radii, in logical points.
+///
+/// ```
+/// use silka_paint::{CornerRadii, Size};
+///
+/// let radii = CornerRadii {
+///     top_left: 14.0,
+///     top_right: 14.0,
+///     ..CornerRadii::ZERO
+/// };
+/// assert_eq!(radii.max(), 14.0);
+/// assert!(!radii.is_sharp());
+///
+/// // A `radius_full` token is 9999; clamping is what keeps the SDF sane.
+/// let pill = CornerRadii::all(9999.0).clamp_to(Size::new(120.0, 32.0));
+/// assert_eq!(pill.top_left, 16.0); // half of the shorter side
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct CornerRadii {
     /// Top-left corner radius.
@@ -126,6 +192,24 @@ impl CornerRadii {
 ///
 /// Widgets never assemble this themselves — it comes from theme tokens
 /// (`silka-theme`), so the active preset is what decides arc vs. squircle.
+///
+/// ```
+/// use silka_paint::{CornerStyle, Corners, Point, Size};
+///
+/// let corners = Corners::uniform(14.0, CornerStyle::squircle());
+/// let size = Size::new(120.0, 44.0);
+///
+/// // Clamping happens against the box, so a pill radius cannot blow up.
+/// assert_eq!(corners.clamp_to(size).radii.max(), 14.0);
+///
+/// // The same value answers "what is drawn?" and "what is clickable?" —
+/// // that is the whole reason corner geometry lives down here (§3.6).
+/// assert!(corners.contains(size, Point::new(60.0, 22.0)));
+/// assert!(!corners.contains(size, Point::new(0.5, 0.5))); // outside the curve
+///
+/// // Sharp corners are the degenerate case, not a special path.
+/// assert!(Corners::SHARP.contains(size, Point::new(0.0, 0.0)));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Corners {
     /// Per-corner radii.

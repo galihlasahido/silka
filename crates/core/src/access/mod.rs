@@ -71,7 +71,8 @@ mod bridge;
 mod tests;
 
 pub use node::{
-    AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole, AccessToggled,
+    AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole, AccessTextSelection,
+    AccessToggled,
 };
 pub use tree::{AccessEntry, AccessTree, AccessUpdate};
 

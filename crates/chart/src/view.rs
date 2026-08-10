@@ -54,6 +54,26 @@ use crate::tooltip::ChartHover;
 // ---------------------------------------------------------------------------
 
 /// The props behind every chart view.
+///
+/// What [`ChartBuilder`] turns into: the spec, the resolved data, and the
+/// already-resolved style. It is what the view-diff layer compares between
+/// rebuilds, so the caller's row type is long gone by this point.
+///
+/// ```
+/// use silka_core::view::View;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+/// use silka_chart::line_chart;
+///
+/// # let fonts = Fonts::bundled_only();
+/// # let theme = Theme::cupertino(Appearance::Dark);
+/// let chart = line_chart(&fonts, &theme, vec![1.0f64, 4.0, 2.0])
+///     .y(|v: &f64| *v)
+///     .animated(false);
+///
+/// // A chart is one view node, whatever it draws inside.
+/// let _view: View = chart.into();
+/// ```
 #[derive(Clone)]
 pub struct ChartProps {
     spec: ChartSpec,
@@ -128,6 +148,28 @@ impl ViewNode for ChartProps {
 ///
 /// Generic over the caller's row type only until `.x`/`.y` have been applied;
 /// what it accumulates is already plain numbers.
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+/// use silka_chart::{bar_chart, format::{Locale, NumberFormat}};
+///
+/// struct Month { name: &'static str, income: f64, outgoing: f64 }
+/// # let fonts = Fonts::bundled_only();
+/// # let theme = Theme::cupertino(Appearance::Dark);
+/// # let data = vec![Month { name: "Jan", income: 1.2e6, outgoing: 8.0e5 }];
+///
+/// // The closures read the application's own row type; everything downstream
+/// // of them is plain numbers.
+/// bar_chart(&fonts, &theme, data)
+///     .x_label(|m: &Month| m.name.to_string())
+///     .y_named("Income", |m: &Month| m.income)
+///     .y_named("Outgoing", |m: &Month| m.outgoing)
+///     .stacked()
+///     .legend(true)
+///     .locale(Locale::ID_ID)
+///     .value_format(NumberFormat::Compact);
+/// ```
 pub struct ChartBuilder<T> {
     rows: Vec<T>,
     spec: ChartSpec,
@@ -443,6 +485,36 @@ impl<T> From<ChartBuilder<T>> for View {
 /// The form to reach for when the question is "how did this change" — the eye
 /// reads the slope, which is why the value axis is *not* forced to include zero
 /// (see [`ChartBuilder::zero_based`]).
+///
+/// ```
+/// use silka_chart::line_chart;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// struct Reading {
+///     at: &'static str,
+///     cpu: f64,
+///     memory: f64,
+/// }
+/// let data = vec![
+///     Reading { at: "09:00", cpu: 12.0, memory: 48.0 },
+///     Reading { at: "10:00", cpu: 31.0, memory: 51.0 },
+///     Reading { at: "11:00", cpu: 24.0, memory: 55.0 },
+/// ];
+///
+/// // Two series on one chart: `y_named` once per line, and the categorical
+/// // palette assigns colors that stay distinguishable to colorblind readers.
+/// let chart = line_chart(&fonts, &theme, data)
+///     .x_label(|d: &Reading| d.at.to_string())
+///     .y_named("CPU", |d: &Reading| d.cpu)
+///     .y_named("Memory", |d: &Reading| d.memory)
+///     .legend(true)
+///     .animated(true);
+/// # let _ = chart;
+/// ```
 pub fn line_chart<T>(
     fonts: &Fonts,
     theme: &Theme,
@@ -456,6 +528,32 @@ pub fn line_chart<T>(
 /// Worth the ink only when the filled quantity is genuinely cumulative — a
 /// total, a volume. For comparing two independent series, two lines read better
 /// than two overlapping fills.
+///
+/// ```
+/// use silka_chart::area_chart;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// struct Day {
+///     label: &'static str,
+///     visitors: f64,
+/// }
+/// let data = vec![
+///     Day { label: "Mon", visitors: 1_200.0 },
+///     Day { label: "Tue", visitors: 1_850.0 },
+/// ];
+///
+/// // A filled quantity is only honest when it is cumulative, and a filled
+/// // area is only honest when the axis starts at zero.
+/// let chart = area_chart(&fonts, &theme, data)
+///     .x_label(|d: &Day| d.label.to_string())
+///     .y_named("Visitors", |d: &Day| d.visitors)
+///     .zero_based(true);
+/// # let _ = chart;
+/// ```
 pub fn area_chart<T>(
     fonts: &Fonts,
     theme: &Theme,
@@ -469,6 +567,39 @@ pub fn area_chart<T>(
 /// Defaults to a categorical x axis and a zero-based value axis, and neither
 /// default is cosmetic: a bar's length *is* its value, so an axis that does not
 /// start at zero misstates every comparison on the chart.
+///
+/// ```
+/// use silka_chart::bar_chart;
+/// use silka_chart::format::{Locale, NumberFormat};
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// struct Month {
+///     name: &'static str,
+///     income: f64,
+///     expense: f64,
+/// }
+/// let data = vec![
+///     Month { name: "Jan", income: 1.2e9, expense: 8.0e8 },
+///     Month { name: "Feb", income: 1.4e9, expense: 9.1e8 },
+/// ];
+///
+/// // Stacked bars answer "what makes up the total"; grouped bars (the
+/// // default) answer "how do these compare". Billions become "1,2 M" rather
+/// // than a wall of digits, in the reader's own locale.
+/// let chart = bar_chart(&fonts, &theme, data)
+///     .x_label(|d: &Month| d.name.to_string())
+///     .y_named("Income", |d: &Month| d.income)
+///     .y_named("Expense", |d: &Month| d.expense)
+///     .stacked()
+///     .horizontal()
+///     .locale(Locale::ID_ID)
+///     .value_format(NumberFormat::Compact);
+/// # let _ = chart;
+/// ```
 pub fn bar_chart<T>(
     fonts: &Fonts,
     theme: &Theme,
@@ -482,6 +613,20 @@ pub fn bar_chart<T>(
 /// Takes plain values rather than rows, because that is how a sparkline is
 /// actually used — inside a table cell, beside a number, where there is room
 /// for the shape of a trend and nothing else.
+///
+/// ```
+/// use silka_chart::sparkline;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Plain numbers in, no accessors: the shape of the trend is the whole
+/// // message, so there is nothing to label.
+/// let trend = sparkline(&fonts, &theme, [4.0, 9.0, 7.0, 12.0, 11.0, 18.0]);
+/// # let _ = trend;
+/// ```
 pub fn sparkline(
     fonts: &Fonts,
     theme: &Theme,

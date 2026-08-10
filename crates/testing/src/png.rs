@@ -27,6 +27,28 @@
 //! The output is validated two ways: round-tripped through this module's own
 //! decoder, and — the check that actually matters — opened by the operating
 //! system's image stack, which is what a reviewer will use.
+//!
+//! ```
+//! use silka_testing::png;
+//! use silka_testing::Image;
+//!
+//! let mut capture = Image::filled(64, 64, [28, 28, 30, 255]);
+//! capture.set_pixel(10, 10, [10, 132, 255, 255]);
+//!
+//! let bytes = png::encode(&capture);
+//!
+//! // A real PNG, so a reviewer can double-click the failing golden.
+//! assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+//!
+//! // Flat UI artwork compresses hard, which is the point: goldens are
+//! // committed, one per widget per cell, and they only ever accumulate.
+//! assert!(bytes.len() < capture.pixels().len() / 4);
+//!
+//! // And the round trip is lossless — a golden is a comparison target, so
+//! // "close enough" would defeat the whole exercise.
+//! let decoded = png::decode(&bytes).expect("our own encoder writes fixed-Huffman blocks");
+//! assert_eq!(decoded.pixels(), capture.pixels());
+//! ```
 
 use core::fmt;
 
@@ -44,6 +66,17 @@ const MAX_STORED: usize = 0xFFFF;
 const COLOR_RGBA: u8 = 6;
 
 /// Why a PNG could not be read.
+///
+/// ```
+/// use silka_testing::png::{self, PngError};
+///
+/// // Anything that is not a PNG is rejected before it can be misread.
+/// assert_eq!(png::decode(b"not a png at all"), Err(PngError::NotPng));
+/// ```
+///
+/// [`PngError::Compressed`] is the one worth recognising: this decoder handles
+/// only the stored DEFLATE blocks the matching encoder writes, so a golden file
+/// produced by another tool has to be regenerated with `SILKA_GOLDEN=update`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PngError {
     /// The file does not start with the PNG signature.

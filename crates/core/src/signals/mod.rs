@@ -71,6 +71,22 @@ pub use runtime::{Runtime, RuntimeId, ScopeId, SignalId, SIGNAL_DIRTY};
 /// the position — that decides whose state is whose. Moving, inserting, or
 /// swapping items does not move state around as long as the keys travel with
 /// them.
+///
+/// ```
+/// use silka_core::signals::Key;
+///
+/// // A database row keeps its state when the list is re-sorted, because the
+/// // key travels with the row rather than with its position.
+/// let row = Key::num(4_201);
+/// assert_eq!(row, Key::num(4_201));
+/// assert_ne!(row, Key::num(4_202));
+///
+/// // Slots and paths are text keys.
+/// assert_eq!(Key::text("sidebar"), Key::from("sidebar"));
+/// ```
+///
+/// The same key type identifies component scopes *and* child nodes in the
+/// view-diff, so there is exactly one key discipline across the framework.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Key {
     /// The root scope's key; never constructed by users.
@@ -152,12 +168,20 @@ impl From<&String> for Key {
 /// captured by as many `move` closures as needed. That is what makes the §2.5
 /// writing style possible:
 ///
-/// ```ignore
-/// let count = use_signal(|| 0);
-/// column((
-///     text(format!("Nilai: {}", count.get())),
-///     button("Tambah").on_press(move || count.set(count.get() + 1)),
-/// ))
+/// ```
+/// use silka_core::signals::{use_signal, Runtime};
+///
+/// let rt = Runtime::new();
+/// rt.build_root(|| {
+///     let count = use_signal(|| 0i32);
+///
+///     // The signal is captured by value into as many closures as needed;
+///     // this is the `on_press` an application writes.
+///     let increment = move || count.set(count.get() + 1);
+///     increment();
+///     increment();
+///     assert_eq!(count.get(), 2);
+/// });
 /// ```
 ///
 /// A signal is bound to its runtime's thread (the UI thread) and is
@@ -290,6 +314,49 @@ impl<T: 'static> fmt::Debug for Signal<T> {
 /// silently swaps places.
 ///
 /// Panics when called outside a component build.
+///
+/// ```
+/// use silka_core::signals::{use_signal, Runtime};
+///
+/// let rt = Runtime::new();
+///
+/// // `init` runs on the first build…
+/// let first = rt.build_root(|| {
+///     let count = use_signal(|| 0i32);
+///     count.set(count.get() + 1);
+///     count.get()
+/// });
+/// assert_eq!(first, 1);
+///
+/// // …and never again: a rebuild finds the same signal, holding the value the
+/// // previous build left behind. This is what makes component-local state
+/// // survive a rebuild without the parent storing it.
+/// let second = rt.build_root(|| {
+///     let count = use_signal(|| 0i32);
+///     count.set(count.get() + 1);
+///     count.get()
+/// });
+/// assert_eq!(second, 2);
+/// ```
+///
+/// Hooks are recognised by **call order**, so a conditional hook is a bug the
+/// runtime reports rather than one that silently swaps two pieces of state:
+///
+/// ```should_panic
+/// use silka_core::signals::{use_signal, Runtime};
+///
+/// let rt = Runtime::new();
+/// rt.build_root(|| {
+///     let a = use_signal(|| 0i32);
+///     let _ = a;
+/// });
+/// // A second build that reaches a *different* hook at the same position is
+/// // caught here, instead of turning into a mysterious value later.
+/// rt.build_root(|| {
+///     let b = use_signal(|| "text");
+///     let _ = b;
+/// });
+/// ```
 pub fn use_signal<T: 'static>(init: impl FnOnce() -> T) -> Signal<T> {
     let (rt_id, scope) = current_build()
         .expect("use_signal hanya boleh dipanggil saat komponen dibangun (di dalam build_root/scope/rebuild)");
@@ -306,6 +373,27 @@ pub fn use_signal<T: 'static>(init: impl FnOnce() -> T) -> Signal<T> {
 ///
 /// Panics when called outside a build, or when `key` is already used by another
 /// sibling in the same build.
+///
+/// ```
+/// use silka_core::signals::{scope, use_signal, Key, Runtime};
+///
+/// let rt = Runtime::new();
+///
+/// // Two children, each with state of its own.
+/// rt.build_root(|| {
+///     scope(Key::from("left"), || use_signal(|| 1i32).set(10));
+///     scope(Key::from("right"), || use_signal(|| 2i32).set(20));
+/// });
+///
+/// // On the next build the *keys* decide which scope is which, so swapping
+/// // the call order does not swap the state.
+/// let (right, left) = rt.build_root(|| {
+///     let r = scope(Key::from("right"), || use_signal(|| 2i32).get());
+///     let l = scope(Key::from("left"), || use_signal(|| 1i32).get());
+///     (r, l)
+/// });
+/// assert_eq!((left, right), (10, 20));
+/// ```
 pub fn scope<R>(key: impl Into<Key>, body: impl FnOnce() -> R) -> R {
     let (_, parent) =
         current_build().expect("scope() hanya boleh dipanggil saat komponen dibangun");
@@ -357,11 +445,61 @@ where
 ///
 /// Used when a component needs to *look at* a value without wanting to be
 /// rebuilt when that value changes.
+///
+/// ```
+/// use silka_core::signals::{untracked, Runtime};
+///
+/// let rt = Runtime::new();
+/// let tracked = rt.signal(0i32);
+/// let peeked = rt.signal(0i32);
+///
+/// rt.build_root(|| {
+///     // A normal read subscribes this component to the signal…
+///     let _ = tracked.get();
+///     // …while an untracked read deliberately does not.
+///     let _ = untracked(|| peeked.get());
+/// });
+///
+/// // Only one of the two reads created a dependency.
+/// assert_eq!(rt.dependency_count(rt.root()), 1);
+///
+/// // So writing the peeked signal schedules nothing…
+/// peeked.set(99);
+/// assert_eq!(rt.dirty_len(), 0);
+///
+/// // …while writing the tracked one marks the component for rebuild.
+/// tracked.set(1);
+/// assert_eq!(rt.drain_dirty(), vec![rt.root()]);
+/// ```
 pub fn untracked<R>(f: impl FnOnce() -> R) -> R {
     run_untracked(f)
 }
 
 /// The scope currently being built on this thread, if any.
+///
+/// `None` outside a build, which is what makes it usable as a "am I inside a
+/// component right now?" check rather than as something that panics.
+///
+/// ```
+/// use silka_core::signals::{current_scope, scope, Key, Runtime};
+///
+/// // Outside any build there is no current scope.
+/// assert_eq!(current_scope(), None);
+///
+/// let rt = Runtime::new();
+/// let (outer, inner) = rt.build_root(|| {
+///     let outer = current_scope().expect("inside a build");
+///     let inner = scope(Key::from("child"), || current_scope().unwrap());
+///     (outer, inner)
+/// });
+///
+/// // The root builds as itself; a keyed child builds as its own scope.
+/// assert_eq!(outer, rt.root());
+/// assert_ne!(inner, outer);
+///
+/// // And the build is over, so there is nothing current again.
+/// assert_eq!(current_scope(), None);
+/// ```
 pub fn current_scope() -> Option<ScopeId> {
     current_build().map(|(_, scope)| scope)
 }

@@ -23,6 +23,36 @@
 //! These rules deliberately match HTML's `tabindex`, because that is what
 //! people already have in their heads — and because AccessKit maps onto the
 //! same concepts.
+//!
+//! ```
+//! use silka_core::input::{is_focusable, tab_order};
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, interactive, reconcile, View};
+//! use silka_paint::Size;
+//!
+//! let mut tree = RenderTree::new();
+//! reconcile(
+//!     &mut tree,
+//!     column([
+//!         View::from(interactive(fixed(100.0, 24.0)).focusable(true).label("first")),
+//!         // Not focusable: decoration, a separator, a static label.
+//!         View::from(fixed(100.0, 24.0).label("decoration")),
+//!         View::from(interactive(fixed(100.0, 24.0)).focusable(true).label("second")),
+//!     ]),
+//! );
+//! tree.layout(BoxConstraints::tight(Size::new(200.0, 200.0)));
+//!
+//! // Tab order comes from the render tree — the same source of truth layout
+//! // and AccessKit read — so it cannot drift away from what is on screen.
+//! let order = tab_order(&tree, tree.root());
+//! assert_eq!(order.len(), 2, "the decoration is skipped");
+//! for node in &order {
+//!     assert!(is_focusable(&tree, *node));
+//! }
+//!
+//! // The order is reading order: first, then second.
+//! assert!(order[0] < order[1]);
+//! ```
 
 use crate::tree::{NodeId, RenderTree};
 
@@ -36,6 +66,22 @@ use crate::tree::{NodeId, RenderTree};
 /// a widget that forgets to fill it in can never be reached by keyboard, and
 /// that has to be visible while writing the widget — not when QA reaches for
 /// Tab.
+///
+/// ```
+/// use silka_core::input::FocusPolicy;
+///
+/// // Nothing is focusable by accident: the default cannot be tabbed to.
+/// assert!(!FocusPolicy::default().focusable);
+///
+/// // A dialog is a focus trap — Tab cycles inside it and cannot escape to
+/// // the content behind the scrim.
+/// let dialog = FocusPolicy { focusable: false, scope: true, ..FocusPolicy::default() };
+/// assert!(dialog.scope);
+///
+/// // A collapsed section skips its whole subtree rather than each child.
+/// let hidden = FocusPolicy { skip_subtree: true, ..FocusPolicy::default() };
+/// assert!(hidden.skip_subtree);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct FocusPolicy {
     /// Can take keyboard focus.
@@ -84,6 +130,14 @@ impl FocusPolicy {
 }
 
 /// The direction focus moves in.
+///
+/// ```
+/// use silka_core::input::FocusDirection;
+///
+/// // Tab and Shift+Tab — the whole vocabulary, because tab order is computed
+/// // from the render tree rather than declared per widget.
+/// assert_ne!(FocusDirection::Next, FocusDirection::Previous);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FocusDirection {
     /// Tab.
@@ -96,6 +150,15 @@ pub enum FocusDirection {
 ///
 /// Returned rather than dispatched directly so the caller can decide the order
 /// itself (whoever lost focus is told first).
+///
+/// ```
+/// use silka_core::input::FocusChange;
+///
+/// // Clicking the same field twice moves nothing, and a focus ring that
+/// // re-animated on every click would be a visible bug.
+/// assert_eq!(FocusChange::NONE, FocusChange::default());
+/// assert!(FocusChange::NONE.lost.is_none());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FocusChange {
     /// The node that lost focus.
@@ -193,6 +256,25 @@ pub fn is_focusable(tree: &RenderTree, node: NodeId) -> bool {
 /// alive, still focusable, which scope it is in) is always re-read from the
 /// tree. That way no focus state can go stale with respect to the tree
 /// structure.
+///
+/// ```
+/// use silka_core::input::{FocusDirection, FocusManager};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, reconcile};
+/// use silka_paint::Size;
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+/// tree.perform_layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// let mut focus = FocusManager::new();
+/// assert!(focus.focused().is_none());
+///
+/// // Nothing in this tree is focusable, so Tab finds nowhere to go — and
+/// // says so rather than parking focus on a decorative box.
+/// let change = focus.move_focus(&tree, FocusDirection::Next);
+/// assert_eq!(change.gained, None);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct FocusManager {
     focused: Option<NodeId>,

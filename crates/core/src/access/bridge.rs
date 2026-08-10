@@ -71,6 +71,8 @@ impl From<AccessRole> for Role {
             AccessRole::Table => Role::Table,
             AccessRole::Row => Role::Row,
             AccessRole::Cell => Role::Cell,
+            AccessRole::Tree => Role::Tree,
+            AccessRole::TreeItem => Role::TreeItem,
         }
     }
 }
@@ -150,6 +152,22 @@ fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
         disabled,
         toggled,
         selected,
+        // **Deliberately not forwarded.** AccessKit's `TextSelection` addresses
+        // its two ends through `TextPosition`, whose node "must be
+        // `Role::TextRun`" — that is, an editable node has to publish its text
+        // as a row of run child nodes with per-character lengths. Our render
+        // tree emits exactly one node per widget today, so pointing a
+        // `TextPosition` at the field itself would be a lie to the platform
+        // adapter rather than a shortcut. Until the emission pass can produce
+        // text runs, the caret lives in our own vocabulary
+        // (`AccessNode::text_selection`), where `text_field`/`text_area`
+        // maintain it and the tests assert on it — so the day the runs arrive,
+        // the widgets need no change at all.
+        text_selection: _,
+        expanded,
+        level,
+        position_in_set,
+        size_of_set,
     } = &entry.node;
 
     let mut node = Node::new(Role::from(*role));
@@ -185,6 +203,21 @@ fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
     }
     if let Some(s) = selected {
         node.set_selected(*s);
+    }
+    if let Some(e) = expanded {
+        node.set_expanded(*e);
+    }
+    // A hierarchy only exists for assistive technology when the rows say where
+    // they sit: AccessKit counts `level` from 1 and `position_in_set` from 1
+    // too, so a zero here would be a lie rather than a missing value.
+    if let Some(l) = level {
+        node.set_level(*l);
+    }
+    if let Some(p) = position_in_set {
+        node.set_position_in_set(*p);
+    }
+    if let Some(s) = size_of_set {
+        node.set_size_of_set(*s);
     }
     for action in accesskit_actions(*actions) {
         node.add_action(action);

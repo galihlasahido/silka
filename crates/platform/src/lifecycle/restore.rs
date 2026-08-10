@@ -33,6 +33,23 @@ const MIN_VISIBLE_WIDTH: f32 = 120.0;
 const MIN_VISIBLE_HEIGHT: f32 = 24.0;
 
 /// A window's saved geometry.
+///
+/// ```
+/// use silka_paint::Size;
+/// use silka_platform::WindowPlacement;
+///
+/// let saved = WindowPlacement::sized(Size::new(1024.0, 720.0))
+///     .at(100, 80)
+///     .scaled(2.0);
+///
+/// // The rect is reconstructed at the scale it was saved at, because the
+/// // question is "where did this used to be", not "where would it be now".
+/// assert_eq!(saved.physical_rect(), Some((100, 80, 2048, 1440)));
+///
+/// // Without a position there is no rect: the OS gets to place the window,
+/// // which is the one placement that is always correct.
+/// assert_eq!(WindowPlacement::sized(Size::new(800.0, 600.0)).physical_rect(), None);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct WindowPlacement {
     /// Top-left corner of the window frame in **physical** desktop pixels.
@@ -96,6 +113,29 @@ impl WindowPlacement {
 }
 
 /// One monitor as the OS describes it, in physical pixels.
+///
+/// What [`restore_placement`] checks a saved position against, so that a window
+/// last seen on a monitor that has since been unplugged comes back somewhere a
+/// user can actually reach it.
+///
+/// ```
+/// use silka_paint::Size;
+/// use silka_platform::{restore_placement, MonitorArea, WindowPlacement};
+///
+/// let laptop = MonitorArea::new(0, 0, 2560, 1600, 2.0);
+/// assert_eq!(laptop.logical_size(), Size::new(1280.0, 800.0));
+///
+/// // Saved on an unplugged ultrawide, at x = 3000: unreachable now, so the
+/// // position is dropped and the size shrinks to what the laptop can show.
+/// let saved = WindowPlacement::sized(Size::new(3000.0, 1200.0)).at(3000, 40).scaled(1.0);
+/// let restored = restore_placement(saved, &[laptop]);
+/// assert_eq!(restored.position, None);
+/// assert!(restored.size.width <= 1280.0);
+///
+/// // A position that is still on screen survives untouched.
+/// let ok = WindowPlacement::sized(Size::new(900.0, 600.0)).at(60, 40).scaled(2.0);
+/// assert_eq!(restore_placement(ok, &[laptop]).position, Some((60, 40)));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MonitorArea {
     /// Left edge in desktop coordinates.
@@ -206,6 +246,40 @@ pub fn is_reachable(placement: &WindowPlacement, monitors: &[MonitorArea]) -> bo
 ///   that will not say), the saved values are trusted as-is apart from the
 ///   minimum size: refusing to restore would be a worse guess than the user's
 ///   own last position.
+///
+/// ```
+/// use silka_paint::Size;
+/// use silka_platform::{restore_placement, MonitorArea, WindowPlacement};
+///
+/// let laptop = MonitorArea::new(0, 0, 1440, 900, 2.0);
+///
+/// // Saved on an ultrawide, reopened on a laptop: the size is clamped to
+/// // what actually fits rather than opening off the edge of the screen.
+/// let ultrawide = WindowPlacement {
+///     position: Some((20, 20)),
+///     size: Size::new(3440.0, 1440.0),
+///     scale: 1.0,
+///     maximized: false,
+/// };
+/// let fitted = restore_placement(ultrawide, &[laptop]);
+/// assert!(fitted.size.width < 3440.0);
+///
+/// // A position on a monitor that is no longer attached is dropped, and the
+/// // OS places the window — the one placement that is always correct.
+/// let unplugged = WindowPlacement {
+///     position: Some((5_000, 5_000)),
+///     size: Size::new(800.0, 600.0),
+///     scale: 1.0,
+///     maximized: false,
+/// };
+/// assert_eq!(restore_placement(unplugged, &[laptop]).position, None);
+///
+/// // With no monitors reported at all — a headless CI run, or a compositor
+/// // that will not say — the user's own last geometry is trusted, because
+/// // refusing to restore would be a worse guess than theirs.
+/// let saved = WindowPlacement::sized(Size::new(900.0, 700.0));
+/// assert_eq!(restore_placement(saved, &[]).size, Size::new(900.0, 700.0));
+/// ```
 pub fn restore_placement(saved: WindowPlacement, monitors: &[MonitorArea]) -> WindowPlacement {
     let mut out = saved;
     out.size = Size::new(

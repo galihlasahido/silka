@@ -18,6 +18,19 @@
 //! because comparing the two is precisely its job. Every other value — colors,
 //! radii, spacing, shadow recipes — still comes from the active theme tokens
 //! (§2.6).
+//!
+//! ## Kept on purpose: this is the "before" picture
+//!
+//! Everything here is assembled by hand — the `Scene`, and the grid arithmetic
+//! in [`kartu_kartu`] (`(width - padding * 2 - gap) * 0.5`, one multiplication
+//! per cell). It predates both the widget layer and the utility vocabulary, and
+//! it is deliberately **not** being rewritten: it is the reference the newer
+//! path is measured against, and it stays reachable through `--page kartu`.
+//!
+//! The same picture through the framework is [`crate::reactive`]: no scene, no
+//! arithmetic, no theme lookups in the styling, and hover/press/focus on top —
+//! with the cards transitioning on springs instead of snapping. Read the two
+//! files side by side; that comparison is the point.
 
 use silka_paint::{CornerStyle, Corners, Quad, Rect, Scene, ShadowPair, Size};
 use silka_theme::Theme;
@@ -56,7 +69,7 @@ pub fn scene(theme: &Theme, size: Size) -> Scene {
 
 /// Grid layout — pure logic, tested without a GPU.
 ///
-/// Two columns (squircle on the left, arc on the right) × [`BARIS`] rows. If
+/// Two columns (squircle on the left, arc on the right) × `BARIS` rows. If
 /// the window is too narrow to fit the padding and gaps, the grid shrinks to
 /// zero and never produces a card with a negative size.
 pub fn kartu_kartu(theme: &Theme, size: Size) -> Vec<Kartu> {

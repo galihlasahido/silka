@@ -22,6 +22,20 @@ pub const KEY_HIGHLIGHT: &str = "AppleHighlightColor";
 
 /// One accent color as Apple publishes it: a light/dark **pair**, never one
 /// color that gets darkened automatically.
+///
+/// Using the light member on a dark window is exactly the kind of "almost
+/// right" that makes an application read as a port.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_theme::Appearance;
+/// use silka_platform::lifecycle::mac_defaults::ACCENTS;
+///
+/// // Index 0 is Apple's systemRed, published as a pair.
+/// let (index, red) = ACCENTS[1];
+/// assert_eq!(index, 0);
+/// assert_ne!(red.color(Appearance::Light), red.color(Appearance::Dark));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AccentPair {
     /// Name as it appears in System Settings — used by the debug banner.

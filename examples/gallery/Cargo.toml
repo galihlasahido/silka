@@ -1,6 +1,6 @@
 [package]
 name = "silka-gallery"
-description = "Gallery app: demo interaktif setiap komponen sekaligus alat uji visual manual"
+description = "Gallery app: an interactive demo of every component, doubling as the manual visual test harness"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,6 +13,25 @@ publish = false
 # dihitung pikselnya. Hanya dev-dependency — aplikasi sendiri tidak pernah
 # menyentuh backend langsung, ia lewat `silka-platform`.
 silka-renderer.workspace = true
+
+# Three small example applications: usage patterns as living documentation
+# rather than README snippets that go stale in silence. `test = true` so the
+# model unit tests inside them run under `cargo test -p silka-gallery` — an
+# example nobody ever tests is an example that rots.
+[[example]]
+name = "todo"
+path = "examples/todo.rs"
+test = true
+
+[[example]]
+name = "settings"
+path = "examples/settings.rs"
+test = true
+
+[[example]]
+name = "dashboard-mini"
+path = "examples/dashboard-mini.rs"
+test = true
 
 [dependencies]
 silka-widgets.workspace = true

@@ -52,6 +52,17 @@
 //! CSS, no cascade, no parser (§2.6). See [`Theme::with_colors`].
 
 #![warn(missing_docs)]
+// Documentation is part of the public contract, so the checks rustdoc offers
+// are turned on here rather than left to a reviewer's eye. A broken intra-doc
+// link is an error: it means a rename silently orphaned a reference.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![warn(
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks
+)]
 
 pub mod color;
 pub mod palette;
@@ -74,6 +85,15 @@ pub use typography::{FontToken, TypeStyle, TypographyTokens};
 use silka_paint::{Color, Corners, ShadowPair};
 
 /// Light or dark. Follows the OS setting unless the app pins it.
+///
+/// ```
+/// use silka_theme::Appearance;
+///
+/// assert!(Appearance::Dark.is_dark());
+/// assert_eq!(Appearance::Light.toggled(), Appearance::Dark);
+/// // Light is the default, matching a fresh OS install.
+/// assert_eq!(Appearance::default(), Appearance::Light);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Appearance {
     /// Light mode.
@@ -99,6 +119,22 @@ impl Appearance {
 }
 
 /// A first-party design-system preset.
+///
+/// A preset is the *only* place tokens meet numbers, so switching one swaps an
+/// application's entire look without a widget knowing it happened.
+///
+/// ```
+/// use silka_theme::{Appearance, Preset, RadiusToken, Theme};
+///
+/// assert_eq!(Preset::default(), Preset::Cupertino);
+/// assert_eq!(Preset::Tailwind.name(), "tailwind");
+///
+/// // Cross-preset tests sweep both cells rather than hardcoding one.
+/// for preset in Preset::ALL {
+///     let theme = Theme::new(preset, Appearance::Dark);
+///     assert!(theme.resolve(RadiusToken::Md).radii.max() > 0.0);
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Preset {
     /// Modeled on Apple HIG/macOS: squircles, the HIG semantic palette, paired
@@ -126,6 +162,34 @@ impl Preset {
 
 /// The active theme: a preset plus an appearance, already resolved into token
 /// values.
+///
+/// A `Theme` is a **pure value**. When the OS changes, it is rebuilt rather
+/// than invalidated in place, so there is no hidden state that can go stale.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_theme::{Appearance, ColorToken, FontToken, Preset, RadiusToken, SpaceToken, Theme};
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // One `resolve` for every kind of token.
+/// let _surface: Color = theme.resolve(ColorToken::Surface);
+/// let _gap: f32 = theme.resolve(SpaceToken::S4);
+/// let corners = theme.resolve(RadiusToken::Md);
+/// let _title = theme.resolve(FontToken::Title2);
+///
+/// // The same widget under the other preset gets a different corner *shape*,
+/// // not merely a different radius (§2.7).
+/// let web = theme.with_preset(Preset::Tailwind);
+/// assert_ne!(corners.style, web.resolve(RadiusToken::Md).style);
+///
+/// // The OS switching to light mode is one call, not a cache flush.
+/// let light = theme.with_appearance(Appearance::Light);
+/// assert_ne!(light.color_of(ColorToken::Background), theme.color_of(ColorToken::Background));
+///
+/// // Ad-hoc spacing still lands on the 4pt scale.
+/// assert_eq!(theme.space(3.0), 12.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Theme {
     /// The preset in use.
@@ -543,3 +607,12 @@ mod tests {
         }
     }
 }
+
+/// Compiles and runs every Rust example in this crate's `README.md`.
+///
+/// The item only exists while rustdoc is collecting doctests, so it never
+/// shows up in the rendered documentation. Its whole purpose is to stop the
+/// README from drifting away from the API it advertises.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

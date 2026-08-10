@@ -64,10 +64,8 @@
 //! - Single line only; multi-line + soft wrap is `text_area`, which uses the
 //!   already-existing [`silka_text::TextEdit::multiline`].
 
-use std::rc::Rc;
-
 use silka_core::access::{
-    AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole,
+    AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole, AccessTextSelection,
 };
 use silka_core::animation::{Spring, SpringValue, Tick};
 use silka_core::input::{
@@ -85,45 +83,15 @@ use silka_text::{Caret, Movement, TextConstraints, TextEdit, TextLayout, TextSty
 use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
+use crate::editing::{self, EditCaps};
 use crate::fonts::Fonts;
 
-// ---------------------------------------------------------------------------
-// Text-carrying callback
-// ---------------------------------------------------------------------------
-
-/// An action that receives the **field's contents** — the shape of
-/// `on_change`/`on_submit`.
+/// The callback that carries the field's contents.
 ///
-/// [`silka_core::Callback`] deliberately carries no argument (it serves
-/// `on_press`); a text field needs one, and exactly one: its text. The
-/// characteristics are the same — cheap `Clone` via [`Rc`], and `PartialEq` by
-/// identity because closures are rebuilt on every rebuild.
-#[derive(Clone)]
-pub struct TextCallback(Rc<dyn Fn(&str)>);
-
-impl TextCallback {
-    /// Wrap a closure.
-    pub fn new(f: impl Fn(&str) + 'static) -> Self {
-        Self(Rc::new(f))
-    }
-
-    /// Run it with the field's contents.
-    pub fn call(&self, text: &str) {
-        (self.0)(text)
-    }
-}
-
-impl PartialEq for TextCallback {
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl core::fmt::Debug for TextCallback {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("TextCallback")
-    }
-}
+/// It lives in [`crate::editing`] because `text_area` (and later `combo_box`)
+/// hand back exactly the same thing; re-exported here so the name stays where
+/// callers first meet it.
+pub use crate::editing::TextCallback;
 
 // ---------------------------------------------------------------------------
 // Node
@@ -135,6 +103,39 @@ impl core::fmt::Debug for TextCallback {
 /// the caret, the selection, and the preedit must share **one** shaping result
 /// with the glyphs on screen. Two layout sources for one line of text = a caret
 /// off by half a pixel, and that shows.
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{text_field, Fonts, TextFieldBox};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     text_field(&fonts, &theme, "Hello").placeholder("Type here"),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(240.0, 44.0)));
+///
+/// let id = tree.children(tree.root())[0];
+/// let node = tree.node_ref::<TextFieldBox>(id).expect("a text field node");
+///
+/// assert_eq!(node.text(), "Hello");
+/// assert!(!node.shows_placeholder()); // there is content, so no placeholder
+///
+/// // The caret is real geometry, not a guess — it comes from the same
+/// // `TextLayout` the glyphs came from.
+/// assert!(node.caret_rect().size.height > 0.0);
+///
+/// // Nothing selected and no composition in flight, so the normal key path
+/// // is live and the application is receiving whole characters.
+/// assert!(node.selection_rects().is_empty());
+/// assert!(!node.is_composing());
+/// assert!(node.preedit_rects().is_empty());
+/// ```
 pub struct TextFieldBox {
     // -- configuration (tokens already resolved one level up) --
     fonts: Fonts,
@@ -541,95 +542,40 @@ impl TextFieldBox {
             return;
         }
 
-        let m = k.modifiers;
-        let shift = m.contains(Modifiers::SHIFT);
-        let cmd = m.contains(Modifiers::COMMAND);
-        let alt = m.contains(Modifiers::ALT);
+        let shift = k.modifiers.contains(Modifiers::SHIFT);
         let sebelum = self.edit.text().to_string();
-        let mut tertangani = true;
-        let mut caret_berubah = false;
+        let seleksi_sebelum = self.edit.selection();
 
-        match &k.code {
-            KeyCode::Named(n) => match n {
-                NamedKey::ArrowLeft => {
-                    let gerak = if cmd {
-                        Movement::LineStart
-                    } else if alt {
-                        Movement::PrevWord
-                    } else {
-                        Movement::Prev
-                    };
-                    caret_berubah = self.edit.move_caret(gerak, shift);
-                }
-                NamedKey::ArrowRight => {
-                    let gerak = if cmd {
-                        Movement::LineEnd
-                    } else if alt {
-                        Movement::NextWord
-                    } else {
-                        Movement::Next
-                    };
-                    caret_berubah = self.edit.move_caret(gerak, shift);
-                }
+        // The **shared** half of the keymap first (`crate::editing`): arrows,
+        // words, Home/End, delete, undo/redo, plain typing. `text_area` runs
+        // the very same function, which is what keeps the two widgets from
+        // drifting apart key by key.
+        let caps = EditCaps::new(self.bisa_sunting());
+        let mut tertangani = editing::handle_key(&mut self.edit, k, caps);
+
+        if !tertangani {
+            match &k.code {
                 // Single line: up/down = ends of the line, the AppKit habit.
-                NamedKey::ArrowUp | NamedKey::Home => {
-                    caret_berubah = self.edit.move_caret(Movement::LineStart, shift);
+                // This is exactly the key `text_area` reads differently, and
+                // the reason it is not in the shared half.
+                KeyCode::Named(NamedKey::ArrowUp) => {
+                    self.edit.move_caret(Movement::LineStart, shift);
+                    tertangani = true;
                 }
-                NamedKey::ArrowDown | NamedKey::End => {
-                    caret_berubah = self.edit.move_caret(Movement::LineEnd, shift);
+                KeyCode::Named(NamedKey::ArrowDown) => {
+                    self.edit.move_caret(Movement::LineEnd, shift);
+                    tertangani = true;
                 }
-                NamedKey::Backspace if self.bisa_sunting() => {
-                    if alt || cmd {
-                        self.edit.delete_word_backward();
-                    } else {
-                        self.edit.delete_backward();
-                    }
-                }
-                NamedKey::Delete if self.bisa_sunting() => {
-                    if alt || cmd {
-                        self.edit.delete_word_forward();
-                    } else {
-                        self.edit.delete_forward();
-                    }
-                }
-                NamedKey::Space if self.bisa_sunting() && !cmd => {
-                    self.edit.insert(k.text.as_deref().unwrap_or(" "));
-                }
-                NamedKey::Enter => {
+                KeyCode::Named(NamedKey::Enter) => {
                     if let Some(cb) = self.on_submit.clone() {
                         cb.call(self.edit.text());
-                    } else {
-                        tertangani = false;
+                        tertangani = true;
                     }
                 }
                 // Esc and Tab are deliberately let through: the first belongs
                 // to overlays, the second to focus navigation.
-                _ => tertangani = false,
-            },
-
-            KeyCode::Character(c) if cmd => match c.to_ascii_lowercase() {
-                'a' => caret_berubah = self.edit.select_all(),
-                'z' if self.bisa_sunting() => {
-                    if shift {
-                        self.edit.redo();
-                    } else {
-                        self.edit.undo();
-                    }
-                }
-                // ⌘C/⌘X/⌘V are left to bubble: the clipboard lives in
-                // `silka-platform` (see the module notes).
-                _ => tertangani = false,
-            },
-
-            KeyCode::Character(c) if self.bisa_sunting() && !m.contains(Modifiers::CONTROL) => {
-                // Text from the platform has already been through the keyboard
-                // layout and dead keys; `c` is only a fallback for synthetic
-                // events (tests).
-                let teks = k.text.clone().unwrap_or_else(|| c.to_string());
-                self.edit.insert(&teks);
+                _ => {}
             }
-
-            _ => tertangani = false,
         }
 
         if !tertangani {
@@ -638,7 +584,7 @@ impl TextFieldBox {
         ctx.handled();
         if self.edit.text() != sebelum {
             self.setelah_teks_berubah(ctx);
-        } else if caret_berubah || matches!(&k.code, KeyCode::Named(_)) {
+        } else if self.edit.selection() != seleksi_sebelum || matches!(&k.code, KeyCode::Named(_)) {
             self.setelah_caret_berubah(ctx);
         }
     }
@@ -810,6 +756,16 @@ impl RenderNode for TextFieldBox {
         // The value read out is the committed one — not a preedit that is
         // still half-formed.
         node.value = Some(self.edit.text().to_string());
+        // Where the caret stands and how far the selection reaches — in
+        // characters, the unit assistive technology counts in. Without this a
+        // screen reader can only re-read the whole value after every keystroke
+        // instead of following the caret (§3.8).
+        let s = self.edit.selection();
+        node.text_selection = Some(AccessTextSelection::from_bytes(
+            self.edit.text(),
+            s.anchor,
+            s.focus,
+        ));
         node.disabled = self.disabled;
         if !self.disabled {
             node.actions |= AccessActions::CLICK | AccessActions::FOCUS;
@@ -951,6 +907,31 @@ pub fn first(tree: &RenderTree) -> Option<NodeId> {
 
 /// A text field's props: **resolved tokens only**.
 #[derive(Debug, Clone, PartialEq)]
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{text_field, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let build = |v: &str| text_field(&fonts, &theme, v.to_string());
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, build("Hello"));
+/// tree.layout(BoxConstraints::tight(Size::new(240.0, 44.0)));
+///
+/// // Rebuilding with the same value leaves the caret, the selection and the
+/// // undo history exactly where they were.
+/// assert!(reconcile(&mut tree, build("Hello")).is_noop());
+///
+/// // A new value updates the node rather than replacing it — replacing it
+/// // would throw the undo history away mid-sentence.
+/// let changed = reconcile(&mut tree, build("Hello there"));
+/// assert_eq!(changed.replaced, 0);
+/// assert!(changed.updated > 0);
+/// ```
 pub struct TextFieldProps {
     fonts: Fonts,
     value: String,
@@ -1133,6 +1114,31 @@ impl ViewNode for TextFieldProps {
 }
 
 /// A Dart-style text field builder (§2.5).
+///
+/// ```
+/// use silka_core::animation::Spring;
+/// use silka_core::signals::Key;
+/// use silka_paint::Insets;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{text_field, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Everything optional is a method, and every value it takes comes from a
+/// // token rather than from a literal in application code.
+/// let field = text_field(&fonts, &theme, "")
+///     .placeholder("name@example.com")
+///     .label("Email")
+///     .padding(Insets::symmetric(theme.space(3.0), theme.space(2.0)))
+///     .corners(theme.corners_of(silka_theme::RadiusToken::Md))
+///     .min_height(silka_widgets::MIN_HIT_TARGET)
+///     .spring(Spring::smooth())
+///     .key(Key::from("email"))
+///     .on_change(|_| {});
+/// # let _ = field;
+/// ```
+/// A Dart-style text field builder (§2.5).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextField {
     props: TextFieldProps,
@@ -1143,6 +1149,32 @@ pub struct TextField {
 /// Tier 2).
 ///
 /// Every value comes from `theme`; `fonts` is the app's text engine.
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{text_field, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let query = rt.signal(String::new());
+///
+/// // The value is *owned by the caller*: the field is told what to display
+/// // and reports what it has become, so there is only ever one copy of the
+/// // text in the application.
+/// let search = text_field(&fonts, &theme, query.get())
+///     .placeholder("Search")
+///     .label("Search documents")
+///     .on_change(move |text| query.set(text.to_string()))
+///     .on_submit(|text| println!("searching for {text}"));
+/// # let _ = search;
+///
+/// // Read-only is not the same as disabled: the caret still moves, the text
+/// // is still selectable, and it can still be copied out.
+/// let readonly = text_field(&fonts, &theme, "abc-123").read_only(true);
+/// # let _ = readonly;
+/// ```
 pub fn text_field(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> TextField {
     let t = theme;
     TextField {

@@ -13,6 +13,31 @@
 //! All timestamps are a [`Duration`] since the window opened, not an
 //! `Instant`. That way the velocity tracker can be tested deterministically
 //! without touching the system clock.
+//!
+//! ```
+//! use std::time::Duration;
+//!
+//! use silka_core::input::{Event, KeyCode, NamedKey, PointerButton, PointerEvent, PointerPhase};
+//! use silka_paint::Point;
+//!
+//! // A press, built the way a shell backend would build one: logical points,
+//! // global to the window, with a clock that starts when the window opens.
+//! let press = PointerEvent::new(
+//!     PointerPhase::Down,
+//!     Point::new(120.0, 64.0),
+//!     Duration::from_millis(340),
+//! )
+//! .button(PointerButton::Primary);
+//!
+//! let event = Event::from(press);
+//! assert_eq!(event.position(), Some(Point::new(120.0, 64.0)));
+//! assert_eq!(event.time(), Some(Duration::from_millis(340)));
+//!
+//! // Nothing in this vocabulary is winit's, so a headless test or a recorded
+//! // input replay can produce exactly the same events a real window does.
+//! let space = KeyCode::Named(NamedKey::Space);
+//! assert_ne!(space, KeyCode::Character(' '));
+//! ```
 
 use core::fmt;
 use std::time::Duration;
@@ -28,6 +53,22 @@ use silka_paint::Point;
 /// [`Modifiers::COMMAND`] is an alias for the OS "primary action" key: ⌘ on
 /// macOS, Ctrl on Windows/Linux. Widgets write a shortcut once against it and
 /// get the right behaviour on all three platforms.
+///
+/// ```
+/// use silka_core::input::Modifiers;
+///
+/// // Written once — ⌘ on macOS, Ctrl on Windows and Linux.
+/// let save = Modifiers::COMMAND;
+/// assert!(save.contains(Modifiers::COMMAND));
+///
+/// // Sets combine and are tested by containment, so ⇧⌘S matches a check for
+/// // ⌘ while ⌘S does not match a check for ⇧⌘.
+/// let save_as = Modifiers::COMMAND.union(Modifiers::SHIFT);
+/// assert!(save_as.contains(Modifiers::COMMAND));
+/// assert!(!save.contains(Modifiers::SHIFT));
+///
+/// assert!(Modifiers::NONE.is_empty());
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Modifiers(u8);
 
@@ -156,6 +197,31 @@ pub enum PointerKind {
 }
 
 /// A pointer button.
+///
+/// Named by **role**, not by side of the mouse: `Primary` is the left button on
+/// a right-handed mouse, the right button on a left-handed one, and a finger on
+/// a touchscreen. A widget that checked for "left" would be wrong for two of
+/// those three.
+///
+/// ```
+/// use silka_core::input::{Buttons, PointerButton};
+///
+/// // What a context menu listens for.
+/// assert_ne!(PointerButton::Primary, PointerButton::Secondary);
+///
+/// // Buttons the OS numbers but does not name still round-trip.
+/// assert_eq!(PointerButton::Other(9), PointerButton::Other(9));
+/// assert_ne!(PointerButton::Other(9), PointerButton::Other(10));
+///
+/// // The held set is what a drag consults, rather than keeping its own count.
+/// let mut held = Buttons::NONE;
+/// held.insert(PointerButton::Primary);
+/// held.insert(PointerButton::Secondary);
+/// assert!(held.contains(PointerButton::Primary));
+/// held.remove(PointerButton::Primary);
+/// assert!(held.contains(PointerButton::Secondary));
+/// assert!(!held.contains(PointerButton::Primary));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PointerButton {
@@ -188,6 +254,23 @@ impl PointerButton {
 }
 
 /// The set of buttons currently held.
+///
+/// Held *after* the event, which is what lets a drag ask "is the primary
+/// button still down?" without keeping its own bookkeeping.
+///
+/// ```
+/// use silka_core::input::{Buttons, PointerButton};
+///
+/// let mut held = Buttons::NONE;
+/// assert!(held.is_empty());
+///
+/// held.insert(PointerButton::Primary);
+/// assert!(held.contains(PointerButton::Primary));
+/// assert!(!held.contains(PointerButton::Secondary));
+///
+/// held.remove(PointerButton::Primary);
+/// assert!(held.is_empty());
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Buttons(u8);
 
@@ -233,6 +316,40 @@ impl fmt::Debug for Buttons {
 }
 
 /// The lifecycle phase of a pointer event.
+///
+/// The distinction that matters most is [`Cancel`](PointerPhase::Cancel) versus
+/// [`Up`](PointerPhase::Up): a button the OS took away did **not** produce a
+/// click, and a widget that conflates the two fires actions the user never
+/// asked for.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use silka_core::input::{PointerButton, PointerEvent, PointerPhase};
+/// use silka_paint::Point;
+///
+/// /// The shape of every press handler in the catalogue.
+/// fn is_activation(phase: PointerPhase) -> bool {
+///     match phase {
+///         PointerPhase::Up => true,
+///         // The window lost focus, or the OS took the gesture over. The
+///         // press is abandoned, not completed.
+///         PointerPhase::Cancel => false,
+///         _ => false,
+///     }
+/// }
+///
+/// assert!(is_activation(PointerPhase::Up));
+/// assert!(!is_activation(PointerPhase::Cancel));
+///
+/// // A press carries the button that caused it; a plain move does not.
+/// let down = PointerEvent::new(PointerPhase::Down, Point::new(12.0, 8.0), Duration::ZERO)
+///     .button(PointerButton::Primary);
+/// assert_eq!(down.button, Some(PointerButton::Primary));
+///
+/// let moved = PointerEvent::new(PointerPhase::Move, Point::new(14.0, 8.0), Duration::ZERO);
+/// assert_eq!(moved.button, None);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum PointerPhase {
@@ -255,6 +372,25 @@ pub enum PointerPhase {
 }
 
 /// A single pointer event.
+///
+/// Positions are **global**, in logical points; hit-testing is what turns them
+/// into a node and a local position. DPI never appears here.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::input::{PointerButton, PointerEvent, PointerPhase};
+/// use silka_paint::Point;
+///
+/// let down = PointerEvent::new(PointerPhase::Down, Point::new(120.0, 48.0), Duration::ZERO)
+///     .button(PointerButton::Primary);
+/// assert_eq!(down.phase, PointerPhase::Down);
+/// assert!(down.is_primary());
+///
+/// // A cancelled press is NOT an up: the OS took the gesture away, and no
+/// // click may be produced from it.
+/// let cancelled = PointerEvent::new(PointerPhase::Cancel, down.position, Duration::from_millis(80));
+/// assert_eq!(cancelled.phase, PointerPhase::Cancel);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct PointerEvent {
     /// Which pointer.
@@ -325,6 +461,25 @@ impl PointerEvent {
 /// A mouse wheel reports in **lines**, a trackpad in **logical points**. Both
 /// are passed through untouched all the way to the widget: only the widget
 /// knows how tall one of its lines is.
+///
+/// Converting lines to points *here* would mean guessing a line height for
+/// every widget in the framework, so the units survive to the one place that
+/// knows.
+///
+/// ```
+/// use silka_core::input::ScrollDelta;
+///
+/// let wheel = ScrollDelta::Lines { x: 0.0, y: -3.0 };
+/// let trackpad = ScrollDelta::Points { x: 0.0, y: -42.0 };
+///
+/// // A widget resolves lines against its own row height…
+/// let points = match wheel {
+///     ScrollDelta::Lines { x, y } => (x * 44.0, y * 44.0),
+///     ScrollDelta::Points { x, y } => (x, y),
+/// };
+/// assert_eq!(points.1, -132.0);
+/// # let _ = trackpad;
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ScrollDelta {
     /// A multiple of lines (mouse wheel).
@@ -392,6 +547,21 @@ impl ScrollPhase {
 }
 
 /// A single scroll event.
+///
+/// The phase is what keeps the framework from simulating momentum the OS is
+/// already providing: macOS sends real inertial frames, and re-deriving them
+/// would scroll twice as fast as the finger asked.
+///
+/// ```
+/// use silka_core::input::ScrollPhase;
+///
+/// // Anything tagged as momentum belongs to the OS; our physics only takes
+/// // over when the tail ends.
+/// assert!(ScrollPhase::Momentum.is_momentum());
+/// assert!(ScrollPhase::MomentumEnded.is_momentum());
+/// assert!(!ScrollPhase::Changed.is_momentum());
+/// assert!(!ScrollPhase::Wheel.is_momentum());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScrollEvent {
     /// The pointer doing the scrolling (for a trackpad, the mouse).
@@ -414,6 +584,32 @@ pub struct ScrollEvent {
 // ---------------------------------------------------------------------------
 
 /// A named (non-text) key.
+///
+/// These are the keys a control reacts to as *commands* rather than as text,
+/// which is why Space is here even though it produces a character: on a button
+/// it activates, and only in a text field does it type.
+///
+/// ```
+/// use silka_core::input::{KeyCode, NamedKey};
+///
+/// // The keyboard contract every component owes (`KOMPONEN.md`): Space and
+/// // Enter activate, Escape dismisses, arrows move within a group.
+/// fn activates(key: &KeyCode) -> bool {
+///     matches!(
+///         key,
+///         KeyCode::Named(NamedKey::Space) | KeyCode::Named(NamedKey::Enter),
+///     )
+/// }
+///
+/// assert!(activates(&KeyCode::Named(NamedKey::Space)));
+/// assert!(activates(&KeyCode::Named(NamedKey::Enter)));
+/// assert!(!activates(&KeyCode::Named(NamedKey::Escape)));
+/// assert!(!activates(&KeyCode::Character(' ')));
+///
+/// // Function keys are one variant rather than twenty-four.
+/// assert_eq!(NamedKey::Function(5), NamedKey::Function(5));
+/// assert_ne!(NamedKey::Function(5), NamedKey::Function(6));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum NamedKey {
@@ -453,6 +649,25 @@ pub enum NamedKey {
 
 /// The key that was pressed, in the **logical** vocabulary (already through
 /// the OS keyboard layout).
+///
+/// Logical, not physical: on an AZERTY keyboard the key next to Tab reports
+/// `Character('a')`, because that is the letter the user believes they pressed.
+/// A widget therefore never has to know about layouts, and a dead-key sequence
+/// arrives already composed.
+///
+/// ```
+/// use silka_core::input::{KeyCode, NamedKey};
+///
+/// // Text keys carry the character the layout produced…
+/// assert_eq!(KeyCode::Character('é'), KeyCode::Character('é'));
+///
+/// // …command keys carry a name, and the two are never confused.
+/// assert_ne!(KeyCode::Character('\t'), KeyCode::Named(NamedKey::Tab));
+///
+/// // A key the platform could not translate is explicit about it, rather
+/// // than arriving as a plausible-looking wrong character.
+/// assert_eq!(KeyCode::Unidentified, KeyCode::Unidentified);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum KeyCode {
@@ -481,6 +696,20 @@ pub enum KeyState {
 }
 
 /// A single keyboard event.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::input::{KeyCode, KeyEvent, KeyState, Modifiers, NamedKey};
+///
+/// let enter = KeyEvent::pressed(KeyCode::Named(NamedKey::Enter), Duration::ZERO);
+/// assert_eq!(enter.state, KeyState::Pressed);
+/// assert!(!enter.repeat);
+/// assert_eq!(enter.modifiers, Modifiers::NONE);
+/// ```
+///
+/// `text` is deliberately ignored while an IME is composing: a text widget
+/// holds back the normal key path and listens only to
+/// [`ImeEvent`], so the application never receives half-finished letters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyEvent {
     /// The logical key.
@@ -544,6 +773,58 @@ impl KeyEvent {
 /// It maps 1:1 onto `winit::event::Ime` — deliberately, because that shape is
 /// the same shape on all three operating systems. What must **not** leak in
 /// here is the winit type itself.
+///
+/// The rule a text field must honour: while a composition is in flight the
+/// normal key path is **held back**, so the application never receives
+/// half-finished letters (§3.3, §3.8). Only [`Commit`](ImeEvent::Commit) inserts
+/// text.
+///
+/// ```
+/// use silka_core::input::ImeEvent;
+///
+/// /// A miniature of what a text field's IME handling does.
+/// #[derive(Default)]
+/// struct Field {
+///     text: String,
+///     preedit: String,
+/// }
+///
+/// impl Field {
+///     fn handle(&mut self, event: &ImeEvent) {
+///         match event {
+///             ImeEvent::Enabled => {}
+///             // Rendered inline and underlined — it is not in the document yet.
+///             ImeEvent::Preedit { text, .. } => self.preedit = text.clone(),
+///             // This is the only branch that touches the document.
+///             ImeEvent::Commit(s) => {
+///                 self.preedit.clear();
+///                 self.text.push_str(s);
+///             }
+///             // Anything still composing is discarded, never committed.
+///             ImeEvent::Disabled => self.preedit.clear(),
+///         }
+///     }
+/// }
+///
+/// let mut field = Field::default();
+/// field.handle(&ImeEvent::Enabled);
+///
+/// // Typing "ni" toward 你 shows as preedit and changes nothing yet.
+/// field.handle(&ImeEvent::Preedit { text: "ni".into(), cursor: Some((2, 2)) });
+/// assert_eq!(field.preedit, "ni");
+/// assert_eq!(field.text, "");
+///
+/// // Choosing the candidate commits, and the preedit is gone.
+/// field.handle(&ImeEvent::Commit("你".into()));
+/// assert_eq!(field.text, "你");
+/// assert!(field.preedit.is_empty());
+///
+/// // An abandoned composition leaves no trace in the document.
+/// field.handle(&ImeEvent::Preedit { text: "ha".into(), cursor: None });
+/// field.handle(&ImeEvent::Disabled);
+/// assert_eq!(field.text, "你");
+/// assert!(field.preedit.is_empty());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImeEvent {
     /// The IME was enabled for this window.
@@ -587,6 +868,35 @@ pub enum FocusEvent {
 // ---------------------------------------------------------------------------
 
 /// Any input event at all, as the render tree sees it.
+///
+/// One enum for every kind, because a node's `on_event` takes exactly one
+/// parameter and the router has exactly one thing to deliver. The two accessors
+/// exist so common questions — "where did this happen", "when" — do not need a
+/// `match` at every call site.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use silka_core::input::{Event, FocusEvent, PointerEvent, PointerPhase};
+/// use silka_paint::Point;
+///
+/// let at = Point::new(24.0, 16.0);
+/// let moved = Event::from(PointerEvent::new(
+///     PointerPhase::Move,
+///     at,
+///     Duration::from_millis(120),
+/// ));
+///
+/// // Pointer events know where and when they happened…
+/// assert_eq!(moved.position(), Some(at));
+/// assert_eq!(moved.time(), Some(Duration::from_millis(120)));
+///
+/// // …while focus has neither a position nor a time: it is delivered straight
+/// // to the node and does not bubble.
+/// let focused = Event::Focus(FocusEvent::Gained);
+/// assert_eq!(focused.position(), None);
+/// assert_eq!(focused.time(), None);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// Pointer (mouse/touch/pen).

@@ -11,6 +11,45 @@
 //! standard compromise between smoothness and atlas size. The Y axis is
 //! deliberately rounded to whole pixels by the shaping layer (vertical hinting),
 //! so in practice only X varies.
+//!
+//! ```
+//! use silka_text::{GlyphCache, GlyphLookup, SubpixelBin};
+//!
+//! // Quantizing splits a position into a whole pixel and a bin. This is the
+//! // step that stops letters from snapping to integer positions as they move.
+//! let (px_a, bin_a) = SubpixelBin::quantize(10.0);
+//! let (px_b, bin_b) = SubpixelBin::quantize(10.25);
+//! assert_eq!(px_a, px_b);
+//! assert_ne!(bin_a, bin_b); // …so they are two different bitmaps
+//! assert_eq!(bin_a.as_offset(), 0.0);
+//!
+//! // Which means the cache key covers the bin, and a lookup for an
+//! // unrasterized glyph is a miss rather than a wrong bitmap.
+//! let mut cache = GlyphCache::new();
+//! assert!(cache.is_empty());
+//! ```
+//!
+//! The consumer's side of the protocol — the loop every rasterizer runs:
+//!
+//! ```
+//! use silka_text::{GlyphCache, GlyphKey, GlyphLookup};
+//!
+//! /// Returns `true` when the glyph still has to be rendered by the font
+//! /// rasterizer; `false` when the atlas already answers.
+//! fn needs_raster(cache: &mut GlyphCache, key: GlyphKey) -> bool {
+//!     match cache.lookup(&key) {
+//!         // Never seen: rasterize, then `insert` (or `insert_empty` when the
+//!         // glyph turns out to have no pixels at all).
+//!         GlyphLookup::Miss => true,
+//!         // Known to be blank — a space. Recording this is what stops the
+//!         // rasterizer being asked about spaces on every single frame.
+//!         GlyphLookup::Empty => false,
+//!         // Already in the atlas; the id goes straight into the draw command.
+//!         GlyphLookup::Hit(_id) => false,
+//!     }
+//! }
+//! # let _ = needs_raster;
+//! ```
 
 use std::collections::HashMap;
 
@@ -22,10 +61,34 @@ use crate::atlas::{AtlasFormat, AtlasRect, GlyphAtlas};
 ///
 /// Not an id that is stable across processes — it only serves as part of a cache
 /// key.
+///
+/// ```
+/// use silka_text::FontId;
+///
+/// // The id names the font a glyph actually came from — the fallback result,
+/// // not what the style asked for.
+/// let inter = FontId(0);
+/// assert_ne!(inter, FontId(1));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontId(pub u32);
 
 /// A fractional position quantized to quarter pixels.
+///
+/// This is what "subpixel positioning" means in practice: a glyph landing at
+/// x = 10.5 gets a *different bitmap* than one at x = 10.0, so text spacing
+/// stays even as it scrolls — rather than snapping letter by letter.
+///
+/// ```
+/// use silka_text::SubpixelBin;
+///
+/// assert_eq!(SubpixelBin::quantize(10.0), (10, SubpixelBin::Zero));
+/// assert_eq!(SubpixelBin::quantize(10.5), (10, SubpixelBin::Half));
+///
+/// // Four bins per pixel: enough that the eye cannot tell, cheap enough that
+/// // the cache does not explode.
+/// assert_eq!(SubpixelBin::default(), SubpixelBin::Zero);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum SubpixelBin {
     /// 0.0 px.
@@ -86,6 +149,30 @@ impl SubpixelBin {
 }
 
 /// The key of one glyph bitmap in the cache — including its subpixel variant.
+///
+/// Everything that changes the *pixels* is part of the key: the font, the glyph
+/// index, the size in physical pixels, the variable-font weight, the subpixel
+/// bins, and synthetic italic. Anything else — the text color above all — is
+/// deliberately not, which is why one "a" serves the whole UI.
+///
+/// ```
+/// use silka_text::{FontId, GlyphKey, SubpixelBin};
+///
+/// let key = GlyphKey {
+///     font: FontId(0),
+///     glyph: 36,
+///     size_bits: 30.0f32.to_bits(), // 15pt at a 2x scale factor
+///     weight: 400,
+///     subpixel_x: SubpixelBin::Half,
+///     subpixel_y: SubpixelBin::Zero,
+///     synthetic_italic: false,
+/// };
+/// assert_eq!(key.size_px(), 30.0);
+///
+/// // A different weight is a different shape, so it is a different entry.
+/// let bold = GlyphKey { weight: 700, ..key };
+/// assert_ne!(key, bold);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlyphKey {
     /// The source font (already the fallback result, not the requested font).
@@ -114,6 +201,23 @@ impl GlyphKey {
 }
 
 /// One glyph bitmap that already occupies space in the atlas.
+///
+/// The `left`/`top` offsets are why the draw command can carry a plain
+/// destination rect: the bitmap's placement relative to the glyph origin and
+/// the baseline is resolved here, on the CPU.
+///
+/// ```
+/// use silka_text::{GlyphCache, TextConstraints, TextEngine, TextStyle};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let layout = engine.layout("A", &TextStyle::new().size(15.0), TextConstraints::UNBOUNDED);
+/// let run = engine.rasterize(&layout, silka_paint::Point::ZERO, silka_paint::Color::WHITE);
+///
+/// let image = engine.glyphs().image(run.glyphs[0].image).expect("just rasterized");
+/// assert!(image.rect.width > 0);
+/// // A capital letter sits above the baseline.
+/// assert!(image.top > 0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlyphImage {
     /// The id used by `silka-paint` draw commands.
@@ -130,6 +234,28 @@ pub struct GlyphImage {
 }
 
 /// The result of a cache lookup.
+///
+/// The three-way answer matters: `Empty` is remembered so a space is never
+/// rasterized twice just because it produced no pixels the first time.
+///
+/// ```
+/// use silka_text::{FontId, GlyphCache, GlyphKey, GlyphLookup, SubpixelBin};
+///
+/// let mut cache = GlyphCache::new();
+/// let key = GlyphKey {
+///     font: FontId(0),
+///     glyph: 3, // a space
+///     size_bits: 30.0f32.to_bits(),
+///     weight: 400,
+///     subpixel_x: SubpixelBin::Zero,
+///     subpixel_y: SubpixelBin::Zero,
+///     synthetic_italic: false,
+/// };
+///
+/// assert_eq!(cache.lookup(&key), GlyphLookup::Miss);
+/// cache.insert_empty(key);
+/// assert_eq!(cache.lookup(&key), GlyphLookup::Empty);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GlyphLookup {
     /// Never rasterized yet.
@@ -141,6 +267,36 @@ pub enum GlyphLookup {
 }
 
 /// A rasterized bitmap ready to go into the atlas.
+///
+/// The hand-off from the rasterizer to the cache: pixels plus the offsets that
+/// place them, borrowed rather than copied.
+///
+/// ```
+/// use silka_text::{AtlasFormat, FontId, GlyphCache, GlyphKey, RasterGlyph, SubpixelBin};
+///
+/// let mut cache = GlyphCache::new();
+/// let key = GlyphKey {
+///     font: FontId(0),
+///     glyph: 36,
+///     size_bits: 30.0f32.to_bits(),
+///     weight: 400,
+///     subpixel_x: SubpixelBin::Zero,
+///     subpixel_y: SubpixelBin::Zero,
+///     synthetic_italic: false,
+/// };
+///
+/// let pixels = vec![0xFFu8; 8 * 12];
+/// let id = cache.insert(key, RasterGlyph {
+///     width: 8,
+///     height: 12,
+///     left: 0,
+///     top: 12,
+///     format: AtlasFormat::Mask,
+///     data: &pixels,
+/// });
+/// assert!(id.is_some());
+/// assert_eq!(cache.len(), 1);
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct RasterGlyph<'a> {
     /// Bitmap width, in pixels.
@@ -170,6 +326,23 @@ const UKURAN_MAKS: u32 = 4096;
 /// Issued ids are **never reused**. If the atlas fills up and has to be rebuilt,
 /// old ids simply stop resolving (the previous frame's draw commands skip that
 /// glyph) — they never point at the wrong glyph.
+///
+/// ```
+/// use silka_paint::{Color, GlyphFormat, GlyphSource, Point};
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let layout = engine.layout("hi", &TextStyle::new().size(15.0), TextConstraints::UNBOUNDED);
+/// let _run = engine.rasterize(&layout, Point::ZERO, Color::WHITE);
+///
+/// let cache = engine.glyphs();
+/// assert!(!cache.is_empty());
+/// let (hits, misses) = cache.stats();
+/// assert!(misses > 0 && hits + misses > 0);
+///
+/// // The atlas the backend uploads is right here, with no GPU type in sight.
+/// assert!(engine.atlas_size(GlyphFormat::Mask) > 0);
+/// ```
 #[derive(Debug)]
 pub struct GlyphCache {
     mask: GlyphAtlas,

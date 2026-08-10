@@ -1,0 +1,27 @@
+[package]
+name = "silka-dashboard"
+description = "Flagship example: a digital-lending ERP dashboard built only from silka's public API"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dev-dependencies]
+# Headless rendering for the pixel proofs (REKOMENDASI §9.5): the very page
+# that shows up in the window is drawn into an offscreen texture and its pixels
+# are counted. A dev-dependency only — the application itself never touches a
+# backend, it goes through `silka-platform`.
+silka-renderer.workspace = true
+# PNG encoding for the `--ignored` snapshot test, which writes the flagship
+# page to a file for manual visual QA. Test-only, like the renderer above.
+silka-testing.workspace = true
+
+[dependencies]
+silka-widgets.workspace = true
+silka-chart.workspace = true
+silka-core.workspace = true
+silka-theme.workspace = true
+silka-platform.workspace = true
+silka-paint.workspace = true
+silka-text.workspace = true

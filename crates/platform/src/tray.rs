@@ -35,6 +35,14 @@ use crate::image::RgbaImage;
 use crate::menu::{Menu, MenuError};
 
 /// Which mouse button produced a tray event.
+///
+/// ```
+/// use silka_platform::tray::TrayButton;
+///
+/// // The secondary button is the one that conventionally opens the menu —
+/// // on every platform except macOS, where either button does.
+/// assert_ne!(TrayButton::Primary, TrayButton::Secondary);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayButton {
     /// Left / primary.
@@ -50,6 +58,22 @@ pub enum TrayButton {
 /// Positions are in **physical** pixels because a tray icon does not belong to
 /// any window and therefore has no scale factor of its own to divide by; the
 /// screen it sits on is the only frame of reference there is.
+///
+/// ```
+/// use silka_platform::tray::{TrayActivation, TrayButton};
+///
+/// fn opens_window(a: &TrayActivation) -> bool {
+///     matches!(a, TrayActivation::Click { button: TrayButton::Primary, .. })
+/// }
+///
+/// let click = TrayActivation::Click {
+///     id: "status".into(),
+///     button: TrayButton::Primary,
+///     position: (1200.0, 12.0),
+/// };
+/// assert!(opens_window(&click));
+/// assert_eq!(click.id(), "status");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum TrayActivation {
@@ -127,6 +151,26 @@ pub(crate) fn activation_from_tray_icon(event: tray_icon::TrayIconEvent) -> Opti
 }
 
 /// Why a tray icon could not be created.
+///
+/// The first two variants are refusals on principle rather than OS failures:
+/// they catch the two configurations that *look* fine on macOS and are inert on
+/// Linux.
+///
+/// ```
+/// use silka_platform::tray::{tray, TrayError};
+///
+/// use silka_platform::menu::{item, menu};
+///
+/// // Every platform needs an image to draw…
+/// assert_eq!(tray("status").check(), Err(TrayError::NoIcon));
+///
+/// // …and a menuless tray icon does nothing on Linux, so it is refused here
+/// // rather than shipped and discovered by a user.
+/// # use silka_platform::image::RgbaImage;
+/// let iconed = tray("status").icon(RgbaImage::solid(16, 16, [0, 0, 0, 255]).unwrap());
+/// assert_eq!(iconed.check(), Err(TrayError::NoMenu));
+/// assert!(iconed.menu(menu("Status").item(item("app.quit", "Quit"))).check().is_ok());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TrayError {
@@ -167,6 +211,25 @@ impl From<MenuError> for TrayError {
 }
 
 /// A tray icon description, built by method chaining.
+///
+/// A plain value: it can be built, inspected and `check`ed with no OS involved,
+/// and only [`TrayConfig::install`] touches the system tray.
+///
+/// ```
+/// use silka_platform::image::RgbaImage;
+/// use silka_platform::menu::{item, menu};
+/// use silka_platform::tray::tray;
+///
+/// let config = tray("status")
+///     .tooltip("Silka")
+///     .icon(RgbaImage::solid(16, 16, [0x0A, 0x84, 0xFF, 0xFF]).unwrap())
+///     .menu(menu("Status").item(item("app.open", "Open")).item(item("app.quit", "Quit")))
+///     // A macOS template icon is recoloured by the OS for light/dark menubars.
+///     .template(true);
+///
+/// assert_eq!(config.id(), "status");
+/// assert!(config.check().is_ok());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct TrayConfig {
     id: String,
@@ -182,6 +245,24 @@ pub struct TrayConfig {
 ///
 /// `id` is what comes back in a [`TrayActivation`], so an application with
 /// several icons can tell them apart.
+///
+/// ```
+/// use silka_platform::{item, menu, tray, TrayError};
+///
+/// let icon = tray("silka.main")
+///     .tooltip("Silka")
+///     .menu(menu("").item(item("tray.open", "Open")).item(item("tray.quit", "Quit")))
+///     // macOS renders a template image in the menubar's own colour, so it
+///     // stays legible in both appearances. Ignored elsewhere.
+///     .template(true);
+///
+/// assert_eq!(icon.id(), "silka.main");
+///
+/// // Problems are reported before the OS is ever asked to show anything —
+/// // a tray icon with no image is invisible rather than obviously broken,
+/// // so it is caught here instead of at runtime.
+/// assert!(matches!(icon.check(), Err(TrayError::NoIcon)));
+/// ```
 pub fn tray(id: impl Into<String>) -> TrayConfig {
     TrayConfig {
         id: id.into(),
@@ -300,7 +381,30 @@ impl TrayConfig {
 
 /// A live tray icon.
 ///
-/// **Keep it alive.** Dropping it removes the icon from the tray.
+/// **Keep it alive.** Dropping it removes the icon from the tray. Store it
+/// wherever the application lives, not in the function that created it.
+///
+/// ```no_run
+/// use silka_platform::image::RgbaImage;
+/// use silka_platform::menu::{item, menu};
+/// use silka_platform::tray::{poll_tray_activation, tray};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let icon = tray("status")
+///     .tooltip("Silka")
+///     .icon(RgbaImage::solid(16, 16, [0x0A, 0x84, 0xFF, 0xFF])?)
+///     .menu(menu("Status").item(item("app.quit", "Quit")))
+///     .install()?;
+///
+/// // Live updates go through the handle rather than a rebuild.
+/// icon.set_tooltip(Some("Silka — 3 pending"))?;
+///
+/// // Activations are polled from the event loop.
+/// while let Some(activation) = poll_tray_activation() {
+///     println!("tray: {}", activation.id());
+/// }
+/// # Ok(()) }
+/// ```
 pub struct Tray {
     inner: tray_icon::TrayIcon,
 }

@@ -28,6 +28,26 @@
 //! ```
 
 /// A calendar date in the proleptic Gregorian calendar.
+///
+/// A time axis works in **day numbers**, and this is the conversion — which is
+/// why the crate needs no date dependency at all.
+///
+/// ```
+/// use silka_chart::date::Date;
+///
+/// let d = Date::new(2026, 8, 10);
+/// assert_eq!(Date::from_days(d.to_days()), d);
+///
+/// // Leap years are not a special case; they fall out of the arithmetic.
+/// assert_eq!(Date::new(2024, 2, 29).to_days() + 1, Date::new(2024, 3, 1).to_days());
+///
+/// // Tick generation snaps to calendar boundaries rather than to a fixed
+/// // number of days, because months are not all the same length.
+/// assert_eq!(d.start_of_month(), Date::new(2026, 8, 1));
+/// assert_eq!(d.start_of_quarter(), Date::new(2026, 7, 1));
+/// assert_eq!(d.quarter(), 3);
+/// assert_eq!(d.add_months(6), Date::new(2027, 2, 10));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Date {
     /// The year (may be negative).

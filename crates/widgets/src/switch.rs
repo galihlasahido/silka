@@ -86,6 +86,32 @@ use crate::text::text;
 /// Above it the **fling direction beats the position**: a finger flicked to
 /// the right turns the switch on even a third of the way along the track —
 /// the same behaviour as `UISwitch`.
+/// ```
+/// use silka_widgets::switch::{FLING, MAX_FLING};
+///
+/// /// The rule `UISwitch` follows on release, in one function.
+/// fn lands_on(fraction: f32, velocity: f32) -> bool {
+///     if velocity.abs() >= FLING {
+///         // A decisive flick wins over where the thumb happens to be…
+///         velocity > 0.0
+///     } else {
+///         // …and a slow drag is decided by the midpoint.
+///         fraction >= 0.5
+///     }
+/// }
+///
+/// // Flicked right from a third of the way along: on, even though the thumb
+/// // is nowhere near the midpoint.
+/// assert!(lands_on(0.33, 4.0));
+/// // Flicked left from almost the far end: off.
+/// assert!(!lands_on(0.9, -4.0));
+/// // Released gently: position decides.
+/// assert!(!lands_on(0.4, 0.1));
+/// assert!(lands_on(0.6, 0.1));
+///
+/// // And no driver glitch can throw the thumb across the screen.
+/// assert!(MAX_FLING > FLING);
+/// ```
 pub const FLING: f32 = 1.5;
 
 /// Upper bound on the velocity that may be handed to the spring, in fractions
@@ -93,6 +119,17 @@ pub const FLING: f32 = 1.5;
 ///
 /// One mad sample from a trackpad driver must not throw the thumb off to who
 /// knows where (§3.5).
+/// ```
+/// use silka_widgets::switch::MAX_FLING;
+///
+/// // Whatever the trackpad reports, the spring receives something sane.
+/// let reported = 9_999.0f32;
+/// let handed_over = reported.clamp(-MAX_FLING, MAX_FLING);
+/// assert_eq!(handed_over, MAX_FLING);
+///
+/// // Ordinary velocities pass through untouched.
+/// assert_eq!(3.0f32.clamp(-MAX_FLING, MAX_FLING), 3.0);
+/// ```
 pub const MAX_FLING: f32 = 12.0;
 
 /// How far colors are faded toward the background when a switch is disabled.
@@ -105,6 +142,23 @@ const REDUP: f32 = 0.5;
 /// The three colors of one control state: at rest, hovered, pressed.
 ///
 /// All three are tokens; a component never computes a color itself (§2.6).
+/// ```
+/// use silka_paint::Color;
+/// use silka_widgets::StateColors;
+///
+/// let track = StateColors {
+///     idle: Color::hex(0x39393D),
+///     hover: Color::hex(0x48484C),
+///     press: Color::hex(0x5A5A5E),
+/// };
+///
+/// // Pressed wins over hovered, because a finger that is down is the more
+/// // specific statement about what the user is doing.
+/// assert_eq!(track.pick(false, false), track.idle);
+/// assert_eq!(track.pick(true, false), track.hover);
+/// assert_eq!(track.pick(true, true), track.press);
+/// assert_eq!(track.pick(false, true), track.press);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StateColors {
     /// At rest.
@@ -137,6 +191,45 @@ impl StateColors {
 /// which preset is active: an iOS switch and a shadcn switch genuinely are
 /// different sizes, and both are still written as **multiples of the spacing
 /// scale**, never as loose numbers.
+/// ```
+/// use silka_paint::{CornerStyle, Rect};
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::SwitchStyle;
+///
+/// let ios = SwitchStyle::from_theme(&Theme::cupertino(Appearance::Dark));
+/// let shadcn = SwitchStyle::from_theme(&Theme::tailwind(Appearance::Dark));
+///
+/// // An iOS switch and a shadcn switch really are different sizes — the one
+/// // place in this component that has to know which preset is active.
+/// assert_ne!(ios.track, shadcn.track);
+/// assert_eq!(ios.pill.style, CornerStyle::squircle());
+///
+/// // The thumb is derived from the track and its inset, never written down
+/// // separately, so the two can never drift apart.
+/// assert!(ios.thumb_size() < ios.track.height);
+/// assert!(ios.travel() > 0.0);
+///
+/// // The track crosses over between two token colours, and the crossover is
+/// // a colour change rather than a computed brightness.
+/// let off = ios.track_for(false, false, false, false);
+/// let on = ios.track_for(true, false, false, false);
+/// assert_ne!(off, on);
+///
+/// // The thumb slides between the two ends of the track…
+/// let track = Rect::new(0.0, 0.0, ios.track.width, ios.track.height);
+/// let left = ios.thumb_rect(track, 0.0, 0.0);
+/// let right = ios.thumb_rect(track, 1.0, 0.0);
+/// assert!(right.origin.x > left.origin.x);
+///
+/// // …and stretches while pressed, which is the detail that makes it feel
+/// // like a physical object rather than a moving circle.
+/// let squashed = ios.thumb_rect(track, 0.0, 1.0);
+/// assert!(squashed.size.width > left.size.width);
+///
+/// // The hit target clears the HIG minimum even though the track is 32pt.
+/// assert!(ios.min_target >= 44.0);
+/// assert!(ios.track.height < ios.min_target);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SwitchStyle {
     /// Size of the track.
@@ -271,6 +364,25 @@ impl SwitchStyle {
 // Callback
 // ---------------------------------------------------------------------------
 
+/// ```
+/// use std::cell::Cell;
+/// use std::rc::Rc;
+///
+/// use silka_widgets::SwitchCallback;
+///
+/// let state = Rc::new(Cell::new(false));
+/// let sink = state.clone();
+/// let on_change = SwitchCallback::new(move |on| sink.set(on));
+///
+/// // The switch reports the value it has arrived at, so no caller has to
+/// // recompute it and no second source of truth can appear.
+/// on_change.call(true);
+/// assert!(state.get());
+///
+/// // Cheap to clone and equal only to itself, so props stay comparable.
+/// assert_eq!(on_change.clone(), on_change);
+/// assert_ne!(on_change, SwitchCallback::new(|_| {}));
+/// ```
 /// The action that receives a switch's new value.
 #[derive(Clone)]
 pub struct SwitchCallback(Rc<dyn Fn(bool)>);
@@ -318,6 +430,38 @@ struct Seretan {
 }
 
 /// Render node of a switch: track + thumb, with an optional label as its only
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{toggle, Fonts, SwitchNode};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, toggle(&fonts, &theme, "Wi-Fi").on(true));
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// let id = tree.children(tree.root())[0];
+/// let node = tree.node_ref::<SwitchNode>(id).expect("a switch node");
+///
+/// assert!(node.is_on());
+/// assert!(!node.is_dragging());
+///
+/// // At rest the thumb has reached the far end and nothing is moving, so the
+/// // GPU may sleep.
+/// assert_eq!(node.fraction(), 1.0);
+/// assert!(!node.is_animating());
+/// assert_eq!(node.track_color(), node.track_target());
+///
+/// // `visual_on` is what the *track colour* follows, and it crosses over at
+/// // the midpoint of the drag rather than on release — which is why dragging
+/// // a switch shows its new state before you let go.
+/// assert!(node.visual_on());
+/// ```
 /// child.
 pub struct SwitchNode {
     /// Sizes, colors, and shapes — all of them tokens.
@@ -879,6 +1023,31 @@ impl core::fmt::Debug for SwitchNode {
 // ---------------------------------------------------------------------------
 
 /// Props of [`SwitchNode`] — the view form of a switch.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{toggle, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let build = |on| toggle(&fonts, &theme, "Wi-Fi").on(on);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, build(false));
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// assert!(reconcile(&mut tree, build(false)).is_noop());
+///
+/// // Flipping the value updates the node in place, so the thumb *slides*
+/// // rather than teleporting — the node holding the spring survives.
+/// let flipped = reconcile(&mut tree, build(true));
+/// assert_eq!(flipped.replaced, 0);
+/// assert!(flipped.updated > 0);
+/// ```
+/// Props of [`SwitchNode`] — the view form of a switch.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchProps {
     style: SwitchStyle,
@@ -979,6 +1148,29 @@ impl ViewNode for SwitchProps {
 /// Its own type rather than [`Builder`], because the label and the switch are
 /// only assembled as the tree is built: [`switch_only`] still has an a11y
 /// name without a single glyph, and the label color follows a `disabled`
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{switch_only, toggle, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let wifi = rt.signal(true);
+///
+/// // The ordinary form: a label the user reads and a screen reader announces.
+/// let labelled = toggle(&fonts, &theme, "Wi-Fi")
+///     .on(wifi.get())
+///     .on_change(move |on| wifi.set(on));
+/// # let _ = labelled;
+///
+/// // Inside a settings row that supplies its own text, the switch stands
+/// // alone — but it still *must* be named, because an unnamed control does
+/// // not exist for a screen reader.
+/// let bare = switch_only(&theme).label("Wi-Fi").checked(true);
+/// # let _ = bare;
+/// ```
 /// state that may well be set later in the method chain.
 pub struct Switch {
     fonts: Option<Fonts>,
@@ -1019,6 +1211,20 @@ pub fn switch(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch 
 
 /// Another name for [`switch`] — `KOMPONEN.md` calls this component
 /// "`switch` / `toggle`".
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{switch, toggle, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // The two names are the same constructor; pick whichever reads better
+/// // where you are standing.
+/// let a = toggle(&fonts, &theme, "Airplane mode").on(true);
+/// let b = switch(&fonts, &theme, "Airplane mode").on(true);
+/// # let _ = (a, b);
+/// ```
 pub fn toggle(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch {
     switch(fonts, theme, label)
 }

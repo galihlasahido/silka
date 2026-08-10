@@ -118,8 +118,16 @@ pub fn next_sort(current: Option<SortBy>, column: usize) -> SortBy {
 
 /// A single table column — constructor plus method chaining (§2.5).
 ///
-/// ```ignore
-/// col("Nominal").fixed(140.0).right().sortable(true)
+/// ```
+/// use silka_widgets::col;
+///
+/// let amount = col("Amount").fixed(140.0).trailing().sortable(true);
+/// assert_eq!(amount.title, "Amount");
+/// assert!(amount.sortable);
+///
+/// // A flexible column shares the leftover width with its peers.
+/// let party = col("Counterparty").flex(2.0);
+/// assert!(party.resizable);
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Column {

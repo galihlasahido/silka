@@ -5,6 +5,30 @@
 //! be unit-testable on a machine with no GPU at all. The renderer's image
 //! converts into this one in [`crate::headless`], which is the only place that
 //! needs a device.
+//!
+//! ```
+//! use silka_testing::Image;
+//!
+//! // Straight RGBA8, row-major, tightly packed — no stride to get wrong.
+//! let mut img = Image::filled(3, 2, [0, 0, 0, 255]);
+//! assert_eq!(img.width(), 3);
+//! assert_eq!(img.pixel_count(), 6);
+//! assert_eq!(img.pixels().len(), 6 * 4);
+//!
+//! img.set_pixel(1, 0, [255, 0, 0, 255]);
+//! assert_eq!(img.pixel(1, 0), [255, 0, 0, 255]);
+//! assert_eq!(img.pixel(0, 0), [0, 0, 0, 255]);
+//!
+//! // Constructing from a buffer validates the length instead of trusting it,
+//! // because a stride mistake otherwise shows up as a mysteriously skewed
+//! // golden file rather than as an error.
+//! assert!(Image::new(3, 2, vec![0; 6 * 4]).is_ok());
+//! assert!(Image::new(3, 2, vec![0; 10]).is_err());
+//!
+//! // Size equality is its own question, asked before any pixel comparison.
+//! assert!(img.same_size(&Image::filled(3, 2, [0, 0, 0, 0])));
+//! assert!(!img.same_size(&Image::filled(4, 2, [0, 0, 0, 0])));
+//! ```
 
 use core::fmt;
 
@@ -13,6 +37,23 @@ pub const CHANNELS: usize = 4;
 
 /// An 8-bit RGBA image in **sRGB** space — byte values are directly comparable
 /// with the color tokens a preset defines.
+///
+/// ```
+/// use silka_testing::Image;
+///
+/// // Pure arithmetic, no GPU: this is why golden comparison is unit-testable
+/// // on a machine with no display server at all.
+/// let mut image = Image::filled(4, 2, [0x1C, 0x1C, 0x1E, 0xFF]);
+/// assert_eq!(image.pixel_count(), 8);
+/// assert_eq!(image.pixel(0, 0), [0x1C, 0x1C, 0x1E, 0xFF]);
+///
+/// image.set_pixel(1, 1, [0xFF, 0xFF, 0xFF, 0xFF]);
+/// assert_eq!(image.pixel(1, 1), [0xFF, 0xFF, 0xFF, 0xFF]);
+/// assert_eq!(image.opaque_pixels(), 8);
+///
+/// // Out of bounds reads transparent instead of panicking mid-assertion.
+/// assert_eq!(image.pixel(99, 99), [0, 0, 0, 0]);
+/// ```
 #[derive(Clone, PartialEq, Eq)]
 pub struct Image {
     width: u32,
@@ -21,6 +62,19 @@ pub struct Image {
 }
 
 /// Why an image could not be built.
+///
+/// ```
+/// use silka_testing::{image::ImageError, Image};
+///
+/// // A zero dimension is refused: nothing cannot be compared against nothing.
+/// assert_eq!(Image::new(0, 4, vec![]), Err(ImageError::Empty));
+///
+/// // So is a buffer whose length does not match w * h * 4.
+/// assert!(matches!(
+///     Image::new(2, 2, vec![0; 8]),
+///     Err(ImageError::WrongLength { expected: 16, actual: 8 })
+/// ));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageError {
     /// Width or height was zero — nothing can be compared against nothing.

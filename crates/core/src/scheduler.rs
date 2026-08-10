@@ -45,6 +45,23 @@ use std::time::{Duration, Instant};
 /// The scheduler does not care about the contents when deciding whether to
 /// draw — "not empty" is enough. The value is carried all the way into the
 /// frame log so that when investigating jank we know *who* woke the renderer.
+///
+/// ```
+/// use silka_core::scheduler::Dirty;
+///
+/// // Nothing changed: the renderer must not be woken at all.
+/// assert!(Dirty::NONE.is_empty());
+///
+/// // Reasons combine, and the combination is what the frame log records.
+/// let mut reason = Dirty::PAINT;
+/// reason.insert(Dirty::ANIMATION);
+/// assert!(reason.contains(Dirty::PAINT));
+/// assert!(!reason.contains(Dirty::LAYOUT));
+///
+/// // "A frame is needed" is just "not empty" — the scheduler never inspects
+/// // which bits are set to decide whether to draw.
+/// assert!(!reason.is_empty());
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Dirty(u8);
 
@@ -166,6 +183,31 @@ pub const MIN_VSYNC_INTERVAL: Duration = Duration::from_micros(1_000);
 pub const MAX_VSYNC_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Where the vsync interval figure came from.
+///
+/// Recorded rather than assumed, because a wrong frame budget is invisible: the
+/// scheduler would silently declare 8.3 ms frames "on time" on a 60 Hz display,
+/// or panic-budget a 120 Hz one. `Unknown` is a real state with no guess behind
+/// it, so a missing clock is a fact rather than a plausible-looking number.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use silka_core::scheduler::{ClockSource, Vsync};
+///
+/// // No information yet — and deliberately no default of 60 Hz.
+/// assert_eq!(Vsync::UNKNOWN.source(), ClockSource::Unknown);
+///
+/// // What macOS's CADisplayLink reports: authoritative, ProMotion included.
+/// let promotion = Vsync::display_link(Duration::from_micros(8_333)).unwrap();
+/// assert_eq!(promotion.source(), ClockSource::DisplayLink);
+///
+/// // What the winit fallback derives from real inter-frame gaps.
+/// let guessed = Vsync::estimated(Duration::from_micros(16_666)).unwrap();
+/// assert_eq!(guessed.source(), ClockSource::Estimated);
+///
+/// // Implausible intervals are rejected instead of being trusted.
+/// assert!(Vsync::display_link(Duration::from_secs(5)).is_none());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClockSource {
     /// No information yet. **No default guess** — see the module docs.
@@ -201,6 +243,26 @@ impl ClockSource {
 /// It deliberately has no numeric default. `Vsync::UNKNOWN` means "not known
 /// yet", and [`Vsync::budget`] returns `None` — callers must handle that
 /// ignorance rather than paper over it with 16.6 ms.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::scheduler::Vsync;
+///
+/// // Before the platform says anything, the rate is genuinely unknown —
+/// // and the API makes callers face that rather than assume 60 Hz.
+/// assert!(!Vsync::UNKNOWN.is_known());
+/// assert_eq!(Vsync::UNKNOWN.budget(), None);
+///
+/// // A ProMotion display reporting 120 Hz through its display link.
+/// let vsync = Vsync::display_link(Duration::from_micros(8_333)).unwrap();
+/// assert!((vsync.hz().unwrap() - 120.0).abs() < 1.0);
+/// // The frame budget is always derived from the measured interval — never
+/// // a constant, so a 240 Hz display gets 4.2 ms and nobody has to remember.
+/// assert_eq!(vsync.budget(), vsync.interval());
+///
+/// // Implausible intervals are rejected rather than believed.
+/// assert!(Vsync::display_link(Duration::from_secs(5)).is_none());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Vsync {
     interval: Option<Duration>,
@@ -317,6 +379,43 @@ const ESTIMATOR_MIN_SAMPLES: usize = 8;
 /// fallback). It uses the **median**, not the mean: a single dropped frame does
 /// not shift the estimate, and long idle gaps are rejected outright for falling
 /// outside [`MIN_VSYNC_INTERVAL`]..[`MAX_VSYNC_INTERVAL`].
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use silka_core::scheduler::RefreshEstimator;
+///
+/// let mut estimator = RefreshEstimator::new();
+///
+/// // It refuses to answer until it has seen enough frames — a guess from two
+/// // samples is worse than no answer, because the scheduler would act on it.
+/// estimator.observe(Duration::from_micros(16_666));
+/// assert_eq!(estimator.estimate(), None);
+///
+/// // A steady 60 Hz stream, with one badly dropped frame in the middle.
+/// for i in 0..20 {
+///     let gap = if i == 9 {
+///         Duration::from_micros(50_000) // the compositor stalled
+///     } else {
+///         Duration::from_micros(16_666)
+///     };
+///     estimator.observe(gap);
+/// }
+///
+/// // The median absorbs the outlier: one janky frame does not convince the
+/// // scheduler that the display is slower than it is.
+/// let estimate = estimator.estimate().expect("enough samples now");
+/// assert!(estimate.as_micros().abs_diff(16_666) < 1_000);
+///
+/// // An idle gap is outside the plausible range and is rejected outright,
+/// // rather than being averaged in when the window wakes up again.
+/// assert!(!estimator.observe(Duration::from_secs(3)));
+///
+/// // Moving to another display starts over rather than blending two rates.
+/// estimator.reset();
+/// assert_eq!(estimator.sample_count(), 0);
+/// assert_eq!(estimator.estimate(), None);
+/// ```
 #[derive(Debug, Clone)]
 pub struct RefreshEstimator {
     samples: [Duration; ESTIMATOR_CAPACITY],
@@ -384,6 +483,22 @@ const STATS_WINDOW: usize = 120;
 
 /// The measurements of a single frame.
 ///
+/// ```
+/// use std::time::Instant;
+/// use silka_core::scheduler::{Dirty, FrameScheduler};
+///
+/// let mut scheduler = FrameScheduler::new();
+/// scheduler.request(Dirty::PAINT);
+///
+/// let mut start = scheduler.begin_frame(Instant::now());
+/// start.mark_built(Instant::now());  // scene done; hand-off begins
+/// let timing = scheduler.end_frame(start, Instant::now(), true);
+///
+/// // The two halves stay separate: only `build` is judged against the budget.
+/// assert!(timing.presented);
+/// assert!(timing.total() >= timing.build);
+/// ```
+///
 /// Frame time is deliberately split in two, because merging the halves yields a
 /// misleading number:
 ///
@@ -421,6 +536,23 @@ impl FrameTiming {
 }
 
 /// Rolling statistics over frame build times.
+///
+/// The rolling window is what makes the numbers usable while an application is
+/// running: an average over the whole session hides a hitch that happens once
+/// per scroll, which is exactly the hitch a user notices. `worst` is kept for
+/// the session, because the worst frame is the one that gets reported as a bug.
+///
+/// ```
+/// use silka_core::scheduler::FrameStats;
+///
+/// // A fresh session has measured nothing, and says so rather than
+/// // reporting a zero that reads like a fast frame.
+/// let stats = FrameStats::new();
+/// assert_eq!(stats.frames(), 0);
+/// assert_eq!(stats.average(), None);
+/// assert_eq!(stats.last(), None);
+/// assert_eq!(stats.over_budget(), 0);
+/// ```
 #[derive(Debug, Clone)]
 pub struct FrameStats {
     ring: [Duration; STATS_WINDOW],
@@ -530,6 +662,15 @@ impl FrameStats {
     }
 
     /// A one-line summary for logs.
+    ///
+    /// ```
+    /// use silka_core::scheduler::{FrameStats, Vsync};
+    ///
+    /// // Percentiles rather than a mean, because a mean hides exactly the
+    /// // frames a user perceives as a stutter.
+    /// let stats = FrameStats::default();
+    /// assert!(stats.summary(Vsync::UNKNOWN).contains("frame"));
+    /// ```
     pub fn summary(&self, vsync: Vsync) -> String {
         format!(
             "{} frame · build p50 {} · p95 {} · max {} · vsync {vsync} · budget {} · over-budget {}/{} · skipped {}",
@@ -570,6 +711,34 @@ fn opt_ms(d: Option<Duration>) -> String {
 ///
 /// It deliberately returns `Option<String>` instead of printing: the "is this a
 /// debug build" decision belongs to the caller, and the format stays testable.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use silka_core::scheduler::{Dirty, FrameLogger, FrameStats, FrameTiming, Vsync};
+///
+/// // Log one line in ten: enough to see a trend, not enough to become the
+/// // reason frames are slow.
+/// let logger = FrameLogger::every(10);
+/// let stats = FrameStats::new();
+///
+/// let timing = FrameTiming {
+///     index: 10,
+///     reason: Dirty::PAINT,
+///     build: Duration::from_micros(4_000),
+///     present: Duration::from_micros(900),
+///     since_previous: Some(Duration::from_micros(16_666)),
+///     presented: true,
+///     over_budget: false,
+/// };
+///
+/// // Nothing is printed here — the caller decides whether a line is wanted
+/// // and where it goes, which is what keeps the format testable.
+/// let line = logger.line(&stats, Vsync::UNKNOWN, &timing);
+/// if let Some(text) = line {
+///     assert!(text.contains("10"));
+/// }
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct FrameLogger {
     every: u64,
@@ -627,6 +796,22 @@ impl Default for FrameLogger {
 // ---------------------------------------------------------------------------
 
 /// What the platform should do after a frame request.
+///
+/// ```
+/// use silka_core::scheduler::{Dirty, FrameScheduler, Wake};
+///
+/// let mut scheduler = FrameScheduler::new();
+///
+/// // The first request wakes the display link…
+/// assert_eq!(scheduler.request(Dirty::PAINT), Wake::Schedule);
+/// // …and a second one in the same turn must not poke the platform twice.
+/// assert_eq!(scheduler.request(Dirty::LAYOUT), Wake::AlreadyScheduled);
+///
+/// // A signal nobody read changes nothing, and changes nothing on the GPU.
+/// let mut idle = FrameScheduler::new();
+/// assert_eq!(idle.request(Dirty::NONE), Wake::Suppressed);
+/// assert!(idle.is_idle());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wake {
     /// Wake the vsync source (unpause the display link / `request_redraw`).
@@ -642,6 +827,27 @@ pub enum Wake {
 /// Returned by [`FrameScheduler::begin_frame`] and consumed by
 /// [`FrameScheduler::end_frame`] — a shape that turns "forgot to close the
 /// frame" into a visible mistake rather than a silent leak.
+///
+/// ```
+/// use std::time::Instant;
+/// use silka_core::scheduler::{Dirty, FrameScheduler};
+///
+/// let mut scheduler = FrameScheduler::new();
+/// scheduler.request(Dirty::ANIMATION);
+///
+/// let now = Instant::now();
+/// let mut start = scheduler.begin_frame(now);
+/// assert!(start.reason().contains(Dirty::ANIMATION));
+///
+/// // Marking the hand-off separates our own work from swapchain
+/// // backpressure; without it the whole frame counts as build time.
+/// start.mark_built(Instant::now());
+/// assert!(start.built_at().is_some());
+///
+/// let timing = scheduler.end_frame(start, Instant::now(), true);
+/// assert_eq!(timing.index, 0);
+/// assert!(scheduler.is_idle());
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct FrameStart {
     index: u64,
@@ -687,6 +893,32 @@ impl FrameStart {
 /// not draw at all — no loop spinning, no timer ticking. The moment something
 /// is dirty, exactly **one** frame is scheduled on the next vsync, whatever the
 /// display's rate happens to be.
+///
+/// ```
+/// use std::time::{Duration, Instant};
+/// use silka_core::scheduler::{Dirty, FrameScheduler, Vsync, Wake};
+///
+/// let mut scheduler = FrameScheduler::new();
+/// scheduler.set_vsync(Vsync::display_link(Duration::from_micros(8_333)).unwrap());
+///
+/// // Nothing is dirty: no loop spins, no timer ticks.
+/// assert!(scheduler.is_idle());
+///
+/// // One write, one frame — however many things asked for it.
+/// assert_eq!(scheduler.request(Dirty::PAINT), Wake::Schedule);
+/// assert_eq!(scheduler.request(Dirty::THEME), Wake::AlreadyScheduled);
+///
+/// let start = scheduler.begin_frame(Instant::now());
+/// scheduler.end_frame(start, Instant::now(), true);
+///
+/// // And back to sleep.
+/// assert!(scheduler.is_idle());
+/// assert_eq!(scheduler.pending(), Dirty::NONE);
+///
+/// // A hidden window is not drawn at all, however dirty it becomes.
+/// scheduler.set_visible(false);
+/// assert_eq!(scheduler.request(Dirty::LAYOUT), Wake::Suppressed);
+/// ```
 #[derive(Debug)]
 pub struct FrameScheduler {
     dirty: Dirty,

@@ -330,6 +330,43 @@ impl Default for Spring {
 /// seconds.
 ///
 /// Produced by [`Spring::propagator`].
+///
+/// It is a matrix rather than a step function because the same `dt` is used by
+/// every animating value in a frame: computing the coefficients once and
+/// applying them many times is what keeps a thousand springs cheap. It is also
+/// what makes a spring **retargetable** — the state is `(displacement,
+/// velocity)`, so a new target mid-flight keeps the motion the user is already
+/// watching instead of restarting it.
+///
+/// ```
+/// use silka_core::animation::Spring;
+///
+/// let spring = Spring::snappy();
+/// let step = spring.propagator(1.0 / 60.0);
+/// assert!(step.is_finite());
+///
+/// // Start 100 points away from the target, at rest.
+/// let (mut x, mut v) = (100.0f32, 0.0f32);
+/// for _ in 0..8 {
+///     (x, v) = step.apply(x, v);
+/// }
+///
+/// // Eight frames later the displacement has shrunk and the value is moving.
+/// assert!(x < 100.0);
+/// assert!(x > 0.0);
+/// assert!(v.abs() > 0.0);
+///
+/// // Run it out: a spring always converges on its target.
+/// for _ in 0..400 {
+///     (x, v) = step.apply(x, v);
+/// }
+/// assert!(x.abs() < 0.01);
+///
+/// // The same matrix serves every value animating on this spring in this
+/// // frame — that is the whole reason it is a matrix.
+/// let (other, _) = step.apply(-40.0f32, 0.0);
+/// assert!(other > -40.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Propagator {
     /// Contribution of the initial displacement to the new displacement.

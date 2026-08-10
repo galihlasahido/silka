@@ -199,7 +199,7 @@
 //!   not at `x = 3000` where nobody would ever find it
 //!   ([`restore_placement`]).
 //!
-//! //! [`headless_app`] assembles the **exact same** [`silka_core::app::AppRuntime`]
+//! [`headless_app`] assembles the **exact same** [`silka_core::app::AppRuntime`]
 //! without a window and without a GPU — `run_app` itself uses it, and so do
 //! integration tests that run the same page in CI, feed it input events, and
 //! then count its pixels in an offscreen texture (§9.5). The [`Env`] values the
@@ -208,6 +208,17 @@
 //! [`Signal<ScaleFactor>`](silka_core::app::ScaleFactor) (§3.3).
 
 #![warn(missing_docs)]
+// Documentation is part of the public contract, so the checks rustdoc offers
+// are turned on here rather than left to a reviewer's eye. A broken intra-doc
+// link is an error: it means a rename silently orphaned a reference.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![warn(
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks
+)]
 
 pub mod access;
 pub mod appearance;
@@ -306,3 +317,12 @@ pub use platform::{NativeEvent, NativeFlow, NativeWindow};
 /// need to touch the winit API directly use this re-export, so there is never
 /// more than one version of winit in a dependency tree.
 pub use winit;
+
+/// Compiles and runs every Rust example in this crate's `README.md`.
+///
+/// The item only exists while rustdoc is collecting doctests, so it never
+/// shows up in the rendered documentation. Its whole purpose is to stop the
+/// README from drifting away from the API it advertises.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

@@ -4,6 +4,35 @@
 //! one pass per level, keys for identity, position for everything else. No
 //! clever heuristics that are hard to explain when state lands on the wrong
 //! row.
+//!
+//! ```
+//! use silka_core::signals::Key;
+//! use silka_core::tree::RenderTree;
+//! use silka_core::view::{column, fixed, reconcile, View};
+//!
+//! fn rows(ids: &[i64]) -> View {
+//!     View::from(column(
+//!         ids.iter()
+//!             .map(|id| View::from(fixed(100.0, 24.0).key(Key::num(*id))))
+//!             .collect::<Vec<_>>(),
+//!     ))
+//! }
+//!
+//! let mut tree = RenderTree::new();
+//! reconcile(&mut tree, rows(&[1, 2, 3]));
+//! let column_id = tree.children(tree.root())[0];
+//! let before = tree.children(column_id).to_vec();
+//!
+//! // Reordering keyed children *moves* their nodes; it never destroys and
+//! // rebuilds them, which is what stops per-row state landing on the wrong row.
+//! let stats = reconcile(&mut tree, rows(&[3, 1, 2]));
+//! assert_eq!(stats.created, 0);
+//! assert_eq!(stats.removed, 0);
+//! assert!(stats.moved > 0);
+//!
+//! let after = tree.children(column_id);
+//! assert_eq!(after, vec![before[2], before[0], before[1]]);
+//! ```
 
 use std::collections::HashMap;
 
@@ -14,6 +43,38 @@ use crate::tree::{keyed_children, NodeId, RenderTree};
 use super::View;
 
 /// The tally of one diff run — for tests, the inspector, and jank debugging.
+///
+/// The numbers are what turns "the UI feels slow" into a specific answer: a
+/// frame that recreates hundreds of nodes is a keying bug, and a frame that
+/// reuses everything but still relayouts is a constraints bug.
+///
+/// ```
+/// use silka_core::view::DiffStats;
+///
+/// // The quiet frame: nothing was created, changed, replaced, removed or
+/// // moved, so there is nothing for layout or paint to do either.
+/// let quiet = DiffStats { reused: 12, ..DiffStats::default() };
+/// assert!(quiet.is_noop());
+/// assert!(!quiet.structure_changed());
+///
+/// // A props-only change is work, but not *structural* work: the same nodes
+/// // stay in the same places and only repaint.
+/// let repaint = DiffStats { reused: 12, updated: 1, ..DiffStats::default() };
+/// assert!(!repaint.is_noop());
+/// assert!(!repaint.structure_changed());
+///
+/// // A row that moved is structural, and so is one that was created.
+/// let reordered = DiffStats { reused: 12, moved: 2, ..DiffStats::default() };
+/// assert!(reordered.structure_changed());
+///
+/// // A frame may diff several subtrees — one per rebuilt component — and
+/// // still report one number per category.
+/// let mut total = repaint;
+/// total.merge(reordered);
+/// assert_eq!(total.updated, 1);
+/// assert_eq!(total.moved, 2);
+/// assert_eq!(total.reused, 24);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DiffStats {
     /// Nodes newly created (including every descendant of a new subtree).
@@ -67,6 +128,38 @@ impl DiffStats {
 ///
 /// This is the normal entry point per rebuild: build the view, call this, then
 /// lay out.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, reconcile, View};
+/// use silka_paint::Size;
+///
+/// let mut tree = RenderTree::new();
+///
+/// // The first pass has nothing to reuse, so everything is created.
+/// let first = reconcile(
+///     &mut tree,
+///     column([View::from(fixed(40.0, 20.0)), View::from(fixed(40.0, 20.0))]),
+/// );
+/// assert!(first.created > 0);
+/// assert_eq!(first.removed, 0);
+/// tree.layout(BoxConstraints::tight(Size::new(200.0, 100.0)));
+///
+/// // Diffing the *same* view again reuses every node and changes nothing:
+/// // no allocation, no relayout, and no reason to wake the renderer.
+/// let again = reconcile(
+///     &mut tree,
+///     column([View::from(fixed(40.0, 20.0)), View::from(fixed(40.0, 20.0))]),
+/// );
+/// assert!(again.is_noop());
+/// assert!(again.reused > 0);
+///
+/// // Dropping a child is a structural change, which is a different question
+/// // from "did any props change".
+/// let shrunk = reconcile(&mut tree, column([View::from(fixed(40.0, 20.0))]));
+/// assert!(shrunk.structure_changed());
+/// assert_eq!(shrunk.removed, 1);
+/// ```
 pub fn reconcile(tree: &mut RenderTree, view: impl Into<View>) -> DiffStats {
     let view = view.into();
     let root = tree.root();

@@ -15,6 +15,31 @@
 //! Subpixel *positioning* is already baked into the id: two subpixel variants
 //! of the same glyph are two different atlas entries with different ids (§3.3).
 //! That is why this draw command needs to know nothing about DPI.
+//!
+//! ```
+//! use silka_paint::{Color, Glyph, GlyphImageId, GlyphRun, Rect};
+//!
+//! // A run is one color plus a list of "this bitmap, at this rect". Color
+//! // lives on the run, not the glyph, because that is the batching unit.
+//! let mut run = GlyphRun::new(Color::hex(0xF2F2F7));
+//! for (i, id) in [11u32, 12, 13].into_iter().enumerate() {
+//!     let x = 24.0 + i as f32 * 9.0;
+//!     run.push(Glyph::new(
+//!         GlyphImageId::from_raw(id),
+//!         Rect::new(x, 40.0, 8.0, 12.0),
+//!     ));
+//! }
+//! assert_eq!(run.len(), 3);
+//!
+//! // The run knows the box it covers, which is what culling needs…
+//! let bounds = run.bounds().expect("a non-empty run always has bounds");
+//! assert_eq!(bounds.origin.x, 24.0);
+//! assert_eq!(bounds.max_x(), 50.0);
+//!
+//! // …and a clip rect is how a text field keeps its content inside its frame.
+//! let clipped = run.clip(Rect::new(0.0, 0.0, 40.0, 100.0));
+//! assert_eq!(clipped.clip, Some(Rect::new(0.0, 0.0, 40.0, 100.0)));
+//! ```
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect, Size};
@@ -25,6 +50,17 @@ use crate::geometry::{Point, Rect, Size};
 /// disk: it is only valid as long as the atlas that issued it is still alive.
 /// Ids are never reused, so resolving a stale id is safe (the result is
 /// "nothing", not the wrong glyph).
+///
+/// ```
+/// use silka_paint::GlyphImageId;
+///
+/// // Only the atlas that owns the bitmaps mints these.
+/// let id = GlyphImageId::from_raw(42);
+/// assert_eq!(id.raw(), 42);
+///
+/// // Ids are values: cheap to copy, hashable, and orderable for batching.
+/// assert_eq!(id, GlyphImageId::from_raw(42));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GlyphImageId(u32);
 
@@ -42,6 +78,15 @@ impl GlyphImageId {
 }
 
 /// One glyph ready to draw: a bitmap from the atlas, placed on a logical rect.
+///
+/// ```
+/// use silka_paint::{Glyph, GlyphImageId, Rect};
+///
+/// // The bitmap's offset from the glyph origin is already folded into
+/// // `bounds`, so a backend draws the rect as-is — no font metrics needed.
+/// let g = Glyph::new(GlyphImageId::from_raw(7), Rect::new(24.0, 30.0, 9.0, 12.0));
+/// assert_eq!(g.bounds.size.width, 9.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Glyph {
     /// The bitmap in the atlas.
@@ -64,6 +109,23 @@ impl Glyph {
 /// One run = one color. Rich text with several colors produces several runs;
 /// that is deliberate, because batching per color is the cheapest thing to do
 /// on the GPU.
+///
+/// ```
+/// use silka_paint::{Color, Glyph, GlyphImageId, GlyphRun, Rect};
+///
+/// let mut run = GlyphRun::new(Color::WHITE); // the color is a `label` token
+/// run.push(Glyph::new(GlyphImageId::from_raw(1), Rect::new(0.0, 0.0, 8.0, 12.0)));
+/// run.push(Glyph::new(GlyphImageId::from_raw(2), Rect::new(8.0, 0.0, 8.0, 12.0)));
+/// assert_eq!(run.len(), 2);
+///
+/// // The union rect drives dirty regions and coarse hit-testing.
+/// assert_eq!(run.bounds(), Some(Rect::new(0.0, 0.0, 16.0, 12.0)));
+/// assert_eq!(GlyphRun::new(Color::WHITE).bounds(), None);
+///
+/// // Truncation and scrolling clip the run rather than re-laying out the text.
+/// let clipped = run.clip(Rect::new(0.0, 0.0, 10.0, 12.0));
+/// assert!(clipped.clip.is_some());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlyphRun {
     /// The glyphs making up this run, in visual left-to-right order.

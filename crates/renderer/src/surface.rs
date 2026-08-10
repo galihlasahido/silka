@@ -10,6 +10,19 @@ use crate::instance::{fill_draw_list, ColorSpace, DrawList};
 use crate::pipeline::SdfPipeline;
 
 /// The result of one attempt to draw a frame.
+///
+/// ```
+/// use silka_renderer::FrameOutcome;
+///
+/// fn frame_was_shown(outcome: FrameOutcome) -> bool {
+///     // `Skipped` is not an error: a minimized or occluded window simply has
+///     // nothing to present, and the scheduler goes back to waiting.
+///     matches!(outcome, FrameOutcome::Presented)
+/// }
+///
+/// assert!(frame_was_shown(FrameOutcome::Presented));
+/// assert!(!frame_was_shown(FrameOutcome::Skipped));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameOutcome {
     /// The frame was drawn and presented.
@@ -25,6 +38,27 @@ pub enum FrameOutcome {
 ///
 /// Its API is deliberately free of wgpu types: `silka-platform` only forwards
 /// the physical size from winit and a [`Scene`].
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// use silka_paint::{Color, Scene, Size};
+/// use silka_renderer::{FrameOutcome, Gpu, SurfaceGeometry, WindowTarget};
+///
+/// fn run<W: WindowTarget>(window: Arc<W>) -> Result<(), Box<dyn std::error::Error>> {
+///     let geometry = SurfaceGeometry::from_logical(Size::new(1024.0, 720.0), 2.0);
+///     let (gpu, mut surface) = Gpu::with_surface(window, geometry)?;
+///
+///     // The shell forwards what winit reports; no wgpu type crosses over.
+///     surface.resize(&gpu, 2048, 1440);
+///     surface.set_scale_factor(2.0);
+///
+///     // Draw only when something is dirty (REKOMENDASI §3.5).
+///     if surface.render(&gpu, &Scene::new(Color::hex(0x1C1C1E)))? == FrameOutcome::Skipped {
+///         // Minimized or occluded: go back to waiting for an event.
+///     }
+///     Ok(())
+/// }
+/// ```
 #[derive(Debug)]
 pub struct WindowSurface {
     surface: wgpu::Surface<'static>,

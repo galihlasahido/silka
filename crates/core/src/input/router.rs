@@ -20,6 +20,47 @@
 //! all it can do is change itself and leave requests behind through
 //! [`EventCtx`]. Structure only changes through the view diff (§2) — that is
 //! what keeps the arena consistent even when events arrive mid-frame.
+//!
+//! ```
+//! use std::time::Duration;
+//!
+//! use silka_core::input::{
+//!     Event, FocusDirection, InputRouter, PointerButton, PointerEvent, PointerId, PointerPhase,
+//! };
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, interactive, reconcile, View};
+//! use silka_paint::{Point, Size};
+//!
+//! let mut tree = RenderTree::new();
+//! reconcile(
+//!     &mut tree,
+//!     column([
+//!         View::from(interactive(fixed(100.0, 40.0)).focusable(true).label("first")),
+//!         View::from(interactive(fixed(100.0, 40.0)).focusable(true).label("second")),
+//!     ]),
+//! );
+//! tree.layout(BoxConstraints::tight(Size::new(200.0, 200.0)));
+//!
+//! let mut router = InputRouter::new();
+//!
+//! // Rule 1: a pointer event is routed by geometry, innermost node first.
+//! let press = PointerEvent::new(
+//!     PointerPhase::Down,
+//!     Point::new(10.0, 10.0),
+//!     Duration::from_millis(10),
+//! )
+//! .button(PointerButton::Primary);
+//! let _ = router.dispatch(&mut tree, &Event::from(press));
+//!
+//! // Rule 3: that press captured the pointer, so a fast drag cannot come
+//! // loose from the node it started on even when the cursor leaves the box.
+//! assert!(router.capture_of(PointerId::MOUSE).is_some());
+//!
+//! // Rule 2: the keyboard is routed by focus, which Tab moves through the
+//! // very order the render tree defines.
+//! router.move_focus(&mut tree, FocusDirection::Next);
+//! assert!(router.focus().focused().is_some());
+//! ```
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -46,6 +87,15 @@ use super::velocity::{Velocity, VelocityTracker};
 /// Our own vocabulary, mapped to `winit::window::CursorIcon` in
 /// `silka-platform` — the same reason as for the whole input module: widget
 /// code does not touch third-party types.
+///
+/// ```
+/// use silka_core::input::CursorIcon;
+///
+/// // The arrow is the default, so a node that says nothing about the cursor
+/// // cannot leave a stale resize arrow behind it.
+/// assert_eq!(CursorIcon::default(), CursorIcon::Default);
+/// assert_ne!(CursorIcon::Text, CursorIcon::Pointer);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum CursorIcon {
@@ -79,6 +129,27 @@ pub enum CursorIcon {
 /// `silka-platform` translates it into `set_ime_allowed` +
 /// `set_ime_cursor_area` — the two winit calls that decide whether the CJK
 /// candidate window appears in the right place (REKOMENDASI §3.8).
+///
+/// The request flows **out** of the framework to the shell, which turns it into
+/// `set_ime_allowed` plus `set_ime_cursor_area`. Getting the area wrong is what
+/// puts a CJK candidate window in the corner of the screen instead of under the
+/// caret.
+///
+/// ```
+/// use silka_core::input::ImeRequest;
+/// use silka_paint::Rect;
+///
+/// let caret = Rect::new(120.0, 48.0, 1.0, 18.0);
+///
+/// // Focusing a text field turns the IME on and anchors it…
+/// let enable = ImeRequest::Enable { area: caret };
+/// // …and every caret move afterwards is an update, not a re-enable.
+/// let moved = ImeRequest::Update { area: Rect::new(132.0, 48.0, 1.0, 18.0) };
+/// assert_ne!(enable, moved);
+///
+/// // Focus leaving the field turns it off: nothing can receive text now.
+/// assert_eq!(ImeRequest::Disable, ImeRequest::Disable);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ImeRequest {
     /// Enable the IME and put the candidate area at `area` (logical points,
@@ -101,6 +172,21 @@ pub enum ImeRequest {
 // ---------------------------------------------------------------------------
 
 /// The result of one dispatch: what the shell has to do afterwards.
+///
+/// One event goes in, one `Response` comes out, and the shell translates it
+/// into `request_redraw`, the IME calls, and `set_cursor`. `dirty` being empty
+/// is the common case, and it is what keeps an idle window idle.
+///
+/// ```
+/// use silka_core::input::Response;
+/// use silka_core::scheduler::Dirty;
+///
+/// // A pointer moving over dead space changes nothing at all.
+/// let quiet = Response::default();
+/// assert_eq!(quiet.dirty, Dirty::NONE);
+/// assert!(!quiet.handled);
+/// assert!(quiet.ime.is_none());
+/// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Response {
     /// Why a next frame is needed — wired straight into
@@ -150,6 +236,54 @@ struct Sink {
 /// change itself (through `&mut self`) and leave requests here. As a
 /// consequence the tree structure cannot possibly change mid-dispatch, and
 /// there is no re-entrancy to guard against.
+///
+/// The shape of a handler, and the four things it can ask for:
+///
+/// ```
+/// use silka_core::input::{Event, EventCtx, PointerPhase};
+///
+/// struct Toggle {
+///     on: bool,
+///     hovered: bool,
+/// }
+///
+/// impl Toggle {
+///     fn on_event(&mut self, event: &Event, cx: &mut EventCtx<'_>) {
+///         let Event::Pointer(p) = event else { return };
+///         match p.phase {
+///             PointerPhase::Enter => {
+///                 self.hovered = true;
+///                 // "Something about how I look changed."
+///                 cx.request_paint();
+///                 // …and the spring driving that change needs more frames.
+///                 cx.request_animation();
+///             }
+///             PointerPhase::Down => {
+///                 // Keyboard focus follows a click, so the focus ring lands
+///                 // where the user is actually working.
+///                 cx.request_focus();
+///                 // Ancestors must not also treat this as a click on them.
+///                 cx.handled();
+///             }
+///             PointerPhase::Up => {
+///                 self.on = !self.on;
+///                 cx.handled();
+///             }
+///             // The OS took the gesture away: abandon it, do not activate.
+///             PointerPhase::Cancel | PointerPhase::Leave => {
+///                 self.hovered = false;
+///                 cx.request_paint();
+///             }
+///             _ => {}
+///         }
+///     }
+/// }
+/// # let _ = Toggle { on: false, hovered: false };
+/// ```
+///
+/// Note what is *absent*: no `&mut RenderTree`, so no handler can add, remove
+/// or reorder a node. Structure changes only through the view diff (§2), which
+/// is what keeps the arena consistent even when events arrive mid-frame.
 pub struct EventCtx<'a> {
     node: NodeId,
     local: Point,
@@ -259,6 +393,18 @@ impl EventCtx<'_> {
 /// The numbers belong to the framework, not the platform: the three operating
 /// systems report them in different ways (and Wayland not at all), while users
 /// expect the same behaviour everywhere.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::input::ClickConfig;
+///
+/// let config = ClickConfig::default();
+/// assert_eq!(config.interval, Duration::from_millis(500));
+///
+/// // The drift allowance is what makes a double-click survive a hand that is
+/// // not perfectly still — without it, a trackpad rarely produces one.
+/// assert!(config.distance > 0.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ClickConfig {
     /// The maximum gap between clicks.
@@ -301,6 +447,29 @@ struct PointerState {
 /// modifiers, the buttons held, the hover path, capture, per-pointer velocity,
 /// focus, and the IME state. Anything that can be re-read from the tree is
 /// **not** stored.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::input::{Event, InputRouter, PointerEvent, PointerPhase};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, reconcile};
+/// use silka_paint::{Point, Size};
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+/// tree.perform_layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// let mut router = InputRouter::new();
+/// let move_event = Event::Pointer(PointerEvent::new(
+///     PointerPhase::Move,
+///     Point::new(40.0, 12.0),
+///     Duration::ZERO,
+/// ));
+///
+/// // One event in, one Response out — nothing else crosses this boundary.
+/// let response = router.dispatch(&mut tree, &move_event);
+/// assert!(!response.handled); // a plain box claims nothing
+/// ```
 #[derive(Debug, Default)]
 pub struct InputRouter {
     modifiers: Modifiers,

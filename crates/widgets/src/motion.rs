@@ -81,10 +81,16 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
 /// assert!(advance(&mut tree, &tick).contains(Dirty::ANIMATION));
 /// ```
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
+    // First the engine's own pass: every node that owns a spring through the
+    // `RenderNode` contract — today `silka_core::tree::Interactive`, i.e. every
+    // `interactive(…)` an application writes with the utility vocabulary — is
+    // advanced by the same tick, so a hand-written card transitions exactly the
+    // way a first-party button does (REKOMENDASI §2.6, §3.5).
+    let mut dirty = tree.advance(tick);
     // The tab bar advances itself (the indicator plus each tab's highlight)
     // through a single door in its own module; here it is simply handed the
     // same tick so the application still only has to call one function.
-    let mut dirty = crate::tabs::advance(tree, tick);
+    dirty |= crate::tabs::advance(tree, tick);
     // Scrolling has its own door too: besides the position spring it owns the
     // scrollbar auto-hide countdown, which has to run exactly once per frame —
     // and only its module knows when that countdown is done.
@@ -98,6 +104,26 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     // virtualisation seam (`list::sync_virtual`), so it too has to read
     // **this** frame's scroll offset.
     dirty |= crate::table::advance(tree, tick);
+    // Tree: the third rider on the same virtualisation seam, and the same
+    // ordering rule applies. It is also the only one of the three that can
+    // return `Dirty::LAYOUT` from its own animation — a subtree opening really
+    // does move the rows below it.
+    dirty |= crate::tree::advance(tree, tick);
+    // Text areas come after scrolling too, and for the same reason: bringing
+    // the caret back into view is a `reveal` on the scroll container, and it
+    // has to be computed against **this** frame's position. What is advanced
+    // here besides that is only the frame's hover/focus ring.
+    dirty |= crate::text_area::advance(tree, tick);
+    // The rich text editor rides the same frame and the same scroll view as a
+    // text area, so its own pass is only the sync seam: serving the toolbar's
+    // queued commands and revealing the caret against **this** frame's scroll
+    // position.
+    dirty |= crate::wysiwyg::advance(tree, tick);
+    // Menus come after everything else on purpose: besides their springs, this
+    // pass **publishes geometry** (a clicked trigger's rect, a submenu row's
+    // rect) that only exists once this frame's layout is settled — the same
+    // seam `list::sync_virtual` uses, and for the same reason.
+    dirty |= crate::menu::advance(tree, tick);
     for id in semua(tree) {
         // Button: only pixels change, so no layout has to run again —
         // deliberately, because hovering a button must never make the page
@@ -235,11 +261,37 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
 }
 
 /// True while any widget animation is still running in this tree.
+///
+/// This is the question that decides whether the GPU may sleep, so it has to
+/// be asked of the whole tree: one unsettled spring anywhere keeps the frame
+/// loop alive, and asking each widget separately is how a missed one becomes
+/// an application that never idles.
+///
+/// ```
+/// use silka_core::tree::RenderTree;
+/// use silka_widgets::{is_animating, settle};
+///
+/// // An empty tree is trivially at rest, so this can be called every frame
+/// // without a guard.
+/// let mut tree = RenderTree::new();
+/// assert!(!is_animating(&tree));
+/// settle(&mut tree);
+/// assert!(!is_animating(&tree));
+/// ```
+/// True while any widget animation is still running in this tree.
 pub fn is_animating(tree: &RenderTree) -> bool {
+    // The engine's own nodes first (`Interactive` and anything else that
+    // implements `RenderNode::is_animating`).
+    if tree.is_animating() {
+        return true;
+    }
     if crate::tabs::is_animating(tree)
         || crate::scroll_view::is_animating(tree)
         || crate::list::is_animating(tree)
         || crate::table::is_animating(tree)
+        || crate::tree::is_animating(tree)
+        || crate::text_area::is_animating(tree)
+        || crate::menu::is_animating(tree)
     {
         return true;
     }
@@ -271,11 +323,42 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 }
 
 /// Finish every widget animation instantly (tests, snapshots, golden tests).
+///
+/// A golden file should photograph the result of a transition, never a spring
+/// halfway through one — that is the difference between a test that fails on a
+/// real regression and one that fails because the machine was busy.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{button, is_animating, settle, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, button(&fonts, &theme, "Save"));
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// settle(&mut tree);
+/// assert!(!is_animating(&tree));
+/// ```
+/// Finish every widget animation instantly (tests, snapshots, golden tests).
 pub fn settle(tree: &mut RenderTree) {
+    tree.settle_motion();
     crate::tabs::settle(tree);
     crate::scroll_view::settle(tree);
     crate::list::settle(tree);
     crate::table::settle(tree);
+    crate::tree::settle(tree);
+    crate::text_area::settle(tree);
+    crate::menu::settle(tree);
+    // The editor has no spring of its own — its frame is a `TextAreaFrame`,
+    // already settled above — but its sync seam still has to run so a queued
+    // toolbar command is served before a snapshot is taken.
+    crate::wysiwyg::sync(tree);
     for id in semua(tree) {
         let tombol = tree.node_mut_ref::<ButtonBox>(id).map(ButtonBox::settle);
         if tombol.is_some() {

@@ -45,6 +45,23 @@ use silka_paint::{Color, Corners, ShadowPair};
 use crate::{ColorToken, FontToken, RadiusToken, ShadowToken, SpaceToken, Theme, TypeStyle};
 
 /// Something that becomes a concrete value once it meets the active theme.
+///
+/// The trait is what lets one `Theme::resolve` serve every kind of token, and
+/// what lets a helper be generic over "any token" without caring which:
+///
+/// ```
+/// use silka_theme::{Appearance, ColorToken, RadiusToken, SpaceToken, Theme, Token};
+///
+/// fn resolved<T: Token>(theme: &Theme, token: T) -> T::Value {
+///     token.resolve(theme)
+/// }
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let _color = resolved(&theme, ColorToken::Accent);   // -> Color
+/// let _gap = resolved(&theme, SpaceToken::S4);         // -> f32
+/// let corners = resolved(&theme, RadiusToken::Lg);     // -> Corners
+/// assert!(corners.radii.max() > 0.0);
+/// ```
 pub trait Token: Copy {
     /// The value produced by resolution.
     type Value;

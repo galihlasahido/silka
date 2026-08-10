@@ -3,6 +3,13 @@
 > Catatan internal (bahasa Indonesia, sejalan dengan `catatan/`).
 > Tanggal: **10 Agustus 2026** · Basis: working tree `main`, 48 berkas berubah/baru sejak commit `d96c416`.
 > Acuan yang mengikat: `catatan/REKOMENDASI.md`, `catatan/KOMPONEN.md`, `catatan/INTEGRASI-NATIVE.md`, `catatan/STATUS.md`.
+> **Pembaruan status 11 Agustus 2026 (milestone `utility-adopt`):** P-1 dan P-2 ditandai
+> **DITUTUP** di §2, beserta ringkasan bagaimana keduanya ditutup dan berkas buktinya. Temuannya
+> sendiri tidak dihapus — uraian aslinya tetap di bawah setiap kotak status, karena riwayat audit
+> yang dipotong tidak bisa dipakai memeriksa apakah keputusannya masih masuk akal. Baris yang ikut
+> disesuaikan karena faktanya berubah: tabel kontrak §1, baris `div`/`container` di §4, jumlah
+> halaman galeri di §6, dan urutan penutupan §7 poin 1 & 4.
+>
 > **Audit ini tidak mengubah satu baris kode pun.** Tidak ada `cargo check`/`cargo test` yang dijalankan
 > (agen lain sedang memakai `target/` yang sama); seluruh temuan berbasis pembacaan sumber, dan setiap
 > klaim membawa berkas + baris agar bisa diverifikasi ulang tanpa build.
@@ -28,7 +35,9 @@ untuk kontrak lain yang hari ini hanya dijaga doc-comment (lihat P-1).
 Squircle memang parameter shader (`sdf.wgsl` baris 5–10, 126–137), bukan konstanta.
 `unsafe` hanya ada di `crates/platform` (24) dan `crates/renderer` (4) — nol di tujuh crate lain.
 
-**Yang bocor.** Titik lemahnya bukan arsitektur, melainkan **permukaan API publik**: dua dari delapan
+**Yang bocor.** *(Diperbarui 11 Agustus 2026: bagian §2.6 dari paragraf ini sudah tidak berlaku —
+P-1 ditutup, kosakata utility ada dan sudah dipakai. Yang tersisa dari paragraf ini adalah §2.5,
+yaitu P-3.)* Titik lemahnya bukan arsitektur, melainkan **permukaan API publik**: dua dari delapan
 keputusan mengikat di REKOMENDASI (§2.5 gaya Dart, §2.6 utility ala Tailwind) baru terwujud sebagian,
 dan sisanya justru yang paling mahal diperbaiki nanti karena menyentuh tanda tangan semua konstruktor
 (lihat P-1, P-2, P-3). Padahal §4 "Kestabilan" secara eksplisit menyuruh **membekukan kontrak
@@ -52,8 +61,8 @@ seluruh daftar ini.
 | §3.6 squircle = parameter shader | ✅ | `CornerStyle::superellipse_exponent()` → uniform shader |
 | §2.7 token semantik + dual preset | ✅ | Cupertino & Tailwind, 25 token warna |
 | §2.5 API gaya Dart | ⚠️ menyimpang | `&Fonts`/`&Theme` eksplisit di setiap konstruktor (P-3) |
-| §2.6 kosakata utility Tailwind | ⚠️ baru sebagian | tidak ada `div()`, `px_*`, `rounded_*`, `shadow_md`, `hover(…)` (P-1) |
-| §2.6 utility interaktif bertransisi spring | ❌ dilanggar | jalur generik memotong keras, tanpa spring (P-2) |
+| §2.6 kosakata utility Tailwind | ✅ ditutup | `view::utility` (`div()`, `p_*`, `rounded_*`, `shadow_*`, `bg()`), nilai hanya lewat token, tema ambient dipasang `AppRuntime::frame` (P-1) |
+| §2.6 utility interaktif bertransisi spring | ✅ ditutup | `StateStyle` + SpringValue per properti di `tree::Interactive`, dimajukan `RenderTree::advance`, dipakai kartu galeri (P-2) |
 | §9.8 RTL arsitektural | ⚠️ separuh | layout termirror, geometri gambar-tangan belum (P-6) |
 | §9.5 testing infra | ✅ | 1.679 `#[test]`, golden headless, gerbang frame-time, CI 3 OS |
 | §9.6 async/threading | ❌ nol | tidak ada satu pun `spawn`/kanal/jembatan ke UI thread |
@@ -66,7 +75,39 @@ seluruh daftar ini.
 
 Diurutkan berdasarkan biaya memperbaikinya nanti dibanding sekarang.
 
-### P-1 — Kosakata utility §2.6 belum ada (dampak: tinggi)
+### P-1 — Kosakata utility §2.6 belum ada (dampak: tinggi) — **DITUTUP**
+
+> **Status: selesai (milestone `utility-vocab` + `utility-adopt`).** Kosakatanya ada di
+> `crates/core/src/view/utility.rs`: `div()`/`container()`, `flex()`/`items_*`/`justify_*`,
+> `p_*`/`px_*`/`py_*`/`m_*`, `gap_*`, `rounded_none/sm/md/lg/xl/full`, `border_0/1/2/4`,
+> `shadow_none/sm/md/lg/xl`, `bg()`, `text_*`/`font_*`, plus bentuk closure
+> `hover(|s| …)`/`pressed(|s| …)`/`focused(|s| …)`/`disabled_style(|s| …)`.
+>
+> Yang membuatnya lebih dari sekadar sinonim: **jalur normal hanya menerima token**
+> (`ColorToken`, `RadiusToken`, `ShadowToken`, `SpaceToken`, `FontToken`), sehingga
+> `.bg(Color::hex(0x1E90FF))` **tidak compile** — disiplin §2.6 poin 1 kini dijaga tipe, bukan
+> doc-comment. Warna yang benar-benar milik aplikasi keluar lewat pintu darurat yang sengaja
+> mencolok di diff (`bg_raw`, `rounded_raw`, `shadow_raw`, `p_raw`).
+>
+> Token bertemu angka lewat tema ambient (`view::with_theme`) yang dipasang
+> `AppRuntime::frame` dari `Signal<Theme>` di `Env` — jadi komponen yang dibangun ulang sendiri
+> di tengah pohon meresolusi terhadap tema yang sama dengan akar, bukan `Theme::default`
+> (`crates/core/src/app/host.rs`, uji: `app::tests::komponen_yang_dibangun_ulang_sendiri_tetap_dapat_theme`).
+>
+> Adopsinya nyata, bukan hanya tersedia: `examples/gallery/src/reactive.rs`,
+> `primitives.rs`, dan `counter.rs` ditulis ulang memakainya (aritmetika tata letak,
+> `Insets::all(t.space(…))`, dan pencarian `t.color.*` hilang seluruhnya), halaman baru
+> `examples/gallery/src/utility.rs` memamerkan spacing/radius/shadow/state sebagai rujukan
+> hidup, dan `crates/core/src/styling.rs` adalah halaman rustdoc yang mengajarkannya sebagai
+> **cara utama** menata tampilan (enam contoh ter-doctest, termasuk satu `compile_fail`).
+> Kosakata tipografi menyusul di `silka_widgets::text` (`font(FontToken)`, `text_*`,
+> `font_*`, `text_color(ColorToken)`), sehingga trait `view::TextStyled` punya penghuni.
+>
+> Yang **belum** ditutup dan tetap milik P-3: konstruktor widget masih meminta `&Fonts`/`&Theme`
+> eksplisit. Tema ambient menghapus `theme` dari sisi styling, bukan dari tanda tangan
+> konstruktor.
+>
+> Uraian di bawah dipertahankan sebagai catatan sejarah.
 
 `REKOMENDASI §2.6` memberi contoh yang mengikat:
 
@@ -89,7 +130,30 @@ bukan oleh tipe. Tidak ada yang mencegah aplikasi menulis `.background(Color::he
 ini `crates/widgets` dan `crates/chart` bersih dari itu (nol `Color::hex`/`Color::rgb` di luar
 `#[cfg(test)]`), tapi kebersihannya adalah kebiasaan, bukan kontrak yang dipaksakan compiler.
 
-### P-2 — Utility interaktif tidak bertransisi spring (dampak: tinggi)
+### P-2 — Utility interaktif tidak bertransisi spring (dampak: tinggi) — **DITUTUP**
+
+> **Status: selesai (milestone `utility-spring`).** `tree::Interactive` kini
+> menyimpan `SpringValue` untuk tiap properti yang bisa dianimasikan (warna
+> latar, warna border + lebarnya, cincin fokus, skala), keadaan ditulis lewat
+> bentuk closure `hover(|s| …)` / `pressed(|s| …)` / `focused(|s| …)` /
+> `disabled_style(|s| …)` di atas kosakata token, dan semuanya dimajukan oleh
+> satu jalur `RenderTree::advance` yang sama untuk seluruh pohon (kontrak baru
+> `RenderNode::advance`/`is_animating`/`settle_motion`). Retarget di tengah
+> jalan membawa velocity; reduced-motion membuat warna mendarat seketika tanpa
+> menjadwalkan frame lagi, cincin fokus tetap tumbuh tanpa pantulan, dan skala
+> tidak terjadi sama sekali. Bukti: `crates/core/src/tree/interactive_tests.rs`.
+>
+> **Diperkuat di milestone `utility-adopt`:** kalimat "setiap `interactive(...)` yang ditulis
+> aplikasi (mis. kartu di halaman galeri) melompat" kini punya uji regresi di tempat yang
+> persis disebut. Kartu `examples/gallery/src/reactive.rs` memakai
+> `hover`/`pressed`/`focused`, dan tiga ujinya menjaga perilakunya:
+> `kartu_tidak_melompat_saat_hover_melainkan_bertransisi` (dua frame belum sampai tujuan,
+> dan transisinya memang selesai), `pointer_pergi_di_tengah_jalan_berbalik_tanpa_sambungan`,
+> serta `reduced_motion_mendarat_seketika_dan_tidak_mengecil`. Halaman
+> `examples/gallery/src/utility.rs` menambah satu uji setara untuk tile `hover`.
+> Efek sampingan yang menyenangkan: karena `update()` me-retarget spring yang sama,
+> pergantian tema kini ikut cross-fade, bukan berkedip.
+> Uraian di bawah dipertahankan sebagai catatan sejarah.
 
 `REKOMENDASI §2.6` disiplin #2: *"`hover(...)`/`pressed(...)`/`focused(...)` otomatis bertransisi
 lewat spring animation (§3.5), bukan lompat seperti CSS tanpa transition."*
@@ -273,7 +337,7 @@ Legenda: ✅ ada · 🟡 ada sebagian / tersamar · ❌ belum ada · 🚧 terblo
 
 | Komponen | Status | Catatan |
 |---|---|---|
-| `div` / `container` | 🟡 | Tidak ada konstruktor `div()`. Fungsinya tersebar di `fixed()`, `pad()`, `constrained()` + trait `Decorated`. Lihat P-1. |
+| `div` / `container` | ✅ | `view::div()`/`container()` + kosakata utility di atasnya (P-1 ditutup). `fixed()`/`pad()`/`constrained()` tetap ada sebagai lapisan di bawahnya. |
 | `text` | ✅ | `widgets::text` — mengukur sendiri, isi jadi nama node a11y |
 | `image` | ❌ 🚧 | butuh perintah tekstur; belum ada async decode |
 | `icon` | ❌ 🚧 | butuh atlas SVG + perintah tekstur |
@@ -323,7 +387,7 @@ Belum: `tree`, `card`, `accordion`, `avatar`, `tag`/`chip`, `calendar`/`date_pic
 
 ### Ringkasan angka
 
-**Tier 0–4: 17 ✅ + 2 🟡 dari 46 baris katalog** (`overlay` tidak ikut dihitung — ia infrastruktur,
+**Tier 0–4: 18 ✅ + 1 🟡 dari 46 baris katalog** (`div`/`container` naik dari 🟡 ke ✅ setelah P-1) (`overlay` tidak ikut dihitung — ia infrastruktur,
 bukan baris katalog).
 
 Yang paling murah sekaligus paling menaikkan kelengkapan: `spacer`, `divider`, `stack`, `center`,
@@ -358,7 +422,7 @@ baru**, dan sebagian besar hanya perlu memilih `Placement` di atas `overlay` yan
 | 9.6 | Async / threading | ❌ **nol** — nol `spawn`, nol kanal, nol `tokio`, nol jembatan "hasil async kembali ke UI thread" di `crates/core` maupun `crates/platform`. Aplikasi flagship "tool bisnis/finance" (§9.3) melakukan network + database; ini akan jadi penghalang pertama begitu aplikasi itu mulai ditulis |
 | 9.7 | Strategi panic | ❌ **nol di jalur produksi** — `catch_unwind` hanya muncul di `crates/testing` dan di unit test. Tidak ada error-boundary per komponen, tidak ada `panic::set_hook`, tidak ada crash recovery/simpan state. Satu-satunya kepatuhan §9.7 yang nyata adalah `GlyphCache::insert` yang memilih melewatkan glyph daripada panic |
 | 9.8 | i18n & RTL | ⚠️ separuh — mirroring layout ✅ (P-6), tapi **nol sistem terjemahan**: tidak ada Fluent/gettext, dan string bawaan widget (mis. label tombol dialog) tidak melalui lapisan apa pun. `Locale` hanya ada di `silka-chart` untuk format angka/tanggal — bagus, tapi lokal untuk satu crate |
-| 9.9 | Dokumentasi & gallery | ⚠️ galeri ✅ (16 halaman, katalog terpusat di `catalog.rs` sehingga sidebar/`--page`/test tidak bisa berbeda pendapat), dokumentasi Fase 4 ❌ belum mulai — tidak ada tutorial "app pertama", tidak ada 3 contoh app, tidak ada scaffold flagship |
+| 9.9 | Dokumentasi & gallery | ⚠️ galeri ✅ (17 halaman termasuk rujukan kosakata utility, katalog terpusat di `catalog.rs` sehingga sidebar/`--page`/test tidak bisa berbeda pendapat), dokumentasi Fase 4 ❌ belum mulai — tidak ada tutorial "app pertama", tidak ada 3 contoh app, tidak ada scaffold flagship |
 
 ---
 
@@ -366,7 +430,14 @@ baru**, dan sebagian besar hanya perlu memilih `Placement` di atas `overlay` yan
 
 Diurutkan berdasarkan "biaya sekarang dibanding biaya nanti", bukan berdasarkan ukuran.
 
-1. **P-3 + P-1 + P-2 bersamaan — bentuk API publik.** Ketiganya menyentuh permukaan yang sama dan
+1. **P-3 — sisa terakhir dari bentuk API publik.** ~~P-1~~ dan ~~P-2~~ sudah ditutup (kosakata
+   utility bertoken + spring milik sistem, keduanya sudah dipakai galeri dan didokumentasikan di
+   `crates/core/src/styling.rs`); yang tersisa dari paket ini adalah memindahkan `Theme` + `Fonts`
+   ke `Env` plus `BuildCtx` yang membacanya, supaya konstruktor widget berbentuk seperti janji
+   §2.5. Tema ambient sudah membuktikan mekanismenya: nilainya dipasang sekali per frame di
+   `AppRuntime::frame` dan tidak satu pun call site menyebut `theme` lagi di sisi styling.
+
+   > Catatan asli, saat ketiganya masih terbuka: ketiganya menyentuh permukaan yang sama dan
    ketiganya makin mahal setiap kali satu komponen ditambahkan. Konkretnya: pindahkan `Theme` dan
    `Fonts` ke `Env` (mekanismenya sudah terbukti lewat `ScaleFactor`), tambahkan `div()` plus
    kosakata utility bernama yang resolve lewat token, dan pasang `SpringValue` di `Interactive`
@@ -377,8 +448,8 @@ Diurutkan berdasarkan "biaya sekarang dibanding biaya nanti", bukan berdasarkan 
    tercatat (stroke chart, centang checkbox, scale-on-press). `OffscreenTarget` sudah setengah jadi.
 3. **Eviction atlas glyph** (§3 dokumen ini). Kecil, terisolasi di satu berkas, dan menutup mode
    kegagalan senyap di jalur CJK — failure mode #1 REKOMENDASI.
-4. **Tier 0–1 yang hilang.** `spacer`, `divider`, `stack`, `aspect_ratio`, `align`, `center` (plus
-   `div()` dari poin 1) — enam komponen yang tidak butuh perintah paint baru sama sekali; `image` dan
+4. **Tier 0–1 yang hilang.** `spacer`, `divider`, `stack`, `aspect_ratio`, `align`, `center`
+   (`div()` sudah ada sejak P-1 ditutup) — enam komponen yang tidak butuh perintah paint baru sama sekali; `image` dan
    `icon` menyusul otomatis setelah poin 2. Kerjakan setelah bentuk API di poin 1 beku, supaya tidak
    ditulis dua kali. Urutan #1 `KOMPONEN.md` menyuruh tier ini solid sebelum tier di atasnya, dan
    hari ini urutan itu terbalik.

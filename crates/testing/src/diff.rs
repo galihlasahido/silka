@@ -19,12 +19,63 @@
 //! A tolerance that hides a real regression is worse than no golden test, so the
 //! presets below are deliberately tight and are chosen by **what is drawn**, not
 //! by what makes the suite go green.
+//!
+//! ```
+//! use silka_testing::{compare, Image, Tolerance};
+//!
+//! // Two captures of the same card; the second has driver noise along one
+//! // anti-aliased edge.
+//! let expected = Image::filled(100, 100, [28, 28, 30, 255]);
+//! let mut actual = expected.clone();
+//! for x in 40..44 {
+//!     actual.set_pixel(x, 50, [29, 28, 30, 255]);
+//! }
+//!
+//! // A tolerance chosen for shapes absorbs that, and says so honestly: the
+//! // pixels are counted, they simply do not exceed the channel threshold.
+//! let diff = compare(&expected, &actual, Tolerance::SHAPES).unwrap();
+//! assert!(diff.is_match());
+//! assert_eq!(diff.max_channel, 1);
+//!
+//! // What it must never absorb is a widget that moved. Even a one-point shift
+//! // repaints thousands of pixels — orders of magnitude past any sane ratio.
+//! let mut moved = expected.clone();
+//! for y in 20..80 {
+//!     for x in 20..80 {
+//!         moved.set_pixel(x, y, [255, 255, 255, 255]);
+//!     }
+//! }
+//! let regression = compare(&expected, &moved, Tolerance::SHAPES).unwrap();
+//! assert!(!regression.is_match());
+//! assert!(regression.ratio() > 0.3);
+//!
+//! // …and the report says where to look, not merely that something is wrong.
+//! assert_eq!(regression.bounds, Some((20, 20, 79, 79)));
+//! ```
 
 use core::fmt;
 
 use crate::image::Image;
 
 /// How much difference still counts as "the same picture".
+///
+/// The preset is chosen by **what is drawn**, not by what makes the suite go
+/// green: a tolerance that hides a real regression is worse than no golden test.
+///
+/// ```
+/// use silka_testing::{compare, Image, Tolerance};
+///
+/// // Flat fills move by at most an anti-aliased edge; text moves much more,
+/// // because glyph rasterisation is the least portable thing we do.
+/// assert!(Tolerance::GEOMETRY.channel < Tolerance::TEXT.channel);
+/// assert_eq!(Tolerance::default(), Tolerance::SHAPES);
+///
+/// // One channel off by two: within the shapes budget, outside exact equality.
+/// let expected = Image::filled(4, 4, [100, 100, 100, 255]);
+/// let actual = Image::filled(4, 4, [102, 100, 100, 255]);
+/// assert!(compare(&expected, &actual, Tolerance::SHAPES).unwrap().is_match());
+/// assert!(!compare(&expected, &actual, Tolerance::EXACT).unwrap().is_match());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tolerance {
     /// The largest per-channel absolute difference a pixel may show before it
@@ -95,6 +146,20 @@ impl fmt::Display for Tolerance {
 }
 
 /// Why two images could not be compared at all.
+///
+/// Different sizes are not a "large difference" — they mean the layout changed,
+/// which no per-pixel tolerance could ever express.
+///
+/// ```
+/// use silka_testing::{compare, Image, Tolerance};
+///
+/// let golden = Image::filled(4, 4, [0, 0, 0, 255]);
+/// let resized = Image::filled(4, 5, [0, 0, 0, 255]);
+///
+/// let err = compare(&golden, &resized, Tolerance::EXACT).unwrap_err();
+/// assert_eq!(err.expected, (4, 4));
+/// assert_eq!(err.actual, (4, 5));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SizeMismatch {
     /// The expected size.
@@ -116,6 +181,27 @@ impl fmt::Display for SizeMismatch {
 impl std::error::Error for SizeMismatch {}
 
 /// The result of comparing two captures.
+///
+/// ```
+/// use silka_testing::{compare, Image, Tolerance};
+///
+/// let expected = Image::filled(8, 8, [0, 0, 0, 255]);
+/// let mut actual = expected.clone();
+/// actual.set_pixel(3, 5, [255, 255, 255, 255]);
+///
+/// let diff = compare(&expected, &actual, Tolerance::EXACT).unwrap();
+/// assert!(!diff.is_match());
+/// assert_eq!(diff.different, 1);
+/// assert_eq!(diff.max_channel, 255);
+///
+/// // `bounds` is the most useful number in a failure report: it says *where*
+/// // to look, and its shape usually names the culprit.
+/// assert_eq!(diff.bounds, Some((3, 5, 3, 5)));
+/// assert_eq!(diff.worst_at, Some((3, 5)));
+///
+/// // An identical capture is a match with nothing to report.
+/// assert!(compare(&expected, &expected, Tolerance::EXACT).unwrap().is_match());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Diff {
     /// Total pixels examined.
@@ -176,6 +262,40 @@ impl Diff {
 }
 
 /// Compare two captures pixel by pixel.
+///
+/// Returns `Err` only when the two images are not even the same size — a
+/// different failure from "the pixels disagree", and one no tolerance should
+/// ever absorb.
+///
+/// ```
+/// use silka_testing::{compare, Image, Tolerance};
+///
+/// let expected = Image::filled(4, 4, [10, 10, 10, 255]);
+///
+/// // Rounding noise of one step: within `SHAPES`, so this is still a pass.
+/// let mut noisy = expected.clone();
+/// noisy.set_pixel(1, 1, [11, 10, 10, 255]);
+/// let diff = compare(&expected, &noisy, Tolerance::SHAPES).unwrap();
+/// assert!(diff.is_match());
+/// assert_eq!(diff.different, 0); // under the channel threshold entirely
+///
+/// // The same drift under `EXACT` is a difference, because `EXACT` allows none.
+/// let strict = compare(&expected, &noisy, Tolerance::EXACT).unwrap();
+/// assert_eq!(strict.different, 1);
+/// assert_eq!(strict.worst_at, Some((1, 1)));
+/// assert!(!strict.is_match());
+///
+/// // A moved widget lights up far too many pixels for any ratio to hide.
+/// let moved = Image::filled(4, 4, [200, 200, 200, 255]);
+/// let big = compare(&expected, &moved, Tolerance::SHAPES).unwrap();
+/// assert_eq!(big.different, big.total);
+/// assert!(!big.is_match());
+/// // …and the bounding box says *where* to look.
+/// assert_eq!(big.bounds, Some((0, 0, 3, 3)));
+///
+/// // Mismatched sizes are their own error, never a tolerated difference.
+/// assert!(compare(&expected, &Image::filled(8, 4, [10, 10, 10, 255]), Tolerance::EXACT).is_err());
+/// ```
 pub fn compare(
     expected: &Image,
     actual: &Image,
@@ -231,6 +351,35 @@ fn pixel_delta(a: [u8; 4], b: [u8; 4]) -> u8 {
 /// recognisable; differing pixels are painted a saturated magenta whose
 /// brightness follows how wrong they are. Magenta because no preset in this
 /// project contains it, so a diff can never be mistaken for the UI.
+///
+/// The result is written next to the failing golden so a reviewer can open
+/// three files — expected, actual, diff — and see the regression rather than
+/// read a number about it.
+///
+/// ```
+/// use silka_testing::{visualize, Image, Tolerance};
+///
+/// let expected = Image::filled(4, 4, [10, 10, 10, 255]);
+/// let mut actual = expected.clone();
+/// actual.set_pixel(2, 2, [255, 255, 255, 255]);
+///
+/// let diff = visualize(&expected, &actual, Tolerance::EXACT);
+/// assert_eq!(diff.width(), 4);
+///
+/// // The offending pixel is magenta: red and blue high, green absent. No
+/// // preset in this project contains magenta, so a diff can never be mistaken
+/// // for the interface it is describing.
+/// let [r, g, b, a] = diff.pixel(2, 2);
+/// assert!(r > 128 && b > 128);
+/// assert_eq!(g, 0);
+/// assert_eq!(a, 255);
+///
+/// // Everything that matched stays a dimmed grey, so the layout is still
+/// // recognisable around the change.
+/// let [r, g, b, _] = diff.pixel(0, 0);
+/// assert_eq!((r, g, b), (r, r, r));
+/// assert!(r < 128);
+/// ```
 pub fn visualize(expected: &Image, actual: &Image, tolerance: Tolerance) -> Image {
     let width = expected.width().max(actual.width());
     let height = expected.height().max(actual.height());

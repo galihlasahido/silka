@@ -143,6 +143,25 @@ impl Default for AnimationDriver {
 /// The flag lives in a [`Cell`] so that `&Tick` suffices: paint code holds it
 /// as a shared reference, without needing a `&mut` that would spread through
 /// every widget signature.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::animation::{Motion, SpringValue, Tick};
+///
+/// let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
+/// let mut value = SpringValue::new(0.0);
+/// value.set_target(100.0);
+///
+/// // Advancing through the tick both moves the spring and records that
+/// // something is still moving…
+/// tick.advance(&mut value);
+/// assert!(tick.is_active());
+///
+/// // …which is the flag that schedules the next frame. No timer ticks: once
+/// // nothing reports activity, the renderer goes back to sleep.
+/// let quiet = Tick::manual(Duration::from_millis(16), Motion::Full);
+/// assert!(!quiet.is_active());
+/// ```
 #[derive(Debug)]
 pub struct Tick {
     dt: Duration,

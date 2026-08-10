@@ -32,6 +32,54 @@
 //! [`Barrier::None`]. A tooltip must never catch the mouse passing beneath it:
 //! it would swallow the very pointer motion that keeps it alive, and the panel
 //! would flicker at exactly the moment the reader moves toward it.
+//!
+//! ```
+//! use silka_chart::style::ChartStyle;
+//! use silka_chart::{tooltip, tooltip_overlay, ChartHover, HoverEntry};
+//! use silka_paint::Rect;
+//! use silka_theme::{Appearance, Theme};
+//! use silka_widgets::Fonts;
+//!
+//! let fonts = Fonts::bundled_only();
+//! let theme = Theme::cupertino(Appearance::Dark);
+//! let style = ChartStyle::from_theme(&theme);
+//!
+//! // What the pointer is over, expressed as data — not as a position.
+//! let hover = ChartHover {
+//!     index: 1,
+//!     title: "Feb".into(),
+//!     entries: vec![HoverEntry {
+//!         series: 0,
+//!         name: "Income".into(),
+//!         value: 1.4e9,
+//!         text: "1,4 M".into(),
+//!         color: theme.color.accent,
+//!     }],
+//!     // Global window coordinates: the one frame of reference the chart and
+//!     // the overlay layer can both compute without knowing about each other.
+//!     anchor: Rect::new(120.0, 60.0, 8.0, 8.0),
+//! };
+//!
+//! // The panel content is an ordinary view, so an application can swap it for
+//! // its own and still ride the same overlay path.
+//! let _content = tooltip(&fonts, &theme, &style, &hover);
+//!
+//! // What a screen reader announces, and what a test can assert on without
+//! // going anywhere near a pixel.
+//! assert!(hover.summary().starts_with("Feb"));
+//!
+//! // The overlay is handed the anchor rather than a computed position: edge
+//! // flipping and the spring transition stay the overlay system's job.
+//! // `anchor()` is the common case where the overlay layer *is* the window
+//! // root; `anchor_in` converts into some other layer's coordinates.
+//! let anchor = hover.anchor();
+//! let open = tooltip_overlay(&fonts, &theme, &style, Some(&hover), anchor);
+//!
+//! // `None` is not "skip the overlay" — it is "the overlay is closed", so its
+//! // disappearance animates instead of snapping out of existence.
+//! let closed = tooltip_overlay(&fonts, &theme, &style, None, anchor);
+//! # let _ = (open, closed);
+//! ```
 
 use silka_core::signals::Key;
 use silka_core::tree::{NodeId, RenderTree};
@@ -45,6 +93,24 @@ use silka_widgets::{text, Fonts};
 use crate::style::ChartStyle;
 
 /// One series' contribution to what is under the pointer.
+///
+/// The value is the **target**, never the animating one: a tooltip that counted
+/// up while the spring settled would be unreadable. The color travels with it
+/// so the panel carries the same identity as the mark it describes.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_chart::tooltip::HoverEntry;
+///
+/// let entry = HoverEntry {
+///     series: 0,
+///     name: "Income".into(),
+///     value: 1_200_000.0,
+///     text: "Rp 1,2 jt".into(),
+///     color: Color::hex(0x0A84FF),
+/// };
+/// assert_eq!(entry.text, "Rp 1,2 jt");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct HoverEntry {
     /// Which series (its index, so the color can be looked up again).
@@ -67,6 +133,20 @@ pub struct HoverEntry {
 /// [`on_hover`](crate::ChartBuilder::on_hover), which stores it in a signal like
 /// any other state. Nothing here is a widget and nothing here is positioned —
 /// see the module docs.
+///
+/// The application stores it in a signal like any other state:
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_chart::tooltip::ChartHover;
+///
+/// let rt = Runtime::new();
+/// let hover = rt.signal(None::<ChartHover>);
+///
+/// // `on_hover` writes it; the view reads it and decides whether to open a
+/// // tooltip. Nothing in this crate computes a position.
+/// assert!(hover.get().is_none());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartHover {
     /// The data point's index.

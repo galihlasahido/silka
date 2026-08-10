@@ -62,6 +62,25 @@ use silka_theme::{Appearance, Theme};
 /// ordering of any palette keeps every pair apart for a colorblind reader, and
 /// a ninth generated hue would be a lie told in color. Past this count the
 /// honest moves are "Other", small multiples, or a different encoding.
+///
+/// ```
+/// use silka_chart::{ChartPalette, CATEGORICAL_LEN};
+/// use silka_theme::{Appearance, Theme};
+///
+/// let palette = ChartPalette::for_theme(&Theme::cupertino(Appearance::Dark));
+///
+/// // Every slot within the count is a distinct hue…
+/// let hues: Vec<_> = (0..CATEGORICAL_LEN).map(|i| palette.slot(i)).collect();
+/// for i in 1..hues.len() {
+///     assert_ne!(hues[i], hues[i - 1]);
+/// }
+///
+/// // …and asking for more series than there are slots is a question the
+/// // palette answers honestly rather than by inventing a ninth colour no
+/// // colourblind reader could tell from an earlier one.
+/// assert!(!palette.is_exhausted(CATEGORICAL_LEN));
+/// assert!(palette.is_exhausted(CATEGORICAL_LEN + 1));
+/// ```
 pub const CATEGORICAL_LEN: usize = 8;
 
 /// The minimum OKLab distance (×100) required between **adjacent** slots under
@@ -114,6 +133,27 @@ const DARK: [u32; CATEGORICAL_LEN] = [
 /// A plain value like [`Theme`] itself: it is rebuilt when the appearance
 /// changes rather than invalidated, so there is no hidden state to go stale
 /// when the OS switches to dark mode.
+///
+/// ```
+/// use silka_chart::palette::{cvd, ChartPalette, CATEGORICAL_LEN, MIN_ADJACENT_CVD};
+/// use silka_theme::Appearance;
+///
+/// let palette = ChartPalette::for_appearance(Appearance::Dark);
+/// assert_eq!(palette.slots().len(), CATEGORICAL_LEN);
+///
+/// // Eight slots is the honest limit: a ninth series would repeat a color,
+/// // so the caller is told rather than quietly misled.
+/// assert!(!palette.is_exhausted(8));
+/// assert!(palette.is_exhausted(9));
+///
+/// // Neighbouring slots stay apart under red- and green-blindness — the
+/// // promise this palette exists to keep, and it is checked by arithmetic.
+/// let (a, b) = (palette.slot(0), palette.slot(1));
+/// assert!(cvd::worst_required(a, b) >= MIN_ADJACENT_CVD);
+///
+/// // An area fill is the line color tinted down, not a second token.
+/// assert!(palette.fill(a).a < a.a);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChartPalette {
     slots: [Color; CATEGORICAL_LEN],
@@ -224,6 +264,27 @@ pub mod cvd {
     use silka_paint::{srgb_to_linear, Color};
 
     /// A form of color-vision deficiency.
+    ///
+    /// ```
+    /// use silka_chart::palette::cvd::{self, Deficiency};
+    /// use silka_paint::Color;
+    ///
+    /// // Red and green are far apart to a typical reader…
+    /// let (red, green) = (Color::hex(0xD62728), Color::hex(0x2CA02C));
+    /// assert!(cvd::delta_e(red, green) > 20.0);
+    /// // …and much closer to a green-blind one, which is exactly the mistake
+    /// // a hand-picked "red vs green" palette makes.
+    /// assert!(cvd::delta_e_cvd(red, green, Deficiency::Deuteranopia) < cvd::delta_e(red, green));
+    ///
+    /// // The palette is gated on the two common forms, not all three:
+    /// // requiring tritanopia at eight slots leaves no palette standing.
+    /// assert_eq!(Deficiency::REQUIRED.len(), 2);
+    /// assert_eq!(
+    ///     cvd::worst_required(red, green),
+    ///     cvd::delta_e_cvd(red, green, Deficiency::Protanopia)
+    ///         .min(cvd::delta_e_cvd(red, green, Deficiency::Deuteranopia))
+    /// );
+    /// ```
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
     pub enum Deficiency {
         /// Red-blind (~1% of men).

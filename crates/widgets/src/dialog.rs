@@ -93,6 +93,22 @@ use crate::text::{text, Text};
 /// 90 × 4pt = 360pt: between `NSAlert` (260pt, too narrow for explanatory
 /// text) and shadcn's `Dialog` (512pt, too wide for an alert). The number is
 /// still a multiple of the scale, not an arbitrary width.
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::DIALOG_WIDTH_STEPS;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // The width is a count of spacing steps, so it stays on the scale rather
+/// // than becoming one more loose number in the codebase.
+/// assert_eq!(theme.space(DIALOG_WIDTH_STEPS), 360.0);
+///
+/// // Between NSAlert (too narrow for explanatory text) and shadcn's Dialog
+/// // (too wide for an alert).
+/// assert!(theme.space(DIALOG_WIDTH_STEPS) > 260.0);
+/// assert!(theme.space(DIALOG_WIDTH_STEPS) < 512.0);
+/// ```
 pub const DIALOG_WIDTH_STEPS: f32 = 90.0;
 
 // ---------------------------------------------------------------------------
@@ -111,6 +127,31 @@ pub const DIALOG_WIDTH_STEPS: f32 = 90.0;
 /// [`ButtonOrder::Platform`] translates between the two. In an RTL interface
 /// the row mirrors itself, because [`row`] follows the reading direction
 /// (§9.8).
+/// ```
+/// use silka_widgets::{action, ButtonOrder};
+///
+/// // The application writes its actions in order of *meaning*.
+/// let written = vec![
+///     action("Save").confirm(),
+///     action("Cancel").cancel(),
+/// ];
+///
+/// // macOS and GNOME put the default button last…
+/// let mac = ButtonOrder::ConfirmLast.arrange(written.clone());
+/// assert_eq!(mac.last().unwrap().label(), "Save");
+///
+/// // …Windows puts it first. Neither ordering is written by the caller.
+/// let windows = ButtonOrder::ConfirmFirst.arrange(written.clone());
+/// assert_eq!(windows.first().unwrap().label(), "Save");
+///
+/// // `Platform` is decided at compile time, so no application asks its own
+/// // operating system anything merely to lay out two buttons.
+/// assert_ne!(ButtonOrder::PLATFORM, ButtonOrder::Platform);
+/// assert!(matches!(
+///     ButtonOrder::PLATFORM,
+///     ButtonOrder::ConfirmFirst | ButtonOrder::ConfirmLast,
+/// ));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ButtonOrder {
     /// Follow the convention of the OS this app is compiled for
@@ -201,6 +242,22 @@ impl ButtonOrder {
 
 /// The role of a dialog button — decides its position, visual variant, and the
 /// key that runs it.
+/// ```
+/// use silka_widgets::{action, ActionKind, ButtonVariant};
+///
+/// // The role decides the position, the visual variant, and the key.
+/// assert_eq!(action("Save").confirm().kind(), ActionKind::Confirm);
+/// assert_eq!(action("Cancel").cancel().kind(), ActionKind::Cancel);
+/// assert_eq!(action("Don't Save").kind(), ActionKind::Plain);
+///
+/// // A destructive action looks like the primary one…
+/// let delete = action("Delete").destructive();
+/// assert_eq!(delete.variant(), ButtonVariant::Destructive);
+///
+/// // …but it is never the Return-key default. The HIG forbids a destructive
+/// // action being run by a stray keypress.
+/// assert_ne!(delete.kind(), ActionKind::Confirm);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ActionKind {
     /// The primary action, run by **Return** from anywhere inside the dialog.
@@ -219,6 +276,22 @@ pub enum ActionKind {
 /// A single dialog button.
 ///
 /// Written Dart-style (§2.5): [`action`] followed by method chaining.
+///
+/// ```
+/// use silka_widgets::{action, ActionKind, ButtonVariant};
+///
+/// let save = action("Save").confirm().on_press(|| {});
+/// assert_eq!(save.label(), "Save");
+/// assert_eq!(save.kind(), ActionKind::Confirm);
+/// assert_eq!(save.variant(), ButtonVariant::Primary);
+/// assert!(!save.is_disabled());
+///
+/// // An action can be present but unavailable — still announced, so the
+/// // reader learns the option exists and why it cannot be taken.
+/// let publish = action("Publish").confirm().disabled(true);
+/// assert!(publish.is_disabled());
+/// ```
+/// Written Dart-style (§2.5): [`action`] followed by method chaining.
 #[derive(Debug, Clone)]
 pub struct DialogAction {
     label: String,
@@ -228,6 +301,15 @@ pub struct DialogAction {
 }
 
 /// A dialog button labeled `label`, with no special role.
+///
+/// ```
+/// use silka_widgets::{action, ActionKind};
+///
+/// // No role until one is asked for, which is the right default for the
+/// // third button in a three-button alert ("Don't Save").
+/// let plain = action("Don't Save");
+/// assert_eq!(plain.kind(), ActionKind::Plain);
+/// ```
 pub fn action(label: impl Into<String>) -> DialogAction {
     DialogAction {
         label: label.into(),
@@ -468,6 +550,28 @@ fn cari_panel(tree: &RenderTree, akar: NodeId) -> Option<NodeId> {
 ///
 /// By default it can be dismissed with Esc **and** by clicking outside the
 /// panel; for an alert that must not disappear by accident, use [`alert`].
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{dialog, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let open = rt.signal(true);
+///
+/// let sheet = dialog(&fonts, &theme, "Rename file")
+///     .message("Choose a new name for this document.")
+///     .open(open.get())
+///     .confirm("Rename", || {})
+///     .cancel("Cancel", move || open.set(false));
+///
+/// // The buttons come back in the order this OS puts them in — the caller
+/// // wrote them in order of meaning.
+/// let arranged = sheet.arranged();
+/// assert_eq!(arranged.len(), 2);
+/// ```
 pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
     DialogBuilder {
         fonts: fonts.clone(),
@@ -492,6 +596,24 @@ pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogB
 /// clicking outside the panel does **not** dismiss it. An alert asks something
 /// that has to be answered; making it vanish because the cursor slipped means
 /// losing data (the same behavior as `NSAlert` and shadcn's `AlertDialog`).
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{alert, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // A question that has to be answered: Esc still works, but a click that
+/// // lands outside the panel does not throw the work away.
+/// let confirm = alert(&fonts, &theme, "Discard changes?")
+///     .message("This cannot be undone.")
+///     .destructive("Discard", || {})
+///     .cancel("Keep editing", || {})
+///     .open(true);
+///
+/// assert_eq!(confirm.arranged().len(), 2);
+/// ```
 pub fn alert(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
     dialog(fonts, theme, title).dismiss(Dismiss::ESCAPE)
 }
@@ -501,6 +623,30 @@ pub fn alert(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBu
 /// It becomes an [`OverlayBuilder`] when handed to [`crate::overlay_layer`],
 /// so a dialog rides on the same overlay infrastructure as
 /// popover/tooltip/menu/toast — no geometry, dismissal, or transition is
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{action, dialog, ButtonOrder, Dismiss, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let d = dialog(&fonts, &theme, "Export")
+///     .message("Pick a format.")
+///     .actions([
+///         action("Export").confirm().on_press(|| {}),
+///         action("Cancel").cancel().on_press(|| {}),
+///         action("Help"),
+///     ])
+///     .order(ButtonOrder::ConfirmLast)
+///     .dismiss(Dismiss::ESCAPE)
+///     .open(true);
+///
+/// // Three buttons, and the confirm one has been moved to the end for us.
+/// let arranged = d.arranged();
+/// assert_eq!(arranged.len(), 3);
+/// assert_eq!(arranged.last().unwrap().label(), "Export");
+/// ```
 /// recomputed here.
 pub struct DialogBuilder {
     fonts: Fonts,

@@ -9,6 +9,26 @@
 //! - **Paired shadows**, ambient + key.
 //! - **Inter with optical sizing**: the `opsz` axis is tied to the font size,
 //!   and tracking follows the SF table (loose when small, tight when large).
+//!
+//! ```
+//! use silka_paint::CornerStyle;
+//! use silka_theme::{Appearance, FontToken, RadiusToken, Theme};
+//!
+//! // This is the framework default, so `Theme::cupertino` is the usual entry.
+//! let t = Theme::cupertino(Appearance::Dark);
+//!
+//! // Corners are superellipses, which is the single most recognizable part of
+//! // the look.
+//! assert_eq!(t.corners_of(RadiusToken::Md).style, CornerStyle::squircle());
+//!
+//! // Optical sizing is on, and tracking is derived from the size rather than
+//! // typed out per line: small text is tracked loose, large text tight.
+//! assert!(t.typography.optical_sizing);
+//! let caption = t.font(FontToken::Caption1);
+//! let title = t.font(FontToken::LargeTitle);
+//! assert!(caption.tracking > title.tracking);
+//! assert!(title.size > caption.size);
+//! ```
 
 use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
@@ -141,6 +161,24 @@ pub fn shadows(appearance: Appearance) -> ShadowTokens {
 /// (Caption 10/13 … Large Title 26/32). Tracking is **not** written out by
 /// hand per line: it is derived from the size via [`optical_tracking`], so a
 /// brand preset that changes the sizes stays automatically correct.
+///
+/// ```
+/// use silka_theme::{preset::cupertino, FontToken};
+///
+/// let scale = cupertino::typography();
+/// assert!(scale.optical_sizing);
+///
+/// // The scale only ever grows as the token gets larger.
+/// let body = scale.get(FontToken::Body);
+/// let headline = scale.get(FontToken::Headline);
+/// assert!(headline.size >= body.size);
+/// assert!(body.line_height_px() > body.size);
+///
+/// // Tracking is derived, not authored: the small end is tracked positive,
+/// // the large end negative, exactly as the SF table does it.
+/// assert!(scale.get(FontToken::Caption2).tracking > 0.0);
+/// assert!(scale.get(FontToken::LargeTitle).tracking < 0.0);
+/// ```
 pub fn typography() -> TypographyTokens {
     let gaya = |size: f32, line: f32, w: u16| {
         TypeStyle::new(size, line)

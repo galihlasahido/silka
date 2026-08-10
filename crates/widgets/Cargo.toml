@@ -1,6 +1,7 @@
 [package]
 name = "silka-widgets"
-description = "Katalog komponen sesuai KOMPONEN.md: API gaya Dart + styling utility ala Tailwind"
+description = "The silka component catalogue: Dart-style constructors with Tailwind-style utility styling"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

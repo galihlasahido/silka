@@ -40,26 +40,44 @@
 //! the `Teks & kontainer` page, which shows the same two things through the
 //! widget layer.
 
-mod button;
-mod cards;
-mod catalog;
-mod chart;
-mod checkbox;
-mod counter;
-mod dialog;
-mod list;
-mod primitives;
-mod reactive;
-mod scroll_view;
-mod select;
-mod shell;
-mod slider;
-mod spring;
-mod switch;
-mod table;
-mod tabs;
-mod text_field;
-mod typography;
+#![warn(missing_docs)]
+// The gallery is documentation as much as it is an application: every page is
+// the worked example for one component, so the same rustdoc gates the library
+// crates keep apply here too.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![warn(
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks
+)]
+
+pub mod button;
+pub mod cards;
+pub mod catalog;
+pub mod chart;
+pub mod checkbox;
+pub mod counter;
+pub mod dialog;
+pub mod list;
+pub mod menu;
+pub mod primitives;
+pub mod reactive;
+pub mod scroll_view;
+pub mod select;
+pub mod shell;
+pub mod slider;
+pub mod spring;
+pub mod switch;
+pub mod table;
+pub mod tabs;
+pub mod text_area;
+pub mod text_field;
+pub mod tree;
+pub mod typography;
+pub mod utility;
+pub mod wysiwyg;
 
 use catalog::Halaman;
 use silka_platform::{window, PlatformError};

@@ -252,9 +252,18 @@ impl ListState {
 ///
 /// A hook: called once per build, never inside an `if`/`loop`.
 ///
-/// ```ignore
-/// let daftar = use_list_state();
-/// list(&t, daftar, baris.len(), move |i| baris_view(i)).item_extent(44.0)
+/// ```
+/// # use silka_core::view::{fixed, View};
+/// # use silka_theme::{Appearance, Theme};
+/// # use silka_widgets::{list, use_list_state};
+/// # use silka_core::signals::Runtime;
+/// # let rt = Runtime::new();
+/// # let t = Theme::cupertino(Appearance::Dark);
+/// // A hook, so it runs inside the component being built.
+/// rt.build_root(|| {
+///     let state = use_list_state();
+///     list(&t, state, 100, |_i| View::from(fixed(240.0, 44.0))).item_extent(44.0);
+/// });
 /// ```
 pub fn use_list_state() -> ListState {
     let scroll = use_signal(ListScroll::default);

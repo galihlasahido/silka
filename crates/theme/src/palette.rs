@@ -17,6 +17,26 @@
 //! The values are stored as `u32` hex literals rather than [`Color`] so they
 //! can be `const` without float arithmetic in a `const fn` (a limit of the
 //! workspace `rust-version`).
+//!
+//! ```
+//! use silka_theme::palette::{hig, tailwind, Step};
+//!
+//! // A ramp is indexed by its Tailwind step number, not by an integer nobody
+//! // can read at a glance.
+//! let mid = tailwind::BLUE.get(Step::S500);
+//! let deep = tailwind::BLUE.get(Step::S900);
+//! assert!(deep.r < mid.r); // 900 really is the darker end
+//!
+//! // Apple's colors come as explicit light/dark pairs — the dark variant is
+//! // brighter, because it sits on a dark surface.
+//! assert_ne!(hig::SYSTEM_BLUE_LIGHT, hig::SYSTEM_BLUE_DARK);
+//!
+//! // Nothing here has any meaning yet: assigning `SYSTEM_BLUE_DARK` the role
+//! // of "accent" is the preset's job, and widgets see only the role.
+//! for step in Step::ALL {
+//!     let _ = tailwind::SLATE.get(step);
+//! }
+//! ```
 
 use silka_paint::Color;
 
@@ -24,6 +44,21 @@ use silka_paint::Color;
 ///
 /// The order matches how the palette is written: [`Step::S50`] is the lightest,
 /// [`Step::S950`] the darkest.
+///
+/// ```
+/// use silka_theme::palette::{tailwind, Step};
+///
+/// assert_eq!(Step::S500.value(), 500);
+/// assert_eq!(Step::S50.index(), 0);
+/// assert!(Step::S50 < Step::S950);
+///
+/// // Ramps are the only place color literals live; semantic tokens borrow
+/// // from them, and widgets never see either.
+/// let slate = tailwind::SLATE;
+/// assert_eq!(slate.shades().len(), 11);
+/// // Step 50 is nearly white, step 950 nearly black.
+/// assert!(slate.get(Step::S50).r > slate.get(Step::S950).r);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Step {
     /// Step 50 — nearly white.

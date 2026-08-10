@@ -16,6 +16,18 @@ use core::fmt;
 /// A node's role for assistive technology (screen readers).
 ///
 /// `#[non_exhaustive]`: the list of roles grows alongside `KOMPONEN.md`.
+///
+/// ```
+/// use silka_core::access::AccessRole;
+///
+/// // The default is structural, and structural nodes are filtered out of the
+/// // tree assistive technology sees — so a node that forgot to state its role
+/// // can never make a screen reader announce an empty container.
+/// assert_eq!(AccessRole::default(), AccessRole::Container);
+/// assert!(AccessRole::Container.is_structural());
+/// assert!(!AccessRole::Button.is_structural());
+/// assert_eq!(AccessRole::Button.name(), "button");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[non_exhaustive]
 pub enum AccessRole {
@@ -83,6 +95,10 @@ pub enum AccessRole {
     Row,
     /// A table cell.
     Cell,
+    /// A hierarchical list (outline view).
+    Tree,
+    /// A single row of a hierarchical list.
+    TreeItem,
 }
 
 impl AccessRole {
@@ -118,6 +134,8 @@ impl AccessRole {
             AccessRole::Table => "table",
             AccessRole::Row => "row",
             AccessRole::Cell => "cell",
+            AccessRole::Tree => "tree",
+            AccessRole::TreeItem => "tree_item",
         }
     }
 
@@ -144,6 +162,19 @@ impl fmt::Display for AccessRole {
 /// The difference from [`AccessActions`]: this is a single incoming request
 /// (VoiceOver pressing a button), whereas [`AccessActions`] is the set of
 /// capabilities a node advertises outwards.
+///
+/// ```
+/// use silka_core::access::{AccessAction, AccessActions};
+///
+/// // Every incoming action names the capability a node must advertise for it
+/// // to be legal — which is what the platform adapter checks before
+/// // delivering it.
+/// assert_eq!(AccessAction::Click.capability(), AccessActions::CLICK);
+///
+/// let button = AccessActions::CLICK.union(AccessActions::FOCUS);
+/// assert!(button.contains(AccessAction::Focus.capability()));
+/// assert!(!button.contains(AccessAction::Increment.capability()));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum AccessAction {
@@ -236,6 +267,53 @@ impl fmt::Display for AccessAction {
 /// advertised by that node. Assistive technology works from a snapshot that
 /// may be a frame out of date; without those checks, a click could land on the
 /// wrong widget.
+///
+/// Assistive technology works from a snapshot that may be a frame out of date,
+/// so an unvalidated request is a click landing on whatever moved into that
+/// slot since.
+///
+/// ```
+/// use silka_core::access::{AccessAction, AccessActionRequest, AccessRole};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, interactive, reconcile, View};
+/// use silka_paint::Size;
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     column([View::from(
+///         interactive(fixed(120.0, 44.0))
+///             .role(AccessRole::Button)
+///             .label("Save"),
+///     )]),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// let access = tree.access_tree(None);
+/// let button = access.find_label("Save").expect("the button is announced");
+///
+/// // VoiceOver asks for the primary action on the node it last saw.
+/// let request = AccessActionRequest {
+///     target: button.id,
+///     action: AccessAction::Click,
+///     value: None,
+/// };
+///
+/// // The adapter validates both halves before dispatching: the node still
+/// // exists, *and* it really advertises that action. A button does not
+/// // advertise `Increment`, so such a request is dropped rather than guessed at.
+/// assert!(tree.contains(request.target));
+/// assert!(button.node.actions.contains(AccessAction::Click.capability()));
+/// assert!(!button.node.actions.contains(AccessAction::Increment.capability()));
+///
+/// // `value` only travels with `SetValue` — dictation into a text field.
+/// let dictated = AccessActionRequest {
+///     target: button.id,
+///     action: AccessAction::SetValue,
+///     value: Some("Hello".into()),
+/// };
+/// assert_eq!(dictated.value.as_deref(), Some("Hello"));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccessActionRequest {
     /// The target node.
@@ -248,6 +326,22 @@ pub struct AccessActionRequest {
 }
 
 /// The set of capabilities a node **advertises**, as a bitset.
+///
+/// ```
+/// use silka_core::access::AccessActions;
+///
+/// // A slider advertises what a screen reader may actually do to it.
+/// let slider = AccessActions::FOCUS
+///     .union(AccessActions::INCREMENT)
+///     .union(AccessActions::DECREMENT);
+///
+/// assert!(slider.contains(AccessActions::INCREMENT));
+/// assert!(!slider.contains(AccessActions::CLICK));
+/// assert!(AccessActions::NONE.is_empty());
+///
+/// // The names are what a golden a11y dump prints.
+/// assert!(slider.names().any(|n| n == "increment"));
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct AccessActions(u16);
 
@@ -366,6 +460,16 @@ impl fmt::Debug for AccessActions {
 // ---------------------------------------------------------------------------
 
 /// A three-state value for checkboxes/switches/menu items.
+///
+/// Three, not two: an indeterminate checkbox has to reach a screen reader as
+/// "mixed" rather than as a button whose *name* keeps changing.
+///
+/// ```
+/// use silka_core::access::AccessToggled;
+///
+/// assert_eq!(AccessToggled::Mixed.name(), "mixed");
+/// assert_ne!(AccessToggled::Mixed, AccessToggled::On);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AccessToggled {
     /// Off.
@@ -397,12 +501,109 @@ impl From<bool> for AccessToggled {
     }
 }
 
+/// Where the caret sits, and how far the selection reaches, inside an editable
+/// node's [`AccessNode::value`].
+///
+/// Both ends are **character** offsets (not bytes): that is the unit assistive
+/// technology counts in, and the unit `AccessKit` positions in. `anchor` is the
+/// end that stays put while the selection is being extended, `focus` the end
+/// that moves; the two being equal means "just a caret, nothing selected" —
+/// what AccessKit calls a degenerate selection.
+///
+/// This is what lets a screen reader announce *"line 3, character 12"* and
+/// follow a selection as it grows, instead of merely re-reading the whole
+/// content after every keystroke.
+///
+/// Indices are in **characters**, not bytes, because that is what assistive
+/// technology counts — [`AccessTextSelection::from_bytes`] does the conversion
+/// from the editing model's byte offsets.
+///
+/// ```
+/// use silka_core::access::AccessTextSelection;
+///
+/// assert!(AccessTextSelection::caret(3).is_collapsed());
+///
+/// // Selecting backwards is normal; `range` orders the pair.
+/// let backwards = AccessTextSelection::new(7, 2);
+/// assert_eq!(backwards.range(), 2..7);
+///
+/// // "café" is 5 bytes but 4 characters — the difference a screen reader
+/// // would otherwise announce wrongly.
+/// assert_eq!(AccessTextSelection::from_bytes("café", 0, 5).focus, 4);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AccessTextSelection {
+    /// The fixed end of the selection, in characters from the start of the
+    /// value.
+    pub anchor: usize,
+    /// The moving end — the caret itself.
+    pub focus: usize,
+}
+
+impl AccessTextSelection {
+    /// A caret with nothing selected.
+    pub const fn caret(at: usize) -> Self {
+        Self {
+            anchor: at,
+            focus: at,
+        }
+    }
+
+    /// A selection running from `anchor` to `focus`.
+    pub const fn new(anchor: usize, focus: usize) -> Self {
+        Self { anchor, focus }
+    }
+
+    /// True when nothing is selected.
+    pub const fn is_collapsed(self) -> bool {
+        self.anchor == self.focus
+    }
+
+    /// The selected range, ordered.
+    pub fn range(self) -> core::ops::Range<usize> {
+        let (a, b) = (self.anchor.min(self.focus), self.anchor.max(self.focus));
+        a..b
+    }
+
+    /// Translate a **byte** range in `text` into character offsets.
+    ///
+    /// Widgets store byte indices (that is what `silka-text` edits in);
+    /// assistive technology counts characters. Converting here, once, keeps
+    /// every widget from getting it subtly wrong on its own.
+    pub fn from_bytes(text: &str, anchor: usize, focus: usize) -> Self {
+        // Counted by walking, not by slicing: an index that lands inside a
+        // character must come back as a number, never as a panic (§9.7).
+        let hitung = |batas: usize| text.char_indices().take_while(|(i, _)| *i < batas).count();
+        Self {
+            anchor: hitung(anchor),
+            focus: hitung(focus),
+        }
+    }
+}
+
 /// The part of an accessibility node that is **filled in by the widget**.
 ///
 /// This is half of the [`crate::tree::RenderNode::access`] contract. The other
 /// half — `bounds`, parent and children — comes from the layout result and is
 /// assembled by the engine in [`super::AccessEntry`], so it cannot go stale
 /// with respect to what is drawn.
+///
+/// ```
+/// use silka_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
+///
+/// // What a checkbox fills in. Note what is absent: `bounds`. A widget never
+/// // holds it, so it structurally cannot describe a box other than the one
+/// // that was laid out.
+/// let node = AccessNode::with_role(AccessRole::CheckBox)
+///     .label("Sync automatically")
+///     .with_actions(AccessActions::CLICK.union(AccessActions::FOCUS))
+///     .toggled(AccessToggled::Mixed);
+///
+/// assert_eq!(node.role, AccessRole::CheckBox);
+/// assert_eq!(node.label.as_deref(), Some("Sync automatically"));
+/// assert_eq!(node.toggled, Some(AccessToggled::Mixed));
+/// assert!(!node.hidden);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AccessNode {
     /// The node's role.
@@ -432,6 +633,36 @@ pub struct AccessNode {
     /// selection fill it in (`AccessKit` documents the same trap on
     /// `Selected`).
     pub selected: Option<bool>,
+    /// Caret and selection inside [`AccessNode::value`], for editable text.
+    ///
+    /// Only text-editing roles fill this in; everywhere else it stays `None`,
+    /// which means "this node has no caret", not "the caret is at zero".
+    pub text_selection: Option<AccessTextSelection>,
+    /// Open or closed, where the concept applies (tree rows, disclosure
+    /// triangles, combo boxes).
+    ///
+    /// The same trap as [`AccessNode::selected`]: `None` means "this node
+    /// cannot be opened at all", while `Some(false)` makes a screen reader
+    /// announce "collapsed" — which is exactly right for a branch and exactly
+    /// wrong for a leaf.
+    pub expanded: Option<bool>,
+    /// Nesting depth, counted from 1 for a root row.
+    ///
+    /// A hierarchy is invisible to assistive technology unless every row says
+    /// how deep it sits: without this a screen reader reads an outline as a
+    /// flat list, and the user loses the only structure the widget has.
+    pub level: Option<usize>,
+    /// This node's 1-based position among its **siblings**.
+    ///
+    /// Deliberately not its position in the flattened list: "3 of 7" is what a
+    /// screen reader announces, and it is about the group the row belongs to.
+    pub position_in_set: Option<usize>,
+    /// How many siblings the group holds in total.
+    ///
+    /// A virtualized container may only materialize a window of its rows, so
+    /// this number cannot be inferred from the a11y tree — the widget is the
+    /// only one that knows it.
+    pub size_of_set: Option<usize>,
 }
 
 impl AccessNode {
@@ -493,6 +724,27 @@ impl AccessNode {
     /// Set the selected state (list/table rows, tabs, menu items).
     pub fn selected(mut self, selected: bool) -> Self {
         self.selected = Some(selected);
+        self
+    }
+
+    /// Set the caret/selection inside the value (editable text only).
+    pub fn text_selection(mut self, selection: AccessTextSelection) -> Self {
+        self.text_selection = Some(selection);
+        self
+    }
+
+    /// Set the open/closed state (tree rows, disclosure triangles).
+    pub fn expanded(mut self, expanded: bool) -> Self {
+        self.expanded = Some(expanded);
+        self
+    }
+
+    /// Place this node inside a hierarchy: depth (from 1), its 1-based
+    /// position among its siblings, and how many siblings there are.
+    pub fn at_level(mut self, level: usize, position: usize, size: usize) -> Self {
+        self.level = Some(level);
+        self.position_in_set = Some(position);
+        self.size_of_set = Some(size);
         self
     }
 

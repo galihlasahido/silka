@@ -15,6 +15,32 @@
 //!
 //! The Tailwind/shadcn preset happens to be two-layered as well (`shadow-md` =
 //! two stacked `box-shadow`s), so one vocabulary serves both presets.
+//!
+//! ```
+//! use silka_paint::{Color, Corners, CornerStyle, Rect, Shadow, ShadowPair};
+//!
+//! // The HIG recipe: a wide, faint ambient layer and a tight, offset key layer.
+//! let elevation = ShadowPair::new(
+//!     Shadow::new(Color::BLACK.with_alpha(0.06), 16.0),
+//!     Shadow::new(Color::BLACK.with_alpha(0.12), 4.0).offset(0.0, 1.0),
+//! );
+//! let [ambient, key] = elevation.layers();
+//! assert!(ambient.sigma() > key.sigma()); // softer
+//! assert_eq!(key.offset.y, 1.0); // and sitting lower
+//!
+//! // Each layer is drawn as the box displaced and expanded — never the box
+//! // itself — so the culler needs the grown bounds, not the original rect.
+//! let card = Rect::new(24.0, 24.0, 180.0, 96.0);
+//! assert!(ambient.bounds(card).size.width > card.size.width);
+//!
+//! // And the shadow of a squircle is itself a squircle: corner shape is a
+//! // parameter that travels along, not a constant in the renderer.
+//! let corners = Corners::uniform(14.0, CornerStyle::squircle());
+//! assert_eq!(key.shape_corners(corners).style, CornerStyle::squircle());
+//!
+//! // A fully transparent layer is skipped rather than drawn.
+//! assert!(!Shadow::new(Color::BLACK.with_alpha(0.0), 16.0).is_visible());
+//! ```
 
 use crate::color::Color;
 use crate::corner::{CornerRadii, Corners};
@@ -26,6 +52,26 @@ use crate::geometry::{Point, Rect};
 /// the spread, while the gaussian in the shader uses sigma = `blur / 2`
 /// ([`Shadow::sigma`]). That way token values can be copied verbatim from the
 /// Tailwind palette or from a designer's spec.
+///
+/// ```
+/// use silka_paint::{Color, Rect, Shadow};
+///
+/// // `blur` is the CSS diameter, so a designer's spec transfers verbatim…
+/// let key = Shadow::new(Color::BLACK.with_alpha(0.12), 8.0).offset(0.0, 2.0);
+/// // …and the shader's gaussian sigma is half of it.
+/// assert_eq!(key.sigma(), 4.0);
+/// assert!(key.is_visible());
+///
+/// // The drawn shape is the box displaced and expanded, never the box itself.
+/// let box_rect = Rect::new(20.0, 20.0, 100.0, 60.0);
+/// assert_eq!(key.shape(box_rect).min_y(), 22.0);
+///
+/// // Culling uses the 3-sigma tail, so a shadow is never clipped early.
+/// assert!(key.bounds(box_rect).size.width > box_rect.size.width);
+///
+/// // A fully transparent layer costs nothing and is skipped.
+/// assert!(!Shadow::NONE.is_visible());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
     /// Shadow color (low alpha; a token, not a literal).
@@ -125,6 +171,24 @@ impl Shadow {
 ///
 /// This is the form theme tokens store (`theme.shadow.md`), so a widget only
 /// has to name its elevation and never writes a blur value itself.
+///
+/// ```
+/// use silka_paint::{Color, Shadow, ShadowPair};
+///
+/// let elevation = ShadowPair::new(
+///     // Ambient: wide and barely offset — "this object shares your space".
+///     Shadow::new(Color::BLACK.with_alpha(0.06), 16.0).offset(0.0, 2.0),
+///     // Key: tight and pushed down — "this object sits above the surface".
+///     Shadow::new(Color::BLACK.with_alpha(0.12), 4.0).offset(0.0, 1.0),
+/// );
+///
+/// // Ordered back to front: the widest layer is drawn first.
+/// let [back, front] = elevation.layers();
+/// assert!(back.sigma() > front.sigma());
+///
+/// // Elevation 0 is a value, not a special case in the renderer.
+/// assert!(!ShadowPair::NONE.is_visible());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowPair {
     /// The soft, wide layer.

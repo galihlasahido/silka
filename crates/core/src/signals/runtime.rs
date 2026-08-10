@@ -109,7 +109,32 @@ pub struct RuntimeId(u32);
 /// The identity of one component scope in the runtime arena.
 ///
 /// Generational: once a scope dies, its old ID never matches a new scope that
-/// takes over the same slot.
+/// takes over the same slot. That is what makes a stale id safe to hold — it
+/// resolves to nothing rather than to whoever moved into the free slot.
+///
+/// ```
+/// use silka_core::signals::{scope, Key, Runtime};
+///
+/// let rt = Runtime::new();
+/// let root = rt.root();
+///
+/// // A scope is created by building a keyed child.
+/// rt.build_root(|| scope(Key::from("panel"), || {}));
+/// let child = rt.children(root)[0];
+/// assert_ne!(child, root);
+///
+/// // The key disappears, so the scope and everything it owned is dropped…
+/// rt.build_root(|| {});
+/// assert!(rt.children(root).is_empty());
+///
+/// // …and the old id can still be held safely: it names a generation that is
+/// // gone, so it can never be confused with a later occupant of the slot.
+/// rt.build_root(|| scope(Key::from("other"), || {}));
+/// let reused = rt.children(root)[0];
+/// assert_eq!(reused.index(), child.index());
+/// assert_ne!(reused.generation(), child.generation());
+/// assert_ne!(reused, child);
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
     rt: RuntimeId,
@@ -137,6 +162,32 @@ impl fmt::Debug for ScopeId {
 
 /// The identity of one signal in the runtime arena (generational, like
 /// [`ScopeId`]).
+///
+/// A [`Signal`](crate::signals::Signal) is a typed handle around one of these,
+/// which is why signals are `Copy` and can be moved into as many callbacks as
+/// a view needs without any lifetime plumbing.
+///
+/// ```
+/// use silka_core::signals::Runtime;
+///
+/// let rt = Runtime::new();
+/// let count = rt.signal(0i32);
+///
+/// // The handle is a plain id, so copying it costs nothing and every copy
+/// // refers to the same cell.
+/// let alias = count;
+/// alias.set(7);
+/// assert_eq!(count.get(), 7);
+/// assert_eq!(count.id(), alias.id());
+///
+/// // Two signals are two distinct slots, even at the same value.
+/// let other = rt.signal(7i32);
+/// assert_ne!(count.id(), other.id());
+///
+/// // A signal created straight off the runtime belongs to no scope, so
+/// // nothing can drop it out from under a callback that captured it.
+/// assert_eq!(rt.signal_owner(count.id()), None);
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SignalId {
     rt: RuntimeId,
@@ -444,6 +495,24 @@ impl Drop for ValueGuard<'_> {
 /// A runtime registers itself with the thread when created and deregisters when
 /// its last handle drops. That is what lets [`super::Signal`] be `Copy` without
 /// carrying any pointer — exactly the Dioxus pattern.
+///
+/// ```
+/// use silka_core::scheduler::Dirty;
+/// use silka_core::signals::Runtime;
+///
+/// let rt = Runtime::new();
+/// let count = rt.signal(0i32);
+///
+/// // Signals are `Copy` and carry no pointer, so they go into as many `move`
+/// // closures as an application needs.
+/// let increment = move || count.set(count.get() + 1);
+/// increment();
+/// assert_eq!(count.get(), 1);
+///
+/// // The whole wiring into "render only when dirty" is this one line: a
+/// // signal nobody read never wakes the GPU.
+/// rt.on_wake(|_reason: Dirty| { /* scheduler.request(reason) */ });
+/// ```
 #[derive(Clone)]
 pub struct Runtime {
     inner: Rc<RuntimeInner>,

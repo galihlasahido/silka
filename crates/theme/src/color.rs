@@ -3,6 +3,37 @@
 //! Widgets name `surface`/`accent`/`separator`; the preset and appearance fill
 //! them in from [`crate::palette`]. That is why a widget that looks right under
 //! Cupertino is automatically right under Tailwind, light or dark (§2.7).
+//!
+//! ```
+//! use silka_theme::{Appearance, ColorToken, Theme};
+//!
+//! // A widget asks for a *role*. It never learns which number came back, and
+//! // it certainly never writes a hex literal of its own.
+//! let dark = Theme::cupertino(Appearance::Dark);
+//! let light = Theme::cupertino(Appearance::Light);
+//! assert_ne!(
+//!     dark.color_of(ColorToken::Background),
+//!     light.color_of(ColorToken::Background),
+//! );
+//!
+//! // Switching preset re-fills the same roles from a different palette, so
+//! // nothing in the widget changes.
+//! let shadcn = Theme::tailwind(Appearance::Dark);
+//! assert_ne!(
+//!     shadcn.color_of(ColorToken::Accent),
+//!     dark.color_of(ColorToken::Accent),
+//! );
+//!
+//! // The tokens are also reachable as plain fields, which is the shorter form
+//! // used all over the widget crate.
+//! assert_eq!(dark.color.label, dark.color_of(ColorToken::Label));
+//!
+//! // Every role is enumerable — this is how the contrast tests sweep a preset
+//! // without anyone maintaining a second list by hand.
+//! for token in ColorToken::ALL {
+//!     let _ = dark.color_of(token);
+//! }
+//! ```
 
 use silka_paint::Color;
 
@@ -11,6 +42,19 @@ use silka_paint::Color;
 /// Every field must be filled in by the preset — no `Option`, no silent
 /// fallback. If a preset "has no" color for some role, it has to make a
 /// deliberate choice about which color to borrow.
+///
+/// ```
+/// use silka_theme::{Appearance, ColorToken, Theme};
+///
+/// let colors = Theme::cupertino(Appearance::Dark).color;
+///
+/// // Fields and tokens are two views of the same value.
+/// assert_eq!(colors.get(ColorToken::Surface), colors.surface);
+///
+/// // In dark mode the background really is darker than the label on it —
+/// // the kind of invariant a preset test asserts across all four cells.
+/// assert!(colors.background.r < colors.label.r);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorTokens {
     /// Window background — this is what the surface clear color uses.
@@ -145,6 +189,24 @@ impl ColorTokens {
 ///
 /// `div().bg(ColorToken::Surface)` carries no color at all; the color only
 /// comes into being when resolved against the active theme ([`crate::Token`]).
+///
+/// ```
+/// use silka_theme::{Appearance, ColorToken, Preset, Theme};
+///
+/// let dark = Theme::cupertino(Appearance::Dark);
+/// let light = dark.with_appearance(Appearance::Light);
+///
+/// // One token, two appearances — the widget that named it did not change.
+/// assert_ne!(dark.color_of(ColorToken::Surface), light.color_of(ColorToken::Surface));
+///
+/// // Every preset must answer for every role; there is no fallback.
+/// for preset in Preset::ALL {
+///     let theme = Theme::new(preset, Appearance::Dark);
+///     for token in ColorToken::ALL {
+///         assert!(theme.color_of(token).a >= 0.0);
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ColorToken {
     /// [`ColorTokens::background`].

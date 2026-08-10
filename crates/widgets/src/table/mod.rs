@@ -21,18 +21,26 @@
 //! list: columns (width, order, sorting), multiple selection, and cell-to-cell
 //! navigation.
 //!
-//! ```ignore
-//! let tabel = use_table_state();
-//! let kolom = vec![
+//! ```
+//! # use silka_core::signals::Runtime;
+//! # use silka_core::view::{fixed, View};
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_widgets::{col, table, Fonts, TableState};
+//! # let rt = Runtime::new();
+//! # let fonts = Fonts::bundled_only();
+//! # let t = Theme::cupertino(Appearance::Dark);
+//! let state = TableState::new(&rt);
+//! let columns = vec![
 //!     col("No.").fixed(90.0),
-//!     col("Pihak").flex(2.0),
-//!     col("Nominal").fixed(160.0).trailing(),
+//!     col("Counterparty").flex(2.0),
+//!     col("Amount").fixed(160.0).trailing(),
 //! ];
-//! table(&fonts, &t, tabel, kolom, baris.len(), move |b, k| sel(b, k))
+//!
+//! table(&fonts, &t, state, columns, 100_000, |_row, _column| View::from(fixed(80.0, 20.0)))
 //!     .row_extent(44.0)
 //!     .striped()
-//!     .label("Transaksi")
-//!     .on_activate(move |i| buka(i))
+//!     .label("Transactions")
+//!     .on_activate(|i| println!("open row {i}"));
 //! ```
 //!
 //! ## The shape of the tree

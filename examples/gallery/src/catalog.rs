@@ -44,13 +44,15 @@ pub enum Kelompok {
     Overlay,
     /// Tier 5 — data display.
     Data,
+    /// Tier 6 — advanced components driven by a flagship application's needs.
+    Lanjutan,
     /// Motion: the spring system the whole design system transitions on.
     Gerak,
 }
 
 impl Kelompok {
     /// Every group, in sidebar order.
-    pub const SEMUA: [Kelompok; 8] = [
+    pub const SEMUA: [Kelompok; 9] = [
         Kelompok::Fondasi,
         Kelompok::Primitif,
         Kelompok::Layout,
@@ -58,6 +60,7 @@ impl Kelompok {
         Kelompok::Navigasi,
         Kelompok::Overlay,
         Kelompok::Data,
+        Kelompok::Lanjutan,
         Kelompok::Gerak,
     ];
 
@@ -71,6 +74,7 @@ impl Kelompok {
             Kelompok::Navigasi => "Tier 3 · Navigasi",
             Kelompok::Overlay => "Tier 4 · Overlay",
             Kelompok::Data => "Tier 5 · Data",
+            Kelompok::Lanjutan => "Tier 6 · Lanjutan",
             Kelompok::Gerak => "Gerak",
         }
     }
@@ -82,7 +86,7 @@ impl Kelompok {
 /// view tree and is therefore driven by the reactive lifecycle. The two older
 /// pages that assemble a `Scene` by hand (the typography specimen and the
 /// corner comparison) are not part of this enum; they hang off
-/// [`crate::HalamanScene`] and are reachable only through `--page`.
+/// `HalamanScene` in `main.rs` and are reachable only through `--page`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Halaman {
     /// Tier 0: the type scale, corner shapes, and layered shadows as views.
@@ -91,10 +95,14 @@ pub enum Halaman {
     Counter,
     /// The card grid driven entirely through the reactive lifecycle.
     Reaktif,
+    /// The utility vocabulary of §2.6 as a living reference.
+    Utility,
     /// Tier 2: the `button` catalogue (five variants, every state).
     Tombol,
     /// Tier 2: the `text_field` catalogue (caret, selection, IME).
     KolomTeks,
+    /// Tier 2: the `text_area` catalogue (soft wrap, goal column, gutter).
+    AreaTeks,
     /// Tier 2: the `checkbox` catalogue (including indeterminate).
     Centang,
     /// Tier 2: the `switch` catalogue (a thumb you can drag).
@@ -105,6 +113,8 @@ pub enum Halaman {
     Pilihan,
     /// Tier 3: the `tabs` catalogue (three variants on one engine).
     Tabs,
+    /// Tier 3: the in-app `menu` catalogue (dropdown + context menu).
+    MenuHalaman,
     /// Tier 4: modal dialogs and alerts on the overlay system.
     Dialog,
     /// Tier 1: `scroll_view` — rubber banding, momentum, overlay scrollbars.
@@ -113,30 +123,39 @@ pub enum Halaman {
     Daftar,
     /// Tier 5: the **virtualized** table.
     Tabel,
+    /// Tier 5: the **virtualized** tree (outline view).
+    Pohon,
     /// Tier 5: the `silka-chart` catalogue.
     Chart,
+    /// Tier 6: the rich text editor.
+    Wysiwyg,
     /// The interactive spring playground.
     Animasi,
 }
 
 impl Halaman {
     /// Every page, in sidebar order (grouped by tier).
-    pub const SEMUA: [Halaman; 16] = [
+    pub const SEMUA: [Halaman; 21] = [
         Halaman::Counter,
         Halaman::Reaktif,
+        Halaman::Utility,
         Halaman::Primitif,
         Halaman::Gulir,
         Halaman::Daftar,
         Halaman::Tombol,
         Halaman::KolomTeks,
+        Halaman::AreaTeks,
         Halaman::Centang,
         Halaman::Sakelar,
         Halaman::Slider,
         Halaman::Pilihan,
         Halaman::Tabs,
+        Halaman::MenuHalaman,
         Halaman::Dialog,
         Halaman::Tabel,
+        Halaman::Pohon,
         Halaman::Chart,
+        Halaman::Wysiwyg,
         Halaman::Animasi,
     ];
 
@@ -153,18 +172,23 @@ impl Halaman {
             Halaman::Primitif => "primitives",
             Halaman::Counter => "counter",
             Halaman::Reaktif => "reactive",
+            Halaman::Utility => "utility",
             Halaman::Tombol => "button",
             Halaman::KolomTeks => "text-field",
+            Halaman::AreaTeks => "text-area",
             Halaman::Centang => "checkbox",
             Halaman::Sakelar => "switch",
             Halaman::Slider => "slider",
             Halaman::Pilihan => "select",
             Halaman::Tabs => "tabs",
+            Halaman::MenuHalaman => "menu",
             Halaman::Dialog => "dialog",
             Halaman::Gulir => "scroll",
             Halaman::Daftar => "list",
             Halaman::Tabel => "table",
+            Halaman::Pohon => "tree",
             Halaman::Chart => "chart",
+            Halaman::Wysiwyg => "wysiwyg",
             Halaman::Animasi => "spring",
         }
     }
@@ -176,18 +200,23 @@ impl Halaman {
             Halaman::Primitif => "Teks & kontainer",
             Halaman::Counter => "Counter",
             Halaman::Reaktif => "Grid reaktif",
+            Halaman::Utility => "Kosakata utility",
             Halaman::Tombol => "Button",
             Halaman::KolomTeks => "Text field",
+            Halaman::AreaTeks => "Text area",
             Halaman::Centang => "Checkbox",
             Halaman::Sakelar => "Switch",
             Halaman::Slider => "Slider",
             Halaman::Pilihan => "Select",
             Halaman::Tabs => "Tabs",
+            Halaman::MenuHalaman => "Menu & context menu",
             Halaman::Dialog => "Dialog & alert",
             Halaman::Gulir => "Scroll view",
             Halaman::Daftar => "List (virtual)",
             Halaman::Tabel => "Table (virtual)",
+            Halaman::Pohon => "Tree (virtual)",
             Halaman::Chart => "Chart",
+            Halaman::Wysiwyg => "WYSIWYG editor",
             Halaman::Animasi => "Spring",
         }
     }
@@ -195,18 +224,20 @@ impl Halaman {
     /// The tier this page belongs to.
     pub fn kelompok(self) -> Kelompok {
         match self {
-            Halaman::Counter | Halaman::Reaktif => Kelompok::Fondasi,
+            Halaman::Counter | Halaman::Reaktif | Halaman::Utility => Kelompok::Fondasi,
             Halaman::Primitif => Kelompok::Primitif,
             Halaman::Gulir | Halaman::Daftar => Kelompok::Layout,
             Halaman::Tombol
             | Halaman::KolomTeks
+            | Halaman::AreaTeks
             | Halaman::Centang
             | Halaman::Sakelar
             | Halaman::Slider
             | Halaman::Pilihan => Kelompok::Kontrol,
-            Halaman::Tabs => Kelompok::Navigasi,
+            Halaman::Tabs | Halaman::MenuHalaman => Kelompok::Navigasi,
             Halaman::Dialog => Kelompok::Overlay,
-            Halaman::Tabel | Halaman::Chart => Kelompok::Data,
+            Halaman::Tabel | Halaman::Pohon | Halaman::Chart => Kelompok::Data,
+            Halaman::Wysiwyg => Kelompok::Lanjutan,
             Halaman::Animasi => Kelompok::Gerak,
         }
     }
@@ -232,10 +263,13 @@ impl Halaman {
             Halaman::Gulir
                 | Halaman::Daftar
                 | Halaman::Tabel
+                | Halaman::Pohon
                 | Halaman::Chart
                 | Halaman::Reaktif
                 | Halaman::Dialog
                 | Halaman::Pilihan
+                | Halaman::MenuHalaman
+                | Halaman::Wysiwyg
         )
     }
 
@@ -246,18 +280,23 @@ impl Halaman {
             "primitives" | "primitif" | "dasar" => Halaman::Primitif,
             "counter" | "pencacah" => Halaman::Counter,
             "reactive" | "reaktif" => Halaman::Reaktif,
+            "utility" | "utilitas" | "kosakata" => Halaman::Utility,
             "button" | "tombol" => Halaman::Tombol,
             "text-field" | "text_field" | "kolom-teks" => Halaman::KolomTeks,
+            "text-area" | "text_area" | "area-teks" | "textarea" => Halaman::AreaTeks,
             "checkbox" | "centang" => Halaman::Centang,
             "switch" | "toggle" | "sakelar" => Halaman::Sakelar,
             "slider" | "penggeser" => Halaman::Slider,
             "select" | "dropdown" | "pilihan" => Halaman::Pilihan,
             "tabs" | "tab" => Halaman::Tabs,
+            "menu" | "context-menu" | "context_menu" | "menu-konteks" => Halaman::MenuHalaman,
             "dialog" | "alert" => Halaman::Dialog,
             "scroll" | "scroll_view" | "gulir" => Halaman::Gulir,
             "list" | "daftar" => Halaman::Daftar,
             "table" | "tabel" => Halaman::Tabel,
+            "tree" | "pohon" | "outline" => Halaman::Pohon,
             "chart" | "grafik" | "bagan" => Halaman::Chart,
+            "wysiwyg" | "editor" | "rich-text" | "teks-kaya" => Halaman::Wysiwyg,
             "spring" | "animasi" | "animation" => Halaman::Animasi,
             _ => return None,
         })
@@ -273,18 +312,23 @@ impl Halaman {
             Halaman::Primitif => crate::primitives::halaman(cx, fonts),
             Halaman::Counter => crate::counter::halaman(cx, fonts),
             Halaman::Reaktif => crate::reactive::halaman(cx),
+            Halaman::Utility => crate::utility::halaman(cx, fonts),
             Halaman::Tombol => crate::button::halaman(cx, fonts),
             Halaman::KolomTeks => crate::text_field::halaman(cx, fonts),
+            Halaman::AreaTeks => crate::text_area::halaman(cx, fonts),
             Halaman::Centang => crate::checkbox::halaman(cx, fonts),
             Halaman::Sakelar => crate::switch::halaman(cx, fonts),
             Halaman::Slider => crate::slider::halaman(cx, fonts),
             Halaman::Pilihan => crate::select::halaman(cx, fonts),
             Halaman::Tabs => crate::tabs::halaman(cx, fonts),
+            Halaman::MenuHalaman => crate::menu::halaman(cx, fonts),
             Halaman::Dialog => crate::dialog::halaman(cx, fonts),
             Halaman::Gulir => crate::scroll_view::halaman(cx, fonts),
             Halaman::Daftar => crate::list::halaman(cx, fonts),
             Halaman::Tabel => crate::table::halaman(cx, fonts),
+            Halaman::Pohon => crate::tree::halaman(cx, fonts),
             Halaman::Chart => crate::chart::halaman(cx, fonts),
+            Halaman::Wysiwyg => crate::wysiwyg::halaman(cx, fonts),
             Halaman::Animasi => crate::spring::halaman(cx, fonts),
         }
     }

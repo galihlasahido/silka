@@ -5,6 +5,41 @@
 //! work in the whole framework, and so rasterization can use different origins
 //! (scrolling, animation) without reshaping — which is what keeps **subpixel
 //! positioning** correct as text moves.
+//!
+//! It is also the geometry a text field navigates: hit testing, caret
+//! placement, and selection rectangles all come from here rather than from a
+//! second copy of the layout inside the widget.
+//!
+//! ```
+//! use silka_paint::Point;
+//! use silka_text::{TextConstraints, TextEngine, TextStyle};
+//!
+//! let mut engine = TextEngine::bundled_only();
+//! let style = TextStyle::new().size(15.0);
+//! let layout = engine.layout("Hello world", &style, TextConstraints::UNBOUNDED);
+//!
+//! assert_eq!(layout.line_count(), 1);
+//! assert!(!layout.overflowed());
+//!
+//! // Clicking far to the left lands before the first character…
+//! assert_eq!(layout.hit(Point::new(-10.0, 4.0)), 0);
+//! // …and far to the right lands at the end, never outside the string.
+//! assert_eq!(layout.hit(Point::new(9_000.0, 4.0)), "Hello world".len());
+//!
+//! // The caret comes back as geometry the widget can draw directly, and it
+//! // advances as the index does.
+//! let start = layout.caret(0);
+//! let later = layout.caret(5);
+//! assert!(later.x > start.x);
+//! assert_eq!(later.line, start.line);
+//! assert!(start.height > 0.0);
+//! assert!(!start.rtl);
+//!
+//! // A selection is one rect per visual line, so a multi-line highlight needs
+//! // no special case in the widget.
+//! assert_eq!(layout.selection_rects(0..5).len(), 1);
+//! assert!(layout.selection_rects(0..0).is_empty());
+//! ```
 
 use silka_paint::{Point, Rect, Size};
 use unicode_segmentation::UnicodeSegmentation;
@@ -13,6 +48,33 @@ use crate::measure::{TextConstraints, TextMeasure};
 
 /// Metrics for one laid-out line, in logical points relative to the top edge of
 /// the text block.
+///
+/// One entry = one **visual** line: soft wrapping turns a single paragraph into
+/// several of them, and that is exactly the unit a multi-line editor navigates
+/// in (↑/↓, Home/End) and numbers in its gutter. The link back to the source is
+/// [`LineMetrics::line`] plus the byte range [`LineMetrics::start`] ..
+/// [`LineMetrics::end`].
+///
+/// ```
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let layout = engine.layout(
+///     "one two three four five",
+///     &TextStyle::new().size(15.0),
+///     TextConstraints::width(60.0),
+/// );
+///
+/// let lines = layout.lines();
+/// assert!(lines.len() > 1); // soft wrapping produced several visual lines
+///
+/// // Every visual line here came from the same source paragraph…
+/// assert!(lines.iter().all(|l| l.line == 0));
+/// // …and their byte ranges walk forward through the source text.
+/// assert!(lines[0].range().end <= lines[1].range().start);
+/// // Visual lines stack downwards by their own height.
+/// assert!(lines[1].top >= lines[0].top + lines[0].height - 0.01);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineMetrics {
     /// Distance from the block's top edge to the line's top edge.
@@ -25,9 +87,51 @@ pub struct LineMetrics {
     pub width: f32,
     /// True when this line's paragraph direction is right-to-left (§9.8).
     pub rtl: bool,
+    /// The **source** line this visual line belongs to: the paragraph index,
+    /// counted in newlines, not in wraps. Several visual lines share one value
+    /// when a paragraph is soft-wrapped.
+    pub line: usize,
+    /// Byte index in the source text where this visual line begins.
+    pub start: usize,
+    /// Byte index in the source text just past this visual line's last
+    /// character (the newline itself excluded).
+    pub end: usize,
+}
+
+impl LineMetrics {
+    /// The byte range this visual line covers.
+    pub fn range(&self) -> core::ops::Range<usize> {
+        self.start..self.end
+    }
 }
 
 /// Text that has been shaped and is ready to rasterize.
+///
+/// Besides the glyphs, it carries the geometry an editor needs: where a click
+/// lands, where the caret goes, and which rectangles a selection covers.
+///
+/// ```
+/// use silka_paint::Point;
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let layout = engine.layout("Hello", &TextStyle::new().size(15.0), TextConstraints::UNBOUNDED);
+///
+/// assert_eq!(layout.line_count(), 1);
+/// assert!(layout.glyph_count() >= 5);
+/// assert!(!layout.overflowed());
+///
+/// // A click far to the left lands before the first character.
+/// assert_eq!(layout.hit(Point::new(0.0, 2.0)), 0);
+///
+/// // The caret is a full line tall, even next to a lowercase letter.
+/// let caret = layout.caret(0);
+/// assert_eq!(caret.height, layout.measure().line_height);
+///
+/// // A selection is a list of rects, one per visual segment.
+/// assert_eq!(layout.selection_rects(0..5).len(), 1);
+/// assert!(layout.selection_rects(0..0).is_empty());
+/// ```
 pub struct TextLayout {
     pub(crate) buffer: cosmic_text::Buffer,
     pub(crate) max_lines: Option<usize>,
@@ -71,17 +175,43 @@ impl TextLayout {
         self.measure.overflowed
     }
 
-    /// Per-line metrics — used by the caret, selection, and `align_baseline`.
+    /// Per-**visual**-line metrics — used by the caret, selection,
+    /// `align_baseline`, and by `text_area` for line navigation and its gutter.
+    ///
+    /// The byte range of each entry is taken from the glyphs that actually
+    /// landed on the line, so a soft-wrapped paragraph really does come back as
+    /// several entries with the same [`LineMetrics::line`] and adjacent ranges.
     pub fn lines(&self) -> Vec<LineMetrics> {
+        let awal = self.awal_baris();
         self.buffer
             .layout_runs()
             .take(self.max_lines.unwrap_or(usize::MAX))
-            .map(|run| LineMetrics {
-                top: run.line_top,
-                baseline: run.line_y,
-                height: run.line_height,
-                width: run.line_w,
-                rtl: run.rtl,
+            .map(|run| {
+                let dasar = awal.get(run.line_i).copied().unwrap_or(0);
+                // Glyphs come in **visual** order (bidi), so the line's byte
+                // range is the span of the whole run, not its first and last
+                // glyph.
+                let mut mulai = usize::MAX;
+                let mut akhir = 0usize;
+                for g in run.glyphs {
+                    mulai = mulai.min(g.start);
+                    akhir = akhir.max(g.end);
+                }
+                let (mulai, akhir) = if run.glyphs.is_empty() {
+                    (0, 0)
+                } else {
+                    (mulai, akhir)
+                };
+                LineMetrics {
+                    top: run.line_top,
+                    baseline: run.line_y,
+                    height: run.line_height,
+                    width: run.line_w,
+                    rtl: run.rtl,
+                    line: run.line_i,
+                    start: dasar + mulai,
+                    end: dasar + akhir,
+                }
             })
             .collect()
     }
@@ -97,6 +227,23 @@ impl TextLayout {
 /// Its height is the **line** height, not the glyph height: a caret on an empty
 /// line is still a full line tall, and a caret next to a lowercase letter does
 /// not shrink.
+///
+/// ```
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let layout = engine.layout("ab", &TextStyle::new().size(15.0), TextConstraints::UNBOUNDED);
+///
+/// let start = layout.caret(0);
+/// let after_a = layout.caret(1);
+///
+/// // The caret advances as the byte index moves through the text…
+/// assert!(after_a.x > start.x);
+/// // …but its height and line stay the line's, not the glyph's.
+/// assert_eq!(after_a.height, start.height);
+/// assert_eq!(after_a.line, 0);
+/// assert!(!after_a.rtl);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Caret {
     /// Distance from the block's left edge.
@@ -443,5 +590,45 @@ mod tests {
         // Hit-testing the second line returns a global index, not a local one.
         let indeks = l.hit(Point::new(1000.0, bawah.top + bawah.height / 2.0));
         assert_eq!(indeks, 8);
+    }
+
+    #[test]
+    fn baris_visual_menyimpan_rentang_byte_dan_baris_sumbernya() {
+        let mut e = TextEngine::bundled_only();
+        let l = e.layout(
+            "satu\ndua",
+            &TextStyle::new().size(16.0),
+            TextConstraints::UNBOUNDED,
+        );
+        let baris = l.lines();
+        assert_eq!(baris.len(), 2);
+        assert_eq!(baris[0].line, 0);
+        assert_eq!(baris[0].range(), 0..4);
+        assert_eq!(baris[1].line, 1);
+        // The newline itself is not part of any line's range.
+        assert_eq!(baris[1].range(), 5..8);
+    }
+
+    #[test]
+    fn soft_wrap_memecah_satu_paragraf_jadi_beberapa_baris_visual() {
+        let mut e = TextEngine::bundled_only();
+        let teks = "satu dua tiga empat lima enam tujuh delapan";
+        let l = e.layout(
+            teks,
+            &TextStyle::new().size(16.0),
+            TextConstraints::width(120.0),
+        );
+        let baris = l.lines();
+        assert!(baris.len() > 1, "teks selebar 120pt harus terlipat");
+        // Every visual line belongs to the same **source** line: wrapping is
+        // not the same thing as a newline.
+        assert!(baris.iter().all(|b| b.line == 0));
+        // The ranges walk forward and cover the whole text.
+        assert_eq!(baris[0].start, 0);
+        assert_eq!(baris[baris.len() - 1].end, teks.len());
+        for pasangan in baris.windows(2) {
+            assert!(pasangan[1].start >= pasangan[0].end);
+            assert!(pasangan[1].top > pasangan[0].top);
+        }
     }
 }

@@ -23,6 +23,21 @@ use crate::menu::MenuActivation;
 use crate::tray::TrayActivation;
 
 /// Anything that reaches the event loop from outside a window event.
+///
+/// The three sources that are not the window itself: assistive technology, the
+/// OS menubar, and the tray. Each arrives through a `From` conversion, so the
+/// event loop matches on one type rather than three.
+///
+/// ```
+/// use silka_platform::ShellEvent;
+/// use silka_platform::menu::{MenuActivation, MenuId};
+///
+/// let event = ShellEvent::from(MenuActivation::new(MenuId::new("file.new")));
+/// match event {
+///     ShellEvent::Menu(a) if a.is("file.new") => println!("new document"),
+///     _ => {}
+/// }
+/// ```
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ShellEvent {

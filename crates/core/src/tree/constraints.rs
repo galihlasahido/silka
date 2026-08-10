@@ -30,6 +30,32 @@ use silka_paint::{Insets, Size};
 ///
 /// All units are logical points. `max_*` may be infinite (e.g. the content of a
 /// scroll view along its scroll axis); `min_*` never is.
+///
+/// The Flutter protocol: **constraints go down, sizes come up, the parent
+/// decides position.** A node never learns where it is, which is what makes a
+/// subtree relocatable without re-laying it out.
+///
+/// ```
+/// use silka_paint::{Insets, Size};
+/// use silka_core::tree::BoxConstraints;
+///
+/// // "You must be exactly this big" — what a window hands its root.
+/// let window = BoxConstraints::tight(Size::new(320.0, 200.0));
+/// assert!(window.is_tight());
+/// assert_eq!(window.constrain(Size::new(999.0, 999.0)), Size::new(320.0, 200.0));
+///
+/// // "You may be up to this big" — what a padded container hands its child.
+/// let content = window.deflate(Insets::all(16.0)).loosen();
+/// assert_eq!(content.biggest(), Size::new(288.0, 168.0));
+/// assert_eq!(content.smallest(), Size::ZERO);
+/// assert_eq!(content.constrain(Size::new(100.0, 40.0)), Size::new(100.0, 40.0));
+///
+/// // A scroll view's child is unbounded along the scroll axis, which is how
+/// // "as tall as your content" is expressed — infinity, not a big number.
+/// let scrollable = window.with_unbounded_height();
+/// assert!(!scrollable.has_bounded_height());
+/// assert!(scrollable.has_bounded_width());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxConstraints {
     /// The minimum width that must be honoured.

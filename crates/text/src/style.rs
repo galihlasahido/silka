@@ -19,6 +19,20 @@ use std::sync::Arc;
 ///
 /// The bundled Inter is a **variable font**, so any weight in this range is
 /// valid — not just 400/700.
+///
+/// ```
+/// use silka_text::FontWeight;
+///
+/// assert_eq!(FontWeight::default(), FontWeight::REGULAR);
+/// assert!(FontWeight::SEMIBOLD > FontWeight::REGULAR);
+///
+/// // Any weight in between is real, because the bundled font is variable.
+/// let in_between = FontWeight(550);
+/// assert_eq!(in_between.clamped(), in_between);
+///
+/// // Out-of-range values are clamped, never extrapolated.
+/// assert_eq!(FontWeight(5000).clamped(), FontWeight(1000));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct FontWeight(pub u16);
 
@@ -59,6 +73,17 @@ impl Default for FontWeight {
 /// [`FontFamily::Ui`] is the right choice for almost all UI: it points at the
 /// framework's UI font (bundled Inter), with system fallback for the CJK/emoji
 /// that Inter does not cover.
+///
+/// ```
+/// use silka_text::FontFamily;
+///
+/// // What almost every widget uses; fallback for CJK and emoji is automatic.
+/// assert_eq!(FontFamily::default(), FontFamily::Ui);
+///
+/// // A brand font is a name, and the value is cheap to clone (it is an `Arc`).
+/// let brand = FontFamily::named("Söhne");
+/// assert_eq!(brand.clone(), brand);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum FontFamily {
     /// The framework UI font — bundled Inter (§3.6).
@@ -82,6 +107,22 @@ impl FontFamily {
 }
 
 /// How lines are broken when they exceed the available width.
+///
+/// ```
+/// use silka_text::{TextConstraints, TextEngine, TextStyle, TextWrap};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let narrow = TextConstraints::width(40.0);
+///
+/// // Word wrapping is the default for UI text.
+/// assert_eq!(TextWrap::default(), TextWrap::Word);
+/// let wrapped = engine.measure("hello there", &TextStyle::new(), narrow);
+/// assert!(wrapped.line_count > 1);
+///
+/// // A single-line label never wraps; the caller clips it instead.
+/// let style = TextStyle::new().wrap(TextWrap::None);
+/// assert_eq!(engine.measure("hello there", &style, narrow).line_count, 1);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextWrap {
     /// Never wrap — a single line, clipped by the caller if needed.
@@ -99,6 +140,14 @@ pub enum TextWrap {
 /// Horizontal alignment within the available width.
 ///
 /// `Start`/`End` follow the paragraph's writing direction (RTL-safe, §9.8).
+///
+/// ```
+/// use silka_text::TextAlign;
+///
+/// // The default is direction-relative, not "left" — which is what makes an
+/// // Arabic UI come out right without a single widget being changed.
+/// assert_eq!(TextAlign::default(), TextAlign::Start);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextAlign {
     /// Aligned to the start of the line (left in LTR, right in RTL).
@@ -113,6 +162,30 @@ pub enum TextAlign {
 }
 
 /// The complete text style for one piece of text.
+///
+/// Built by method chaining (§2.5). Widgets never hard-code these numbers —
+/// they come from the active theme's typography tokens.
+///
+/// ```
+/// use silka_text::{FontWeight, TextAlign, TextStyle, TextWrap};
+///
+/// let title = TextStyle::new()
+///     .size(28.0)
+///     .weight(FontWeight::SEMIBOLD)
+///     .tracking(-0.02)     // em, negative tightens the way SF does
+///     .line_height(1.2)    // a multiple of the size, not points
+///     .align(TextAlign::Center);
+///
+/// assert_eq!(title.size, 28.0);
+/// assert!((title.line_height_px() - 33.6).abs() < 0.01);
+///
+/// // Truncation starts here: cap the lines, then check `overflowed`.
+/// let row = TextStyle::new().max_lines(2).wrap(TextWrap::WordOrGlyph);
+/// assert_eq!(row.max_lines, Some(2));
+///
+/// // A single-line field is one call.
+/// assert_eq!(TextStyle::new().single_line().wrap, TextWrap::None);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextStyle {
     /// Font family.

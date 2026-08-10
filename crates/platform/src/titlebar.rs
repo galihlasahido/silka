@@ -29,10 +29,42 @@
 //! leave clear. **The inset has to be re-applied after a resize or a fullscreen
 //! transition** — AppKit puts the buttons back where it wants them — which is
 //! why the shell calls it again on every resize rather than only at startup.
+//!
+//! ```
+//! use silka_platform::{system_reduces_transparency, Material, MaterialState, TitlebarStyle};
+//!
+//! // Materials are named by *role*, not by blur radius, so the OS decides
+//! // what a sidebar should look like on the version it is running.
+//! let sidebar = Material::Sidebar;
+//! assert_ne!(sidebar, Material::None);
+//! assert_ne!(MaterialState::Active, MaterialState::Inactive);
+//!
+//! // The accessibility check is a plain question anyone can ask before
+//! // committing to a translucent design.
+//! if system_reduces_transparency() {
+//!     // Draw an opaque surface instead.
+//! }
+//! # let _ = TitlebarStyle::default();
+//! ```
 
 use silka_paint::{Point, Rect};
 
 /// How much of the OS titlebar to keep.
+///
+/// ```
+/// use silka_platform::TitlebarStyle;
+///
+/// assert_eq!(TitlebarStyle::default(), TitlebarStyle::Native);
+///
+/// // The "custom titlebar" of a modern desktop app: the application draws the
+/// // whole window, but the traffic lights stay native — which is what keeps
+/// // them behaving the way the OS taught the user they behave.
+/// assert!(TitlebarStyle::Transparent.is_custom());
+/// assert!(TitlebarStyle::Transparent.has_window_buttons());
+///
+/// // Hiding them makes dragging, closing and resizing the app's problem.
+/// assert!(!TitlebarStyle::Hidden.has_window_buttons());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TitlebarStyle {
     /// The ordinary OS titlebar.
@@ -108,6 +140,18 @@ pub fn apply_titlebar_style(
 /// implements it — the same rule the theme tokens follow (§2.7). Each variant
 /// maps to an `NSVisualEffectMaterial` on macOS and to Mica or Acrylic on
 /// Windows.
+///
+/// ```
+/// use silka_platform::Material;
+///
+/// // Opaque unless asked otherwise.
+/// assert_eq!(Material::default(), Material::None);
+/// ```
+///
+/// Naming the *surface* rather than the effect is what lets one call be right
+/// on both platforms — and it is also what makes "reduce transparency" a single
+/// decision rather than a per-window one. See
+/// [`system_reduces_transparency`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Material {
     /// No translucency: the window background is opaque.
@@ -134,6 +178,14 @@ pub enum Material {
 }
 
 /// When the material stays lit.
+///
+/// ```
+/// use silka_platform::titlebar::MaterialState;
+///
+/// // Following the window is the native behaviour, and the one users read as
+/// // "this window is in front".
+/// assert_eq!(MaterialState::default(), MaterialState::FollowsWindow);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MaterialState {
     /// Bright while the window is active, muted when it is not — the native
@@ -147,6 +199,24 @@ pub enum MaterialState {
 }
 
 /// Why a material could not be applied.
+///
+/// Every variant is a *decline*, not a failure: a window with no blur behind it
+/// is a perfectly good window, so the caller logs and carries on rather than
+/// refusing to open.
+///
+/// ```
+/// use silka_platform::titlebar::VibrancyError;
+///
+/// fn explain(e: VibrancyError) -> String {
+///     match e {
+///         VibrancyError::Unsupported(_) => "no blur on this platform".into(),
+///         VibrancyError::TooOld(_) => "the OS is older than this effect".into(),
+///         other => other.to_string(),
+///     }
+/// }
+///
+/// assert_eq!(explain(VibrancyError::Unsupported("x11".into())), "no blur on this platform");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VibrancyError {
@@ -217,6 +287,21 @@ fn state_macos(state: MaterialState) -> window_vibrancy::NSVisualEffectState {
 ///
 /// `false` on platforms with no such setting — the honest answer, since there
 /// is nothing to respect there.
+///
+/// Read fresh on every call rather than cached: a user can turn it on while
+/// the application is running, and a cached `false` would keep the blur on for
+/// the rest of the session.
+///
+/// ```
+/// use silka_platform::system_reduces_transparency;
+///
+/// // Always answerable — `false` where the OS has no such setting, which is
+/// // the honest answer rather than a guess.
+/// let reduced = system_reduces_transparency();
+/// if reduced {
+///     // Draw an opaque surface instead of a material.
+/// }
+/// ```
 pub fn system_reduces_transparency() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -235,6 +320,23 @@ pub fn system_reduces_transparency() -> bool {
 /// Returns `Ok(false)` when nothing was applied because the user asked for
 /// reduced transparency, and `Ok(true)` when the material is live. Applying
 /// [`Material::None`] clears whatever was there.
+///
+/// The accessibility contract is enforced here rather than left to the caller:
+/// a user who asked for reduced transparency gets an opaque window even if
+/// every call site forgot to check.
+///
+/// ```no_run
+/// use silka_platform::{apply_material, Material, MaterialState};
+///
+/// # fn demo(window: &winit::window::Window) -> Result<(), silka_platform::VibrancyError> {
+/// // `Ok(false)` is not a failure — it means the user asked for reduced
+/// // transparency, and the material was deliberately not applied.
+/// let applied = apply_material(window, Material::Sidebar, MaterialState::Active)?;
+/// if !applied {
+///     // Fall back to an opaque surface colour.
+/// }
+/// # Ok(()) }
+/// ```
 pub fn apply_material(
     window: &winit::window::Window,
     material: Material,
@@ -287,6 +389,17 @@ pub fn force_material(
 }
 
 /// Remove any material previously applied to the window.
+///
+/// ```no_run
+/// use silka_platform::{apply_material, clear_material, Material, MaterialState};
+///
+/// # fn demo(window: &winit::window::Window) -> Result<(), silka_platform::VibrancyError> {
+/// // Applying `Material::None` and clearing are the same thing; both undo
+/// // whatever material was there.
+/// apply_material(window, Material::None, MaterialState::Active)?;
+/// clear_material(window)?;
+/// # Ok(()) }
+/// ```
 pub fn clear_material(
     #[allow(unused_variables)] window: &winit::window::Window,
 ) -> Result<(), VibrancyError> {

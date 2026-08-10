@@ -38,6 +38,49 @@ use crate::node::{walk, ChartBox};
 /// [`Dirty::LAYOUT`] is deliberately **never** returned: a chart's size does
 /// not depend on its values, so animating data must not make the page around it
 /// re-measure sixty times a second.
+///
+/// ```
+/// use std::time::Duration;
+///
+/// use silka_chart::{advance, is_animating, line_chart};
+/// use silka_core::animation::{Motion, Tick};
+/// use silka_core::scheduler::Dirty;
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     line_chart(&fonts, &theme, [1.0f64, 4.0, 2.0, 8.0])
+///         .numeric()
+///         .y_named("Value", |v: &f64| *v)
+///         .animated(true),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// // Values spring in from their baseline, so the first frames report work
+/// // left to do; the frame loop keeps calling until they do not.
+/// let mut frames = 0;
+/// let tick = Tick::manual(Duration::from_micros(8_333), Motion::Full);
+/// while is_animating(&tree) && frames < 600 {
+///     let dirty = advance(&mut tree, &tick);
+///     // A chart's size never depends on its values, so animating data must
+///     // never force the page around it to re-measure.
+///     assert!(!dirty.contains(Dirty::LAYOUT));
+///     frames += 1;
+/// }
+///
+/// // Once every spring has settled the GPU is allowed to sleep: no repaint is
+/// // requested and no further frame is scheduled.
+/// assert!(!is_animating(&tree));
+/// assert_eq!(advance(&mut tree, &tick), Dirty::NONE);
+/// ```
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     let mut dirty = Dirty::NONE;
     for id in walk(tree) {
@@ -58,6 +101,22 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
 }
 
 /// True while any chart in the tree is still animating.
+///
+/// This is the question that decides whether the GPU may sleep, so it must be
+/// asked of the whole tree rather than of one node: a single unsettled chart
+/// keeps the frame loop alive.
+///
+/// ```
+/// use silka_chart::{is_animating, settle};
+/// use silka_core::tree::RenderTree;
+///
+/// // A tree with no charts in it is trivially at rest — which is what lets an
+/// // application call this unconditionally.
+/// let mut empty = RenderTree::new();
+/// assert!(!is_animating(&empty));
+/// settle(&mut empty);
+/// assert!(!is_animating(&empty));
+/// ```
 pub fn is_animating(tree: &RenderTree) -> bool {
     walk(tree).into_iter().any(|id| {
         tree.node_ref::<ChartBox>(id)
@@ -67,6 +126,33 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 
 /// Finish every chart animation instantly — golden tests and snapshots, where
 /// "halfway through a spring" is not a state worth photographing.
+///
+/// ```
+/// use silka_chart::{bar_chart, is_animating, settle};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::Fonts;
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     bar_chart(&fonts, &theme, [3.0f64, 7.0, 5.0])
+///         .numeric()
+///         .y_named("Value", |v: &f64| *v)
+///         .animated(true),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(240.0, 160.0)));
+///
+/// // Jump straight to the end state instead of pumping frames — a golden file
+/// // should photograph the result, never a spring mid-flight.
+/// settle(&mut tree);
+/// assert!(!is_animating(&tree));
+/// ```
 pub fn settle(tree: &mut RenderTree) {
     for id in walk(tree) {
         if tree

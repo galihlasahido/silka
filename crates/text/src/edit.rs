@@ -144,6 +144,23 @@ pub fn word_range(text: &str, index: usize) -> Range<usize> {
 /// The two are kept distinct deliberately: Shift+← moves `focus` and leaves
 /// `anchor` alone, and that is the only way selection feels right when the drag
 /// direction reverses.
+///
+/// ```
+/// use silka_text::Selection;
+///
+/// // A bare caret is a collapsed selection, not a special case.
+/// assert!(Selection::caret(3).is_collapsed());
+///
+/// // Selecting backwards is normal: `start`/`end` order the pair, the fields
+/// // remember which end the user is dragging.
+/// let backwards = Selection::new(7, 2);
+/// assert_eq!(backwards.range(), 2..7);
+/// assert_eq!(backwards.focus, 2);
+///
+/// // Indices always land on grapheme boundaries — "é" is two bytes here.
+/// let text = "café";
+/// assert_eq!(Selection::new(0, 4).snapped(text).end(), 3);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Selection {
     /// The anchor point (it does not move as the selection is extended).
@@ -204,6 +221,24 @@ impl Selection {
 /// Its text has **not** yet entered the value the application holds: it lives
 /// here until the IME sends a commit. That is what keeps `on_change` from ever
 /// reporting a half-formed letter.
+///
+/// ```
+/// use silka_text::TextEdit;
+///
+/// let mut field = TextEdit::new("");
+///
+/// // The IME is composing: the text is visible, but not yet committed.
+/// field.set_preedit("にほ", None);
+/// assert!(field.is_composing());
+/// assert_eq!(field.text(), "");                 // what the application sees
+/// assert_eq!(field.display_text(), "にほ");      // what the user sees
+/// assert!(field.preedit_range().is_some());     // what gets underlined
+///
+/// // On commit it becomes ordinary text, and only now can `on_change` fire.
+/// field.commit("日本");
+/// assert!(!field.is_composing());
+/// assert_eq!(field.text(), "日本");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preedit {
     /// The composition text.
@@ -220,6 +255,21 @@ pub struct Preedit {
 // ---------------------------------------------------------------------------
 
 /// One step of caret movement.
+///
+/// ```
+/// use silka_text::{Movement, TextEdit};
+///
+/// let mut field = TextEdit::new("halo dunia");
+/// assert_eq!(field.selection().focus, 10); // the caret starts at the end
+///
+/// // A step is one grapheme or one word, never one byte.
+/// field.move_caret(Movement::PrevWord, false);
+/// assert_eq!(field.selection().focus, 5);
+///
+/// // `extend` is what Shift does: the anchor stays put.
+/// field.move_caret(Movement::LineEnd, true);
+/// assert_eq!(field.selection().range(), 5..10);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Movement {
@@ -263,6 +313,36 @@ const KAPASITAS_UNDO: usize = 128;
 /// Every operation works in **byte indices that always sit on grapheme
 /// boundaries**; there is no entry point that can leave the caret inside a
 /// character.
+///
+/// A pure model: no pixels, no fonts. `text_field` and `text_area` are the very
+/// same type, differing only in [`TextEdit::multiline`].
+///
+/// ```
+/// use silka_text::{Movement, TextEdit};
+///
+/// let mut field = TextEdit::new("halo");
+///
+/// // Typing coalesces into a single undo step…
+/// field.insert(" dunia");
+/// assert_eq!(field.text(), "halo dunia");
+///
+/// // …so one ⌘Z takes back the whole run, not one letter.
+/// assert!(field.can_undo());
+/// field.undo();
+/// assert_eq!(field.text(), "halo");
+/// field.redo();
+/// assert_eq!(field.text(), "halo dunia");
+///
+/// // Deleting works on graphemes, so a combining mark never gets orphaned.
+/// let mut accented = TextEdit::new("café");
+/// accented.delete_backward();
+/// assert_eq!(accented.text(), "caf");
+///
+/// // Selection replaces rather than appends.
+/// field.select_all();
+/// field.insert("x");
+/// assert_eq!(field.text(), "x");
+/// ```
 #[derive(Debug, Clone)]
 pub struct TextEdit {
     text: String,
@@ -456,7 +536,7 @@ impl TextEdit {
 
     /// Insert text, replacing the selection if there is one.
     ///
-    /// Control characters are dropped (and newlines too, unless
+    /// Control characters are dropped (and newlines and tabs too, unless
     /// [`TextEdit::multiline`]): text pasted from anywhere must never be able to
     /// wreck a single-line layout.
     pub fn insert(&mut self, teks: &str) -> bool {
@@ -651,10 +731,15 @@ impl TextEdit {
     }
 
     /// Drop characters that must not enter this field.
+    ///
+    /// A multi-line field keeps newlines **and tabs**: both are structure there
+    /// (a paragraph break, an indent), whereas in a one-line field they are
+    /// nothing but a way to wreck the layout.
     fn saring(&self, teks: &str) -> String {
         teks.chars()
             .filter_map(|c| match c {
                 '\r' | '\n' if self.multiline => Some('\n'),
+                '\t' if self.multiline => Some('\t'),
                 c if c.is_control() => None,
                 c => Some(c),
             })
@@ -739,6 +824,20 @@ mod tests {
         let mut m = TextEdit::new("").multiline(true);
         m.insert("dua\r\nbaris");
         assert_eq!(m.text(), "dua\n\nbaris");
+    }
+
+    #[test]
+    fn tab_hanya_masuk_di_kolom_multiline() {
+        let mut satu = TextEdit::new("");
+        satu.insert("a\tb");
+        assert_eq!(satu.text(), "ab", "tab bukan isi kolom satu baris");
+
+        let mut banyak = TextEdit::new("").multiline(true);
+        banyak.insert("a\tb");
+        assert_eq!(banyak.text(), "a\tb", "indentasi adalah isi di text_area");
+        // Other control characters stay out of both.
+        banyak.insert("\u{7}");
+        assert_eq!(banyak.text(), "a\tb");
     }
 
     #[test]

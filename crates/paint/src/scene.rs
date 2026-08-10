@@ -4,6 +4,41 @@
 //! Any backend (`silka-renderer` on wgpu today; GL/CPU later) takes a `&Scene`
 //! and never receives its own graphics types from the caller side
 //! (REKOMENDASI §3.2, §5 failure mode #7).
+//!
+//! One frame of a small card, assembled the way the paint pass assembles it:
+//!
+//! ```
+//! use silka_paint::{
+//!     Color, Command, Corners, CornerStyle, Quad, Rect, Scene, Shadow, ShadowPair,
+//! };
+//!
+//! let mut scene = Scene::new(Color::hex(0x1C1C1E));
+//!
+//! // A card: two shadow layers, then the box itself, in that order.
+//! scene.push_shadowed(
+//!     Quad::new(Rect::new(24.0, 24.0, 180.0, 96.0))
+//!         .background(Color::hex(0x2C2C2E))
+//!         .corners(Corners::uniform(14.0, CornerStyle::squircle())),
+//!     ShadowPair::new(
+//!         Shadow::new(Color::BLACK.with_alpha(0.06), 16.0),
+//!         Shadow::new(Color::BLACK.with_alpha(0.12), 4.0).offset(0.0, 1.0),
+//!     ),
+//! );
+//!
+//! // Anything scrolling is bracketed by a clip pair. The rect is already
+//! // absolute and already intersected, so the backend just sets a scissor.
+//! scene.push(Command::PushClip(Rect::new(24.0, 24.0, 180.0, 96.0)));
+//! scene.push(Quad::new(Rect::new(36.0, 36.0, 60.0, 12.0)).background(Color::WHITE));
+//! scene.push(Command::PopClip);
+//!
+//! assert_eq!(scene.len(), 6);
+//! assert!(matches!(scene.commands()[0], Command::Shadow(_)));
+//!
+//! // The next frame reuses the allocation instead of freeing it — this is what
+//! // makes a redraw cost nothing in the allocator.
+//! scene.reset(Color::hex(0x1C1C1E));
+//! assert!(scene.is_empty());
+//! ```
 
 use crate::color::Color;
 use crate::corner::Corners;
@@ -17,6 +52,28 @@ use crate::shadow::{Shadow, ShadowPair};
 /// use silka_paint::{Color, Scene};
 ///
 /// let scene = Scene::new(Color::hex(0x1C1C1E));
+/// assert!(scene.is_empty());
+/// ```
+///
+/// A scene is rebuilt each frame the UI is dirty and handed to the backend as a
+/// `&Scene`; the backend never receives its own graphics types from this side.
+///
+/// ```
+/// use silka_paint::{Color, Quad, Rect, Scene, Shadow, ShadowPair};
+///
+/// let mut scene = Scene::new(Color::hex(0x1C1C1E));
+/// scene.push_shadowed(
+///     Quad::new(Rect::new(24.0, 24.0, 180.0, 96.0)).background(Color::hex(0x2C2C2E)),
+///     ShadowPair::new(
+///         Shadow::new(Color::BLACK.with_alpha(0.06), 16.0),
+///         Shadow::new(Color::BLACK.with_alpha(0.12), 4.0).offset(0.0, 1.0),
+///     ),
+/// );
+/// // Two shadow layers behind the box, then the box itself.
+/// assert_eq!(scene.len(), 3);
+///
+/// // Reusing the allocation across frames is what keeps a redraw cheap.
+/// scene.reset(Color::hex(0xF2F2F7));
 /// assert!(scene.is_empty());
 /// ```
 #[derive(Debug, Clone)]
@@ -126,6 +183,20 @@ impl Scene {
 /// Deliberately `#[non_exhaustive]`: the vocabulary is still growing (glyphs,
 /// double shadows, blur/materials, offscreen layers) and should grow without
 /// breaking existing backends.
+///
+/// ```
+/// use silka_paint::{Color, Command, Quad, Rect, Scene};
+///
+/// let mut scene = Scene::new(Color::hex(0x1C1C1E));
+/// // Everything inside the viewport is clipped to it; the pairs are balanced.
+/// scene.push(Command::PushClip(Rect::new(0.0, 0.0, 320.0, 200.0)));
+/// scene.push(Quad::new(Rect::new(8.0, 8.0, 120.0, 24.0)).background(Color::WHITE));
+/// scene.push(Command::PopClip);
+///
+/// // Command order is stacking order: parent before child, back to front.
+/// assert!(matches!(scene.commands()[0], Command::PushClip(_)));
+/// assert!(matches!(scene.commands()[1], Command::Quad(_)));
+/// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Command {
@@ -175,6 +246,23 @@ impl From<GlyphRun> for Command {
 }
 
 /// A rounded box with a fill and an optional border.
+///
+/// The primitive that covers roughly 95% of any UI. Built by method chaining,
+/// with every value already resolved from a theme token one level up.
+///
+/// ```
+/// use silka_paint::{Color, CornerStyle, Corners, Quad, Rect};
+///
+/// let pill = Quad::new(Rect::new(0.0, 0.0, 120.0, 32.0))
+///     .background(Color::hex(0x0A84FF))
+///     .border(1.0, Color::hex(0x0A84FF).with_alpha(0.4))
+///     .corners(Corners::uniform(9999.0, CornerStyle::squircle()))
+///     // `normalized` clamps a `radius_full` token against the box.
+///     .normalized();
+///
+/// assert_eq!(pill.corners.radii.max(), 16.0);
+/// assert_eq!(pill.border_width, 1.0);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quad {
     /// The box in logical points.
@@ -234,6 +322,20 @@ impl Quad {
 /// tested), so the backend only has to blur the shape as-is. The corner shape
 /// is deliberately inherited from the box being shadowed — a squircle's shadow
 /// stays a squircle.
+///
+/// ```
+/// use silka_paint::{Color, CornerStyle, Corners, Quad, Rect, Shadow, ShadowQuad};
+///
+/// let card = Quad::new(Rect::new(20.0, 20.0, 100.0, 60.0))
+///     .corners(Corners::uniform(12.0, CornerStyle::squircle()));
+/// let layer = ShadowQuad::for_quad(&card, Shadow::new(Color::BLACK.with_alpha(0.12), 8.0).offset(0.0, 2.0));
+///
+/// // Offset and spread are already baked in on the CPU, where they are testable.
+/// assert_eq!(layer.rect.min_y(), 22.0);
+/// assert_eq!(layer.sigma(), 4.0);
+/// // A squircle's shadow stays a squircle.
+/// assert_eq!(layer.corners.style, CornerStyle::squircle());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShadowQuad {
     /// The shadow shape after offset and spread, in logical points.

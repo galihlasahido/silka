@@ -23,6 +23,26 @@ const ROW_ALIGNMENT: u32 = 256;
 
 /// An 8-bit RGBA image produced by a headless render, already in **sRGB** space
 /// (its byte values can be compared directly against color tokens).
+///
+/// ```no_run
+/// use silka_paint::{Color, Scene, Size};
+/// use silka_renderer::{Gpu, OffscreenTarget, SurfaceGeometry};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// # let gpu = Gpu::headless()?;
+/// # let geometry = SurfaceGeometry::from_logical(Size::new(160.0, 100.0), 2.0);
+/// # let mut target = OffscreenTarget::new(&gpu, geometry)?;
+/// let image = target.render(&gpu, &Scene::new(Color::hex(0x1C1C1E)))?;
+///
+/// // Byte values are directly comparable with the token that produced them,
+/// // because the readback is already in sRGB rather than linear space.
+/// assert_eq!(image.pixel(0, 0), [0x1C, 0x1C, 0x1E, 0xFF]);
+/// assert_eq!(image.pixels().len() as u32, image.width() * image.height() * 4);
+///
+/// // Reading outside the image is transparent rather than a panic.
+/// assert_eq!(image.pixel(image.width(), 0), [0, 0, 0, 0]);
+/// # Ok(()) }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rgba8Image {
     width: u32,
@@ -62,6 +82,31 @@ impl Rgba8Image {
 }
 
 /// An offscreen texture that can receive any [`Scene`].
+///
+/// The draw path is **exactly** the one [`crate::WindowSurface`] uses — same SDF
+/// pipeline, same sRGB format, same blending — so what a test asserts is what a
+/// user sees.
+///
+/// ```no_run
+/// use silka_paint::{Color, Scene, Size};
+/// use silka_renderer::{Gpu, OffscreenTarget, SurfaceGeometry};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let gpu = Gpu::headless()?;
+/// let mut target = OffscreenTarget::new(
+///     &gpu,
+///     SurfaceGeometry::from_logical(Size::new(320.0, 200.0), 2.0),
+/// )?;
+/// assert_eq!(target.logical_size(), Size::new(320.0, 200.0));
+///
+/// // The target is reusable: render as many scenes through it as you like.
+/// let image = target.render(&gpu, &Scene::new(Color::hex(0xF2F2F7)))?;
+/// assert_eq!((image.width(), image.height()), (640, 400));
+/// # Ok(()) }
+/// ```
+///
+/// Text needs the glyph atlas too; use `render_with_glyphs` and pass the
+/// application's [`silka_paint::GlyphSource`].
 #[derive(Debug)]
 pub struct OffscreenTarget {
     texture: wgpu::Texture,

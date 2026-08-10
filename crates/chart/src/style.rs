@@ -42,6 +42,29 @@ use silka_theme::Theme;
 use crate::palette::ChartPalette;
 
 /// Every number and color a chart draws with, already resolved.
+///
+/// Nothing here is a literal: each field comes from a theme token, except the
+/// categorical palette, which encodes identity rather than role and is
+/// therefore validated for colorblind readers instead of themed.
+///
+/// ```
+/// use silka_theme::{Appearance, Preset, Theme};
+/// use silka_chart::style::ChartStyle;
+///
+/// let dark = ChartStyle::from_theme(&Theme::cupertino(Appearance::Dark));
+/// let light = ChartStyle::from_theme(&Theme::cupertino(Appearance::Light));
+///
+/// // Grid and axis follow the appearance…
+/// assert_ne!(dark.grid, light.grid);
+/// // …but the series palette does not follow the *preset*, because CVD safety
+/// // is a promise to the reader rather than a brand decision.
+/// let web = ChartStyle::from_theme(&Theme::new(Preset::Tailwind, Appearance::Dark));
+/// assert_eq!(dark.palette, web.palette);
+///
+/// // An explicit series color overrides its palette slot.
+/// let brand = silka_paint::Color::hex(0x0A7D48);
+/// assert_eq!(dark.series_color(0, Some(brand)), brand);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartStyle {
     /// The categorical palette for the series marks.

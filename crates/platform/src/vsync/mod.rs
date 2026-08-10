@@ -30,6 +30,15 @@ use silka_core::scheduler::Vsync;
 use winit::window::Window;
 
 /// Where the frame clock comes from in this process.
+///
+/// ```
+/// use silka_platform::vsync::VsyncKind;
+///
+/// // macOS gets the real display clock, so ProMotion 120 Hz is correct
+/// // rather than assumed; everywhere else the interval is measured.
+/// assert_eq!(VsyncKind::DisplayLink.label(), "CADisplayLink");
+/// assert_eq!(VsyncKind::RequestRedraw.label(), "request_redraw");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VsyncKind {
     /// macOS `CADisplayLink` — follows the currently active display rate.
@@ -54,6 +63,28 @@ impl VsyncKind {
 /// The display link callback runs on the main run loop, just like the winit
 /// event loop, but the two are different *reentrancy boundaries* — so the
 /// values are stored atomically instead of being borrowed.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_platform::vsync::VsyncClock;
+///
+/// let clock = VsyncClock::new();
+///
+/// // Until the OS says otherwise the interval is genuinely unknown — there is
+/// // no hardcoded 16.6 ms anywhere in this framework.
+/// assert_eq!(clock.interval(), None);
+/// assert_eq!(clock.ticks(), 0);
+///
+/// // A 120 Hz display reports its own interval.
+/// clock.tick(Some(Duration::from_micros(8_333)));
+/// assert_eq!(clock.ticks(), 1);
+/// assert_eq!(clock.interval(), Some(Duration::from_micros(8_333)));
+///
+/// // Seeding only fills a still-unknown interval; it never overwrites a
+/// // measurement the OS already made.
+/// clock.seed_interval(Duration::from_millis(16));
+/// assert_eq!(clock.interval(), Some(Duration::from_micros(8_333)));
+/// ```
 #[derive(Debug, Default)]
 pub struct VsyncClock {
     /// Last interval reported by the OS, in nanoseconds. `0` = not yet known.
@@ -115,6 +146,22 @@ impl VsyncClock {
 /// Its surface is deliberately just two buttons — [`VsyncSource::schedule`] and
 /// [`VsyncSource::idle`] — so that the macOS path and the fallback path are
 /// genuinely driven by the same event loop code.
+///
+/// `schedule` asks for one more frame; `idle` says nothing is dirty, so the
+/// clock can stop. That is the whole of "render only when dirty" as the shell
+/// sees it — and the reason an idle window burns no GPU.
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// use silka_platform::vsync::VsyncSource;
+/// # fn demo(window: Arc<silka_platform::winit::window::Window>) {
+/// let source = VsyncSource::attach(window);
+/// println!("frame clock: {}", source.kind().label());
+///
+/// source.schedule(); // something changed: draw one more frame
+/// source.idle();     // everything settled: stop the clock
+/// # }
+/// ```
 pub struct VsyncSource {
     window: Arc<Window>,
     clock: Arc<VsyncClock>,

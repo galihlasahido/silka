@@ -67,6 +67,36 @@ pub const ENV_REDUCE_TRANSPARENCY: &str = "SILKA_REDUCE_TRANSPARENCY";
 /// Deliberately **not** including the appearance: light/dark already arrives
 /// through winit's `ThemeChanged`, and storing it twice is how the two copies
 /// start disagreeing.
+///
+/// All of it turns into a theme by a **pure function**, so what a window shows
+/// and what a headless test asserts cannot drift apart.
+///
+/// ```
+/// use silka_core::animation::Motion;
+/// use silka_paint::Color;
+/// use silka_theme::{Appearance, ColorToken, Theme};
+/// use silka_platform::lifecycle::{AccentSource, SystemSettings};
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let settings = SystemSettings {
+///     accent: Some(Color::hex(0xFF375F)),
+///     motion: Motion::Reduced,
+///     ..SystemSettings::DEFAULT
+/// };
+///
+/// // The OS accent reshapes the whole accent family, not just one token.
+/// let themed = settings.apply(theme, AccentSource::System);
+/// assert_eq!(themed.color_of(ColorToken::Accent), Color::hex(0xFF375F));
+///
+/// // A branded application opts out: a purple product does not turn pink
+/// // because the user likes pink.
+/// let branded = settings.apply(theme, AccentSource::Preset);
+/// assert_eq!(branded.color_of(ColorToken::Accent), theme.color_of(ColorToken::Accent));
+///
+/// // Nothing polls: `diff` says whether a re-read changed anything at all.
+/// assert!(SystemSettings::DEFAULT.diff(&settings) != silka_core::scheduler::Dirty::NONE);
+/// assert_eq!(settings.diff(&settings), silka_core::scheduler::Dirty::NONE);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SystemSettings {
     /// The system accent color, when the OS has one and the user has not
@@ -217,6 +247,26 @@ impl SystemSettings {
 }
 
 /// Where the accent color comes from.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_platform::lifecycle::AccentSource;
+///
+/// let os_accent = Some(Color::hex(0xFF375F));
+///
+/// // Following the OS is the default, and falls back to the preset when the
+/// // OS has no accent at all (macOS "multicolor", most Linux desktops).
+/// assert_eq!(AccentSource::default(), AccentSource::System);
+/// assert_eq!(AccentSource::System.color(os_accent), os_accent);
+/// assert_eq!(AccentSource::System.color(None), None);
+///
+/// // `None` here means "use the preset's own accent", not "no accent".
+/// assert_eq!(AccentSource::Preset.color(os_accent), None);
+///
+/// let brand = Color::hex(0x0A7D48);
+/// assert_eq!(AccentSource::Custom(brand).color(os_accent), Some(brand));
+/// assert!(!AccentSource::Custom(brand).follows_system());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum AccentSource {
     /// Follow the OS accent, and fall back to the preset when the OS has none

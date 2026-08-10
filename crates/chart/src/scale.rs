@@ -33,6 +33,27 @@
 /// because screen coordinates grow downward while values grow upward. Doing the
 /// inversion *here*, once, is what keeps every call site from having to
 /// remember it.
+///
+/// ```
+/// use silka_chart::scale::LinearScale;
+///
+/// // A y axis: the domain grows upward, the range grows downward.
+/// let y = LinearScale::new(0.0, 100.0, 200.0, 0.0);
+/// assert_eq!(y.map(0.0), 200.0);   // zero sits at the bottom
+/// assert_eq!(y.map(100.0), 0.0);   // the maximum at the top
+/// assert_eq!(y.invert(100.0), 50.0);
+///
+/// // Out-of-domain values are NOT clamped: clipping decides what is seen,
+/// // never a silent relocation onto the axis.
+/// assert!(y.map(150.0) < 0.0);
+/// assert!(!y.contains(150.0));
+/// assert_eq!(y.map_clamped(150.0), 0.0);
+///
+/// // A flat series is not a division by zero: the single value lands in the
+/// // middle of the range, which is what a reader expects.
+/// let flat = LinearScale::new(42.0, 42.0, 0.0, 200.0);
+/// assert_eq!(flat.map(42.0), 100.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LinearScale {
     domain_min: f64,
@@ -153,6 +174,25 @@ fn normalize_domain(min: f64, max: f64) -> (f64, f64) {
 /// after the last. Fractions rather than points, because the gap has to shrink
 /// with the bars when the window narrows — a fixed gap would swallow the bars
 /// entirely at a hundred categories.
+///
+/// ```
+/// use silka_chart::scale::BandScale;
+///
+/// // Twelve months across 600 points.
+/// let months = BandScale::new(12, 0.0, 600.0);
+/// assert_eq!(months.len(), 12);
+/// assert!(months.band_width() < months.step()); // the gap is the difference
+///
+/// // Hit-testing a hover back to a category is the inverse.
+/// let x = months.center(3);
+/// assert_eq!(months.index_at(x), Some(3));
+///
+/// // Grouped bars split one band into sub-bands, so a group never overflows
+/// // into its neighbour.
+/// let (start, width) = months.subband(3, 1, 2);
+/// assert!(width <= months.band_width());
+/// assert!(start >= months.start(3));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BandScale {
     count: usize,

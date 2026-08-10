@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use silka_paint::{Color, Point, Rect, Scene, Size};
 
 use crate::access::{AccessNode, AccessRole, AccessTree};
+use crate::animation::Tick;
 use crate::input::{CursorIcon, Event, EventCtx, FocusPolicy, HitBehavior, HitShape};
 use crate::scheduler::Dirty;
 use crate::signals::Key;
@@ -32,6 +33,17 @@ use super::style::ItemStyle;
 static NEXT_TREE: AtomicU32 = AtomicU32::new(0);
 
 /// The identity of one render tree (one per window).
+///
+/// It rides inside every [`NodeId`], which is what makes mixing nodes from two
+/// windows a caught mistake rather than a silent one.
+///
+/// ```
+/// use silka_core::tree::RenderTree;
+///
+/// let a = RenderTree::new();
+/// let b = RenderTree::new();
+/// assert_ne!(a.id(), b.id());
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct TreeId(u32);
 
@@ -40,6 +52,22 @@ pub struct TreeId(u32);
 /// Generational: once a node dies, its old ID never matches the new node that
 /// takes over the same slot. The ID also carries a [`TreeId`] so nodes from
 /// another window are never silently mixed in.
+///
+/// ```
+/// use silka_core::tree::RenderTree;
+/// use silka_core::view::{column, fixed, reconcile};
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+///
+/// let root = tree.root();
+/// assert_eq!(root.tree(), tree.id());
+/// assert!(tree.contains(root));
+///
+/// // An id from another tree never resolves here, even by accident.
+/// let other = RenderTree::new();
+/// assert!(!other.contains(root));
+/// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId {
     tree: TreeId,
@@ -109,6 +137,59 @@ impl<T: Any> AsAny for T {
 /// compile — the only defence against the "accessibility retrofitted later"
 /// failure mode that has actually proven to work (§5, item 2). A node that
 /// really is pure structure says so explicitly with [`AccessRole::Container`].
+///
+/// A complete leaf node — the two required methods, plus paint:
+///
+/// ```
+/// use silka_core::access::{AccessNode, AccessRole};
+/// use silka_core::tree::{
+///     BoxConstraints, Decoration, LayoutCtx, PaintCtx, RenderNode, RenderTree,
+/// };
+/// use silka_paint::{Color, Size};
+///
+/// struct Swatch {
+///     color: Color,
+///     name: String,
+/// }
+///
+/// impl RenderNode for Swatch {
+///     // Constraints go down, a size comes up. A leaf takes the largest box
+///     // it is allowed, or its own natural size when the box is unbounded.
+///     fn layout(&mut self, _cx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+///         constraints.constrain(Size::new(24.0, 24.0))
+///     }
+///
+///     fn paint(&self, cx: &mut PaintCtx<'_>) {
+///         cx.decorate(&Decoration::fill(self.color));
+///     }
+///
+///     // No default: a widget that forgot about screen readers does not
+///     // compile. That is the only defence against retrofitted accessibility
+///     // that has ever actually worked.
+///     fn access(&self, node: &mut AccessNode) {
+///         node.role = AccessRole::Image;
+///         node.label = Some(self.name.clone());
+///     }
+/// }
+///
+/// // In an application the view-diff inserts nodes; a test can do it directly.
+/// let mut tree = RenderTree::new();
+/// let root = tree.root();
+/// let id = tree.insert_child(
+///     root,
+///     0,
+///     None,
+///     std::any::TypeId::of::<Swatch>(),
+///     Box::new(Swatch { color: Color::hex(0x0A84FF), name: "Accent".into() }),
+/// );
+/// tree.layout(BoxConstraints::loose(Size::new(200.0, 200.0)));
+/// assert_eq!(tree.size(id), Size::new(24.0, 24.0));
+///
+/// // The a11y tree is assembled from layout results, so bounds and parentage
+/// // cannot go stale and cannot be faked by the widget.
+/// let access = tree.access_tree(None);
+/// assert!(access.entries().iter().any(|e| e.node.label.as_deref() == Some("Accent")));
+/// ```
 pub trait RenderNode: AsAny {
     /// A type name for debugging/inspectors.
     fn type_name(&self) -> &'static str {
@@ -226,6 +307,37 @@ pub trait RenderNode: AsAny {
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         let _ = (ctx, event);
     }
+
+    // -- animation --------------------------------------------------------
+    //
+    // The three hooks below are the motion contract (§3.5). They exist on the
+    // trait rather than on each widget so that **one** pass advances the whole
+    // tree ([`RenderTree::advance`]): a node that owns a spring only has to say
+    // so here, and it is animated by the same clock, under the same
+    // reduced-motion rule, as everything else.
+
+    /// Advance this node's own animations by one frame.
+    ///
+    /// Returns why the frame is not finished with this node:
+    /// [`Dirty::PAINT`] when something moved, [`Dirty::LAYOUT`] when what moved
+    /// changes geometry, and [`Dirty::ANIMATION`] while a spring has not settled
+    /// — that last one is what schedules the next frame, and its absence is what
+    /// lets the GPU sleep.
+    ///
+    /// The default does nothing at all: the majority of nodes are structural.
+    fn advance(&mut self, tick: &Tick) -> Dirty {
+        let _ = tick;
+        Dirty::NONE
+    }
+
+    /// True while any of this node's own animations is still running.
+    fn is_animating(&self) -> bool {
+        false
+    }
+
+    /// Finish every animation of this node instantly (tests, snapshots, golden
+    /// images).
+    fn settle_motion(&mut self) {}
 }
 
 impl dyn RenderNode {
@@ -255,6 +367,16 @@ impl core::fmt::Debug for dyn RenderNode {
 ///
 /// RTL mirroring is not a later addition: `row` reverses its main axis and the
 /// cross axis of `column` flips with it, both inside the layout engine.
+///
+/// ```
+/// use silka_core::tree::TextDirection;
+///
+/// assert_eq!(TextDirection::default(), TextDirection::Ltr);
+/// assert!(TextDirection::Rtl.is_rtl());
+/// ```
+///
+/// Retrofitting RTL is as hopeless as retrofitting accessibility, which is why
+/// this lives in the layout engine rather than in a mirroring pass on top.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextDirection {
     /// Left to right (Latin, CJK).
@@ -795,6 +917,101 @@ impl RenderTree {
         self.dirty
     }
 
+    // -- animation --------------------------------------------------------
+
+    /// **One tick for the whole tree**: advance every node's animations.
+    ///
+    /// This is the path REKOMENDASI §3.5 asks for — no ticking timer anywhere,
+    /// just one pass per frame in which the values that are still moving flag
+    /// themselves on the shared [`Tick`]. What comes back is the dirty reason
+    /// for the *next* frame; when [`Dirty::ANIMATION`] is absent, everything has
+    /// settled and the renderer genuinely sleeps.
+    ///
+    /// Nodes that moved are marked here rather than by themselves: a node holds
+    /// no reference to the tree, so it can report but not mark.
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use silka_core::animation::{Motion, Tick};
+    /// use silka_core::scheduler::Dirty;
+    /// use silka_core::tree::{BoxConstraints, RenderTree};
+    /// use silka_core::view::{fixed, interactive, reconcile};
+    /// use silka_paint::Size;
+    ///
+    /// let mut tree = RenderTree::new();
+    /// reconcile(&mut tree, interactive(fixed(80.0, 32.0)));
+    /// tree.layout(BoxConstraints::tight(Size::new(80.0, 32.0)));
+    ///
+    /// // Nothing has been interacted with: nothing is moving.
+    /// let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
+    /// assert_eq!(tree.advance(&tick), Dirty::NONE);
+    /// ```
+    pub fn advance(&mut self, tick: &Tick) -> Dirty {
+        let mut dirty = Dirty::NONE;
+        for id in self.node_ids() {
+            let Some(node) = self.render_mut(id) else {
+                continue;
+            };
+            let alasan = node.advance(tick);
+            if alasan.is_empty() {
+                continue;
+            }
+            if alasan.contains(Dirty::LAYOUT) {
+                self.mark_needs_layout(id);
+            } else if alasan.contains(Dirty::PAINT) {
+                self.mark_needs_paint(id);
+            }
+            dirty |= alasan;
+        }
+        if dirty.contains(Dirty::ANIMATION) {
+            // The reason has to survive the trip to the scheduler even when not
+            // a single pixel moved this frame (a spring that was just re-aimed);
+            // `mark_needs_paint` cannot carry it.
+            self.mark_dirty(Dirty::ANIMATION);
+        }
+        dirty
+    }
+
+    /// True while any node in the tree is still animating.
+    pub fn is_animating(&self) -> bool {
+        self.node_ids()
+            .into_iter()
+            .filter_map(|id| self.render(id))
+            .any(|n| n.is_animating())
+    }
+
+    /// Finish every animation in the tree instantly.
+    ///
+    /// For tests and golden images: a snapshot must show the settled state, not
+    /// whatever frame the spring happened to be on.
+    pub fn settle_motion(&mut self) {
+        for id in self.node_ids() {
+            let bergerak = self
+                .render_mut(id)
+                .map(|n| {
+                    let bergerak = n.is_animating();
+                    n.settle_motion();
+                    bergerak
+                })
+                .unwrap_or(false);
+            if bergerak {
+                self.mark_needs_paint(id);
+            }
+        }
+    }
+
+    /// Every live node, parents before children.
+    fn node_ids(&self) -> Vec<NodeId> {
+        let mut out = Vec::with_capacity(self.len());
+        let mut stack = vec![self.root];
+        while let Some(id) = stack.pop() {
+            out.push(id);
+            // Reversed so the traversal stays in paint order once popped.
+            stack.extend(self.children(id).iter().rev().copied());
+        }
+        out
+    }
+
     /// Mark the whole tree as painted.
     pub fn clear_paint(&mut self) {
         for slot in &mut self.slots {
@@ -1189,6 +1406,35 @@ impl core::fmt::Debug for RenderTree {
 /// It deliberately offers **no** structural mutation: the tree only changes
 /// through the view-diff. What a node may do is lay out its children and place
 /// them.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, LayoutCtx};
+/// use silka_paint::{Point, Size};
+///
+/// /// A minimal vertical stack: the whole box-constraints protocol in one
+/// /// function — constraints go down, sizes come up, the parent places.
+/// fn layout(cx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+///     let mut y = 0.0f32;
+///     let mut width = 0.0f32;
+///
+///     for i in 0..cx.child_count() {
+///         let child = cx.child(i);
+///
+///         // Down: each child may be as wide as we are, and as tall as it likes.
+///         let size = cx.layout_child(child, constraints.loosen());
+///
+///         // The parent decides position; a child never knows its own.
+///         cx.place_child(child, Point::new(0.0, y));
+///
+///         y += size.height;
+///         width = width.max(size.width);
+///     }
+///
+///     // Up: our own size, clamped into what our parent allowed.
+///     constraints.constrain(Size::new(width, y))
+/// }
+/// # let _ = layout;
+/// ```
 pub struct LayoutCtx<'a> {
     tree: &'a mut RenderTree,
     node: NodeId,

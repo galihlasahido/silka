@@ -1,0 +1,20 @@
+[package]
+name = "silka-todo"
+description = "The little todo app built step by step in docs/TUTORIAL.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+silka-core.workspace = true
+silka-theme.workspace = true
+silka-widgets.workspace = true
+silka-platform.workspace = true
+
+[dev-dependencies]
+# Headless verification of the tutorial's app: the same view tree that shows up
+# in the window is driven by simulated input and read back through the
+# accessibility tree (REKOMENDASI §9.5).
+silka-paint.workspace = true

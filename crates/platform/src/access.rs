@@ -20,6 +20,38 @@
 //! 3. **Re-activation always sends the full tree.** A screen reader that was
 //!    just switched on has no history; sending it a delta would leave it with a
 //!    tree that is never complete.
+//!
+//! ```
+//! use silka_core::access::{AccessRole, AccessTree};
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::{column, fixed, interactive, reconcile, View};
+//! use silka_paint::Size;
+//!
+//! // What the shell hands the adapter each frame: a whole tree, from which
+//! // the adapter sends only what changed.
+//! let mut tree = RenderTree::new();
+//! reconcile(
+//!     &mut tree,
+//!     column([View::from(
+//!         interactive(fixed(120.0, 44.0))
+//!             .role(AccessRole::Button)
+//!             .label("Save"),
+//!     )]),
+//! );
+//! tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+//!
+//! let snapshot = tree.access_tree(None);
+//!
+//! // The first update after a screen reader switches on is the full tree —
+//! // a reader with no history cannot be handed a delta.
+//! let full = snapshot.changes_since(None);
+//! assert!(full.full);
+//!
+//! // From there it is deltas, and an unchanged frame produces nothing at
+//! // all: a user without a screen reader pays nothing for any of this.
+//! let quiet = snapshot.changes_since(Some(&snapshot));
+//! assert!(quiet.is_empty());
+//! ```
 
 use accesskit_winit::Adapter;
 use silka_core::access::{AccessActionRequest, AccessTree};
@@ -32,6 +64,18 @@ use winit::window::{Window, WindowId};
 /// Used as the shell event loop's *user event*. A newtype rather than an alias,
 /// so the application event loop can carry other events later without forcing
 /// an API change.
+///
+/// It reaches the event loop wrapped in [`crate::ShellEvent`], alongside menu
+/// and tray activations:
+///
+/// ```
+/// use silka_platform::ShellEvent;
+///
+/// fn is_accessibility(event: &ShellEvent) -> bool {
+///     matches!(event, ShellEvent::Access(_))
+/// }
+/// # let _ = is_accessibility;
+/// ```
 #[derive(Debug)]
 pub struct AccessEvent(pub accesskit_winit::Event);
 
@@ -49,6 +93,23 @@ impl AccessEvent {
 }
 
 /// What the shell must do after an [`AccessEvent`] has been processed.
+///
+/// ```
+/// use silka_platform::access::AccessOutcome;
+///
+/// fn needs_work(outcome: &AccessOutcome) -> bool {
+///     // `Idle` is the common case — accessibility is off, and the a11y pass
+///     // never runs. Users without a screen reader pay nothing at all.
+///     !matches!(outcome, AccessOutcome::Idle)
+/// }
+///
+/// assert!(!needs_work(&AccessOutcome::Idle));
+/// assert!(needs_work(&AccessOutcome::NeedsFullTree));
+/// ```
+///
+/// [`AccessOutcome::NeedsFullTree`] rather than a delta on activation is
+/// deliberate: a screen reader that was just switched on has no history, and a
+/// delta would leave it with a tree that is never complete.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccessOutcome {
     /// Assistive technology asked for the whole tree — send one full update.
@@ -60,6 +121,26 @@ pub enum AccessOutcome {
 }
 
 /// Accessibility adapter for a single window.
+///
+/// Applications do not build one: [`crate::WindowConfig::on_access`] wires it
+/// up and the shell drives it. What the type enforces is three rules that are
+/// easy to break and expensive to debug —
+///
+/// 1. it is attached **before** the window becomes visible (`accesskit_winit`
+///    panics otherwise), which is why the shell creates the window hidden;
+/// 2. the a11y pass runs only while assistive technology is actually present,
+///    so the tree is never built for nobody ([`AccessAdapter::update_with`]
+///    takes a closure precisely so the tree is not even constructed);
+/// 3. re-activation sends the **whole** tree, never a delta.
+///
+/// ```no_run
+/// use silka_core::view::fixed;
+/// use silka_platform::{run_app, window};
+///
+/// run_app(window("Editor"), |_cx| fixed(120.0, 24.0).into()).unwrap();
+/// // The a11y tree comes from the same render tree as layout and paint, so
+/// // what a screen reader announces cannot diverge from what was drawn.
+/// ```
 pub struct AccessAdapter {
     inner: Adapter,
     /// The last snapshot actually sent — the basis for the delta **and** for

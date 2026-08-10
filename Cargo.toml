@@ -11,6 +11,8 @@ members = [
     "crates/platform",
     "crates/testing",
     "examples/gallery",
+    "examples/todo",
+    "examples/dashboard",
 ]
 
 [workspace.package]

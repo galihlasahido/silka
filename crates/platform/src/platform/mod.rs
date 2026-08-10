@@ -195,6 +195,28 @@ pub mod linux {
 /// alive, the window is alive, so pointers read from it stay valid. That is the
 /// whole reason this type exists rather than handing out a bare
 /// `RawWindowHandle`.
+///
+/// ```no_run
+/// use silka_platform::window;
+///
+/// window("Editor")
+///     .on_native_ready(|native| {
+///         // A handle read out of this value stays valid for as long as the
+///         // value lives — the guarantee a bare RawWindowHandle cannot make.
+///         println!("handle: {:?}", native.raw_handle());
+///
+///         #[cfg(target_os = "macos")]
+///         if let Some(w) = native.ns_window() {
+///             w.setTitlebarAppearsTransparent(true);
+///         }
+///     })
+///     .run()
+///     .unwrap();
+/// ```
+///
+/// The typed per-OS accessors (`ns_window`, `hwnd`, `wl_surface`) sit next to
+/// [`NativeWindow::raw_handle`]; `#[cfg(target_os)]` in a public API is normal
+/// here, not a disgrace.
 #[derive(Clone)]
 pub struct NativeWindow {
     window: Arc<Window>,
@@ -322,6 +344,20 @@ impl core::fmt::Debug for NativeWindow {
 }
 
 /// What the framework should do with an event after a native hook has seen it.
+///
+/// ```
+/// use silka_platform::NativeFlow;
+///
+/// // Watching is the default, because a hook that swallows events by accident
+/// // is a class of bug that takes days to find.
+/// assert_eq!(NativeFlow::default(), NativeFlow::Continue);
+/// assert!(!NativeFlow::Continue.is_consumed());
+/// assert!(NativeFlow::Consume.is_consumed());
+/// ```
+///
+/// Consuming means the shell skips *its* work for this event — input routing,
+/// resizing, redraw scheduling, closing the window. The accessibility adapter
+/// still observes it.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum NativeFlow {
     /// Carry on as usual — the hook only watched. The default, because a hook
@@ -346,6 +382,26 @@ impl NativeFlow {
 
 /// A window event, offered to the application **before** the framework acts on
 /// it (INTEGRASI-NATIVE §8).
+///
+/// ```no_run
+/// use silka_platform::{window, NativeFlow};
+///
+/// window("Editor")
+///     .on_native_event(|event| {
+///         // Unsaved work: refuse the close and show our own dialog instead
+///         // of letting the shell tear the window down.
+///         if event.is_close_requested() {
+///             return NativeFlow::Consume;
+///         }
+///         let _ = event.window().raw_handle();
+///         NativeFlow::Continue
+///     })
+///     .run()
+///     .unwrap();
+/// ```
+///
+/// The hook is only constructed when one is installed, so an application
+/// without one pays nothing.
 pub struct NativeEvent<'a> {
     window: &'a NativeWindow,
     event: &'a WindowEvent,

@@ -6,15 +6,52 @@
 //! both the HIG palette and the Tailwind 50–950 steps work that way. The
 //! conversion to the linear space the GPU needs happens **at the backend
 //! boundary** (`silka-renderer`), not in widget code.
+//!
+//! ```
+//! use silka_paint::Color;
+//!
+//! // Tokens are authored the way a designer writes them down.
+//! let accent = Color::hex(0x0A84FF);
+//! assert_eq!(accent, Color::rgba8(0x0A, 0x84, 0xFF, 0xFF));
+//!
+//! // Straight alpha means a scrim is one call, not a premultiply by hand.
+//! let scrim = Color::BLACK.with_alpha(0.4);
+//! assert_eq!(scrim.a, 0.4);
+//!
+//! // Springs interpolate between two token colors; nothing here is linearized
+//! // yet, because that is the backend's job.
+//! let midway = Color::BLACK.lerp(accent, 0.5);
+//! assert!((midway.r - accent.r / 2.0).abs() < 1e-6);
+//!
+//! // …and this is the one place the conversion happens. Everything between
+//! // the endpoints darkens; 0.0 and 1.0 are fixed points of the curve.
+//! let [r, g, b, a] = accent.to_linear();
+//! assert!(r < accent.r);
+//! assert!(g < accent.g);
+//! assert_eq!(b, 1.0); // 0xFF was already at full intensity
+//! assert_eq!(a, 1.0); // alpha is never gamma-encoded
+//! ```
 
 /// An RGBA color in non-linear sRGB space, components 0.0–1.0, straight alpha.
 ///
 /// ```
 /// use silka_paint::Color;
 ///
-/// let biru = Color::hex(0x0A84FF);
-/// assert_eq!(biru.a, 1.0);
-/// assert_eq!(biru, Color::rgba8(0x0A, 0x84, 0xFF, 0xFF));
+/// let blue = Color::hex(0x0A84FF);
+/// assert_eq!(blue.a, 1.0);
+/// assert_eq!(blue, Color::rgba8(0x0A, 0x84, 0xFF, 0xFF));
+///
+/// // Alpha is straight, not premultiplied — a scrim is one call.
+/// assert_eq!(Color::BLACK.with_alpha(0.4).a, 0.4);
+///
+/// // Interpolation is what a spring drives between two token colors.
+/// let half = Color::BLACK.lerp(Color::WHITE, 0.5);
+/// assert!((half.r - 0.5).abs() < 1e-6);
+///
+/// // Conversion to the linear space the GPU wants happens at the backend
+/// // boundary, never in widget code.
+/// let linear = Color::WHITE.to_linear();
+/// assert!((linear[0] - 1.0).abs() < 1e-6);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
@@ -119,6 +156,24 @@ impl Color {
 
 /// Converts one non-linear sRGB component to linear (the official IEC
 /// 61966-2-1 curve).
+///
+/// Widget code never calls this; the backend does, once, as it turns a
+/// [`Color`] into the linear values a GPU blends in.
+///
+/// ```
+/// use silka_paint::srgb_to_linear;
+///
+/// // The endpoints are fixed points of the curve.
+/// assert_eq!(srgb_to_linear(0.0), 0.0);
+/// assert!((srgb_to_linear(1.0) - 1.0).abs() < 1e-6);
+///
+/// // Mid grey is the reason the conversion exists: 50% sRGB is far darker
+/// // than 50% light, so blending in sRGB would wash gradients out.
+/// assert!(srgb_to_linear(0.5) < 0.25);
+///
+/// // Below the knee the curve is a straight line, not a power function.
+/// assert!((srgb_to_linear(0.02) - 0.02 / 12.92).abs() < 1e-9);
+/// ```
 pub fn srgb_to_linear(c: f32) -> f32 {
     if c <= 0.040_449_936 {
         c / 12.92
@@ -128,6 +183,20 @@ pub fn srgb_to_linear(c: f32) -> f32 {
 }
 
 /// The inverse of [`srgb_to_linear`].
+///
+/// Used when a value computed in linear space has to come back out as a theme
+/// token — for instance when a blended result is written back into a palette.
+///
+/// ```
+/// use silka_paint::{linear_to_srgb, srgb_to_linear};
+///
+/// // Round-tripping is lossless to within float precision, which is what lets
+/// // a color cross the backend boundary and return unchanged.
+/// for step in 0..=10 {
+///     let c = step as f32 / 10.0;
+///     assert!((linear_to_srgb(srgb_to_linear(c)) - c).abs() < 1e-5);
+/// }
+/// ```
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
         c * 12.92

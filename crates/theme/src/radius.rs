@@ -5,10 +5,54 @@
 //! under Tailwind an 8px arc. That is why resolution yields not an `f32` but
 //! [`Corners`] — the radius **and** its superellipse exponent together, exactly
 //! what the SDF shader and hit-testing expect.
+//!
+//! ```
+//! use silka_paint::CornerStyle;
+//! use silka_theme::{Appearance, RadiusToken, Theme};
+//!
+//! let cupertino = Theme::cupertino(Appearance::Dark);
+//! let tailwind = Theme::tailwind(Appearance::Dark);
+//!
+//! // The same token, two different curves — decided by the preset, never by
+//! // the widget that named it.
+//! assert_eq!(
+//!     cupertino.corners_of(RadiusToken::Lg).style,
+//!     CornerStyle::squircle(),
+//! );
+//! assert_eq!(tailwind.corners_of(RadiusToken::Lg).style, CornerStyle::Arc);
+//!
+//! // Resolution yields geometry, not a bare number, because the exponent has
+//! // to reach the shader alongside the radius.
+//! let corners = cupertino.corners_of(RadiusToken::Lg);
+//! assert_eq!(corners.radii.top_left, cupertino.radius_of(RadiusToken::Lg));
+//!
+//! // `Full` is the pill token: deliberately enormous, then clamped against
+//! // the box it is drawn into.
+//! assert!(cupertino.radius_of(RadiusToken::Full) > 1_000.0);
+//! assert_eq!(cupertino.radius_of(RadiusToken::None), 0.0);
+//! ```
 
 use silka_paint::{CornerStyle, Corners};
 
 /// Corner-radius tokens plus the shape of their curve.
+///
+/// ```
+/// use silka_paint::CornerStyle;
+/// use silka_theme::{RadiusToken, RadiusTokens};
+///
+/// let radius = RadiusTokens {
+///     style: CornerStyle::squircle(),
+///     sm: 6.0, md: 10.0, lg: 14.0, xl: 20.0, full: 9999.0,
+/// };
+///
+/// // `corners` is the only door: a widget gets radius *and* curve together.
+/// let lg = radius.corners(RadiusToken::Lg);
+/// assert_eq!(lg.radii.max(), 14.0);
+/// assert_eq!(lg.style, CornerStyle::squircle());
+///
+/// // A sharp corner names `Arc` so the shader can skip the superellipse path.
+/// assert_eq!(radius.corners(RadiusToken::None).style, CornerStyle::Arc);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiusTokens {
     /// The corner shape that applies across this entire preset.
@@ -53,6 +97,28 @@ impl RadiusTokens {
 }
 
 /// The name of a radius token — the form utilities take (`rounded_lg`).
+///
+/// A token is not a number: it resolves to [`Corners`], carrying the curve
+/// shape the active preset decided on.
+///
+/// ```
+/// use silka_paint::CornerStyle;
+/// use silka_theme::{Appearance, Preset, RadiusToken, Theme};
+///
+/// let hig = Theme::new(Preset::Cupertino, Appearance::Light);
+/// let web = Theme::new(Preset::Tailwind, Appearance::Light);
+///
+/// // The same `rounded_lg` call, two different geometries (§2.7).
+/// assert_eq!(hig.corners_of(RadiusToken::Lg).style, CornerStyle::squircle());
+/// assert_eq!(web.corners_of(RadiusToken::Lg).style, CornerStyle::Arc);
+///
+/// // Every preset must answer for every token — a sweep, not a guess.
+/// for token in RadiusToken::ALL {
+///     let _ = hig.corners_of(token);
+/// }
+/// ```
+///
+/// [`Corners`]: silka_paint::Corners
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RadiusToken {
     /// No rounding at all.

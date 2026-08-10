@@ -24,6 +24,61 @@
 //!    is idle and panics if it never is. A UI that cannot come to rest is a bug
 //!    (it keeps the GPU awake forever), so the harness reports it instead of
 //!    hanging the suite.
+//!
+//! A whole interaction test, from press to settled result:
+//!
+//! ```
+//! use silka_core::signals::{use_signal, Signal};
+//! use silka_core::view::{column, View};
+//! use silka_paint::Point;
+//! use silka_testing::{Case, Simulator};
+//! use silka_theme::Theme;
+//! use silka_widgets::{button, text, Fonts};
+//!
+//! let fonts = Fonts::bundled_only();
+//!
+//! let mut sim = Simulator::case(Case::ALL[0], move |cx| {
+//!     // The active theme reaches a component through the environment, so a
+//!     // preset swap needs no plumbing of its own.
+//!     let theme: Theme = cx.expect_env::<Signal<Theme>>().get();
+//!     let count = use_signal(|| 0i32);
+//!     View::from(
+//!         column([
+//!             View::from(text(&fonts, format!("Count {}", count.get()))),
+//!             button(&fonts, &theme, "Add")
+//!                 .on_press(move || count.set(count.get() + 1))
+//!                 .into(),
+//!         ])
+//!         .spacing(8.0),
+//!     )
+//! })
+//! .size(320.0, 200.0)
+//! .animator(silka_widgets::advance);
+//!
+//! // Let the first frame lay everything out, then press the button *by name* —
+//! // the coordinates come from the real layout via the a11y tree, so a padding
+//! // change does not break the test while a broken a11y contract does.
+//! sim.settle();
+//! sim.click_label("Add");
+//!
+//! // Springs advance on a *fake* clock, one frame at a time, so settling is
+//! // realistic, repeatable, and bounded: a UI that never comes to rest fails
+//! // instead of hanging the suite.
+//! sim.settle();
+//!
+//! // The result is read back the way a screen reader would read it.
+//! let labels: Vec<String> = sim
+//!     .access_tree()
+//!     .entries()
+//!     .iter()
+//!     .filter_map(|e| e.node.label.clone())
+//!     .collect();
+//! assert!(labels.iter().any(|l| l == "Count 1"), "got {labels:?}");
+//!
+//! // The pointer is a piece of state, exactly as it is in a real window.
+//! sim.move_to(Point::new(4.0, 4.0));
+//! assert_eq!(sim.pointer_position(), Point::new(4.0, 4.0));
+//! ```
 
 use std::time::{Duration, Instant};
 
@@ -64,6 +119,29 @@ pub const DEFAULT_SETTLE_LIMIT: usize = 1_200;
 pub type Animator = Box<dyn FnMut(&mut RenderTree, &Tick) -> Dirty>;
 
 /// An [`AppRuntime`] plus a hand, a keyboard and two fake clocks.
+///
+/// The application is assembled exactly the way `run_app` assembles it, so a
+/// test never drifts into exercising a runtime nobody ships. Time is fake and
+/// explicit: frames advance when the test says so, which is what makes a spring
+/// assertion deterministic.
+///
+/// ```
+/// use silka_core::view::fixed;
+/// use silka_testing::{matrix::Case, Simulator};
+///
+/// let mut sim = Simulator::case(Case::ALL[0], |_cx| fixed(120.0, 48.0).into())
+///     .size(320.0, 200.0)
+///     .scale(2.0);
+///
+/// // Pump frames until every spring has settled and nothing is dirty.
+/// sim.settle();
+/// assert_eq!(sim.viewport(), silka_paint::Size::new(320.0, 200.0));
+/// assert_eq!(sim.scale_factor(), 2.0);
+/// assert!(sim.ui().is_idle()); // nothing is animating; the GPU may sleep
+/// ```
+///
+/// Add [`Simulator::capture`] and the same page becomes a golden test; add
+/// [`crate::bench::Bench::run_frames`] and it becomes a frame-time benchmark.
 pub struct Simulator {
     ui: AppRuntime,
     size: Size,

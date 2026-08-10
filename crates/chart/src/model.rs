@@ -31,6 +31,54 @@
 //! [`Orientation`] decides which of the two ends up horizontal. Every
 //! downstream calculation goes through [`PlotGeometry::point`] and therefore
 //! gets both orientations right for free.
+//!
+//! ```
+//! use silka_chart::model::{ChartData, ChartKind, ChartSpec, Orientation, PlotGeometry, Series};
+//! use silka_paint::{Point, Rect};
+//!
+//! // The data reaching the render tree is plain numbers — the caller's
+//! // accessors were applied eagerly, at view-build time.
+//! let data = ChartData {
+//!     x: vec![0.0, 1.0, 2.0],
+//!     labels: vec!["Jan".into(), "Feb".into(), "Mar".into()],
+//!     series: vec![Series::new("Income", vec![10.0, 30.0, 20.0])],
+//! };
+//! assert_eq!(data.len(), 3);
+//! assert!(!data.is_empty());
+//!
+//! // A bar chart's value axis includes zero; a line chart's does not. That is
+//! // not cosmetic — a bar's *length* is its value.
+//! let spec = ChartSpec::new(ChartKind::Bar);
+//! assert!(spec.is_zero_based());
+//! assert!(!ChartSpec::new(ChartKind::Line).is_zero_based());
+//!
+//! // Geometry is a pure function of (rect, spec, data), so positions can be
+//! // asserted on without a window or a GPU anywhere in sight.
+//! let plot = Rect::new(0.0, 0.0, 300.0, 100.0);
+//! let g = PlotGeometry::build(plot, &spec, &data);
+//! assert_eq!(g.orientation, Orientation::Vertical);
+//!
+//! // In a vertical chart the largest value sits highest — screen y is
+//! // inverted, and this is the one place that knows it.
+//! let tallest = g.point(1, 1.0, 30.0);
+//! let shortest = g.point(0, 0.0, 10.0);
+//! assert!(tallest.y < shortest.y);
+//! assert!(tallest.x > shortest.x);
+//!
+//! // Hovering anywhere in a category's column finds that point, including the
+//! // empty space above a short bar.
+//! assert_eq!(g.index_at(Point::new(tallest.x, 4.0), &data), Some(1));
+//!
+//! // And a horizontal chart is the same chart with its axes swapped — no
+//! // second code path, so both orientations are right for free.
+//! let mut sideways = spec.clone();
+//! sideways.orientation = Orientation::Horizontal;
+//! let h = PlotGeometry::build(plot, &sideways, &data);
+//! let long = h.point(1, 1.0, 30.0);
+//! let short = h.point(0, 0.0, 10.0);
+//! assert!(long.x > short.x);
+//! assert!(long.y > short.y);
+//! ```
 
 use silka_paint::{Point, Rect, Size};
 
@@ -43,6 +91,20 @@ use crate::ticks::{self, TimeUnit, MIN_STACKED_TICK_SPACING, MIN_TICK_SPACING};
 // ---------------------------------------------------------------------------
 
 /// Which chart is being drawn.
+///
+/// ```
+/// use silka_chart::model::ChartKind;
+///
+/// // Bars lay out on a band scale and their value axis must include zero —
+/// // a bar chart truncated at the bottom lies about its proportions.
+/// assert!(ChartKind::Bar.is_bar());
+/// assert!(!ChartKind::Bar.is_line());
+///
+/// // The line family shares one rasterisation path.
+/// assert!(ChartKind::Line.is_line());
+/// assert!(ChartKind::Area.is_line());
+/// assert!(ChartKind::Sparkline.is_line());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ChartKind {
     /// A line through the data points.
@@ -72,6 +134,19 @@ impl ChartKind {
 }
 
 /// How several bar series share one category.
+///
+/// ```
+/// use silka_chart::model::{BarLayout, ChartKind, ChartSpec};
+///
+/// // Grouped is the default: comparing series against each other is the
+/// // commoner question than breaking a total down.
+/// assert_eq!(BarLayout::default(), BarLayout::Grouped);
+///
+/// let mut spec = ChartSpec::new(ChartKind::Bar);
+/// assert!(!spec.is_stacked());
+/// spec.bar_layout = BarLayout::Stacked;
+/// assert!(spec.is_stacked());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum BarLayout {
     /// Side by side — for comparing series against each other.
@@ -82,6 +157,16 @@ pub enum BarLayout {
 }
 
 /// Which way the value axis runs.
+///
+/// ```
+/// use silka_chart::model::Orientation;
+///
+/// assert_eq!(Orientation::default(), Orientation::Vertical);
+/// ```
+///
+/// Reach for [`Orientation::Horizontal`] when the category names are long:
+/// horizontal labels never need rotating, and a rotated label is the single
+/// most common way a chart becomes unreadable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Orientation {
     /// Value upward, categories across. The default for everything.
@@ -93,6 +178,16 @@ pub enum Orientation {
 }
 
 /// What the x values mean, which decides how they are ticked and labelled.
+///
+/// ```
+/// use silka_chart::model::XKind;
+///
+/// // Names have no "between": one slot per entry, on a band scale.
+/// assert_eq!(XKind::default(), XKind::Category);
+/// ```
+///
+/// [`XKind::Time`] carries day numbers (see [`crate::date`]), so ticks snap to
+/// month and quarter boundaries rather than to a fixed count of days.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum XKind {
     /// Names. There is no "between" — a band scale, one slot per entry.
@@ -105,6 +200,16 @@ pub enum XKind {
 }
 
 /// One tick: a value, where it landed, and what it says.
+///
+/// Ticks are computed once per layout and reused by the axis labels, the
+/// gridlines, and the accessibility summary, so the three can never disagree.
+///
+/// ```
+/// use silka_chart::model::Tick;
+///
+/// let tick = Tick { value: 1.5e6, position: 84.0, label: "1,5 jt".into() };
+/// assert_eq!(tick.label, "1,5 jt");
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tick {
     /// The data value.
@@ -116,6 +221,17 @@ pub struct Tick {
 }
 
 /// One resolved series: a name, plain values, and an optional color override.
+///
+/// ```
+/// use silka_chart::model::Series;
+///
+/// // A missing value is `NaN`, not zero — a gap in the line and a zero mean
+/// // very different things, and only one of them is honest.
+/// let s = Series::new("Income", vec![1.0, f64::NAN, 3.0]);
+/// assert_eq!(s.value(0), Some(1.0));
+/// assert_eq!(s.value(1), None);
+/// assert_eq!(s.value(99), None); // past the end reads the same as no data
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Series {
     /// The name shown in the legend and the tooltip.
@@ -145,6 +261,29 @@ impl Series {
 }
 
 /// The whole dataset, already resolved out of the caller's row type.
+///
+/// The builder's closures have already run by this point: whatever the
+/// application's row type was, the chart itself only ever sees numbers.
+///
+/// ```
+/// use silka_chart::model::{ChartData, Series};
+///
+/// let data = ChartData {
+///     x: vec![0.0, 1.0, 2.0],
+///     labels: vec!["Jan".into(), "Feb".into(), "Mar".into()],
+///     series: vec![
+///         Series::new("Income", vec![3.0, 5.0, 4.0]),
+///         Series::new("Outgoing", vec![1.0, 2.0, 2.0]),
+///     ],
+/// };
+/// assert_eq!(data.len(), 3);
+///
+/// // Grouped bars need the largest single value…
+/// assert_eq!(data.value_domain(false).1, 5.0);
+/// // …stacked bars need the largest total, which is a different number.
+/// assert_eq!(data.value_domain(true).1, 7.0);
+/// assert_eq!(data.stacked_totals(1), (0.0, 7.0));
+/// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ChartData {
     /// The x position of each point (an index for categories, a number, or a
@@ -264,6 +403,25 @@ impl ChartData {
 
 /// Everything about a chart that is not its data: which marks, which axes,
 /// which formats.
+///
+/// ```
+/// use silka_chart::model::{ChartKind, ChartSpec};
+///
+/// // Sparklines are word-sized: no axes, no grid, no legend — and that is a
+/// // property of the kind, not something every caller has to switch off.
+/// let spark = ChartSpec::new(ChartKind::Sparkline);
+/// assert!(!spark.grid && !spark.value_axis && !spark.category_axis);
+///
+/// // "Zero-based" defaults honestly rather than uniformly: a truncated bar
+/// // chart lies about its proportions, a truncated line chart does not.
+/// assert!(ChartSpec::new(ChartKind::Bar).is_zero_based());
+/// assert!(!ChartSpec::new(ChartKind::Line).is_zero_based());
+///
+/// // An explicit choice always wins over the default.
+/// let mut line = ChartSpec::new(ChartKind::Line);
+/// line.zero_based = Some(true);
+/// assert!(line.is_zero_based());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChartSpec {
     /// Which marks are drawn.
@@ -345,6 +503,25 @@ impl ChartSpec {
 // ---------------------------------------------------------------------------
 
 /// The category axis: a band for names, a linear scale for numbers and time.
+///
+/// Two shapes behind one interface, because "where does point 3 go?" has to be
+/// answerable without the caller knowing which kind of axis it is asking.
+///
+/// ```
+/// use silka_chart::model::CategoryScale;
+/// use silka_chart::scale::{BandScale, LinearScale};
+///
+/// let names = CategoryScale::Band(BandScale::new(4, 0.0, 400.0));
+/// let numbers = CategoryScale::Linear(LinearScale::new(0.0, 3.0, 0.0, 400.0));
+///
+/// // A band centres its slot; a linear scale maps the x value itself.
+/// assert!(names.position(0, 0.0) > 0.0);
+/// assert_eq!(numbers.position(0, 0.0), 0.0);
+///
+/// // Both can say how much room one category's marks may take.
+/// assert!(names.band_width(4) > 0.0);
+/// assert!(numbers.band_width(4) > 0.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CategoryScale {
     /// One slot per entry, with gaps — categories have no "between".
@@ -381,6 +558,34 @@ impl CategoryScale {
 
 /// The full plot geometry: where everything goes, in the node's local
 /// coordinates.
+///
+/// A pure function of `(plot, spec, data)` — which is what makes positions
+/// assertable without a window or a GPU.
+///
+/// ```
+/// use silka_paint::{Point, Rect};
+/// use silka_chart::model::{ChartData, ChartKind, ChartSpec, PlotGeometry, Series};
+///
+/// let data = ChartData {
+///     x: vec![0.0, 1.0, 2.0],
+///     labels: vec!["Jan".into(), "Feb".into(), "Mar".into()],
+///     series: vec![Series::new("Income", vec![1.0, 5.0, 3.0])],
+/// };
+/// let spec = ChartSpec::new(ChartKind::Bar);
+/// let geometry = PlotGeometry::build(Rect::new(0.0, 0.0, 300.0, 200.0), &spec, &data);
+///
+/// // A bar chart's axis reaches zero, so the baseline sits at the bottom.
+/// assert_eq!(geometry.baseline, 200.0);
+/// assert!(!geometry.value_ticks.is_empty());
+///
+/// // Values map upward: the larger value is higher on the screen.
+/// let low = geometry.point(0, 0.0, 1.0);
+/// let high = geometry.point(1, 1.0, 5.0);
+/// assert!(high.y < low.y);
+///
+/// // Hover hit-testing is the inverse of the same geometry.
+/// assert_eq!(geometry.index_at(Point::new(high.x, 100.0), &data), Some(1));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct PlotGeometry {
     /// The data area — the rect the marks are clipped to.

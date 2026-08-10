@@ -17,6 +17,20 @@ use super::spring::Spring;
 /// decides when the renderer may go back to sleep is this tolerance, and that
 /// is why it is part of the contract rather than a hidden constant: the units
 /// of position differ between logical points and colour channels.
+///
+/// ```
+/// use silka_core::animation::Tolerance;
+///
+/// // 1/512 pt is far below one physical pixel even at 3x, so stopping there
+/// // is never visible — but it *is* what lets the GPU go back to sleep.
+/// assert!(Tolerance::POINTS.distance < 1.0 / 256.0);
+/// assert!(Tolerance::POINTS.settled(0.0, 0.0));
+/// assert!(!Tolerance::POINTS.settled(4.0, 0.0));
+/// ```
+///
+/// Getting this wrong is not academic: an absolute tolerance in points applied
+/// to values in the billions means a spring that never settles and a GPU that
+/// never sleeps, which is exactly the bug the chart crate hit.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tolerance {
     /// The largest distance to the target that still counts as arrived.
@@ -78,6 +92,22 @@ impl Default for Tolerance {
 /// a magnitude to test convergence with. Because the solution is linear
 /// ([`super::Propagator`]), every component uses the same coefficients — there
 /// is no per-axis spring that could drift out of sync.
+///
+/// It is implemented for `f32`, for the geometry types, and for `Color`, so one
+/// spring drives a position, a size, and a background colour with the same
+/// coefficients.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_core::animation::{Motion, SpringValue};
+/// use silka_paint::Color;
+///
+/// // A colour transition is the same machinery as a position transition.
+/// let mut background = SpringValue::new(Color::hex(0x1C1C1E));
+/// background.set_target(Color::hex(0x2C2C2E));
+/// background.advance(Duration::from_millis(16), Motion::Full);
+/// assert!(background.is_animating());
+/// ```
 pub trait Animatable: Copy + std::fmt::Debug {
     /// A sensible tolerance for this type's units.
     const TOLERANCE: Tolerance;

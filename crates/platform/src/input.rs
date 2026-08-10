@@ -18,6 +18,31 @@
 //!
 //! Time is expressed as a [`Duration`] since the window opened: the velocity
 //! tracker needs a time axis, and `Instant` cannot be tested.
+//!
+//! ```
+//! use silka_core::input::{Event, Modifiers, PointerPhase};
+//! use silka_platform::WinitInput;
+//! use winit::dpi::PhysicalPosition;
+//! use winit::keyboard::ModifiersState;
+//!
+//! let mut input = WinitInput::new();
+//! input.set_scale_factor(2.0);
+//!
+//! // Nothing is known until the pointer has been somewhere.
+//! assert_eq!(input.position(), None);
+//!
+//! // Physical pixels in, logical points out — DPI is resolved here and never
+//! // leaks into widget code.
+//! let moved = input.cursor_moved(PhysicalPosition::new(240.0, 120.0));
+//! assert_eq!(moved.position().map(|p| (p.x, p.y)), Some((120.0, 60.0)));
+//! assert!(input.position().is_some());
+//!
+//! // Modifiers arrive as their own event and are then attached to everything
+//! // that follows, which is why the state is remembered here.
+//! input.modifiers_changed(ModifiersState::SHIFT.into());
+//! assert!(input.modifiers().contains(Modifiers::SHIFT));
+//! # let _ = PointerPhase::Move;
+//! ```
 
 use std::time::{Duration, Instant};
 
@@ -36,6 +61,19 @@ use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamed};
 // ---------------------------------------------------------------------------
 
 /// winit modifiers → ours.
+///
+/// ```
+/// use silka_core::input::Modifiers;
+/// use silka_platform::modifiers_from_winit;
+/// use winit::keyboard::ModifiersState;
+///
+/// assert_eq!(modifiers_from_winit(ModifiersState::empty()), Modifiers::NONE);
+///
+/// let held = modifiers_from_winit(ModifiersState::SHIFT | ModifiersState::CONTROL);
+/// assert!(held.contains(Modifiers::SHIFT));
+/// assert!(held.contains(Modifiers::CONTROL));
+/// assert!(!held.contains(Modifiers::ALT));
+/// ```
 pub fn modifiers_from_winit(state: winit::keyboard::ModifiersState) -> Modifiers {
     let mut m = Modifiers::NONE;
     if state.shift_key() {
@@ -54,6 +92,20 @@ pub fn modifiers_from_winit(state: winit::keyboard::ModifiersState) -> Modifiers
 }
 
 /// winit mouse buttons → ours.
+///
+/// ```
+/// use silka_core::input::PointerButton;
+/// use silka_platform::button_from_winit;
+/// use winit::event::MouseButton;
+///
+/// // Named by role on our side, by side of the mouse on winit's — which is
+/// // exactly the translation this layer exists to perform.
+/// assert_eq!(button_from_winit(MouseButton::Left), PointerButton::Primary);
+/// assert_eq!(button_from_winit(MouseButton::Right), PointerButton::Secondary);
+///
+/// // Buttons the OS only numbers survive the trip.
+/// assert_eq!(button_from_winit(MouseButton::Other(9)), PointerButton::Other(9));
+/// ```
 pub fn button_from_winit(button: MouseButton) -> PointerButton {
     match button {
         MouseButton::Left => PointerButton::Primary,
@@ -70,6 +122,29 @@ pub fn button_from_winit(button: MouseButton) -> PointerButton {
 /// Space is deliberately normalised to [`NamedKey::Space`] even though winit
 /// reports it as a character: on a button or checkbox it *activates* rather
 /// than types.
+///
+/// ```
+/// use silka_core::input::{KeyCode, NamedKey};
+/// use silka_platform::key_from_winit;
+/// use winit::keyboard::{Key, NamedKey as WinitNamed, SmolStr};
+///
+/// // Ordinary text keys carry the character the layout produced.
+/// assert_eq!(
+///     key_from_winit(&Key::Character(SmolStr::new("a"))),
+///     KeyCode::Character('a'),
+/// );
+///
+/// // Space is normalised to a *named* key even though winit reports it as a
+/// // character: on a button or a checkbox it activates rather than types.
+/// assert_eq!(
+///     key_from_winit(&Key::Named(WinitNamed::Space)),
+///     KeyCode::Named(NamedKey::Space),
+/// );
+/// assert_eq!(
+///     key_from_winit(&Key::Named(WinitNamed::Tab)),
+///     KeyCode::Named(NamedKey::Tab),
+/// );
+/// ```
 pub fn key_from_winit(key: &WinitKey) -> KeyCode {
     match key {
         WinitKey::Named(named) => match named {
@@ -125,6 +200,26 @@ fn fungsi_ke_nomor(named: WinitNamed) -> Option<u8> {
 ///
 /// `LineDelta` comes from a mouse wheel, `PixelDelta` from a trackpad. The two
 /// are **not** unified here: only the widget knows how many points a line is.
+///
+/// ```
+/// use silka_core::input::ScrollDelta;
+/// use silka_platform::scroll_delta_from_winit;
+/// use winit::dpi::PhysicalPosition;
+/// use winit::event::MouseScrollDelta;
+///
+/// // A mouse wheel speaks in lines, and stays in lines: only the widget
+/// // knows how tall one of its lines is.
+/// let wheel = scroll_delta_from_winit(MouseScrollDelta::LineDelta(0.0, -3.0), 2.0);
+/// assert_eq!(wheel, ScrollDelta::Lines { x: 0.0, y: -3.0 });
+///
+/// // A trackpad speaks in pixels, which are divided by the scale factor so
+/// // everything above this layer is in logical points.
+/// let trackpad = scroll_delta_from_winit(
+///     MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, -48.0)),
+///     2.0,
+/// );
+/// assert_eq!(trackpad, ScrollDelta::Points { x: 0.0, y: -24.0 });
+/// ```
 pub fn scroll_delta_from_winit(delta: MouseScrollDelta, scale_factor: f64) -> ScrollDelta {
     match delta {
         MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines { x, y },
@@ -144,6 +239,40 @@ pub fn scroll_delta_from_winit(delta: MouseScrollDelta, scale_factor: f64) -> Sc
 /// that is the OS-owned inertia tail (INTEGRASI-NATIVE §3), and we tag it so
 /// scroll widgets do not simulate it a second time. Tracking of "an `Ended`
 /// already happened" lives in [`WinitInput`], not in this function.
+///
+/// ```
+/// use silka_core::input::ScrollPhase;
+/// use silka_platform::scroll_phase_from_winit;
+/// use winit::event::TouchPhase;
+///
+/// // A wheel has no gesture at all, so it never enters the phase machine.
+/// assert_eq!(
+///     scroll_phase_from_winit(TouchPhase::Moved, true, false),
+///     ScrollPhase::Wheel,
+/// );
+///
+/// // Fingers on the trackpad: began, then changed.
+/// assert_eq!(
+///     scroll_phase_from_winit(TouchPhase::Started, false, false),
+///     ScrollPhase::Began,
+/// );
+/// assert_eq!(
+///     scroll_phase_from_winit(TouchPhase::Moved, false, false),
+///     ScrollPhase::Changed,
+/// );
+///
+/// // Movement *after* the fingers lifted is the OS's own inertia tail. It is
+/// // tagged rather than treated as a new drag, so a scroll view does not
+/// // simulate momentum a second time on top of it.
+/// assert_eq!(
+///     scroll_phase_from_winit(TouchPhase::Moved, false, true),
+///     ScrollPhase::Momentum,
+/// );
+/// assert_eq!(
+///     scroll_phase_from_winit(TouchPhase::Ended, false, true),
+///     ScrollPhase::MomentumEnded,
+/// );
+/// ```
 pub fn scroll_phase_from_winit(phase: TouchPhase, roda: bool, setelah_ended: bool) -> ScrollPhase {
     if roda {
         return ScrollPhase::Wheel;
@@ -159,6 +288,24 @@ pub fn scroll_phase_from_winit(phase: TouchPhase, roda: bool, setelah_ended: boo
 }
 
 /// winit IME events → ours (a 1:1 mapping, no interpretation).
+///
+/// ```
+/// use silka_core::input::ImeEvent;
+/// use silka_platform::ime_from_winit;
+/// use winit::event::Ime;
+///
+/// // 1:1 and deliberately so: interpreting a composition here would put the
+/// // decision in the wrong layer.
+/// assert_eq!(ime_from_winit(Ime::Enabled), ImeEvent::Enabled);
+/// assert_eq!(
+///     ime_from_winit(Ime::Commit("\u{4f60}".into())),
+///     ImeEvent::Commit("\u{4f60}".into()),
+/// );
+/// assert_eq!(
+///     ime_from_winit(Ime::Preedit("ni".into(), Some((2, 2)))),
+///     ImeEvent::Preedit { text: "ni".into(), cursor: Some((2, 2)) },
+/// );
+/// ```
 pub fn ime_from_winit(ime: Ime) -> ImeEvent {
     match ime {
         Ime::Enabled => ImeEvent::Enabled,
@@ -169,6 +316,17 @@ pub fn ime_from_winit(ime: Ime) -> ImeEvent {
 }
 
 /// Our cursor icons → winit cursor icons.
+///
+/// The one conversion that runs the other way: the cursor is decided by the
+/// widget under the pointer and has to reach the OS.
+///
+/// ```
+/// use silka_core::input::CursorIcon;
+/// use silka_platform::cursor_to_winit;
+///
+/// assert_eq!(cursor_to_winit(CursorIcon::Text), winit::window::CursorIcon::Text);
+/// assert_eq!(cursor_to_winit(CursorIcon::Grabbing), winit::window::CursorIcon::Grabbing);
+/// ```
 pub fn cursor_to_winit(cursor: CursorIcon) -> winit::window::CursorIcon {
     use winit::window::CursorIcon as W;
     match cursor {
@@ -195,6 +353,28 @@ pub fn cursor_to_winit(cursor: CursorIcon) -> winit::window::CursorIcon {
 ///
 /// Not a router: it knows nothing about the render tree. Its only job is to
 /// assemble **complete** events out of the pieces winit delivers separately.
+///
+/// This is the **only** type in the workspace that knows the shape of a winit
+/// event, exactly as wgpu is confined to `silka-renderer`. What it settles here
+/// and never lets leak upward: dividing by the scale factor (winit reports
+/// physical pixels, the framework speaks logical points), the cursor position
+/// for `MouseInput` events that do not carry one, modifiers that arrive as
+/// separate events, and the tagging of OS-owned scroll momentum so our scroll
+/// physics never simulates it twice.
+///
+/// ```
+/// use silka_platform::input::WinitInput;
+///
+/// use silka_core::input::Modifiers;
+///
+/// let mut input = WinitInput::new();
+/// input.set_scale_factor(2.0);
+///
+/// // Nothing is known until the cursor has actually been somewhere — which
+/// // is why `mouse_input` before any motion produces no event at all.
+/// assert!(input.position().is_none());
+/// assert_eq!(input.modifiers(), Modifiers::NONE);
+/// ```
 #[derive(Debug)]
 pub struct WinitInput {
     scale_factor: f64,
@@ -402,6 +582,21 @@ impl WinitInput {
 ///
 /// The CJK candidate window anchors to this box; get it slightly wrong and it
 /// covers the text being typed (REKOMENDASI §3.8).
+///
+/// ```
+/// use silka_paint::Rect;
+/// use silka_platform::ime_area_to_winit;
+///
+/// let caret = Rect::new(120.0, 64.0, 1.0, 18.0);
+/// let (position, size) = ime_area_to_winit(caret);
+/// assert_eq!(position.x, 120.0);
+/// assert_eq!(size.height, 18.0);
+///
+/// // A zero-width caret is the normal case, and a zero-size box would leave
+/// // the candidate window nowhere to anchor — so it is floored at one point.
+/// let (_, degenerate) = ime_area_to_winit(Rect::new(0.0, 0.0, 0.0, 0.0));
+/// assert_eq!((degenerate.width, degenerate.height), (1.0, 1.0));
+/// ```
 pub fn ime_area_to_winit(area: Rect) -> (LogicalPosition<f64>, LogicalSize<f64>) {
     (
         LogicalPosition::new(area.origin.x as f64, area.origin.y as f64),

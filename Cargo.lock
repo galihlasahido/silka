@@ -2884,7 +2884,23 @@ dependencies = [
  "accesskit",
  "silka-paint",
  "silka-text",
+ "silka-theme",
  "taffy",
+]
+
+[[package]]
+name = "silka-dashboard"
+version = "0.1.0"
+dependencies = [
+ "silka-chart",
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-renderer",
+ "silka-testing",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
 ]
 
 [[package]]
@@ -2968,6 +2984,17 @@ name = "silka-theme"
 version = "0.1.0"
 dependencies = [
  "silka-paint",
+]
+
+[[package]]
+name = "silka-todo"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-theme",
+ "silka-widgets",
 ]
 
 [[package]]

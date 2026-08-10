@@ -203,11 +203,13 @@
 //!    by §2.5, and it closes the `click → signal → rebuild` path: before it, an
 //!    interactive node could only **count** activations, never tell anyone
 //!    about them.
-//! 2. **Per-state appearance** ([`tree::Interactive::decoration`],
-//!    `hover_background`, `press_background`, [`tree::FocusRing`]) — the values
-//!    are already resolved from tokens one level up (§2.6), and the corner
-//!    shape is guaranteed to match the shape hit-testing checks because both
-//!    read the same [`tree::Interactive::corners`] (§3.6).
+//! 2. **Per-state appearance** ([`tree::Interactive::decoration`] plus the
+//!    [`tree::StateStyle`] deltas behind `hover(|s| …)` / `pressed(|s| …)` /
+//!    `focused(|s| …)`, and [`tree::FocusRing`]) — the values are already
+//!    resolved from tokens one level up (§2.6), the transition between them is
+//!    a spring owned by the node rather than by each widget (§3.5), and the
+//!    corner shape is guaranteed to match the shape hit-testing checks because
+//!    both read the same [`tree::Interactive::corners`] (§3.6).
 //! 3. [`app::ScaleFactor`] as a standard [`app::Env`] injected value — text
 //!    must be rasterized at the real screen resolution (§3.3), and a window
 //!    moved to another monitor rebuilds only the components that read it.
@@ -220,12 +222,84 @@
 //! scissor rect per instance range, so this pass's clip contract holds all the
 //! way down to the pixel.
 //!
+//! **Milestone `utility-vocab`** — [`view::div`] and the §2.6 utility
+//! vocabulary: `flex()`, `items_center()`, `justify_between()`, `p_4()`,
+//! `rounded_lg()`, `shadow_md()`, `bg()`, `text_sm()` as a method chain, in
+//! Tailwind's spelling but on HIG's numbers.
+//!
+//! The point of the milestone is not the vocabulary but **who is allowed to
+//! supply the values**. §2.6 discipline #1 ("values are locked to design
+//! tokens") used to be guarded by a doc-comment: `background()` takes a
+//! `Color`, so a literal type-checked. Now the normal path takes only a token
+//! (`ColorToken`, `RadiusToken`, `ShadowToken`, `SpaceToken`, `FontToken`) and
+//! `.bg(Color::hex(0x1E90FF))` **does not compile**; a brand color that really
+//! is not a token goes through a conspicuously named escape hatch
+//! (`bg_raw`, `rounded_raw`, `p_raw`). The older `background`/`corners`/
+//! `border`/`shadow` remain as the layer underneath, which is what the token
+//! methods call.
+//!
+//! Tokens meet numbers through the **ambient theme** ([`view::with_theme`]):
+//! [`app::AppRuntime::frame`] installs it around the whole rebuild pass, taken
+//! from the `Signal<Theme>` in [`app::Env`], so no call site has to name
+//! `theme` (§2.5 — the code has to read like Dart) and a component rebuilt on
+//! its own halfway down the tree resolves against the same theme as the root.
+//! Resolution happens while
+//! the view is built, so [`tree::Decoration`] still reaches the paint pass
+//! already resolved and the renderer stays theme-free (§3.2). `rounded_lg()`
+//! is therefore one call with two geometries: a 14pt squircle under Cupertino,
+//! an 8pt arc under Tailwind (§2.7).
+//!
+//! **Milestone `utility-spring`** — §2.6 discipline #2: *"`hover(...)` /
+//! `pressed(...)` / `focused(...)` transition through a spring animation
+//! (§3.5), they do not jump the way CSS without `transition` does."*
+//!
+//! ```
+//! # use silka_core::view::{fixed, interactive};
+//! # use silka_theme::ColorToken;
+//! let _ = interactive(fixed(240.0, 88.0))
+//!     .bg(ColorToken::Surface)
+//!     .rounded_lg()
+//!     .hover(|s| s.bg(ColorToken::SurfaceHover))
+//!     .pressed(|s| s.bg(ColorToken::SurfacePressed).scale(0.98))
+//!     .focused(|s| s.ring(ColorToken::FocusRing));
+//! ```
+//!
+//! Each state is a [`tree::StateStyle`] — a delta over the resting style,
+//! written in the same utility vocabulary — and [`tree::Interactive`] keeps one
+//! [`SpringValue`] per animatable property (background, border, focus ring,
+//! scale). They are advanced by [`tree::RenderTree::advance`], the **one** pass
+//! that ticks the whole tree, and retargeted mid-flight carrying their velocity,
+//! so a pointer that leaves halfway reverses without a seam.
+//!
+//! The point is *where the spring lives*: before this milestone every widget
+//! brought its own, which meant an `interactive(…)` written by an application
+//! jumped. Motion is now a property of the system.
+//!
+//! **Milestone `utility-adopt`** — the vocabulary put to work. [`styling`] is
+//! the page to read before writing a screen: it teaches the vocabulary as the
+//! primary way to arrange a view, with the token rule, the 4pt scale, the
+//! closure states, and a mechanical table for converting hand-styled code. The
+//! gallery carries the worked examples — `reactive.rs` (a page rewritten out of
+//! layout arithmetic, gaining hover/press/focus on the way) and `utility.rs`
+//! (the vocabulary itself as a live reference).
+//!
 //! What is still missing, and what comes next: layer/offscreen-based repaint
 //! boundaries, and wiring [`animation::AnimationDriver`] into
 //! [`app::AppRuntime::frame`] (for now springs are still driven by the
 //! application through `request_animation_frame`).
 
 #![warn(missing_docs)]
+// Documentation is part of the public contract, so the checks rustdoc offers
+// are turned on here rather than left to a reviewer's eye. A broken intra-doc
+// link is an error: it means a rename silently orphaned a reference.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![warn(
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks
+)]
 
 pub mod access;
 pub mod animation;
@@ -234,6 +308,7 @@ mod callback;
 pub mod input;
 pub mod scheduler;
 pub mod signals;
+pub mod styling;
 pub mod tree;
 pub mod view;
 
@@ -263,4 +338,16 @@ pub use tree::{
     BoxConstraints, ContainerStyle, CrossAlign, Decoration, ItemStyle, LayoutCtx, MainAlign,
     NodeId, PaintCtx, RenderNode, RenderTree, TextDirection, Track,
 };
-pub use view::{reconcile, DiffStats, View, ViewNode};
+pub use view::{
+    active_theme, container, div, reconcile, with_theme, DiffStats, Margined, Padded, TextStyled,
+    View, ViewNode,
+};
+
+/// Compiles and runs every Rust example in this crate's `README.md`.
+///
+/// The item only exists while rustdoc is collecting doctests, so it never
+/// shows up in the rendered documentation. Its whole purpose is to stop the
+/// README from drifting away from the API it advertises.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

@@ -59,6 +59,32 @@ use super::arena::RenderNode;
 /// The corner shape rides along as a **parameter**, not a constant: the
 /// Cupertino squircle and the Tailwind arc are two equally valid [`Corners`]
 /// values (§2.7, §3.6).
+///
+/// ```
+/// use silka_core::tree::Decoration;
+/// use silka_paint::{Color, Corners, CornerStyle, Shadow, ShadowPair};
+///
+/// // A node draws nothing unless a token asks it to, so structural nodes cost
+/// // no draw commands at all.
+/// assert_eq!(Decoration::default(), Decoration::NONE);
+/// assert_eq!(Decoration::NONE.background, Color::TRANSPARENT);
+///
+/// // A card, assembled the way a widget assembles one: every value has come
+/// // from a theme token, and none of them is written here.
+/// let card = Decoration::fill(Color::hex(0x2C2C2E))
+///     .corners(Corners::uniform(14.0, CornerStyle::squircle()))
+///     .border(1.0, Color::WHITE.with_alpha(0.08))
+///     .shadows(ShadowPair::new(
+///         Shadow::new(Color::BLACK.with_alpha(0.06), 16.0),
+///         Shadow::new(Color::BLACK.with_alpha(0.12), 4.0).offset(0.0, 1.0),
+///     ));
+///
+/// assert_eq!(card.border_width, 1.0);
+///
+/// // The same corner value reaches the shader *and* hit-testing, which is why
+/// // a squircle button is not clickable in the corners a squircle excludes.
+/// assert_eq!(card.corners.style, CornerStyle::squircle());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Decoration {
     /// The fill colour.
@@ -160,6 +186,29 @@ pub(super) struct PaintCache {
 ///
 /// Every coordinate the methods here accept is **local**: `(0, 0)` is the
 /// top-left corner of the node currently drawing.
+///
+/// ```
+/// use silka_core::tree::{Decoration, PaintCtx};
+/// use silka_paint::{Color, Quad, Rect};
+///
+/// /// What a leaf node's `paint` looks like — no backend type in sight.
+/// fn paint(cx: &mut PaintCtx<'_>) {
+///     // The node's own box, in its own coordinates. It never learns where on
+///     // screen it ended up.
+///     let bounds = cx.local_bounds();
+///
+///     // Background, border and both shadow layers in one call.
+///     cx.decorate(&Decoration::fill(Color::hex(0x2C2C2E)));
+///
+///     // Anything outside the clip is not worth building a command for — this
+///     // is the check that keeps a hundred-thousand-row list cheap.
+///     let stripe = Rect::new(8.0, 8.0, bounds.size.width - 16.0, 2.0);
+///     if cx.is_visible(stripe) {
+///         cx.quad(Quad::new(stripe).background(Color::WHITE.with_alpha(0.2)));
+///     }
+/// }
+/// # let _ = paint;
+/// ```
 pub struct PaintCtx<'a> {
     tree: &'a mut RenderTree,
     scene: &'a mut Scene,

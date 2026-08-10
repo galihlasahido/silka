@@ -27,6 +27,30 @@ pub(crate) struct ScissorRect {
 }
 
 /// The surface size in physical pixels, plus the window's scale factor.
+///
+/// The one place logical points become physical pixels, which is why "correct
+/// DPI" can be tested without a GPU at all.
+///
+/// ```
+/// use silka_paint::Size;
+/// use silka_renderer::SurfaceGeometry;
+///
+/// // A 1024x720 pt window on a 2x Retina display.
+/// let geometry = SurfaceGeometry::from_logical(Size::new(1024.0, 720.0), 2.0);
+/// assert_eq!(geometry.physical_width(), 2048);
+/// assert_eq!(geometry.logical_size(), Size::new(1024.0, 720.0));
+/// assert!(geometry.is_renderable());
+///
+/// // Dragging the window to a 1.25x fractional Wayland scale.
+/// let moved = geometry.with_scale_factor(1.25);
+/// assert_eq!(moved.scale_factor(), 1.25);
+///
+/// // A minimized window has nothing to draw — not an error, just a skip.
+/// assert!(!geometry.with_physical_size(0, 0).is_renderable());
+///
+/// // A nonsensical scale factor is normalized rather than dividing by zero.
+/// assert_eq!(SurfaceGeometry::new(800, 600, 0.0).scale_factor(), 1.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SurfaceGeometry {
     width: u32,

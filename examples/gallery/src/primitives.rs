@@ -1,5 +1,5 @@
 //! Demo page: **Tier 0 primitives** — the type scale and the container box
-//! (`KOMPONEN.md` Tier 0).
+//! (`KOMPONEN.md` Tier 0), both written in the utility vocabulary of §2.6.
 //!
 //! The two oldest pages of this gallery (the typography specimen and the
 //! squircle/arc comparison) assemble a `Scene` by hand, because they predate
@@ -8,6 +8,31 @@
 //! importantly, is what makes them a test of the real path:
 //! `text()` measuring itself through `silka-text`, and a container that
 //! resolves its corners and shadows from tokens.
+//!
+//! It is also the page where the vocabulary earns its keep the most visibly.
+//! What a heading used to take, and what it takes now:
+//!
+//! ```text
+//! // before
+//! text(fonts, judul)
+//!     .size(t.typography.caption1.size)
+//!     .weight(FontWeight::SEMIBOLD)
+//!     .tracking(t.typography.caption1.tracking)
+//!     .color(t.color.tertiary_label)
+//!     .single_line()
+//!
+//! // after
+//! text(fonts, judul)
+//!     .font(FontToken::Caption1)
+//!     .font_semibold()
+//!     .text_color(ColorToken::TertiaryLabel)
+//!     .single_line()
+//! ```
+//!
+//! Note what disappeared with the theme lookups: the chance of taking the
+//! *size* of one role and the *tracking* of another. `font()` moves the four
+//! properties of a typographic role together, because separating them is how a
+//! type scale drifts.
 //!
 //! | What it proves | How to check it |
 //! |---|---|
@@ -19,11 +44,12 @@
 
 use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::signals::Signal;
-use silka_core::tree::{CrossAlign, MainAlign};
-use silka_core::view::{column, fixed, row, View};
-use silka_paint::{CornerStyle, Corners, Insets, ShadowPair};
-use silka_text::FontWeight;
-use silka_theme::{Theme, TypeStyle};
+use silka_core::tree::CrossAlign;
+use silka_core::view::{div, fixed, View};
+use silka_paint::{CornerStyle, Corners};
+#[cfg(test)]
+use silka_theme::TypeStyle;
+use silka_theme::{ColorToken, FontToken, RadiusToken, ShadowToken, Theme};
 use silka_widgets::{text, Fonts};
 
 /// The page title.
@@ -40,33 +66,27 @@ const KARTU: f32 = 16.0;
 
 /// The steps of the type scale, from the smallest to the largest.
 ///
-/// Returned as a function of the theme rather than a constant, because that is
-/// the whole claim being made: the scale **is** the token set, so a preset
-/// switch changes all eleven entries at once.
-pub fn skala(t: &Theme) -> [(&'static str, TypeStyle); 11] {
-    let ty = &t.typography;
-    [
-        ("caption2", ty.caption2),
-        ("caption1", ty.caption1),
-        ("footnote", ty.footnote),
-        ("subheadline", ty.subheadline),
-        ("callout", ty.callout),
-        ("body", ty.body),
-        ("headline", ty.headline),
-        ("title3", ty.title3),
-        ("title2", ty.title2),
-        ("title1", ty.title1),
-        ("large_title", ty.large_title),
-    ]
+/// Returned as **tokens**: the page names eleven roles and holds not one
+/// number, which is the whole claim — a preset switch changes all eleven at
+/// once.
+pub fn skala() -> [FontToken; 11] {
+    FontToken::ALL
+}
+
+/// The same scale resolved against one theme — for the tests, which have to
+/// compare numbers somewhere.
+#[cfg(test)]
+pub fn skala_terpakai(t: &Theme) -> [(&'static str, TypeStyle); 11] {
+    skala().map(|token| (token.name(), t.typography.get(token)))
 }
 
 /// The radius/elevation pairs shown in the container section.
-pub fn tingkat(t: &Theme) -> [(&'static str, f32, ShadowPair); 4] {
+pub fn tingkat() -> [(RadiusToken, ShadowToken); 4] {
     [
-        ("sm", t.radius.sm, t.shadow.sm),
-        ("md", t.radius.md, t.shadow.sm),
-        ("lg", t.radius.lg, t.shadow.md),
-        ("xl", t.radius.xl, t.shadow.lg),
+        (RadiusToken::Sm, ShadowToken::Sm),
+        (RadiusToken::Md, ShadowToken::Sm),
+        (RadiusToken::Lg, ShadowToken::Md),
+        (RadiusToken::Xl, ShadowToken::Lg),
     ]
 }
 
@@ -78,16 +98,19 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
-    column([
-        View::from(
+    div()
+        .items_center()
+        .justify_center()
+        .gap_5()
+        .p_8()
+        .child(
             text(fonts, JUDUL)
-                .size(t.typography.title2.size)
-                .weight(FontWeight::SEMIBOLD)
-                .tracking(t.typography.title2.tracking)
-                .color(t.color.label)
+                .font(FontToken::Title2)
+                .font_semibold()
+                .text_color(ColorToken::Label)
                 .single_line(),
-        ),
-        View::from(
+        )
+        .child(
             text(
                 fonts,
                 "Dua primitif Tier 0 yang dipakai semua komponen lain: satu \
@@ -96,100 +119,97 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                  bilah atas — seluruh halaman ini ikut berubah tanpa satu pun \
                  angka di berkas ini berubah.",
             )
-            .size(t.typography.body_size)
-            .line_height(t.typography.body_line_height)
-            .color(t.color.secondary_label)
+            .text_base()
+            .text_color(ColorToken::SecondaryLabel)
             .max_width(t.space(LEBAR_LANGKAH)),
-        ),
-        judul_bagian(fonts, &t, "Skala tipografi"),
-        spesimen(fonts, &t),
-        judul_bagian(fonts, &t, "Sudut & bayangan"),
-        kartu_kartu(fonts, &t),
-    ])
-    .spacing(t.space(5.0))
-    .main(MainAlign::Center)
-    .cross(CrossAlign::Center)
-    .padding(Insets::all(t.space(8.0)))
-    .into()
+        )
+        .child(judul_bagian(fonts, "Skala tipografi"))
+        .child(spesimen(fonts))
+        .child(judul_bagian(fonts, "Sudut & bayangan"))
+        .child(kartu_kartu(fonts, &t))
+        .into()
 }
 
 /// A section heading.
-fn judul_bagian(fonts: &Fonts, t: &Theme, judul: &str) -> View {
+fn judul_bagian(fonts: &Fonts, judul: &str) -> View {
     text(fonts, judul)
-        .size(t.typography.caption1.size)
-        .weight(FontWeight::SEMIBOLD)
-        .tracking(t.typography.caption1.tracking)
-        .color(t.color.tertiary_label)
+        .font(FontToken::Caption1)
+        .font_semibold()
+        .text_color(ColorToken::TertiaryLabel)
         .single_line()
         .into()
 }
 
 /// The type scale: token name on the left, the sample rendered on the right.
-fn spesimen(fonts: &Fonts, t: &Theme) -> View {
-    column(skala(t).map(|(nama, gaya)| {
-        View::from(
-            row([
-                View::from(
-                    text(fonts, nama)
-                        .size(t.typography.caption2.size)
-                        .color(t.color.tertiary_label)
+fn spesimen(fonts: &Fonts) -> View {
+    div()
+        .items_start()
+        .gap_2()
+        .children(skala().map(|token| {
+            div()
+                .flex()
+                .cross(CrossAlign::Baseline)
+                .gap_3()
+                .child(
+                    text(fonts, token.name())
+                        .text_xs()
+                        .text_color(ColorToken::TertiaryLabel)
                         .single_line(),
-                ),
-                View::from(
+                )
+                .child(
                     text(fonts, CONTOH)
-                        .size(gaya.size)
-                        .weight(FontWeight(gaya.weight))
-                        .tracking(gaya.tracking)
-                        // `TypeStyle::line_height` is already a multiple of the
-                        // font size, which is exactly what `text()` wants.
-                        .line_height(gaya.line_height)
-                        .color(t.color.label)
+                        // One call for size, line height, weight and tracking:
+                        // the four properties of a typographic role travel
+                        // together.
+                        .font(token)
+                        .text_color(ColorToken::Label)
                         .single_line(),
-                ),
-            ])
-            .spacing(t.space(3.0))
-            .cross(CrossAlign::Baseline),
-        )
-    }))
-    .spacing(t.space(2.0))
-    .cross(CrossAlign::Start)
-    .into()
+                )
+        }))
+        .into()
 }
 
 /// Four radius steps × two corner shapes.
 fn kartu_kartu(fonts: &Fonts, t: &Theme) -> View {
     let sisi = t.space(KARTU);
-    column(tingkat(t).map(|(nama, radius, shadow)| {
-        View::from(
-            row([
-                View::from(
-                    text(fonts, nama)
-                        .size(t.typography.caption2.size)
-                        .color(t.color.tertiary_label)
+    div()
+        .items_start()
+        .gap_3()
+        .children(tingkat().map(|(radius, elevasi)| {
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .child(
+                    text(fonts, radius.name())
+                        .text_xs()
+                        .text_color(ColorToken::TertiaryLabel)
                         .single_line(),
-                ),
-                // This page (like `cards`/`reactive`) is one of the few allowed
-                // to pick a corner shape by hand, because comparing the two
-                // shapes is precisely its job. Everything else is a token.
-                kartu(t, sisi, radius, CornerStyle::squircle(), shadow),
-                kartu(t, sisi, radius, CornerStyle::Arc, shadow),
-            ])
-            .spacing(t.space(3.0))
-            .cross(CrossAlign::Center),
-        )
-    }))
-    .spacing(t.space(3.0))
-    .cross(CrossAlign::Start)
-    .into()
+                )
+                // This page (like `cards`) is one of the few allowed to pick a
+                // corner *shape* by hand, because comparing the two shapes is
+                // precisely its job. Everything else — the radius included — is
+                // a token.
+                .child(kartu(t, sisi, radius, CornerStyle::squircle(), elevasi))
+                .child(kartu(t, sisi, radius, CornerStyle::Arc, elevasi))
+        }))
+        .into()
 }
 
 /// One specimen card.
-fn kartu(t: &Theme, sisi: f32, radius: f32, style: CornerStyle, shadow: ShadowPair) -> View {
+fn kartu(
+    t: &Theme,
+    sisi: f32,
+    radius: RadiusToken,
+    style: CornerStyle,
+    elevasi: ShadowToken,
+) -> View {
     fixed(sisi, sisi)
-        .background(t.color.surface)
-        .corners(Corners::uniform(radius, style))
-        .border(t.space(0.25), t.color.separator)
-        .shadow(shadow)
+        .bg(ColorToken::Surface)
+        .rounded_raw(Corners::uniform(t.radius.get(radius), style))
+        .border_1()
+        .border_color(ColorToken::Separator)
+        .elevation(elevasi)
         .into()
 }
 
@@ -219,7 +239,7 @@ mod tests {
     fn skala_naik_monoton() {
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             let t = Theme::new(preset, Appearance::Light);
-            let langkah = skala(&t);
+            let langkah = skala_terpakai(&t);
             for pasangan in langkah.windows(2) {
                 assert!(
                     pasangan[1].1.size >= pasangan[0].1.size,
@@ -243,8 +263,8 @@ mod tests {
 
     #[test]
     fn skala_ikut_preset() {
-        let a = skala(&Theme::cupertino(Appearance::Light));
-        let b = skala(&Theme::tailwind(Appearance::Light));
+        let a = skala_terpakai(&Theme::cupertino(Appearance::Light));
+        let b = skala_terpakai(&Theme::tailwind(Appearance::Light));
         assert!(
             a.iter().zip(b.iter()).any(|(x, y)| x.1 != y.1),
             "kedua preset memberi skala tipografi yang identik — token tidak \
@@ -279,6 +299,59 @@ mod tests {
                 let t = Theme::new(preset, appearance);
                 assert_eq!(ui(t, &f).scene().clear_color(), t.color.background);
             }
+        }
+    }
+
+    /// The utilities really do resolve against the theme the frame installs —
+    /// not against `Theme::default`, which is the failure mode a page written
+    /// this way would otherwise hide.
+    #[test]
+    fn kotak_spesimen_memakai_warna_dan_hairline_dari_token() {
+        let f = fonts();
+        for preset in [Preset::Cupertino, Preset::Tailwind] {
+            for appearance in [Appearance::Light, Appearance::Dark] {
+                let t = Theme::new(preset, appearance);
+                let ui = ui(t, &f);
+                let kotak: Vec<_> = ui
+                    .scene()
+                    .commands()
+                    .iter()
+                    .filter_map(|c| match c {
+                        Command::Quad(q) => Some(q.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(kotak.len(), tingkat().len() * 2);
+                for q in kotak {
+                    assert_eq!(q.background, t.color.surface, "{preset:?} {appearance:?}");
+                    assert_eq!(q.border_color, t.color.separator);
+                    assert_eq!(q.border_width, t.space(0.25), "border_1 = hairline");
+                }
+            }
+        }
+    }
+
+    /// Both corner shapes, at exactly the same nominal radius — the comparison
+    /// this page exists for.
+    #[test]
+    fn tiap_baris_memasangkan_squircle_dengan_arc_beradius_sama() {
+        let f = fonts();
+        let t = Theme::cupertino(Appearance::Dark);
+        let ui = ui(t, &f);
+        let kotak: Vec<_> = ui
+            .scene()
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::Quad(q) => Some(q.clone()),
+                _ => None,
+            })
+            .collect();
+        for (pasangan, (radius, _)) in kotak.chunks(2).zip(tingkat()) {
+            assert_eq!(pasangan[0].corners.style, CornerStyle::squircle());
+            assert_eq!(pasangan[1].corners.style, CornerStyle::Arc);
+            assert_eq!(pasangan[0].corners.radii, pasangan[1].corners.radii);
+            assert_eq!(pasangan[0].corners.radii.max(), t.radius.get(radius));
         }
     }
 }

@@ -8,8 +8,45 @@
 //! The only value that is not a multiple of the unit is [`SpaceToken::Px`]: the
 //! 1pt hairline for borders and separators. It exists deliberately, so widgets
 //! are never tempted to write `1.0` themselves.
+//!
+//! ```
+//! use silka_theme::{Appearance, SpaceToken, Theme};
+//!
+//! let t = Theme::cupertino(Appearance::Dark);
+//!
+//! // A step is a count of units, so the scale stays consistent by
+//! // construction rather than by discipline.
+//! assert_eq!(t.space_of(SpaceToken::S4), 16.0);
+//! assert_eq!(t.space_of(SpaceToken::S2), 8.0);
+//! assert_eq!(t.space_of(SpaceToken::None), 0.0);
+//!
+//! // `space(n)` is the shorthand widgets actually use — the same scale
+//! // without naming a token for every value.
+//! assert_eq!(t.space(4.0), t.space_of(SpaceToken::S4));
+//!
+//! // The hairline is the deliberate exception: 1pt, not a multiple of 4.
+//! assert_eq!(t.space_of(SpaceToken::Px), 1.0);
+//!
+//! // Both presets agree on the unit, so a layout ported between them keeps
+//! // its rhythm.
+//! assert_eq!(
+//!     Theme::tailwind(Appearance::Dark).space_of(SpaceToken::S4),
+//!     t.space_of(SpaceToken::S4),
+//! );
+//! ```
 
 /// The spacing scale.
+///
+/// ```
+/// use silka_theme::{SpaceToken, SpacingTokens};
+///
+/// let scale = SpacingTokens { unit: 4.0 };
+/// assert_eq!(scale.space(3.0), 12.0);
+/// assert_eq!(scale.get(SpaceToken::S4), 16.0);
+/// // The hairline is the one value outside the scale, and it is a token so
+/// // that no widget is ever tempted to write `1.0` by hand.
+/// assert_eq!(scale.get(SpaceToken::Px), 1.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpacingTokens {
     /// One step of the scale, in logical points.
@@ -38,6 +75,18 @@ impl SpacingTokens {
 /// The number counts **steps**, not points: `S4` = 4 steps = 16pt at a 4pt
 /// unit. The naming deliberately matches Tailwind so the mental jump from the
 /// web is close to zero.
+///
+/// ```
+/// use silka_theme::{Appearance, SpaceToken, Theme};
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// // The number counts steps, not points: S4 is four 4pt steps.
+/// assert_eq!(theme.space_of(SpaceToken::S4), 16.0);
+/// assert_eq!(theme.space_of(SpaceToken::None), 0.0);
+///
+/// // The scale is ordered, so "at least this much padding" is expressible.
+/// assert!(SpaceToken::S2 < SpaceToken::S6);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SpaceToken {
     /// 0 steps.

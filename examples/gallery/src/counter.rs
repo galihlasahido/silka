@@ -24,11 +24,8 @@
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
-use silka_core::tree::{CrossAlign, MainAlign};
-use silka_core::view::{column, row, View};
-use silka_paint::Insets;
-use silka_text::FontWeight;
-use silka_theme::Theme;
+use silka_core::view::{div, View};
+use silka_theme::{ColorToken, FontToken, Theme};
 use silka_widgets::{button, button_variant, text, ButtonVariant, Fonts};
 
 /// The increment button's name — also used by the tests to find it in the
@@ -58,37 +55,35 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     let count = use_signal(|| 0i32);
 
-    column([
-        View::from(
+    div()
+        // The whole stack sits centered in the window — the alignment belongs
+        // to the layout engine, not to arithmetic on this page (§3.4).
+        .justify_center()
+        .items_center()
+        .gap_6()
+        .p_8()
+        .child(
+            // One call carries size, line height, weight and tracking: the
+            // optical tracking of a big title is part of the role, not
+            // something this page gets to invent (§3.6).
             text(fonts, JUDUL)
-                .size(t.typography.body_size * 2.0)
-                .weight(FontWeight::SEMIBOLD)
-                // Negative tracking at large sizes — an SF habit (§3.6).
-                .tracking(-0.02)
-                .color(t.color.label)
+                .font(FontToken::Title1)
+                .text_color(ColorToken::Label)
                 .single_line(),
-        ),
-        View::from(
+        )
+        .child(
             text(
                 fonts,
                 "Klik tombol di bawah: signal berubah, hanya komponen angka \
                  yang dibangun ulang, dan angkanya benar-benar berganti di layar.",
             )
-            .size(t.typography.body_size)
-            .line_height(t.typography.body_line_height)
-            .color(t.color.secondary_label)
+            .text_base()
+            .text_color(ColorToken::SecondaryLabel)
             .max_width(t.space(96.0)),
-        ),
-        angka(fonts, count),
-        kendali(fonts, &t, count),
-    ])
-    .spacing(t.space(6.0))
-    // The whole stack sits centered in the window — the alignment belongs to
-    // the layout engine, not to arithmetic on this page (§3.4).
-    .main(MainAlign::Center)
-    .cross(CrossAlign::Center)
-    .padding(Insets::all(t.space(8.0)))
-    .into()
+        )
+        .child(angka(fonts, count))
+        .child(kendali(fonts, &t, count))
+        .into()
 }
 
 /// The big number as **its own component**.
@@ -99,11 +94,14 @@ fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
     let fonts = fonts.clone();
     component("angka", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
+        // The one number on the page that is genuinely not a token: this is a
+        // display figure, five times body size, and no type scale has a role
+        // for "the hero digit of a demo".
         text(&fonts, count.get().to_string())
             .size(t.typography.body_size * 5.0)
-            .weight(FontWeight::BOLD)
+            .font_bold()
             .tracking(-0.03)
-            .color(t.color.accent)
+            .text_color(ColorToken::Accent)
             .single_line()
             .into()
     })
@@ -116,20 +114,20 @@ fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
 /// unchanged across clicks: what the user's finger is pressing is never rebuilt
 /// mid-interaction.
 fn kendali(fonts: &Fonts, t: &Theme, count: Signal<i32>) -> View {
-    row([
-        View::from(button(fonts, t, TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1))),
-        View::from(
+    div()
+        .flex()
+        .items_center()
+        .gap_3()
+        .child(button(fonts, t, TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1)))
+        .child(
             button_variant(fonts, t, TOMBOL_KURANG, ButtonVariant::Secondary)
                 .on_press(move || count.update(|n| *n -= 1)),
-        ),
-        View::from(
+        )
+        .child(
             button_variant(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary)
                 .on_press(move || count.set(0)),
-        ),
-    ])
-    .spacing(t.space(3.0))
-    .cross(CrossAlign::Center)
-    .into()
+        )
+        .into()
 }
 
 #[cfg(test)]

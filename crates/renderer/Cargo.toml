@@ -1,6 +1,7 @@
 [package]
 name = "silka-renderer"
-description = "Backend wgpu (shader SDF khusus UI) yang mengimplementasikan abstraksi silka-paint"
+description = "wgpu backend with a UI-specific SDF shader implementing the silka-paint vocabulary"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

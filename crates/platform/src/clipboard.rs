@@ -31,6 +31,22 @@ use core::fmt;
 use crate::image::{ImageError, RgbaImage};
 
 /// Why a clipboard operation did not happen.
+///
+/// [`ClipboardError::Empty`] is the ordinary case, not an exception: pasting
+/// with nothing on the clipboard is something users do all the time.
+/// [`ClipboardError::Busy`] is the one worth retrying — on Windows another
+/// process holds the clipboard open for a moment at a time.
+///
+/// ```
+/// use silka_platform::clipboard::{clipboard, ClipboardError};
+///
+/// match clipboard().and_then(|mut c| c.text()) {
+///     Ok(text) => println!("pasted {} bytes", text.len()),
+///     Err(ClipboardError::Empty) => println!("nothing to paste"),
+///     Err(ClipboardError::Unsupported) => println!("headless: no clipboard"),
+///     Err(e) => println!("clipboard unavailable: {e}"),
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ClipboardError {
@@ -96,11 +112,41 @@ fn dari_arboard(e: arboard::Error) -> ClipboardError {
 /// Holding one open costs nothing: the underlying implementation opens the
 /// native clipboard only for the moment a transfer takes, so an application can
 /// keep a single handle around for its whole life.
+///
+/// ```no_run
+/// use silka_platform::clipboard::clipboard;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut board = clipboard()?;
+/// board.set_text("silka")?;
+/// assert_eq!(board.text()?, "silka");
+/// # Ok(()) }
+/// ```
 pub struct Clipboard {
     inner: arboard::Clipboard,
 }
 
 /// Open the system clipboard.
+///
+/// Opened per use rather than held: on X11 the clipboard belongs to whichever
+/// connection last claimed it, and a long-lived handle is a good way to end up
+/// owning a selection nobody can read.
+///
+/// ```
+/// use silka_platform::clipboard;
+///
+/// // Every operation can fail — there may be no clipboard at all on a
+/// // headless CI machine, which is a state rather than a crash.
+/// match clipboard() {
+///     Ok(mut board) => {
+///         board.set_text("silka").expect("writing text");
+///         assert_eq!(board.text().expect("reading it back"), "silka");
+///     }
+///     Err(_) => {
+///         // No display server: nothing to copy to, and nothing to panic about.
+///     }
+/// }
+/// ```
 pub fn clipboard() -> Result<Clipboard, ClipboardError> {
     arboard::Clipboard::new()
         .map(|inner| Clipboard { inner })

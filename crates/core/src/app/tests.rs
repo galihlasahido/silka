@@ -726,3 +726,86 @@ fn spring_yang_belum_settle_tetap_meminta_frame_sampai_selesai() {
         .position();
     assert_eq!(posisi, 50.0);
 }
+
+// ---------------------------------------------------------------------------
+// Ambient theme (§2.6): the utility vocabulary resolves against `Env`
+// ---------------------------------------------------------------------------
+
+/// The whole rebuild pass runs under the injected `Signal<Theme>`, so a page
+/// written in the utility vocabulary never has to name a theme.
+#[test]
+fn kosakata_utility_memakai_theme_dari_env() {
+    use crate::view::div;
+    use silka_theme::{Appearance, ColorToken, Theme};
+
+    let tema = Theme::tailwind(Appearance::Dark);
+    let mut ui = app(|_cx| div().bg(ColorToken::Surface).into())
+        .with_env(move |rt| rt.signal(tema))
+        .sized(200.0, 120.0);
+    ui.frame();
+    assert_eq!(quads(ui.scene())[0].background, tema.color.surface);
+}
+
+/// A theme change repaints in the new palette **without** the page mentioning
+/// it: the value is resolved during the rebuild the signal triggers.
+#[test]
+fn ganti_theme_mengubah_warna_yang_diresolusi_utility() {
+    use crate::view::div;
+    use silka_theme::{Appearance, ColorToken, Theme};
+
+    let terang = Theme::cupertino(Appearance::Light);
+    let gelap = Theme::cupertino(Appearance::Dark);
+    let mut ui = app(|cx| {
+        // Read: this is what marks the root dirty when the theme changes.
+        let _t: Theme = cx.expect_env::<Signal<Theme>>().get();
+        div().bg(ColorToken::Surface).into()
+    })
+    .with_env(move |rt| rt.signal(terang))
+    .sized(200.0, 120.0);
+    ui.frame();
+    assert_eq!(quads(ui.scene())[0].background, terang.color.surface);
+
+    ui.env::<Signal<Theme>>().unwrap().set(gelap);
+    ui.frame();
+    assert_eq!(quads(ui.scene())[0].background, gelap.color.surface);
+    assert_ne!(terang.color.surface, gelap.color.surface);
+}
+
+/// A component deeper in the tree is rebuilt on its own, outside the root
+/// closure — the ambient theme has to reach it too, or a hover would resolve
+/// its colors against `Theme::default` the moment a signal fires.
+#[test]
+fn komponen_yang_dibangun_ulang_sendiri_tetap_dapat_theme() {
+    use crate::view::div;
+    use silka_theme::{Appearance, ColorToken, Theme};
+
+    let tema = Theme::tailwind(Appearance::Light);
+    let pegangan: Rc<RefCell<Option<Signal<bool>>>> = Rc::new(RefCell::new(None));
+    let simpan = pegangan.clone();
+
+    let mut ui = app(move |_cx| {
+        let simpan = simpan.clone();
+        column([component("kartu", move |_cx| {
+            let tekan = use_signal(|| false);
+            *simpan.borrow_mut() = Some(tekan);
+            let warna = if tekan.get() {
+                ColorToken::SurfacePressed
+            } else {
+                ColorToken::Surface
+            };
+            div().bg(warna).child(fixed(60.0, 24.0)).into()
+        })])
+        .into()
+    })
+    .with_env(move |rt| rt.signal(tema))
+    .sized(200.0, 120.0);
+    ui.frame();
+    assert_eq!(quads(ui.scene())[0].background, tema.color.surface);
+
+    // Only the component's own scope is dirty here: the root closure — and with
+    // it any `with_theme` a shell might have wrapped around it — does not run.
+    pegangan.borrow().unwrap().set(true);
+    let laporan = ui.frame();
+    assert_eq!(laporan.rebuilt, 1);
+    assert_eq!(quads(ui.scene())[0].background, tema.color.surface_pressed);
+}

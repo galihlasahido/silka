@@ -5,6 +5,37 @@
 //! node: it takes [`TextConstraints`] and returns [`TextMeasure`]. Taffy uses
 //! the same shape through its measure function, so one implementation serves
 //! both callers.
+//!
+//! ```
+//! use silka_paint::Size;
+//! use silka_text::{TextConstraints, TextEngine, TextStyle};
+//!
+//! let mut engine = TextEngine::bundled_only();
+//! let style = TextStyle::new().size(15.0);
+//!
+//! // Constraints go down…
+//! let m = engine.measure("a longer sentence than fits", &style, TextConstraints::width(80.0));
+//!
+//! // …and a size comes up, already clamped to what was allowed.
+//! assert!(m.size.width <= 80.0);
+//! assert!(m.line_count > 1);
+//!
+//! // The baseline travels with it, because `align_baseline` cannot be
+//! // reconstructed from a bare size.
+//! assert!(m.first_baseline > 0.0);
+//! assert!(m.last_baseline >= m.first_baseline);
+//!
+//! // `content_size` is the *unclamped* natural size, which is how a scroll
+//! // view learns its extent and how ellipsis decides to appear.
+//! let clipped = engine.measure(
+//!     "a longer sentence than fits",
+//!     &style,
+//!     TextConstraints::tight(Size::new(80.0, 16.0)),
+//! );
+//! assert_eq!(clipped.size, Size::new(80.0, 16.0));
+//! assert!(clipped.content_size.height > clipped.size.height);
+//! assert!(clipped.overflowed);
+//! ```
 
 use silka_paint::Size;
 
@@ -14,6 +45,24 @@ use crate::style::canonical_bits;
 ///
 /// `max_width`/`max_height` may be [`f32::INFINITY`] — meaning "size to the
 /// content" (intrinsic sizing).
+///
+/// ```
+/// use silka_paint::Size;
+/// use silka_text::TextConstraints;
+///
+/// // What a layout parent hands down: "you may be this wide, no taller limit".
+/// let column = TextConstraints::width(280.0);
+/// assert!(column.has_bounded_width());
+/// assert!(!column.has_bounded_height());
+///
+/// // "Size to your content" is infinity, not a large number.
+/// assert!(!TextConstraints::UNBOUNDED.has_bounded_width());
+///
+/// // Loose vs tight is the Flutter distinction: at most, versus exactly.
+/// let tight = TextConstraints::tight(Size::new(120.0, 20.0));
+/// assert_eq!(tight.constrain(Size::new(400.0, 400.0)), Size::new(120.0, 20.0));
+/// assert_eq!(TextConstraints::loose(Size::new(120.0, 20.0)).constrain(Size::new(40.0, 8.0)), Size::new(40.0, 8.0));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextConstraints {
     /// Minimum width.
@@ -141,6 +190,27 @@ pub(crate) struct ConstraintsKey {
 }
 
 /// The measurement of a piece of text, in logical points.
+///
+/// This is the value a leaf node returns to the layout pass — the "sizes come
+/// up" half of the box-constraints protocol.
+///
+/// ```
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
+///
+/// let mut engine = TextEngine::bundled_only();
+/// let style = TextStyle::new().size(15.0).max_lines(1);
+///
+/// let m = engine.measure("a fairly long label", &style, TextConstraints::width(40.0));
+///
+/// // `size` is clamped to the constraints; `content_size` is what the text
+/// // actually wanted — the difference is what drives ellipsis and scrolling.
+/// assert!(m.size.width <= 40.0);
+/// assert!(m.content_size.width >= m.size.width);
+/// assert!(m.overflowed);
+///
+/// // Baselines are reported so rows of mixed sizes can align on them.
+/// assert!(m.first_baseline > 0.0 && m.first_baseline <= m.line_height);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextMeasure {
     /// The final size after clamping to the constraints — this is what goes up

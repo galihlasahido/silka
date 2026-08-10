@@ -42,6 +42,9 @@ mod interactive;
 mod primitives;
 #[cfg(test)]
 mod tests;
+mod utility;
+#[cfg(test)]
+mod utility_tests;
 
 use std::any::TypeId;
 
@@ -56,12 +59,36 @@ pub use primitives::{
     ConstrainProps, Decorated, FixedProps, ItemProps, LayoutProps, MeasuredProps, PadProps,
     ViewportProps,
 };
+pub use utility::{active_theme, container, div, with_theme, Margined, Padded, TextStyled};
 
 /// Describes one node: how to create it, and how to update an existing one.
 ///
 /// One `ViewNode` type maps to **exactly one** [`RenderNode`] type — that is
 /// what lets [`ViewNode::update`] trust its downcast (diffing has already
 /// confirmed the view types match before calling).
+///
+/// The `Dirty` returned by [`ViewNode::update`] is what makes a rebuild cheap:
+/// props that did not change report [`Dirty::NONE`], and zero follow-up work
+/// happens.
+///
+/// ```
+/// use silka_core::scheduler::Dirty;
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, reconcile};
+/// use silka_paint::Size;
+///
+/// let mut tree = RenderTree::new();
+///
+/// // The first pass builds nodes…
+/// let built = reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+/// assert!(built.created > 0);
+///
+/// // …and an identical view updates them in place instead, creating nothing.
+/// let again = reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+/// assert_eq!(again.created, 0);
+///
+/// tree.perform_layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+/// ```
 pub trait ViewNode: 'static {
     /// Build a fresh render node from these props.
     fn build(&self) -> Box<dyn RenderNode>;
@@ -78,6 +105,25 @@ pub trait ViewNode: 'static {
 ///
 /// Lightweight and single-use. Built through constructor functions
 /// ([`column()`], [`fixed`], …), never by filling in fields.
+///
+/// ```
+/// use silka_core::signals::Key;
+/// use silka_core::view::{column, fixed, row, View};
+///
+/// // Nesting reads like Flutter; optional properties move onto the chain.
+/// let view: View = column([
+///     View::from(row([fixed(40.0, 40.0), fixed(40.0, 40.0)]).spacing(8.0)),
+///     View::from(fixed(120.0, 24.0)),
+/// ])
+/// .spacing(12.0)
+/// .into();
+///
+/// assert_eq!(view.children().len(), 2);
+///
+/// // A key is what makes a reordered list keep each row's state.
+/// let keyed: View = fixed(40.0, 40.0).key(Key::num(7)).into();
+/// assert_eq!(keyed.key(), Some(&Key::num(7)));
+/// ```
 pub struct View {
     key: Option<Key>,
     type_id: TypeId,
@@ -122,6 +168,16 @@ impl core::fmt::Debug for View {
 /// method chain (§2.5). Every primitive adds its own methods through
 /// `impl Builder<ItsProps>`, so a typo is a compile error rather than a
 /// property that silently has no effect.
+///
+/// ```
+/// use silka_core::view::{column, fixed, View};
+///
+/// // `column(...)` returns a `Builder`, and `.spacing()` is one of the
+/// // methods that primitive adds. A misspelling here is a compile error, not
+/// // a property that quietly does nothing.
+/// let view: View = column([fixed(120.0, 24.0)]).spacing(8.0).into();
+/// assert_eq!(view.children().len(), 1);
+/// ```
 pub struct Builder<V: ViewNode> {
     key: Option<Key>,
     props: V,

@@ -6,14 +6,30 @@
 //! will later **ride on** this virtualization — "do not build three
 //! virtualization systems".
 //!
-//! ```ignore
-//! let daftar = use_list_state();
-//! list(&t, daftar, transaksi.len(), move |i| baris(&fonts, &t, i))
+//! ```
+//! # use silka_core::signals::Runtime;
+//! # use silka_core::view::View;
+//! # use silka_theme::{Appearance, Theme};
+//! # use silka_widgets::{list, text, Fonts, ListState};
+//! # let rt = Runtime::new();
+//! # let fonts = Fonts::bundled_only();
+//! # let t = Theme::cupertino(Appearance::Dark);
+//! # let rows: Vec<String> = (0..100_000).map(|i| format!("Row {i}")).collect();
+//! // In a component this would be `use_list_state()`; owning it at the
+//! // application level looks like this.
+//! let state = ListState::new(&rt);
+//!
+//! let f = fonts.clone();
+//! let theme = t;
+//! list(&t, state, rows.len(), move |i| View::from(text(&f, format!("Row {i}"))))
 //!     .item_extent(44.0)
-//!     .sticky_header(32.0, move || judul_kolom(&fonts, &t))
-//!     .separators(t.space(0.25))
-//!     .label("Transaksi")
-//!     .on_activate(move |i| buka(i))
+//!     .sticky_header(32.0, {
+//!         let f = fonts.clone();
+//!         move || View::from(text(&f, "Transactions"))
+//!     })
+//!     .separators(theme.space(0.25))
+//!     .label("Transactions")
+//!     .on_activate(|i| println!("open row {i}"));
 //! ```
 //!
 //! ## One component, two nodes, zero new systems

@@ -21,10 +21,59 @@
 //! BINDING contract (§3.2, §5 failure mode #7): this trait uses only types
 //! owned by this crate. A future GL/CPU backend reads exactly the same source
 //! as today's wgpu backend.
+//!
+//! The whole per-frame protocol a backend follows, end to end:
+//!
+//! ```
+//! use silka_paint::{GlyphFormat, GlyphImageId, GlyphSource, NoGlyphs};
+//!
+//! /// What every backend does once per frame, before drawing any glyph run.
+//! fn sync_atlases(source: &mut impl GlyphSource) -> u64 {
+//!     let mut bytes_uploaded = 0;
+//!     for format in GlyphFormat::ALL {
+//!         // 1. Ask what changed. `None` is the common case: text that did
+//!         //    not change costs zero bandwidth.
+//!         let Some(region) = source.take_dirty(format) else {
+//!             continue;
+//!         };
+//!         // 2. Upload just that rectangle out of the full pixel buffer.
+//!         let _pixels = source.atlas_pixels(format);
+//!         let _side = source.atlas_size(format);
+//!         bytes_uploaded +=
+//!             u64::from(region.width * region.height * format.bytes_per_pixel());
+//!     }
+//!     bytes_uploaded
+//! }
+//!
+//! /// And this is how a single glyph in a run becomes texture coordinates.
+//! fn uv_for(source: &impl GlyphSource, image: GlyphImageId) -> Option<[f32; 4]> {
+//!     let placement = source.placement(image)?;
+//!     Some(placement.region.uv(source.atlas_size(placement.format)))
+//! }
+//!
+//! // An application with no text at all still runs the same protocol.
+//! let mut empty = NoGlyphs;
+//! assert_eq!(sync_atlases(&mut empty), 0);
+//! assert_eq!(uv_for(&empty, GlyphImageId::from_raw(1)), None);
+//! ```
 
 use crate::glyph::GlyphImageId;
 
 /// The pixel format of an atlas, as seen from the backend side.
+///
+/// ```
+/// use silka_paint::GlyphFormat;
+///
+/// // A mask glyph is coverage only, so one "a" bitmap serves every text color.
+/// assert_eq!(GlyphFormat::Mask.bytes_per_pixel(), 1);
+/// // Color emoji carry their own pixels.
+/// assert_eq!(GlyphFormat::Color.bytes_per_pixel(), 4);
+///
+/// // The backend sweeps both atlases once per frame.
+/// for format in GlyphFormat::ALL {
+///     let _ = format.bytes_per_pixel();
+/// }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GlyphFormat {
     /// 1 byte per pixel: alpha coverage. The normal path for all text.
@@ -56,6 +105,20 @@ impl GlyphFormat {
 /// The unit is **physical atlas pixels**, not logical points: the atlas is
 /// rasterized at screen resolution (§3.3), and it is the backend that maps it
 /// back onto the logical destination rect.
+///
+/// ```
+/// use silka_paint::AtlasRegion;
+///
+/// let region = AtlasRegion::new(32, 64, 16, 24);
+/// assert_eq!(region.max_x(), 48);
+/// assert!(!region.is_empty());
+///
+/// // Edges map to texel edges, which is the condition for crisp text.
+/// assert_eq!(region.uv(1024), [32.0 / 1024.0, 64.0 / 1024.0, 48.0 / 1024.0, 88.0 / 1024.0]);
+///
+/// // An empty region means "nothing to upload this frame".
+/// assert!(AtlasRegion::EMPTY.is_empty());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtlasRegion {
     /// Left edge, in pixels.
@@ -116,6 +179,15 @@ impl AtlasRegion {
 }
 
 /// Where one glyph bitmap lives: which atlas, and which region within it.
+///
+/// ```
+/// use silka_paint::{AtlasRegion, GlyphFormat, GlyphPlacement};
+///
+/// let placement = GlyphPlacement::new(GlyphFormat::Mask, AtlasRegion::new(0, 0, 9, 12));
+/// // This pair is everything a backend needs: which texture, and which texels.
+/// assert_eq!(placement.format, GlyphFormat::Mask);
+/// assert_eq!(placement.region.width, 9);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlyphPlacement {
     /// The atlas holding it.
@@ -141,6 +213,28 @@ impl GlyphPlacement {
 /// must return `None` from [`GlyphSource::placement`] — the backend then skips
 /// that glyph for one frame, which is far better than drawing the wrong glyph
 /// or panicking mid-frame (§9.7).
+///
+/// The whole per-frame protocol a backend follows, against a source that has no
+/// glyphs at all:
+///
+/// ```
+/// use silka_paint::{GlyphFormat, GlyphImageId, GlyphSource, NoGlyphs};
+///
+/// fn upload_and_draw(source: &mut impl GlyphSource, ids: &[GlyphImageId]) -> usize {
+///     for format in GlyphFormat::ALL {
+///         // Upload only what changed — zero bytes when the text is unchanged.
+///         if let Some(region) = source.take_dirty(format) {
+///             let _pixels = source.atlas_pixels(format);
+///             let _uv = region.uv(source.atlas_size(format));
+///         }
+///     }
+///     // A stale id yields `None`: skip the glyph for one frame rather than
+///     // drawing the wrong one or panicking mid-frame.
+///     ids.iter().filter(|id| source.placement(**id).is_some()).count()
+/// }
+///
+/// assert_eq!(upload_and_draw(&mut NoGlyphs, &[GlyphImageId::from_raw(1)]), 0);
+/// ```
 pub trait GlyphSource {
     /// The atlas side length in pixels (always square). `0` means there is no
     /// atlas yet.
@@ -166,6 +260,15 @@ pub trait GlyphSource {
 /// Used by render paths that deliberately draw no text (and as a negative
 /// control in tests): a scene containing a `GlyphRun` rendered with this source
 /// produces **zero** text pixels, not random glyphs.
+///
+/// ```
+/// use silka_paint::{GlyphFormat, GlyphImageId, GlyphSource, NoGlyphs};
+///
+/// let mut source = NoGlyphs;
+/// assert_eq!(source.atlas_size(GlyphFormat::Mask), 0);
+/// assert!(source.take_dirty(GlyphFormat::Mask).is_none());
+/// assert!(source.placement(GlyphImageId::from_raw(1)).is_none());
+/// ```
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NoGlyphs;
 

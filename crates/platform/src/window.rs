@@ -58,6 +58,27 @@ use crate::vsync::VsyncSource;
 ///
 /// All sizes are in **logical points** — DPI is already resolved in the surface
 /// layer, so code above here never deals with physical pixels.
+///
+/// ```no_run
+/// use silka_paint::{Color, Scene};
+/// use silka_theme::ColorToken;
+/// use silka_platform::window;
+///
+/// window("Demo")
+///     .on_frame(|cx| {
+///         // Everything a frame needs, and nothing in physical pixels.
+///         let mut scene = Scene::new(cx.theme().color_of(ColorToken::Background));
+///         let _size = cx.size();
+///         let _scale = cx.scale_factor();
+///         // Ask for another frame only while something is genuinely moving.
+///         if cx.elapsed().as_secs() < 1 {
+///             cx.request_animation_frame();
+///         }
+///         scene
+///     })
+///     .run()
+///     .unwrap();
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct FrameContext<'a> {
     theme: &'a Theme,
@@ -216,7 +237,28 @@ type GlyphsRef = Rc<RefCell<dyn GlyphSource>>;
 
 /// Window configuration, built up by method chaining.
 ///
-/// Created through [`window`].
+/// Created through [`window`]. This is the framework's front door: every
+/// platform capability — titlebar, material, menubar, tray, session state, the
+/// escape hatch — hangs off this one chain rather than off a separate API.
+///
+/// ```no_run
+/// use silka_platform::{window, FileStore, Material, TitlebarStyle};
+/// use silka_theme::Preset;
+///
+/// window("Editor")
+///     .size(960.0, 640.0)
+///     .min_size(640.0, 480.0)
+///     .preset(Preset::Cupertino)
+///     .follow_system_appearance()      // live dark mode
+///     .titlebar(TitlebarStyle::Transparent)
+///     .material(Material::Sidebar)
+///     .restore_state(FileStore::for_app("Editor"))
+///     .run()
+///     .unwrap();
+/// ```
+///
+/// For an application built from views rather than hand-assembled scenes, pass
+/// the same config to [`run_app`](crate::run_app).
 pub struct WindowConfig {
     title: String,
     size: Size,
@@ -251,6 +293,22 @@ pub struct WindowConfig {
 ///
 /// Defaults: 1024×720 points, resizable, the Cupertino preset, and an
 /// appearance that follows the OS.
+///
+/// ```
+/// use silka_paint::{Color, Scene};
+/// use silka_theme::{Appearance, Preset, Theme};
+/// use silka_platform::window;
+///
+/// // Everything optional is a method; nothing here opens a window yet.
+/// let config = window("Silka")
+///     .size(1280.0, 800.0)
+///     .min_size(640.0, 480.0)
+///     .resizable(true)
+///     .preset(Preset::Cupertino)
+///     .follow_system_appearance()
+///     .on_frame(|cx| Scene::new(cx.theme().color.background));
+/// # let _ = (config, Appearance::Dark, Theme::default(), Color::WHITE);
+/// ```
 pub fn window(title: impl Into<String>) -> WindowConfig {
     WindowConfig {
         title: title.into(),
@@ -1835,6 +1893,18 @@ impl ApplicationHandler<ShellEvent> for Shell {
 ///
 /// Exposed so tests and headless tooling can verify that the clear color really
 /// does come from a token rather than from a literal.
+///
+/// ```
+/// use silka_platform::default_clear_color;
+/// use silka_theme::{Appearance, Theme};
+///
+/// // It really is a token, not a literal — which is why light and dark
+/// // differ and why a preset swap changes it.
+/// let light = Theme::cupertino(Appearance::Light);
+/// let dark = Theme::cupertino(Appearance::Dark);
+/// assert_eq!(default_clear_color(&light), light.color.background);
+/// assert_ne!(default_clear_color(&light), default_clear_color(&dark));
+/// ```
 pub fn default_clear_color(theme: &Theme) -> Color {
     theme.color.background
 }

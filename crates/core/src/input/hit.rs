@@ -34,6 +34,23 @@ use crate::tree::{NodeId, RenderTree};
 ///
 /// It comes from [`crate::tree::RenderNode::hit_shape`] and **must** match the
 /// shape that is drawn: the same theme token feeds both.
+///
+/// ```
+/// use silka_core::input::HitShape;
+/// use silka_paint::{CornerStyle, Corners, Point, Size};
+///
+/// let size = Size::new(100.0, 100.0);
+/// let corner = Point::new(1.0, 1.0);
+///
+/// // A plain box is clickable right into its corner…
+/// assert!(HitShape::Rect.contains(size, corner));
+///
+/// // …a rounded one is not, and it is the *same* superellipse the shader
+/// // draws — so a corner that looks empty is not clickable, and vice versa.
+/// let rounded = HitShape::Rounded(Corners::uniform(16.0, CornerStyle::squircle()));
+/// assert!(!rounded.contains(size, corner));
+/// assert!(rounded.contains(size, Point::new(50.0, 50.0)));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum HitShape {
     /// The node's whole box.
@@ -62,6 +79,18 @@ impl HitShape {
 /// The counterpart of Flutter's `HitTestBehavior`, with one addition
 /// ([`HitBehavior::Ignore`]) for decorative layers such as shadows or overlays
 /// that must not steal clicks.
+///
+/// ```
+/// use silka_core::input::HitBehavior;
+///
+/// // Structural nodes (padding, flex, align) have no interest of their own
+/// // in a click, so they join the path only when a child was hit.
+/// assert_eq!(HitBehavior::default(), HitBehavior::DeferToChild);
+/// ```
+///
+/// [`HitBehavior::Ignore`] is the one without a Flutter counterpart: a shadow
+/// or a decorative overlay is drawn above the content and must not steal its
+/// clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum HitBehavior {
     /// Joins the path **only** when one of its children is hit.
@@ -80,6 +109,9 @@ pub enum HitBehavior {
 }
 
 /// One entry on a hit-test path.
+///
+/// The local position is what a widget actually wants: a node never knows where
+/// it is, so an event arrives already translated into its own coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HitEntry {
     /// The node that was hit.
@@ -93,6 +125,20 @@ pub struct HitEntry {
 ///
 /// The order matters — it is the order of delivery: the target first, then its
 /// ancestors, until something marks the event as handled.
+///
+/// ```
+/// use silka_core::input::hit_test;
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, reconcile};
+/// use silka_paint::{Point, Size};
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+/// tree.perform_layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// // Empty when nothing is under the pointer — a miss, not an error.
+/// assert!(hit_test(&tree, Point::new(9_000.0, 9_000.0)).is_empty());
+/// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct HitTestResult {
     entries: Vec<HitEntry>,
@@ -165,6 +211,48 @@ enum Outcome {
 /// ([`crate::tree::RenderNode::clips_children`], e.g. a viewport) stops the
 /// search as soon as the point falls outside its box — that is what makes rows
 /// scrolled off-screen unclickable.
+///
+/// ```
+/// use silka_core::input::hit_test;
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, interactive, reconcile, View};
+/// use silka_paint::{Point, Size};
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     column([
+///         View::from(interactive(fixed(100.0, 40.0)).label("first")),
+///         View::from(interactive(fixed(100.0, 40.0)).label("second")),
+///     ]),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(200.0, 200.0)));
+///
+/// // The result is the whole path from the innermost node out to the root —
+/// // which is exactly the route an event then bubbles along.
+/// let hit = hit_test(&tree, Point::new(10.0, 10.0));
+/// assert!(!hit.is_empty());
+/// assert!(hit.contains(tree.root()));
+///
+/// // The innermost node is the target, and the path carries each node's own
+/// // local coordinates, so nothing downstream has to subtract offsets.
+/// let target = hit.target().expect("something was hit");
+/// assert_eq!(hit.local_of(target), Some(Point::new(10.0, 10.0)));
+///
+/// // The second row starts 40pt down, so a point inside it reports local
+/// // coordinates relative to *that* row rather than to the window.
+/// let lower = hit_test(&tree, Point::new(10.0, 50.0));
+/// let lower_target = lower.target().unwrap();
+/// assert_ne!(lower_target, target);
+/// assert_eq!(lower.local_of(lower_target), Some(Point::new(10.0, 10.0)));
+///
+/// // Far outside everything the result is empty, not a root node standing in
+/// // for "somewhere" — so a click on nothing is unambiguously a click on
+/// // nothing.
+/// let outside = hit_test(&tree, Point::new(9_000.0, 9_000.0));
+/// assert!(outside.is_empty());
+/// assert_eq!(outside.target(), None);
+/// ```
 pub fn hit_test(tree: &RenderTree, point: Point) -> HitTestResult {
     let mut result = HitTestResult::new();
     let root = tree.root();

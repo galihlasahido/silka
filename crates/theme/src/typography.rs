@@ -15,7 +15,8 @@
 //! values, and a token crate must not drag a font shaper into the dependency
 //! tree. Mapping onto `silka_text::TextStyle` happens in the widget layer:
 //!
-//! ```ignore
+//! ```text
+//! // In `silka-widgets`, which depends on both crates:
 //! let ts = theme.font(FontToken::Headline);
 //! TextStyle::new()
 //!     .size(ts.size)
@@ -23,6 +24,9 @@
 //!     .line_height(ts.line_height)
 //!     .tracking(ts.tracking)
 //! ```
+//!
+//! The block above is not a doctest precisely because it *cannot* be one here:
+//! compiling it would require the dependency this module refuses to take.
 
 /// Font weights on the CSS/OpenType scale — the values tokens use.
 ///
@@ -47,6 +51,19 @@ pub const INTER_OPSZ_RANGE: (f32, f32) = (14.0, 32.0);
 
 /// The text style behind one token: a pure value, ready to map onto
 /// `TextStyle`.
+///
+/// ```
+/// use silka_theme::TypeStyle;
+///
+/// // Built from points, stored as a multiple — the form a shaper wants.
+/// let headline = TypeStyle::new(17.0, 22.0).weight(600).tracking(-0.01);
+/// assert_eq!(headline.line_height_px(), 22.0);
+/// assert_eq!(headline.weight, 600);
+///
+/// // Optical sizing is opt-in per preset; Tailwind does not imitate SF.
+/// assert!(headline.optical_size.is_none());
+/// assert!(TypeStyle::new(28.0, 34.0).optical().optical_size.is_some());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypeStyle {
     /// Font size in logical points.
@@ -150,6 +167,23 @@ pub fn optical_tracking(size: f32) -> f32 {
 /// The vocabulary follows HIG, because that is where the roles are most
 /// explicit; the Tailwind preset maps them onto `text-xs`…`text-3xl`. A widget
 /// writes `FontToken::Body` once and is right under both presets.
+///
+/// ```
+/// use silka_theme::{Appearance, FontToken, Preset, Theme};
+///
+/// let theme = Theme::cupertino(Appearance::Light);
+/// let body = theme.font(FontToken::Body);
+/// assert!(body.size > 0.0);
+///
+/// // The vocabulary is ordered, and every preset answers for all of it.
+/// assert!(FontToken::Caption2 < FontToken::LargeTitle);
+/// for preset in Preset::ALL {
+///     let t = Theme::new(preset, Appearance::Light);
+///     assert!(t.font(FontToken::LargeTitle).size > t.font(FontToken::Body).size);
+/// }
+///
+/// assert_eq!(FontToken::LargeTitle.name(), "large_title");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FontToken {
     /// The smallest text (chart legends, table footers).
@@ -215,6 +249,20 @@ impl FontToken {
 /// `body_size` and `body_line_height` are shorthands for `body` — kept because
 /// they are what widgets reach for most often, and both are **derived**, never
 /// filled in separately (see [`TypographyTokens::new`]).
+///
+/// ```
+/// use silka_theme::{Appearance, FontToken, Theme};
+///
+/// let type_scale = Theme::cupertino(Appearance::Light).typography;
+///
+/// // The `body_*` shorthands are derived, so they cannot disagree with `body`.
+/// assert_eq!(type_scale.body_size, type_scale.get(FontToken::Body).size);
+///
+/// // The whole ramp in one call — what the gallery's typography page walks.
+/// let ramp = type_scale.scale();
+/// assert_eq!(ramp.len(), 11);
+/// assert!(ramp[0].1.size < ramp[10].1.size);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypographyTokens {
     /// Body text size in logical points.

@@ -233,9 +233,19 @@ impl TableState {
 ///
 /// A hook: called once per build, never inside an `if`/`loop`.
 ///
-/// ```ignore
-/// let tabel = use_table_state();
-/// table(&fonts, &t, tabel, kolom(), baris.len(), move |b, k| sel(b, k))
+/// ```
+/// # use silka_core::signals::Runtime;
+/// # use silka_core::view::{fixed, View};
+/// # use silka_theme::{Appearance, Theme};
+/// # use silka_widgets::{col, table, use_table_state, Fonts};
+/// # let rt = Runtime::new();
+/// # let fonts = Fonts::bundled_only();
+/// # let t = Theme::cupertino(Appearance::Dark);
+/// rt.build_root(|| {
+///     let state = use_table_state();
+///     let columns = vec![col("No.").fixed(90.0), col("Amount").flex(1.0)];
+///     table(&fonts, &t, state, columns, 500, |_r, _c| View::from(fixed(80.0, 20.0)));
+/// });
 /// ```
 pub fn use_table_state() -> TableState {
     TableState {

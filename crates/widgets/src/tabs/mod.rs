@@ -92,6 +92,21 @@ pub use style::{TabsStyle, TabsVariant};
 /// Deliberately **not** a [`View`]: the row needs to read `disabled` before the
 /// tree is assembled (arrow navigation skips disabled tabs), and the moment
 /// something becomes a `View` its props are buried behind `dyn ViewNode`. The
+///
+/// ```
+/// use silka_core::signals::Key;
+/// use silka_widgets::tab;
+///
+/// let general = tab("General");
+/// assert_eq!(general.label_text(), "General");
+/// assert!(!general.is_disabled());
+///
+/// // A disabled tab is still announced — dimmed, and skipped by the arrow
+/// // keys rather than silently absent.
+/// let advanced = tab("Advanced").disabled(true).key(Key::from("advanced"));
+/// assert!(advanced.is_disabled());
+/// assert_eq!(advanced.label_text(), "Advanced");
+/// ```
 /// same reason gives [`crate::overlay::OverlayBuilder`] its own type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
@@ -101,6 +116,18 @@ pub struct Tab {
 }
 
 /// A single tab labeled `label`.
+///
+/// ```
+/// use silka_widgets::tab;
+///
+/// // Tabs are plain values, so a tab row can be built from data.
+/// let items: Vec<_> = ["General", "Network", "Advanced"]
+///     .into_iter()
+///     .map(tab)
+///     .collect();
+/// assert_eq!(items.len(), 3);
+/// assert_eq!(items[1].label_text(), "Network");
+/// ```
 pub fn tab(label: impl Into<String>) -> Tab {
     Tab {
         label: label.into(),
@@ -143,6 +170,35 @@ impl Tab {
 /// children** from the [`Tab`] list at the moment it becomes a [`View`]: label
 /// colors, font weights, and the per-index callbacks are all derived from
 /// `selected` and `style`, which are only known once the whole method chain has
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{tab, tabs, Fonts, TabsVariant};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let page = rt.signal(0usize);
+///
+/// let row = tabs(&fonts, &theme, [tab("General"), tab("Network")])
+///     .segmented()
+///     .selected(page.get())
+///     .label("Settings sections")
+///     .on_select(move |i| page.set(i));
+///
+/// assert_eq!(row.active_index(), 0);
+/// assert_eq!(row.resolved_style().variant, TabsVariant::Segmented);
+///
+/// // A selected index past the end is clamped rather than panicking: a tab
+/// // list whose contents shrank must not take the application down.
+/// let clamped = tabs(&fonts, &theme, [tab("Only")]).selected(99);
+/// assert_eq!(clamped.active_index(), 0);
+///
+/// // Switching variant swaps the tokens, not the engine.
+/// let underlined = tabs(&fonts, &theme, [tab("A"), tab("B")]).underline();
+/// assert_eq!(underlined.resolved_style().variant, TabsVariant::Underline);
+/// ```
 /// been written out.
 pub struct Tabs {
     fonts: Fonts,
@@ -162,6 +218,29 @@ pub struct Tabs {
 ///
 /// `fonts` is the app's text engine and `theme` the source of every value —
 /// not a single number originates in application code (§2.6).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{tab, tabs, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let selected = rt.signal(1usize);
+///
+/// // The whole row is one Tab stop; the arrow keys move *within* it, which
+/// // is what the platform conventions expect of a tab list.
+/// let row = tabs(
+///     &fonts,
+///     &theme,
+///     [tab("General"), tab("Network"), tab("Advanced").disabled(true)],
+/// )
+/// .selected(selected.get())
+/// .on_select(move |i| selected.set(i));
+///
+/// assert_eq!(row.active_index(), 1);
+/// ```
 pub fn tabs(fonts: &Fonts, theme: &Theme, items: impl IntoIterator<Item = Tab>) -> Tabs {
     Tabs {
         fonts: fonts.clone(),
@@ -426,6 +505,19 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
 }
 
 /// True while any `tabs` transition is still running.
+///
+/// ```
+/// use silka_core::tree::RenderTree;
+/// use silka_widgets::tabs::{is_animating, settle};
+///
+/// // A tree with no tab rows is trivially at rest, so an application may
+/// // call this unconditionally.
+/// let mut tree = RenderTree::new();
+/// assert!(!is_animating(&tree));
+/// settle(&mut tree);
+/// assert!(!is_animating(&tree));
+/// ```
+/// True while any `tabs` transition is still running.
 pub fn is_animating(tree: &RenderTree) -> bool {
     nodes(tree).into_iter().any(|id| {
         tree.node_ref::<TabListBox>(id)
@@ -436,6 +528,31 @@ pub fn is_animating(tree: &RenderTree) -> bool {
     })
 }
 
+/// Finish every `tabs` transition instantly (used by tests and snapshots).
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::tabs::{is_animating, settle};
+/// use silka_widgets::{tab, tabs, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     tabs(&fonts, &theme, [tab("General"), tab("Network")]).selected(1),
+/// );
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 44.0)));
+///
+/// // Jump the sliding indicator to its destination — a golden file should
+/// // photograph the result, never a spring mid-flight.
+/// settle(&mut tree);
+/// assert!(!is_animating(&tree));
+/// ```
 /// Finish every `tabs` transition instantly (used by tests and snapshots).
 pub fn settle(tree: &mut RenderTree) {
     for id in nodes(tree) {

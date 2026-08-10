@@ -45,6 +45,26 @@ pub const SCALE_ENV: &str = "SILKA_BENCH_SCALE";
 pub const FORCE_ENV: &str = "SILKA_BENCH_FORCE";
 
 /// The threshold a run must stay under.
+///
+/// A percentile, never a mean: a mean hides exactly the frames a user perceives
+/// as a stutter. Never the max either — one outlier is the OS scheduler, not
+/// the framework.
+///
+/// ```
+/// use silka_testing::bench::Budget;
+///
+/// // "This page must hold 120 fps" is one call.
+/// let promise = Budget::hz(120);
+/// assert!((promise.frame.as_secs_f64() - 1.0 / 120.0).abs() < 1e-9);
+/// assert_eq!(promise.percentile, 0.95);
+///
+/// // A stricter gate for something that must never stutter at all.
+/// assert_eq!(Budget::millis(4.0).percentile(0.99).percentile, 0.99);
+/// ```
+///
+/// `SILKA_BENCH_SCALE` multiplies the budget for a CI runner slower than the
+/// machine it was written on; [`Budget::enforced`] reports whether a failure
+/// will actually fail the test (debug builds do not gate unless forced).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Budget {
     /// The time one frame may take.
@@ -107,6 +127,22 @@ impl fmt::Display for Budget {
 }
 
 /// The timings one benchmark collected.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_testing::bench::{Budget, Samples};
+///
+/// let frames = (0..100).map(|i| Duration::from_micros(1000 + i * 10)).collect();
+/// let samples = Samples::new("table-page", frames);
+///
+/// assert_eq!(samples.len(), 100);
+/// assert!(samples.min() <= samples.mean());
+///
+/// // The check is a `Result`, so a benchmark can report rather than panic.
+/// assert!(samples.check(Budget::millis(5.0)).is_ok());
+/// let overrun = samples.check(Budget::millis(0.5)).unwrap_err();
+/// assert!(overrun.measured > overrun.limit);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Samples {
     name: String,
@@ -228,6 +264,21 @@ impl Samples {
 }
 
 /// A budget that was exceeded.
+///
+/// Carries enough to act on without rerunning: which benchmark, the budget as
+/// written, the budget after the environment scale, and what was measured.
+///
+/// ```
+/// use std::time::Duration;
+/// use silka_testing::bench::{Budget, Samples};
+///
+/// let samples = Samples::new("slow-page", vec![Duration::from_millis(20); 32]);
+/// let overrun = samples.check(Budget::hz(120)).unwrap_err();
+///
+/// assert_eq!(overrun.name, "slow-page");
+/// assert!(overrun.measured > overrun.limit);
+/// assert!(overrun.to_string().contains("ms"));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Overrun {
     /// The benchmark's name.
@@ -258,6 +309,29 @@ impl fmt::Display for Overrun {
 impl std::error::Error for Overrun {}
 
 /// A benchmark runner: warm up, then measure.
+///
+/// The warm-up is not ceremony: the first frames of any application build the
+/// whole tree, fill caches, and touch pages, and folding that into the sample
+/// set would report a startup cost as a steady-state frame time.
+///
+/// ```
+/// use silka_testing::bench::{Bench, Budget};
+///
+/// // `run` times an arbitrary closure — no GPU involved.
+/// let samples = Bench::new("layout-only")
+///     .warmup(4)
+///     .iterations(32)
+///     .run(|_i| {
+///         let _ = (0..64).map(|n| n * 2).sum::<usize>();
+///     });
+///
+/// assert_eq!(samples.len(), 32);
+/// samples.assert_within(Budget::millis(8.0));
+/// ```
+///
+/// For a real page, [`Bench::run_frames`] drives a [`crate::Simulator`] instead,
+/// timing the CPU frame path — which is our code — rather than the GPU, which
+/// on a CI runner would mostly measure the runner.
 #[derive(Debug, Clone)]
 pub struct Bench {
     name: String,

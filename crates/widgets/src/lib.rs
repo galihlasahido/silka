@@ -69,6 +69,19 @@
 //!   long lists with a window that follows the highlight, an AccessKit
 //!   `Button` carrying a value plus marked `Menu`/`MenuItem` nodes, and a hit
 //!   target ≥ 44pt on both the box and every row.
+//! - [`menu`](mod@menu) (Tier 3 `context_menu`) — the **in-app** menu, drawn by
+//!   us inside the window: a dropdown behind a button or chip, and the very
+//!   same menu behind a right-click on a region. Rows carry an optional icon, a
+//!   displayed shortcut, a check mark or radio dot, and a disabled state;
+//!   separators are announced as separators; submenus nest and open to the side.
+//!   Every panel **rides the overlay system** — flipping above the trigger at
+//!   the bottom of the screen and to the other side at the right edge, without
+//!   this module computing a single coordinate. The keyboard is complete
+//!   (↑/↓, Home/End, →/← through submenus mirrored in RTL, Return, typeahead,
+//!   and **Esc that closes one level**, not the whole menu) and lives on the
+//!   trigger, which keeps focus. Not to be confused with
+//!   `silka_platform::menu`, which is the OS's own menubar and tray — the
+//!   module docs open with the table that says which one to reach for.
 //! - [`scroll_view`](mod@scroll_view) (Tier 1) — a scrolling container with
 //!   **macOS-style rubber banding**, a bounce that inherits the velocity of
 //!   the OS inertia tail (momentum stays the OS's job, INTEGRASI-NATIVE §3),
@@ -97,6 +110,19 @@
 //!   still a single entry, keyboard navigation between **cells** with a focus
 //!   ring around the active cell, custom cells (any widget inside a cell),
 //!   sticky headers, an empty state, and AccessKit `Table`/`Row`/`Cell` nodes.
+//! - [`tree`](mod@tree) (Tier 5) — a **virtualized** outline view
+//!   (`NSOutlineView`) that rides the *same* infrastructure again, so there are
+//!   still only two systems and not three: the hierarchy is flattened into rows
+//!   once per expansion change, and from there `list`'s [`ListMetrics`] answers
+//!   which rows are visible. What it adds is what a flat list cannot have:
+//!   opening and closing as a genuine **height animation** (the subtree grows
+//!   inside a clipping window while the rows below slide, on a spring), a
+//!   chevron that *rotates* rather than swapping glyphs, indentation with
+//!   connector guides, single and multiple selection, keyboard navigation where
+//!   → opens or steps in and ← closes or steps out, type-to-jump, **children
+//!   loaded on open** for trees too large to hold in memory, an empty state, and
+//!   AccessKit `Tree`/`TreeItem` nodes carrying level, position in set, size of
+//!   set, and expanded state.
 //! - [`mod@text_field`] (Tier 2, **the hardest component in the whole catalogue**)
 //!   — a single-line text field: caret and selection **per grapheme cluster**
 //!   (UAX #29), double-click by word, triple-click for the whole content,
@@ -106,6 +132,41 @@
 //!   composition, so the application never receives half-finished letters
 //!   (§3.3, §3.8). Its editing model lives in [`silka_text::edit`], its
 //!   geometry in [`silka_text::TextLayout`].
+//! - [`mod@text_area`] (Tier 2) — the **multi-line** editor. It does not own a
+//!   second editing engine, and that is the whole point: the document, the
+//!   graphemes, the undo, and the IME are the very same
+//!   [`silka_text::TextEdit`] `text_field` uses (in `multiline` mode), the
+//!   keymap is the very same [`editing::handle_key`], and the scrolling is
+//!   [`scroll_view`](mod@scroll_view) — momentum, rubber banding, and the
+//!   auto-hiding scrollbar are not written twice. What it adds is what
+//!   genuinely belongs to multiple lines: soft wrapping against the width,
+//!   ↑/↓ across **visual** lines with a real **goal column**, Home/End per
+//!   visual line with ⌘/Ctrl+Home/End across the document, PageUp/PageDown by
+//!   a viewport, selection across lines, Enter as a new line (⌘Enter submits),
+//!   a **configurable Tab that moves focus by default** so a text box can
+//!   never become a keyboard trap, optional auto-grow up to a maximum height,
+//!   an optional line-number gutter, and an AccessKit node with the
+//!   **multiline** role that reports its caret and selection.
+//! - [`wysiwyg`](mod@wysiwyg) (Tier 6, **the heaviest component in the
+//!   catalogue**) — the rich text editor. It is built **on** `text_area`'s
+//!   machinery rather than beside it: the frame, the focus ring, auto-grow, the
+//!   scroll view and its `SCROLL` action, and the `AreaLink` seam between them
+//!   are literally the same nodes. What it adds is the thing that makes rich
+//!   text hard — the contents are no longer a string but a **tree of blocks**
+//!   (paragraph, three heading levels, bulleted and numbered lists, quotation,
+//!   code block) holding **styled inline runs** (bold, italic, underline,
+//!   strike, inline code, links). Its selection crosses both block and style
+//!   boundaries; its undo works on **document operations** (insert, delete,
+//!   restyle, retype) rather than string snapshots, so undoing a deleted bullet
+//!   brings the bullet back and not merely its letters, while a run of typing
+//!   still collapses into a single ⌘Z. The toolbar reflects what is under the
+//!   caret and rides the components that already exist — the block menu is
+//!   [`select`](mod@select), the link sheet is [`dialog`](mod@dialog) — and
+//!   copy keeps its styling inside the application while degrading to plain
+//!   text on the way out.
+//! - [`editing`](mod@editing) (infrastructure) — the half of the text keymap
+//!   that means the same thing in a one-line field and a multi-line editor,
+//!   written **once** and run by both.
 //! - [`advance`] (infrastructure) — one tick for the whole tree: this is where
 //!   every widget's springs are advanced, once per frame, and where the answer
 //!   to "is anything still moving?" comes from.
@@ -147,12 +208,25 @@
 //! drawing commands (§3.2, §5 failure mode #7).
 
 #![warn(missing_docs)]
+// Documentation is part of the public contract, so the checks rustdoc offers
+// are turned on here rather than left to a reviewer's eye. A broken intra-doc
+// link is an error: it means a rename silently orphaned a reference.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![warn(
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks
+)]
 
 pub mod button;
 pub mod checkbox;
 pub mod dialog;
+pub mod editing;
 pub mod fonts;
 pub mod list;
+pub mod menu;
 pub mod motion;
 pub mod overlay;
 pub mod scroll_view;
@@ -162,7 +236,10 @@ pub mod switch;
 pub mod table;
 pub mod tabs;
 pub mod text;
+pub mod text_area;
 pub mod text_field;
+pub mod tree;
+pub mod wysiwyg;
 
 pub use button::{
     button, button_variant, Button, ButtonBox, ButtonProps, ButtonState, ButtonStyle,
@@ -176,11 +253,13 @@ pub use dialog::{
     action, activate_default, alert, dialog, ActionKind, ButtonOrder, DialogAction, DialogBuilder,
     DialogPanel, DialogPanelProps, DIALOG_WIDTH_STEPS,
 };
+pub use editing::{EditCaps, TextCallback};
 pub use fonts::Fonts;
 pub use list::{
     list, use_list_state, ListBody, ListBuilder, ListMetrics, ListRange, ListRowBox, ListScroll,
     ListState, ListStyle, RowAction, Virtualized,
 };
+pub use menu::{menu, Menu, MenuEntry, MenuHandler, MenuIntent, MenuItem, MenuMark, MenuState};
 pub use motion::{advance, is_animating, settle};
 pub use overlay::{overlay, overlay_layer, Anchor, Barrier, Dismiss, Placement, Side};
 pub use scroll_view::{
@@ -205,4 +284,27 @@ pub use table::{
 };
 pub use tabs::{tab, tabs, Tab, Tabs, TabsStyle, TabsVariant};
 pub use text::{text, Text, TextBox, TextProps};
-pub use text_field::{text_field, TextCallback, TextField, TextFieldBox, TextFieldProps};
+pub use text_area::{
+    text_area, AreaLink, BodyColors, FrameStyle, TabBehavior, TextArea, TextAreaBody,
+    TextAreaBodyProps, TextAreaFrame, TextAreaFrameProps,
+};
+pub use text_field::{text_field, TextField, TextFieldBox, TextFieldProps};
+pub use tree::{
+    tree, use_tree_state, Expansion, TreeAction, TreeBody, TreeBuilder, TreeFlat, TreeGap,
+    TreeGapBox, TreeKey, TreeMetrics, TreeNode, TreeRow, TreeRowBox, TreeSource, TreeState,
+    TreeStyle, TreeWindow,
+};
+pub use wysiwyg::{
+    wysiwyg, Block, BlockKind, DocPos, DocRange, DocSelection, Document, EditorCommand,
+    EditorHandle, EditorSnapshot, EditorStyle, InlineStyle, Marks, RichEdit, Wysiwyg, WysiwygBody,
+    WysiwygBodyProps,
+};
+
+/// Compiles and runs every Rust example in this crate's `README.md`.
+///
+/// The item only exists while rustdoc is collecting doctests, so it never
+/// shows up in the rendered documentation. Its whole purpose is to stop the
+/// README from drifting away from the API it advertises.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

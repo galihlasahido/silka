@@ -5,6 +5,23 @@ use core::fmt;
 use silka_renderer::RendererError;
 
 /// Something went wrong opening a window or running the event loop.
+///
+/// ```no_run
+/// use silka_platform::{window, PlatformError};
+///
+/// match window("Editor").run() {
+///     Ok(()) => {}
+///     // A CI runner with no display server is the common case here, and it
+///     // deserves a message rather than a panic.
+///     Err(PlatformError::EventLoop(reason)) => eprintln!("no display: {reason}"),
+///     Err(e) => eprintln!("could not start: {e}"),
+/// }
+/// ```
+///
+/// Note what is *not* here: a failure to **read** session state. A missing or
+/// unreadable state file is a first run, and an application that refused to
+/// start because it could not remember its window position would be a worse
+/// bug than the one being reported.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PlatformError {

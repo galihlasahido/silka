@@ -23,6 +23,21 @@ use super::constraints::BoxConstraints;
 use super::paint::{Decoration, PaintCtx};
 
 /// A container's main axis.
+///
+/// ```
+/// use silka_core::tree::Axis;
+/// use silka_paint::Size;
+///
+/// let size = Size::new(320.0, 200.0);
+///
+/// // The axis is what turns "main" and "cross" into width and height, so no
+/// // layout code has to branch on the direction twice.
+/// assert_eq!(Axis::Horizontal.main_of(size), 320.0);
+/// assert_eq!(Axis::Vertical.main_of(size), 200.0);
+///
+/// // `column` is the default, matching Flutter.
+/// assert_eq!(Axis::default(), Axis::Vertical);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Axis {
     /// Stacks downwards (`column`).
@@ -63,6 +78,9 @@ impl Axis {
 /// A stand-in for measured nodes (text, icons, images) until the real widgets
 /// exist: its size is known, everything else is identical — including a11y
 /// emission.
+///
+/// Even a placeholder emits an accessibility node — the contract has no
+/// exemptions, which is what keeps a11y from being retrofitted later.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FixedBox {
     /// The requested size; still clamped by the parent's constraints.
@@ -116,6 +134,10 @@ impl RenderNode for FixedBox {
 }
 
 /// Adds space around a single child.
+///
+/// The background covers the **padded** area, not just the child, which is the
+/// whole point of a padded background: a card whose content does not touch its
+/// edges.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PaddingBox {
     /// Space on all four sides (physical sides; the `start`/`end` tokens were
@@ -161,6 +183,17 @@ impl RenderNode for PaddingBox {
 ///
 /// The request is honoured only as far as the parent permits
 /// ([`BoxConstraints::enforce`]).
+///
+/// ```
+/// use silka_core::tree::BoxConstraints;
+/// use silka_paint::Size;
+///
+/// // "At most 400 wide" inside a parent that only allows 320: the parent wins,
+/// // because a child may never grow beyond what it was given.
+/// let parent = BoxConstraints::tight(Size::new(320.0, 200.0));
+/// let request = BoxConstraints::loose(Size::new(400.0, 100.0));
+/// assert_eq!(request.enforce(parent).biggest().width, 320.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ConstrainedBox {
     /// The extra constraints being requested.
@@ -284,6 +317,14 @@ impl RenderNode for MeasuredBox {
 /// Its size is decided entirely by the parent, so content of any height never
 /// causes the window to relayout. This is the reason
 /// [`RenderNode::is_relayout_boundary`] exists.
+///
+/// Scrolling a hundred-thousand-row list therefore relayouts the viewport's
+/// subtree and nothing above it — the difference between a scroll that holds
+/// 120 fps and one that does not.
+///
+/// `line_height` lives here for the same reason [`crate::input::ScrollDelta`]
+/// keeps its units: a wheel reports lines, a trackpad reports points, and this
+/// is the one container that knows what a line is worth.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
     /// The scroll axis.

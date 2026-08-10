@@ -1,6 +1,7 @@
 [package]
 name = "silka-core"
-description = "Signals, view-diff, arena render tree, box constraints, spring, input, scheduler"
+description = "Signals, view-diff, arena render tree, box constraints, springs, input and accessibility"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,5 +18,10 @@ accesskit = ["dep:accesskit"]
 [dependencies]
 silka-paint.workspace = true
 silka-text.workspace = true
+# Design tokens (§2.6/§2.7). The utility vocabulary in `view::utility` resolves
+# every value through the active theme, so the token types have to be visible
+# from here. There is no cycle: `silka-theme` is pure values over `silka-paint`
+# and knows nothing about the view or render tree.
+silka-theme.workspace = true
 taffy.workspace = true         # widget Flex/Grid (§3.4), dipakai `tree::taffy_box` saja
 accesskit = { workspace = true, optional = true }

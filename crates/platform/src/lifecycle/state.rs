@@ -46,6 +46,25 @@ const KEY_MAXIMIZED: &str = "window.maximized";
 const APP_PREFIX: &str = "app.";
 
 /// Everything one window remembers between runs.
+///
+/// The framework owns the geometry; the application owns everything else, and
+/// the two can never collide because application keys are namespaced.
+///
+/// ```
+/// use silka_paint::Size;
+/// use silka_platform::{SessionState, WindowPlacement};
+///
+/// let mut state = SessionState::new();
+/// assert!(state.is_empty());
+///
+/// state.set_placement(WindowPlacement::sized(Size::new(1024.0, 720.0)).at(40, 40));
+/// state.set("page", "transactions");
+///
+/// // It round-trips through a plain text encoding — no serialization crate.
+/// let restored = SessionState::decode(&state.encode());
+/// assert_eq!(restored.get("page"), Some("transactions"));
+/// assert_eq!(restored.placement(), state.placement());
+/// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SessionState {
     placement: Option<WindowPlacement>,
@@ -215,6 +234,22 @@ fn unescape(raw: &str) -> String {
 /// implementations are not both files: an application that already has its own
 /// preferences database wants to put the window geometry in there, and a test
 /// wants it in memory.
+///
+/// ```
+/// use silka_platform::{MemoryStore, SessionState, StateStore};
+///
+/// let store = MemoryStore::new();
+///
+/// // A first run — or an unreadable store — is an empty state, never an
+/// // error: refusing to start because a preferences file is missing would be
+/// // absurd.
+/// assert!(store.load().is_empty());
+///
+/// let mut state = SessionState::new();
+/// state.set("page", "dashboard");
+/// store.save(&state).unwrap();
+/// assert_eq!(store.load().get("page"), Some("dashboard"));
+/// ```
 pub trait StateStore {
     /// Read the stored state. A first run — or an unreadable store — is an
     /// empty state, never an error: failing to start because a preferences
@@ -227,6 +262,18 @@ pub trait StateStore {
 
 /// A store that keeps the state in memory — for tests and for an application
 /// that deliberately does not persist.
+///
+/// ```
+/// use silka_platform::{MemoryStore, SessionState, StateStore};
+///
+/// // `with_state` is the shape of "the previous run" in a test.
+/// let mut previous = SessionState::new();
+/// previous.set("page", "chart");
+/// let store = MemoryStore::with_state(previous);
+///
+/// assert_eq!(store.load().get("page"), Some("chart"));
+/// assert_eq!(store.saved().get("page"), Some("chart"));
+/// ```
 #[derive(Debug, Default)]
 pub struct MemoryStore {
     inner: RefCell<SessionState>,
@@ -263,6 +310,25 @@ impl StateStore for MemoryStore {
 }
 
 /// A store backed by one text file.
+///
+/// Written atomically (to a temporary file, then renamed), so a crash mid-quit
+/// cannot leave a truncated file that costs the user their window position.
+///
+/// ```
+/// use silka_platform::{FileStore, SessionState, StateStore};
+///
+/// let path = std::env::temp_dir().join("silka-doc-state.silka");
+/// let store = FileStore::at(&path);
+///
+/// let mut state = SessionState::new();
+/// state.set("page", "transactions");
+/// store.save(&state).unwrap();
+/// assert_eq!(store.load().get("page"), Some("transactions"));
+/// # let _ = std::fs::remove_file(&path);
+/// ```
+///
+/// [`FileStore::for_app`] picks the conventional per-user location for the
+/// host OS instead of an explicit path.
 #[derive(Debug, Clone)]
 pub struct FileStore {
     path: PathBuf,
@@ -319,6 +385,17 @@ impl StateStore for FileStore {
 }
 
 /// The host operating-system family, as far as the state path is concerned.
+///
+/// It is an enum rather than `cfg!` at the call site so that the path logic for
+/// all three platforms can be tested on any one of them.
+///
+/// ```
+/// use silka_platform::lifecycle::HostOs;
+///
+/// // What this binary was compiled for.
+/// let here = HostOs::CURRENT;
+/// assert!(matches!(here, HostOs::MacOs | HostOs::Windows | HostOs::Unix));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostOs {
     /// macOS: `~/Library/Application Support`.
@@ -387,6 +464,18 @@ pub fn state_path(app: &str, os: HostOs, get: impl Fn(&str) -> Option<String>) -
 }
 
 /// Why the application is being closed.
+///
+/// ```
+/// use silka_platform::QuitReason;
+///
+/// // A close button can still be refused — that is where "you have unsaved
+/// // work" lives.
+/// assert!(QuitReason::CloseRequested.can_cancel());
+///
+/// // By the time the event loop is ending, the decision has been made and
+/// // only saving is still open.
+/// assert!(!QuitReason::Exiting.can_cancel());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuitReason {
     /// The user closed the window (red button, Cmd+W, Alt+F4).
@@ -409,6 +498,23 @@ impl QuitReason {
 /// It carries the state that is about to be written — with the window geometry
 /// already filled in by the shell — and the ability to say "not yet" while the
 /// user still has unsaved work.
+///
+/// ```
+/// use silka_platform::{QuitContext, QuitReason, SessionState};
+///
+/// // The shell has already filled in the window geometry; the application
+/// // adds whatever else it wants back next time.
+/// let mut ctx = QuitContext::new(QuitReason::CloseRequested, SessionState::new());
+/// ctx.remember("page", "transactions");
+///
+/// // Unsaved work: refuse the quit and show a dialog instead.
+/// ctx.cancel();
+/// assert!(ctx.is_cancelled());
+///
+/// let (state, cancelled) = ctx.finish();
+/// assert!(cancelled);
+/// assert_eq!(state.get("page"), Some("transactions"));
+/// ```
 #[derive(Debug)]
 pub struct QuitContext {
     reason: QuitReason,

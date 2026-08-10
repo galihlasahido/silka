@@ -11,6 +11,22 @@ use crate::surface::WindowSurface;
 /// Deliberately expressed through `raw-window-handle` rather than a winit type:
 /// `silka-renderer` must not know which shell is driving it, and
 /// `silka-platform` must not know which graphics API is in use.
+///
+/// Nothing implements this trait by hand: a blanket impl covers every type that
+/// already satisfies the `raw-window-handle` bounds, so the trait is really a
+/// name for "something a surface can be created from".
+///
+/// ```no_run
+/// use std::sync::Arc;
+/// use silka_paint::Size;
+/// use silka_renderer::{Gpu, SurfaceGeometry, WindowTarget};
+///
+/// fn attach<W: WindowTarget>(window: Arc<W>) -> Result<(), Box<dyn std::error::Error>> {
+///     let geometry = SurfaceGeometry::from_logical(Size::new(800.0, 600.0), 1.0);
+///     let (_gpu, _surface) = Gpu::with_surface(window, geometry)?;
+///     Ok(())
+/// }
+/// ```
 pub trait WindowTarget:
     raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync + 'static
 {
@@ -29,6 +45,25 @@ impl<T> WindowTarget for T where
 ///
 /// A single `Gpu` serves many windows: additional surfaces use the same adapter
 /// and device, so resources (glyph atlas, SDF pipeline) can be shared.
+///
+/// ```no_run
+/// use silka_paint::{Color, Scene, Size};
+/// use silka_renderer::{Gpu, OffscreenTarget, SurfaceGeometry};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Without a window: the entry point for golden tests and benchmarks.
+/// let gpu = Gpu::headless()?;
+/// println!("{} on {}", gpu.backend_name(), gpu.adapter_name());
+///
+/// let geometry = SurfaceGeometry::from_logical(Size::new(320.0, 200.0), 2.0);
+/// let mut target = OffscreenTarget::new(&gpu, geometry)?;
+/// let image = target.render(&gpu, &Scene::new(Color::hex(0x1C1C1E)))?;
+/// assert_eq!(image.width(), 640);
+/// # Ok(()) }
+/// ```
+///
+/// With a window, the adapter is chosen after the surface exists, so it is
+/// guaranteed to be able to present to it — see [`Gpu::with_surface`].
 #[derive(Debug)]
 pub struct Gpu {
     instance: wgpu::Instance,

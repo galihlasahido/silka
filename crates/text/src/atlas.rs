@@ -8,8 +8,49 @@
 //! CPU side: a space allocator (shelf packing), a pixel buffer, and a **dirty
 //! region** so the backend only has to upload the part that changed. Today's
 //! wgpu backend — or a GL/CPU one later — reads [`GlyphAtlas::data`] as is.
+//!
+//! ```
+//! use silka_text::{AtlasFormat, GlyphAtlas};
+//!
+//! let mut atlas = GlyphAtlas::new(AtlasFormat::Mask, 256);
+//! assert!(atlas.take_dirty().is_none()); // nothing written yet
+//!
+//! // Shelf packing hands out a rect; writing the bitmap marks it dirty.
+//! let slot = atlas.allocate(8, 12).expect("a fresh 256² atlas has room");
+//! atlas.write(slot, &vec![0xFF; (8 * 12) as usize]);
+//!
+//! // The backend uploads exactly that rectangle and nothing else…
+//! let dirty = atlas.take_dirty().expect("a write always dirties a region");
+//! assert!(dirty.width >= 8 && dirty.height >= 12);
+//! // …and taking it also marks the atlas clean, so an idle frame costs zero.
+//! assert!(atlas.take_dirty().is_none());
+//!
+//! // Consecutive writes coalesce into one region rather than a list of them.
+//! let a = atlas.allocate(8, 12).unwrap();
+//! let b = atlas.allocate(8, 12).unwrap();
+//! atlas.write(a, &vec![0xFF; 96]);
+//! atlas.write(b, &vec![0xFF; 96]);
+//! assert_eq!(atlas.take_dirty().map(|r| r.area() >= 2 * 96), Some(true));
+//!
+//! // The shader needs normalized coordinates, not pixels.
+//! let [u0, v0, ..] = slot.uv(atlas.size());
+//! assert!((0.0..=1.0).contains(&u0) && (0.0..=1.0).contains(&v0));
+//!
+//! // A request larger than the whole atlas fails instead of panicking.
+//! assert!(atlas.allocate(9_000, 9_000).is_none());
+//! ```
 
 /// The atlas pixel format.
+///
+/// ```
+/// use silka_text::AtlasFormat;
+///
+/// // Coverage only: one bitmap of "a" serves every text color, because the
+/// // color comes from the draw command's token, not from the atlas.
+/// assert_eq!(AtlasFormat::Mask.bytes_per_pixel(), 1);
+/// // Color emoji carry their own pixels, so they need their own atlas.
+/// assert_eq!(AtlasFormat::Color.bytes_per_pixel(), 4);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AtlasFormat {
     /// 1 byte per pixel: alpha coverage. This is the normal path for all text.
@@ -34,6 +75,22 @@ impl AtlasFormat {
 }
 
 /// A pixel rect inside the atlas.
+///
+/// ```
+/// use silka_text::AtlasRect;
+///
+/// let a = AtlasRect::new(0, 0, 16, 16);
+/// let b = AtlasRect::new(20, 0, 16, 16);
+///
+/// // The dirty region is the union of everything written this frame, so the
+/// // backend uploads one rect rather than one per glyph.
+/// let dirty = a.union(b);
+/// assert_eq!((dirty.width, dirty.height), (36, 16));
+/// assert!(!a.intersects(b));
+///
+/// // Texture coordinates map edge to edge, which is what keeps text crisp.
+/// assert_eq!(a.uv(1024), [0.0, 0.0, 16.0 / 1024.0, 16.0 / 1024.0]);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtlasRect {
     /// Left edge, in pixels.
@@ -115,6 +172,26 @@ struct Shelf {
 const PADDING: u32 = 1;
 
 /// A CPU-side glyph atlas with a shelf allocator and dirty-region tracking.
+///
+/// It knows nothing about GPU textures: it is a pixel buffer, a space
+/// allocator, and the record of which part changed.
+///
+/// ```
+/// use silka_text::{AtlasFormat, GlyphAtlas};
+///
+/// let mut atlas = GlyphAtlas::new(AtlasFormat::Mask, 256);
+/// assert_eq!(atlas.utilization(), 0.0);
+///
+/// // Shelf packing hands out a rect; `None` would mean the atlas is full.
+/// let slot = atlas.allocate(8, 12).expect("space in a fresh atlas");
+/// atlas.write(slot, &[0xFF; 8 * 12]);
+///
+/// // The backend takes the dirty region once per frame and uploads just that.
+/// let dirty = atlas.take_dirty().expect("a write dirties the atlas");
+/// assert!(dirty.width >= 8 && dirty.height >= 12);
+/// // Taking it also clears it: an unchanged frame uploads zero bytes.
+/// assert!(atlas.take_dirty().is_none());
+/// ```
 #[derive(Debug, Clone)]
 pub struct GlyphAtlas {
     format: AtlasFormat,

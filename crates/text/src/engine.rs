@@ -12,6 +12,39 @@
 //! | [`TextEngine::measure`] | layout (box constraints/Taffy, §3.4) | size + baseline |
 //! | [`TextEngine::layout`] | text widgets | a reusable shaping result |
 //! | [`TextEngine::rasterize`] | paint | a `GlyphRun` holding atlas ids |
+//!
+//! The three verbs in the order one frame uses them:
+//!
+//! ```
+//! use silka_paint::{Color, Point};
+//! use silka_text::{TextConstraints, TextEngine, TextStyle};
+//!
+//! // `bundled_only` skips the system font scan, which is what makes this
+//! // usable in a test; an application calls `TextEngine::new`.
+//! let mut engine = TextEngine::bundled_only();
+//! let style = TextStyle::new().size(15.0);
+//!
+//! // 1. Layout asks "how big are you?" — wrapping obeys the width handed down.
+//! let narrow = engine.measure("the quick brown fox", &style, TextConstraints::width(60.0));
+//! let wide = engine.measure("the quick brown fox", &style, TextConstraints::UNBOUNDED);
+//! assert!(narrow.line_count > wide.line_count);
+//! assert_eq!(wide.line_count, 1);
+//!
+//! // The answer is cached, so asking again does not shape again.
+//! let before = engine.measure_cache_len();
+//! let _ = engine.measure("the quick brown fox", &style, TextConstraints::width(60.0));
+//! assert_eq!(engine.measure_cache_len(), before);
+//!
+//! // 2. The widget shapes once and keeps the result.
+//! let layout = engine.layout("Hello", &style, TextConstraints::UNBOUNDED);
+//! assert!(layout.glyph_count() > 0);
+//!
+//! // 3. Paint turns that into atlas ids at a concrete origin. Moving the text
+//! //    re-rasterizes but never re-shapes, which is what keeps subpixel
+//! //    positioning correct while it animates.
+//! let run = engine.rasterize(&layout, Point::new(24.0, 40.0), Color::WHITE);
+//! assert_eq!(run.color, Color::WHITE);
+//! ```
 
 use std::collections::HashMap;
 
@@ -43,6 +76,35 @@ struct MeasureKey {
 }
 
 /// The text engine: shaping, measurement, and the glyph atlas.
+///
+/// One engine per application: it owns the font database, the measurement
+/// cache, and the glyph atlas that every window shares. Creating one scans the
+/// system fonts, which is not free — build it at startup and pass it around.
+///
+/// ```
+/// use silka_paint::{Color, Point, Scene};
+/// use silka_text::{TextConstraints, TextEngine, TextStyle};
+///
+/// // `bundled_only` skips the system scan: fast and deterministic, for tests.
+/// let mut engine = TextEngine::bundled_only();
+/// engine.set_scale_factor(2.0); // rasterize at the real screen resolution
+///
+/// let style = TextStyle::new().size(17.0);
+/// let constraints = TextConstraints::width(280.0);
+///
+/// // Measure is what the layout pass calls; repeated calls hit the cache.
+/// let measure = engine.measure("Hello, world", &style, constraints);
+/// assert!(measure.width() > 0.0);
+/// assert!(engine.measure_cache_len() > 0);
+///
+/// // Draw appends one `GlyphRun` command: atlas ids, not fonts.
+/// let mut scene = Scene::new(Color::hex(0x1C1C1E));
+/// engine.draw(&mut scene, "Hello, world", &style, constraints, Point::new(24.0, 24.0), Color::WHITE);
+/// assert_eq!(scene.len(), 1);
+/// ```
+///
+/// It implements [`silka_paint::GlyphSource`], which is the entire surface the
+/// rendering backend sees — so the backend never learns what a font is.
 pub struct TextEngine {
     fonts: cosmic_text::FontSystem,
     swash: SwashCache,

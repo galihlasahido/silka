@@ -9,6 +9,31 @@
 //! System fallback is still mandatory: Inter contains no CJK, Arabic, or emoji.
 //! System fonts cover those (§3.3 "per-platform font fallback"), and cosmic-text
 //! picks them per script.
+//!
+//! ```
+//! use silka_text::{FontOptions, TextEngine, BUNDLED_UI_FONT};
+//!
+//! // An application wants both: Inter for the UI, the system for everything
+//! // Inter does not cover.
+//! let full = FontOptions {
+//!     bundled_ui_font: true,
+//!     system_fonts: true,
+//! };
+//! assert!(full.system_fonts);
+//!
+//! // Tests and CI want neither surprise nor a font scan: the same machine
+//! // must produce the same glyph metrics as any other.
+//! let deterministic = FontOptions::bundled_only();
+//! assert!(deterministic.bundled_ui_font);
+//! assert!(!deterministic.system_fonts);
+//!
+//! let engine = TextEngine::with_fonts(deterministic);
+//! assert!(engine.ui_family().is_some());
+//!
+//! // The bundled file is a single variable font, which is why `weight(600)`
+//! // is an axis setting and not a second file to ship.
+//! assert!(BUNDLED_UI_FONT.len() > 1024);
+//! ```
 
 use std::sync::Arc;
 
@@ -18,10 +43,41 @@ use crate::style::FontFamily;
 
 /// The UI font file bundled into the binary.
 ///
+/// A single **variable** font covering the whole weight range, which is why
+/// asking for semibold is an axis setting rather than a second file to ship.
+/// It is loaded automatically whenever [`FontOptions::bundled_ui_font`] is set,
+/// so applications rarely touch this constant directly — it is exposed for the
+/// cases that need the raw bytes, such as embedding the same face into an
+/// exported PDF or handing it to a second engine.
+///
 /// License: SIL Open Font License 1.1 — see `assets/fonts/LICENSE-Inter.txt`.
+///
+/// ```
+/// use silka_text::BUNDLED_UI_FONT;
+///
+/// // A real TrueType/OpenType file, compiled into the binary — there is no
+/// // font path to get wrong at runtime and nothing to install on the user's
+/// // machine.
+/// assert!(BUNDLED_UI_FONT.len() > 100_000);
+/// assert_eq!(&BUNDLED_UI_FONT[..4], b"\x00\x01\x00\x00");
+/// ```
 pub const BUNDLED_UI_FONT: &[u8] = include_bytes!("../assets/fonts/InterVariable.ttf");
 
 /// Where fonts come from when a [`crate::TextEngine`] is created.
+///
+/// ```
+/// use silka_text::{FontOptions, TextEngine};
+///
+/// // Applications want the default: bundled Inter plus system fallback for
+/// // the CJK, Arabic, and emoji Inter does not cover.
+/// assert!(FontOptions::default().system_fonts);
+///
+/// // Tests and CI want determinism, because no two machines have the same
+/// // font list. `TextEngine::bundled_only()` is the shorthand for this.
+/// let deterministic = FontOptions::bundled_only();
+/// assert!(!deterministic.system_fonts);
+/// let _engine = TextEngine::with_fonts(deterministic);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FontOptions {
     /// Load the bundled UI font (Inter). Almost always what you want.

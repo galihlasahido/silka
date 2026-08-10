@@ -97,6 +97,17 @@
 //! ```
 
 #![warn(missing_docs)]
+// Documentation is part of the public contract, so the checks rustdoc offers
+// are turned on here rather than left to a reviewer's eye. A broken intra-doc
+// link is an error: it means a rename silently orphaned a reference.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![warn(
+    rustdoc::private_intra_doc_links,
+    rustdoc::invalid_codeblock_attributes,
+    rustdoc::invalid_html_tags,
+    rustdoc::bare_urls,
+    rustdoc::unescaped_backticks
+)]
 
 mod atlas;
 mod error;
@@ -113,3 +124,12 @@ pub use geometry::SurfaceGeometry;
 pub use gpu::{Gpu, WindowTarget};
 pub use offscreen::{OffscreenTarget, Rgba8Image};
 pub use surface::{FrameOutcome, WindowSurface};
+
+/// Compiles every Rust example in this crate's `README.md`.
+///
+/// The item only exists while rustdoc is collecting doctests, so it never
+/// shows up in the rendered documentation. Its whole purpose is to stop the
+/// README from drifting away from the API it advertises.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

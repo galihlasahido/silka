@@ -29,6 +29,27 @@ use std::fmt;
 use std::rc::Rc;
 
 /// A zero-argument action the application hands to a node.
+///
+/// This is what closes the `click → signal → rebuild` loop: before it, an
+/// interactive node could only *count* activations, never tell anyone.
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_core::Callback;
+///
+/// let rt = Runtime::new();
+/// let count = rt.signal(0i32);
+///
+/// let on_press = Callback::new(move || count.set(count.get() + 1));
+/// on_press.call();
+/// on_press.call();
+/// assert_eq!(count.get(), 2);
+///
+/// // Equality is identity, not contents: cloning keeps the same callback, so
+/// // a view-diff does not see a change where the application made none.
+/// assert_eq!(on_press.clone(), on_press);
+/// assert_ne!(Callback::new(|| {}), Callback::new(|| {}));
+/// ```
 #[derive(Clone)]
 pub struct Callback(Rc<dyn Fn()>);
 

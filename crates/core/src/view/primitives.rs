@@ -21,7 +21,7 @@ use crate::scheduler::Dirty;
 use crate::tree::{
     AccessRole, Axis, BoxConstraints, ConstrainedBox, ContainerStyle, CrossAlign, Decoration,
     FixedBox, FlexWrap, GridFlow, GridSpan, ItemStyle, LayoutItem, MainAlign, MeasuredBox,
-    PaddingBox, RenderNode, TaffyBox, Track, Viewport, SPACING_UNIT,
+    PaddingBox, RenderNode, TaffyBox, Track, Viewport,
 };
 
 use super::{Builder, View, ViewNode};
@@ -36,15 +36,38 @@ use super::{Builder, View, ViewNode};
 /// `bg`/`rounded`/`shadow` are written **once** as a method chain
 /// ([`Builder`]) and apply to `fixed`, `pad`, `constrained`, `row`, `column`,
 /// `grid`, and `viewport` alike (§2.6).
+///
+/// ```
+/// use silka_core::view::{column, div, fixed, pad, View};
+/// use silka_theme::{Appearance, ColorToken, RadiusToken, Theme};
+/// use silka_paint::Insets;
+///
+/// // The same chain works on every primitive that can draw a background,
+/// // because they all implement this one trait.
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// silka_core::view::with_theme(theme, || {
+///     let _card = pad(Insets::all(16.0), fixed(120.0, 24.0))
+///         .bg(ColorToken::Surface)
+///         .rounded(RadiusToken::Lg);
+///     let _stack: View = column([fixed(40.0, 40.0)]).bg(ColorToken::Background).into();
+///     let _box: View = div().bg(ColorToken::SurfaceElevated).into();
+/// });
+/// ```
 pub trait Decorated {
     /// These props' decoration, for the method chain to modify.
     fn decoration_mut(&mut self) -> &mut Decoration;
 }
 
 impl<V: ViewNode + Decorated> Builder<V> {
-    /// The background color — **always a theme token**
-    /// (`theme.color.surface`), never a literal in application code (§2.6,
-    /// §2.7).
+    /// The background color, as an **already resolved** value.
+    ///
+    /// This is the layer underneath the vocabulary, not the front door: prefer
+    /// [`Builder::bg`], which takes a `ColorToken` and therefore cannot be
+    /// handed a literal by accident (§2.6). The deliberate escape hatch for a
+    /// brand color is [`Builder::bg_raw`].
+    ///
+    /// [`Builder::bg`]: crate::view::Builder::bg
+    /// [`Builder::bg_raw`]: crate::view::Builder::bg_raw
     pub fn background(self, color: Color) -> Self {
         self.map(move |p| p.decoration_mut().background = color)
     }
@@ -52,11 +75,26 @@ impl<V: ViewNode + Decorated> Builder<V> {
     /// Corner geometry: a squircle in the Cupertino preset, an arc in the
     /// Tailwind one — both merely [`Corners`] values passed to the shader
     /// (§3.6).
+    ///
+    /// Prefer [`Builder::rounded`] and its `rounded_sm/md/lg/xl/full()`
+    /// shorthands, which pick the geometry the active preset defines instead of
+    /// naming it here.
+    ///
+    /// [`Builder::rounded`]: crate::view::Builder::rounded
     pub fn corners(self, corners: Corners) -> Self {
         self.map(move |p| p.decoration_mut().corners = corners)
     }
 
-    /// A `width`-thick border in `color` (the `separator` token).
+    /// A `width`-thick border in `color`.
+    ///
+    /// Prefer the token vocabulary: [`Builder::border_1`] (hairline),
+    /// [`Builder::border_2`], [`Builder::border_4`] for the width and
+    /// [`Builder::border_color`] for the role.
+    ///
+    /// [`Builder::border_1`]: crate::view::Builder::border_1
+    /// [`Builder::border_2`]: crate::view::Builder::border_2
+    /// [`Builder::border_4`]: crate::view::Builder::border_4
+    /// [`Builder::border_color`]: crate::view::Builder::border_color
     pub fn border(self, width: f32, color: Color) -> Self {
         self.map(move |p| {
             let d = p.decoration_mut();
@@ -65,7 +103,14 @@ impl<V: ViewNode + Decorated> Builder<V> {
         })
     }
 
-    /// The HIG-style double shadow for one elevation level (`shadow.md`).
+    /// The HIG-style double shadow for one elevation level.
+    ///
+    /// Prefer [`Builder::shadow_sm`]/[`Builder::shadow_md`]/[`Builder::shadow_lg`],
+    /// which name the elevation and let the preset supply the recipe.
+    ///
+    /// [`Builder::shadow_sm`]: crate::view::Builder::shadow_sm
+    /// [`Builder::shadow_md`]: crate::view::Builder::shadow_md
+    /// [`Builder::shadow_lg`]: crate::view::Builder::shadow_lg
     pub fn shadow(self, shadows: ShadowPair) -> Self {
         self.map(move |p| p.decoration_mut().shadows = shadows)
     }
@@ -88,6 +133,8 @@ fn terapkan_dekorasi(lama: &mut Decoration, baru: &Decoration) -> Dirty {
 // ---------------------------------------------------------------------------
 
 /// Props for a fixed-size leaf.
+///
+/// Built through [`fixed`], never by filling in fields.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FixedProps {
     size: Size,
@@ -170,9 +217,12 @@ impl Builder<FixedProps> {
 // ---------------------------------------------------------------------------
 
 /// Props for spacing around a child.
+///
+/// Built through [`pad`], or through the utility chain (`p_4()`, `px_3()`),
+/// which is the form that stays on the 4pt scale.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PadProps {
-    insets: Insets,
+    pub(crate) insets: Insets,
     decoration: Decoration,
 }
 
@@ -218,6 +268,9 @@ pub fn pad(insets: Insets, child: impl Into<View>) -> Builder<PadProps> {
 // ---------------------------------------------------------------------------
 
 /// Props for additional constraints.
+///
+/// Built through [`constrained`]. The request is honoured only as far as the
+/// parent permits.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ConstrainProps {
     extra: BoxConstraints,
@@ -269,6 +322,10 @@ pub fn constrained(extra: BoxConstraints, child: impl Into<View>) -> Builder<Con
 ///
 /// Its `PartialEq` compares the **identity** of the measure function
 /// ([`std::rc::Rc`]), not its results: the same closure = nothing changed.
+///
+/// This is the **only** door text measurement comes through, and it is used
+/// identically by the box-constraints engine and by Taffy — which is why a
+/// text leaf inside a flex row measures the same as one inside a column.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeasuredProps {
     node: MeasuredBox,
@@ -331,9 +388,22 @@ impl Builder<MeasuredProps> {
 /// **keeps** the node and its state, because only the axis changed, not the
 /// identity. That is the intended behavior (contrast it with swapping `column`
 /// for `viewport`, which really does replace the node).
+///
+/// ```
+/// use silka_core::tree::RenderTree;
+/// use silka_core::view::{column, fixed, reconcile, row};
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, column([fixed(40.0, 40.0)]));
+///
+/// // Turning a column into a row keeps the node — only the axis changed,
+/// // not the identity — so nothing is created and no state is lost.
+/// let stats = reconcile(&mut tree, row([fixed(40.0, 40.0)]));
+/// assert_eq!(stats.created, 0);
+/// ```
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LayoutProps {
-    style: ContainerStyle,
+    pub(crate) style: ContainerStyle,
     decoration: Decoration,
 }
 
@@ -418,9 +488,15 @@ impl Builder<LayoutProps> {
     /// A gap of `steps` spacing-scale steps on both axes (§2.6).
     ///
     /// This is the general form behind `gap_1()`…`gap_12()`: the value is
-    /// **always** a multiple of [`SPACING_UNIT`], never an arbitrary number.
+    /// **always** a multiple of one scale step, never an arbitrary number. The
+    /// step comes from the ambient theme ([`crate::view::active_theme`]) — the
+    /// same unit `p_4()` and `gap_token()` use — so a brand preset with a
+    /// different unit moves gaps and padding together. Without a theme
+    /// installed it is [`crate::tree::SPACING_UNIT`], which is what both first-party presets
+    /// set anyway.
     pub fn gap_steps(self, steps: f32) -> Self {
-        self.gap(SPACING_UNIT * steps, SPACING_UNIT * steps)
+        let v = super::active_theme().space(steps);
+        self.gap(v, v)
     }
 
     /// No gap.
@@ -532,9 +608,12 @@ impl Builder<LayoutProps> {
 // ---------------------------------------------------------------------------
 
 /// Props carrying an [`ItemStyle`] for one flex/grid child.
+///
+/// Built through [`item`], [`expanded`] and [`flexible`] — the counterparts of
+/// Flutter's `Expanded` and `Flexible`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ItemProps {
-    style: ItemStyle,
+    pub(crate) style: ItemStyle,
 }
 
 impl ViewNode for ItemProps {
@@ -625,6 +704,20 @@ impl Builder<ItemProps> {
 /// - `None` (the default) = the node owns the scroll offset; the view does not
 ///   touch it.
 /// - `Some(v)` = the application owns it (e.g. bound to a signal, `scroll_to`).
+///
+/// ```
+/// use silka_core::tree::RenderTree;
+/// use silka_core::view::{fixed, reconcile, viewport};
+///
+/// let mut tree = RenderTree::new();
+///
+/// // Uncontrolled: rebuilding for any other reason does not throw the user
+/// // back to the top — the classic "controlled component" bug, avoided by
+/// // simply not writing the offset back.
+/// reconcile(&mut tree, viewport(fixed(120.0, 2_000.0)));
+/// let again = reconcile(&mut tree, viewport(fixed(120.0, 2_000.0)));
+/// assert_eq!(again.created, 0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ViewportProps {
     axis: Axis,

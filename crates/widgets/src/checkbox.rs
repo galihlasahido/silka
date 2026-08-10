@@ -95,6 +95,37 @@ use crate::text::text;
 /// Three values, not two: `Mixed` (indeterminate) is a legitimate state for a
 /// parent checkbox whose children are only partly checked — `KOMPONEN.md`
 /// calls it part of this component, not an addition.
+///
+/// ```
+/// use silka_widgets::CheckState;
+///
+/// // A "select all" box, derived from its children rather than stored twice.
+/// fn parent_of(children: &[bool]) -> CheckState {
+///     match children.iter().filter(|c| **c).count() {
+///         0 => CheckState::Off,
+///         n if n == children.len() => CheckState::On,
+///         _ => CheckState::Mixed,
+///     }
+/// }
+///
+/// assert_eq!(parent_of(&[false, false]), CheckState::Off);
+/// assert_eq!(parent_of(&[true, true]), CheckState::On);
+/// assert_eq!(parent_of(&[true, false]), CheckState::Mixed);
+///
+/// // `Mixed` is not part of the click cycle: a user never *chooses* "partly",
+/// // so activating it means deciding — and deciding means On. The same rule
+/// // AppKit and HTML follow.
+/// assert_eq!(CheckState::Mixed.toggled(), CheckState::On);
+/// assert_eq!(CheckState::On.toggled(), CheckState::Off);
+/// assert_eq!(CheckState::Off.toggled(), CheckState::On);
+///
+/// // Two different questions, and the difference is what gets drawn: `On`
+/// // draws a check, `Mixed` a dash, `Off` nothing at all.
+/// assert!(CheckState::On.is_on());
+/// assert!(!CheckState::Mixed.is_on());
+/// assert!(CheckState::Mixed.is_filled());
+/// assert!(!CheckState::Off.is_filled());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CheckState {
     /// Not checked.
@@ -171,6 +202,30 @@ impl From<CheckState> for AccessToggled {
 /// place there is to grow a second source of truth. Its three properties
 /// match `Callback`: cheap `Clone`, `PartialEq` by identity, and it never
 /// touches the tree.
+///
+/// ```
+/// use std::cell::Cell;
+/// use std::rc::Rc;
+///
+/// use silka_widgets::{ChangeCallback, CheckState};
+///
+/// let seen = Rc::new(Cell::new(CheckState::Off));
+/// let sink = seen.clone();
+///
+/// // The argument is the point: the widget reports what it *is* now, so the
+/// // caller never has to recompute the next state and no second source of
+/// // truth can grow.
+/// let on_change = ChangeCallback::new(move |state| sink.set(state));
+///
+/// on_change.call(CheckState::Off.toggled());
+/// assert_eq!(seen.get(), CheckState::On);
+///
+/// // Cheap to clone, and equal only to itself — which is what lets props be
+/// // compared by value on every rebuild.
+/// let clone = on_change.clone();
+/// assert_eq!(clone, on_change);
+/// assert_ne!(on_change, ChangeCallback::new(|_| {}));
+/// ```
 #[derive(Clone)]
 pub struct ChangeCallback(Rc<dyn Fn(CheckState)>);
 
@@ -208,6 +263,31 @@ impl core::fmt::Debug for ChangeCallback {
 /// Cupertino and Tailwind presets swap over by filling in this struct,
 /// without a single line changing in [`CheckboxNode`]. A third preset (a
 /// custom brand) simply hands this struct over through [`Checkbox::style`].
+///
+/// ```
+/// use silka_paint::CornerStyle;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{CheckState, CheckboxStyle};
+///
+/// let cupertino = CheckboxStyle::from_theme(&Theme::cupertino(Appearance::Dark));
+/// let tailwind = CheckboxStyle::from_theme(&Theme::tailwind(Appearance::Dark));
+///
+/// // Same struct, two presets — and the corner shape is one of the values,
+/// // not a constant compiled into the engine.
+/// assert_eq!(cupertino.corners.style, CornerStyle::squircle());
+/// assert_eq!(tailwind.corners.style, CornerStyle::Arc);
+/// assert!(cupertino.box_size > 0.0);
+/// assert!(cupertino.stroke > 0.0);
+///
+/// // A filled box and an empty one are different colours, and a disabled one
+/// // is different again — all three resolved here, none of them computed by
+/// // the node that draws them.
+/// let on = cupertino.background_for(CheckState::On, false, false, false);
+/// let off = cupertino.background_for(CheckState::Off, false, false, false);
+/// let dimmed = cupertino.background_for(CheckState::On, true, false, false);
+/// assert_ne!(on, off);
+/// assert_ne!(on, dimmed);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CheckboxStyle {
     /// Side of the drawn box, in logical points.
@@ -372,6 +452,31 @@ const MAX_JEJAK: usize = 64;
 /// being drawn. The spacing between stamps does not depend on `progress`, so
 /// the early stamps never shift as the stroke grows — the condition for the
 /// motion to read as a single pen movement rather than a flicker.
+///
+/// ```
+/// use silka_paint::Rect;
+/// use silka_widgets::check_dots;
+///
+/// let box_rect = Rect::new(0.0, 0.0, 16.0, 16.0);
+///
+/// // Unchecked really is free: not one draw command.
+/// assert!(check_dots(box_rect, 2.0, 0.0).is_empty());
+///
+/// // Mid-stroke the pen is partway along its path…
+/// let half = check_dots(box_rect, 2.0, 0.5);
+/// let full = check_dots(box_rect, 2.0, 1.0);
+/// assert!(!half.is_empty());
+/// assert!(full.len() > half.len());
+///
+/// // …and the stamps already laid down do not move as it continues, which is
+/// // what makes the motion read as one pen stroke instead of a flicker.
+/// assert_eq!(half[0], full[0]);
+/// assert_eq!(half[1], full[1]);
+///
+/// // The end is exact rather than a whole step past the path's end.
+/// let end = *full.last().unwrap();
+/// assert!(end.x <= box_rect.max_x() && end.y <= box_rect.max_y());
+/// ```
 pub fn check_dots(box_rect: Rect, stroke: f32, progress: f32) -> Vec<Point> {
     let p = progress.clamp(0.0, 1.0);
     if p <= 0.0 || stroke <= 0.0 || box_rect.size.is_empty() {
@@ -412,6 +517,24 @@ pub fn check_dots(box_rect: Rect, stroke: f32, progress: f32) -> Vec<Point> {
 ///
 /// `None` while nothing is visible yet, so the `Off` state really is free —
 /// not a single draw command.
+///
+/// ```
+/// use silka_paint::Rect;
+/// use silka_widgets::dash_rect;
+///
+/// let box_rect = Rect::new(0.0, 0.0, 16.0, 16.0);
+///
+/// // Nothing to draw yet.
+/// assert_eq!(dash_rect(box_rect, 2.0, 0.0), None);
+///
+/// // It grows out of the centre, symmetrically, so the dash never appears to
+/// // slide in from one side.
+/// let small = dash_rect(box_rect, 2.0, 0.4).unwrap();
+/// let big = dash_rect(box_rect, 2.0, 1.0).unwrap();
+/// assert!(big.size.width > small.size.width);
+/// assert_eq!(small.center(), box_rect.center());
+/// assert_eq!(big.center(), box_rect.center());
+/// ```
 pub fn dash_rect(box_rect: Rect, stroke: f32, progress: f32) -> Option<Rect> {
     let p = progress.clamp(0.0, 1.0);
     if p <= 0.0 || stroke <= 0.0 || box_rect.size.is_empty() {
@@ -463,6 +586,38 @@ fn pada_jalur(titik: &[Point], ruas: &[f32], d: f32) -> Point {
 ///
 /// Its first child, if any, is the label placed next to the box, and that
 /// label is **clickable too**.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{checkbox, CheckState, CheckboxNode, Fonts, MIN_HIT_TARGET};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     checkbox(&fonts, &theme, "Remember me").state(CheckState::On),
+/// );
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// let id = tree.children(tree.root())[0];
+/// let node = tree.node_ref::<CheckboxNode>(id).expect("a checkbox node");
+///
+/// assert_eq!(node.state(), CheckState::On);
+/// assert!(!node.is_disabled());
+///
+/// // The graphic stays 16pt-ish while the row it lives in clears the 44pt
+/// // minimum — a small box the user can still hit.
+/// assert!(node.box_rect().size.width < MIN_HIT_TARGET);
+/// assert!(tree.size(id).height >= MIN_HIT_TARGET);
+///
+/// // The label is a real child, which is why clicking the words works too.
+/// assert_eq!(tree.children(id).len(), 1);
+/// ```
 pub struct CheckboxNode {
     style: CheckboxStyle,
     /// State that comes from the application.
@@ -1001,6 +1156,31 @@ impl core::fmt::Debug for CheckboxNode {
 // ---------------------------------------------------------------------------
 
 /// Props of [`CheckboxNode`] — its view form.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{checkbox, CheckState, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let build = |state| checkbox(&fonts, &theme, "Select all").state(state);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, build(CheckState::Off));
+/// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
+///
+/// // Rebuilding with the same state changes nothing at all.
+/// assert!(reconcile(&mut tree, build(CheckState::Off)).is_noop());
+///
+/// // A new state updates the existing node rather than replacing it, which
+/// // is what lets the check mark *draw itself in* instead of appearing.
+/// let changed = reconcile(&mut tree, build(CheckState::On));
+/// assert_eq!(changed.replaced, 0);
+/// assert!(changed.updated > 0);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckboxProps {
     style: CheckboxStyle,
@@ -1109,6 +1289,33 @@ impl ViewNode for CheckboxProps {
 /// becomes both the child that gets drawn *and* the a11y name, so it cannot
 /// be handed over through `map` like an ordinary property (the same pattern
 /// as [`crate::button::Button`]).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{checkbox, CheckState, Fonts};
+///
+/// let fonts = Fonts::bundled_only();
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let state = rt.signal(CheckState::Mixed);
+///
+/// // The tri-state form: the widget hands back what it *is* now.
+/// let all = checkbox(&fonts, &theme, "Select all")
+///     .state(state.get())
+///     .on_change(move |next| state.set(next));
+///
+/// // …and the boolean shorthand, for the ordinary two-state case.
+/// let one = checkbox(&fonts, &theme, "Remember me")
+///     .checked(true)
+///     .on_toggle(|_on| {});
+/// # let _ = (all, one);
+///
+/// // The drawn box is small, and deliberately so — the *hit* target is what
+/// // grows to 44pt, not the graphic.
+/// let style = checkbox(&fonts, &theme, "Compact").resolved_style();
+/// assert!(style.box_size < silka_widgets::MIN_HIT_TARGET);
+/// ```
 pub struct Checkbox {
     fonts: Option<Fonts>,
     theme: Theme,

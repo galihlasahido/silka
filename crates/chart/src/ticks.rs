@@ -142,6 +142,28 @@ pub fn zero_based_domain(min: f64, max: f64, target: usize) -> (f64, f64) {
 // ---------------------------------------------------------------------------
 
 /// The granularity a time axis is labelled at.
+///
+/// Time ticks snap to calendar boundaries rather than to a round number of
+/// days, because "every 30 days" and "every month" are not the same axis.
+///
+/// ```
+/// use silka_chart::ticks::{time_ticks, TimeUnit};
+/// use silka_chart::date::Date;
+///
+/// // The thresholds are the ones a reader would pick by hand.
+/// assert_eq!(TimeUnit::for_span(8.0, 6), TimeUnit::Day);
+/// assert_eq!(TimeUnit::for_span(200.0, 6), TimeUnit::Month);
+/// assert_eq!(TimeUnit::for_span(3650.0, 6), TimeUnit::Year);
+///
+/// // A year of data comes back as month marks on the 1st.
+/// let (unit, ticks) = time_ticks(
+///     Date::new(2026, 1, 1).to_days() as f64,
+///     Date::new(2026, 12, 31).to_days() as f64,
+///     12,
+/// );
+/// assert_eq!(unit, TimeUnit::Month);
+/// assert!(ticks.iter().all(|d| Date::from_days(*d as i64).day == 1));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TimeUnit {
     /// Individual days.

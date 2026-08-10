@@ -10,10 +10,41 @@
 //! silently assumes — `rgba.len() == width * height * 4` — is checked **once**,
 //! in code that can be unit-tested, instead of being discovered as a panic or a
 //! garbled icon at runtime.
+//!
+//! ```
+//! use silka_platform::{ImageError, RgbaImage};
+//!
+//! // The invariant is checked once, here, rather than assumed by every crate
+//! // that later receives the buffer.
+//! let icon = RgbaImage::new(2, 2, vec![255u8; 2 * 2 * 4]).expect("16 bytes for 4 pixels");
+//! assert_eq!((icon.width(), icon.height()), (2, 2));
+//! assert_eq!(icon.rgba().len(), 16);
+//!
+//! // A buffer that does not match its dimensions is an error, not a garbled
+//! // tray icon discovered by a user.
+//! assert!(matches!(RgbaImage::new(2, 2, vec![0u8; 10]), Err(ImageError::WrongLength { expected: 16, actual: 10 })));
+//!
+//! // A solid fill, for placeholders and tests.
+//! let red = RgbaImage::solid(16, 16, [255, 0, 0, 255]).unwrap();
+//! assert_eq!(&red.rgba()[..4], &[255, 0, 0, 255]);
+//! ```
 
 use core::fmt;
 
 /// An 8-bit RGBA image, row-major, top-left origin, **not** premultiplied.
+///
+/// The buffer is validated once, here, rather than handed straight to an OS
+/// call that would answer a wrong length with a crash or a garbled icon.
+///
+/// ```
+/// use silka_platform::image::RgbaImage;
+///
+/// let icon = RgbaImage::solid(16, 16, [0x0A, 0x84, 0xFF, 0xFF]).unwrap();
+/// assert_eq!((icon.width(), icon.height()), (16, 16));
+/// assert_eq!(icon.pixel(0, 0), Some([0x0A, 0x84, 0xFF, 0xFF]));
+/// assert_eq!(icon.pixel(16, 0), None); // out of bounds, not a panic
+/// assert_eq!(icon.rgba().len(), 16 * 16 * 4);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RgbaImage {
     width: u32,
@@ -22,6 +53,19 @@ pub struct RgbaImage {
 }
 
 /// Why a buffer could not be accepted as an [`RgbaImage`].
+///
+/// ```
+/// use silka_platform::image::{ImageError, RgbaImage};
+///
+/// // A zero dimension: every OS rejects it, some of them by crashing.
+/// assert_eq!(RgbaImage::new(0, 16, vec![]), Err(ImageError::Empty));
+///
+/// // A length that does not match w * h * 4 would be read past the end.
+/// assert_eq!(
+///     RgbaImage::new(2, 2, vec![0u8; 8]),
+///     Err(ImageError::WrongLength { expected: 16, actual: 8 })
+/// );
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageError {
     /// A zero width or height. Every OS rejects those, some by crashing.

@@ -25,6 +25,41 @@
 //! Background → gridlines → zero rule → **marks** → crosshair → axis rules →
 //! labels → legend. Marks below the crosshair so the pointer never hides the
 //! data; labels above everything so a tall bar never covers its own axis.
+//!
+//! ```
+//! use silka_chart::{line_chart, ChartBox};
+//! use silka_core::tree::{BoxConstraints, RenderTree};
+//! use silka_core::view::reconcile;
+//! use silka_paint::Size;
+//! use silka_theme::{Appearance, Theme};
+//! use silka_widgets::Fonts;
+//!
+//! let fonts = Fonts::bundled_only();
+//! let theme = Theme::cupertino(Appearance::Dark);
+//!
+//! let mut tree = RenderTree::new();
+//! reconcile(
+//!     &mut tree,
+//!     line_chart(&fonts, &theme, [10.0f64, 30.0, 20.0])
+//!         .numeric()
+//!         .y_named("Value", |v: &f64| *v)
+//!         .title("Throughput"),
+//! );
+//! tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+//!
+//! // The entire chart is one node: not one per axis, per series, per label.
+//! let id = tree.children(tree.root())[0];
+//! let chart = tree.node_ref::<ChartBox>(id).expect("one node per chart");
+//! assert_eq!(tree.children(id).len(), 0);
+//!
+//! // Which is also what a screen reader gets — a sentence describing the
+//! // shape of the data, rather than eight hundred points to tab through.
+//! let summary = chart.summary();
+//! assert_eq!(summary, "line chart, 1 series, 3 points, 10 to 30");
+//!
+//! // Nothing is hovered until a pointer says so.
+//! assert_eq!(chart.hovered(), None);
+//! ```
 
 use std::rc::Rc;
 
@@ -60,6 +95,18 @@ struct Swatch {
 }
 
 /// The render node behind every chart in this crate.
+///
+/// **One node for the whole chart**, deliberately. Axis space is circular — the
+/// value axis's width depends on labels that depend on ticks that depend on the
+/// plot height that depends on the category axis — and box constraints rightly
+/// forbid a node from reading its sibling's measurements. Resolving the
+/// circularity inside a single node is two passes and a comment; spreading it
+/// across sibling nodes is not possible at all.
+///
+/// It carries the same contracts every widget does: springs for data
+/// transitions ([`ChartBox::advance`]), and an accessibility node whose name is
+/// a real description of the content rather than a bare "image"
+/// ([`ChartBox::summary`]).
 pub struct ChartBox {
     pub(crate) spec: ChartSpec,
     pub(crate) data: ChartData,

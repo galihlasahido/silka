@@ -77,9 +77,35 @@ use silka_theme::Theme;
 use crate::button::MIN_HIT_TARGET;
 
 /// The largest number of thumbs one slider supports (the range variant).
+///
+/// Two, not "as many as you like": a third thumb has no meaning a reader can
+/// name, and every extra thumb multiplies the ways two of them can cross over.
+///
+/// ```
+/// use silka_widgets::slider::MAX_THUMBS;
+///
+/// assert_eq!(MAX_THUMBS, 2);
+///
+/// // Which is why the range variant reports exactly two positions.
+/// let positions = [0.25f32, 0.75];
+/// assert_eq!(positions.len(), MAX_THUMBS);
+/// ```
 pub const MAX_THUMBS: usize = 2;
 
 /// How many steps PageUp/PageDown jump over.
+///
+/// ```
+/// use silka_widgets::slider::PAGE_STEPS;
+/// use silka_widgets::slider::{denormalize, normalize};
+///
+/// // PageUp is a coarse jump, an arrow key a fine one — the same distinction
+/// // a scroll view makes, so the keyboard behaves consistently across the
+/// // whole catalogue.
+/// let step = 1.0f32;
+/// assert!(step * PAGE_STEPS > step);
+/// assert_eq!(step * PAGE_STEPS, 10.0);
+/// # let _ = (normalize(0.0, 0.0, 1.0), denormalize(0.0, 0.0, 1.0));
+/// ```
 pub const PAGE_STEPS: f32 = 10.0;
 
 // ---------------------------------------------------------------------------
@@ -130,6 +156,25 @@ impl core::fmt::Debug for ChangeCallback {
 /// is finished numbers and colors, so the Cupertino/Tailwind presets swap
 /// over without a single line changing in the engine. Corner geometry comes
 /// along as a **parameter** ([`SliderStyle::corner_style`]) rather than a
+/// constant — squircle and arc are equally valid (§3.6).
+///
+/// ```
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::SliderStyle;
+///
+/// let cupertino = SliderStyle::from_theme(&Theme::cupertino(Appearance::Dark));
+/// let tailwind = SliderStyle::from_theme(&Theme::tailwind(Appearance::Dark));
+///
+/// // The engine reads finished numbers; swapping presets swaps the numbers
+/// // and not a line of the code that draws them.
+/// assert!(cupertino.track_height > 0.0);
+/// assert!(cupertino.thumb_size > cupertino.track_height);
+/// assert_ne!(cupertino.track, tailwind.track);
+///
+/// // The filled portion is a different token from the empty portion, so the
+/// // slider stays readable in both appearances.
+/// assert_ne!(cupertino.track, cupertino.fill);
+/// ```
 /// constant — squircle and arc are equally valid (§3.6).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SliderStyle {
@@ -202,6 +247,31 @@ impl SliderStyle {
 /// A pure function of (size, style) — shared by layout, paint, hit-testing,
 /// and the tests. Because there is only one source, it is impossible for a
 /// thumb to be drawn anywhere other than where a finger can catch it.
+/// ```
+/// use silka_core::tree::TextDirection;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{SliderGeometry, SliderStyle};
+///
+/// let style = SliderStyle::from_theme(&Theme::cupertino(Appearance::Dark));
+/// let geometry = SliderGeometry::new(Size::new(200.0, 44.0), &style);
+///
+/// // The thumb travels less than the full width, because it has a width of
+/// // its own and must stay inside the track at both ends.
+/// assert!(geometry.travel() > 0.0);
+/// assert!(geometry.travel() < 200.0);
+///
+/// // Position and hit-testing are inverses of one another, which is the
+/// // property that makes a thumb catchable exactly where it is drawn.
+/// let x = geometry.thumb_x(0.25, TextDirection::Ltr);
+/// let back = geometry.t_at(x, TextDirection::Ltr);
+/// assert!((back - 0.25).abs() < 1e-3);
+///
+/// // In a right-to-left layout the same fraction sits on the other side —
+/// // mirroring is part of the geometry, not something each caller redoes.
+/// let rtl = geometry.thumb_x(0.25, TextDirection::Rtl);
+/// assert!(rtl > x);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SliderGeometry {
     /// The full track rect (node-local coordinates).
@@ -284,6 +354,25 @@ impl SliderGeometry {
 /// A zero or negative `step` means continuous. A pure function: this is the
 /// "snap to step" `KOMPONEN.md` asks for, and it is tested without touching
 /// the tree at all.
+/// ```
+/// use silka_widgets::slider::snap;
+///
+/// // Stepped: the value lands on a multiple of the step, measured from `min`.
+/// assert_eq!(snap(0.27, 0.0, 1.0, Some(0.25)), 0.25);
+/// assert_eq!(snap(0.38, 0.0, 1.0, Some(0.25)), 0.5);
+///
+/// // Continuous: nothing is snapped, only clamped.
+/// assert_eq!(snap(0.27, 0.0, 1.0, None), 0.27);
+///
+/// // Out of range is brought back in, whatever the step.
+/// assert_eq!(snap(-5.0, 0.0, 1.0, Some(0.25)), 0.0);
+/// assert_eq!(snap(5.0, 0.0, 1.0, Some(0.25)), 1.0);
+///
+/// // A step that does not divide the range evenly snaps to the nearest
+/// // multiple, which may sit short of the maximum — and never past it.
+/// assert_eq!(snap(9.9, 0.0, 10.0, Some(3.0)), 9.0);
+/// assert!(snap(9.9, 0.0, 10.0, Some(3.0)) <= 10.0);
+/// ```
 pub fn snap(value: f32, min: f32, max: f32, step: Option<f32>) -> f32 {
     let (min, max) = if min <= max { (min, max) } else { (max, min) };
     if !value.is_finite() {
@@ -300,6 +389,19 @@ pub fn snap(value: f32, min: f32, max: f32, step: Option<f32>) -> f32 {
 }
 
 /// Value → position 0..1 within the range (`min == max` is always 0).
+///
+/// ```
+/// use silka_widgets::slider::normalize;
+///
+/// assert_eq!(normalize(50.0, 0.0, 100.0), 0.5);
+/// assert_eq!(normalize(0.0, 0.0, 100.0), 0.0);
+///
+/// // Out of range clamps rather than running off the track.
+/// assert_eq!(normalize(150.0, 0.0, 100.0), 1.0);
+///
+/// // A degenerate range answers 0 instead of dividing by zero.
+/// assert_eq!(normalize(7.0, 5.0, 5.0), 0.0);
+/// ```
 pub fn normalize(value: f32, min: f32, max: f32) -> f32 {
     let span = max - min;
     if span.abs() <= f32::EPSILON {
@@ -310,6 +412,19 @@ pub fn normalize(value: f32, min: f32, max: f32) -> f32 {
 }
 
 /// Position 0..1 → value within the range.
+///
+/// ```
+/// use silka_widgets::slider::{denormalize, normalize};
+///
+/// assert_eq!(denormalize(0.5, 0.0, 100.0), 50.0);
+///
+/// // The two are inverses, which is what keeps a dragged thumb under the
+/// // finger: position becomes a value and the value becomes that position.
+/// for value in [0.0f32, 12.5, 60.0, 100.0] {
+///     let round_trip = denormalize(normalize(value, 0.0, 100.0), 0.0, 100.0);
+///     assert!((round_trip - value).abs() < 1e-3);
+/// }
+/// ```
 pub fn denormalize(t: f32, min: f32, max: f32) -> f32 {
     min + (max - min) * t.clamp(0.0, 1.0)
 }
@@ -327,6 +442,47 @@ fn teks_angka(v: f32) -> String {
 // Node
 // ---------------------------------------------------------------------------
 
+/// The render node of a slider (one or two thumbs).
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{range_slider, Slider};
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     range_slider(&theme, 20.0, 80.0)
+///         .range(0.0..=100.0)
+///         .step(5.0)
+///         .label("Price"),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 44.0)));
+///
+/// let id = tree.children(tree.root())[0];
+/// let node = tree.node_mut_ref::<Slider>(id).expect("a slider node");
+///
+/// assert_eq!(node.values(), (20.0, 80.0));
+/// assert!(!node.is_dragging());
+///
+/// // Arrow keys move by one step — the value a screen reader also announces
+/// // as the increment.
+/// assert_eq!(node.key_step(), 5.0);
+/// node.increment(1.0);
+/// node.settle();
+/// assert_eq!(node.values().0, 25.0);
+///
+/// // Thumbs cannot cross: raising the lower one past the upper is clamped,
+/// // so a range is always a range.
+/// node.set_thumb(0, 999.0);
+/// node.settle();
+/// let (start, end) = node.values();
+/// assert!(start <= end);
+/// ```
 /// The render node of a slider (one or two thumbs).
 #[derive(Debug)]
 pub struct Slider {
@@ -973,6 +1129,30 @@ impl RenderNode for Slider {
 // ---------------------------------------------------------------------------
 
 /// A slider's props — the view form of [`Slider`].
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::slider;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let build = |v: f32| slider(&theme, v).range(0.0..=100.0).label("Volume");
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, build(20.0));
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 44.0)));
+///
+/// assert!(reconcile(&mut tree, build(20.0)).is_noop());
+///
+/// // A new value updates the node in place, so the thumb glides to it
+/// // instead of jumping — the spring lives in the node, not the props.
+/// let moved = reconcile(&mut tree, build(60.0));
+/// assert_eq!(moved.replaced, 0);
+/// assert!(moved.updated > 0);
+/// ```
+/// A slider's props — the view form of [`Slider`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SliderProps {
     min: f32,
@@ -1086,6 +1266,23 @@ fn props(theme: &Theme, values: [f32; MAX_THUMBS], thumbs: usize) -> SliderProps
 ///
 /// Its default range is `0.0..=1.0` like SwiftUI; change it with
 /// [`SliderBuilder::range`].
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::slider;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let volume = rt.signal(35.0f32);
+///
+/// let control = slider(&theme, volume.get())
+///     .range(0.0..=100.0)
+///     .step(5.0)
+///     .label("Volume")
+///     .on_change(move |v| volume.set(v));
+/// # let _ = control;
+/// ```
 pub fn slider(theme: &Theme, value: f32) -> SliderBuilder {
     SliderBuilder {
         key: None,
@@ -1094,6 +1291,25 @@ pub fn slider(theme: &Theme, value: f32) -> SliderBuilder {
 }
 
 /// A two-thumb slider (the range variant, `KOMPONEN.md`).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::range_slider;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+/// let rt = Runtime::new();
+/// let price = rt.signal((20.0f32, 80.0f32));
+///
+/// // Two thumbs, one control — and a callback that reports both, because
+/// // "the lower one moved" is never the whole story.
+/// let filter = range_slider(&theme, price.get().0, price.get().1)
+///     .range(0.0..=100.0)
+///     .step(5.0)
+///     .label("Price")
+///     .on_range_change(move |lo, hi| price.set((lo, hi)));
+/// # let _ = filter;
+/// ```
 pub fn range_slider(theme: &Theme, start: f32, end: f32) -> SliderBuilder {
     SliderBuilder {
         key: None,
@@ -1102,6 +1318,33 @@ pub fn range_slider(theme: &Theme, start: f32, end: f32) -> SliderBuilder {
 }
 
 /// A slider's builder: every optional property moves into the chain (§2.5).
+/// The Dart-style builder shared by [`slider`] and [`range_slider`].
+///
+/// One builder for both, because a range slider is the same control with a
+/// second thumb — not a second widget with its own set of options.
+///
+/// ```
+/// use silka_core::animation::Spring;
+/// use silka_core::signals::Key;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::slider;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Stepped by default where it matters, and explicitly continuous where a
+/// // step would be a lie — a colour picker has no natural increment.
+/// let stepped = slider(&theme, 3.0).range(1.0..=5.0).step(1.0).label("Rating");
+/// let smooth = slider(&theme, 0.5).continuous().label("Hue");
+///
+/// // The rest of the vocabulary.
+/// let full = slider(&theme, 0.5)
+///     .label("Opacity")
+///     .disabled(false)
+///     .spring(Spring::smooth())
+///     .key(Key::from("opacity"))
+///     .on_change(|_| {});
+/// # let _ = (stepped, smooth, full);
+/// ```
 pub struct SliderBuilder {
     key: Option<Key>,
     props: SliderProps,
@@ -1199,6 +1442,33 @@ impl core::fmt::Debug for SliderBuilder {
 ///
 /// Used by [`crate::motion`] (this crate's animation pump) and by the tests;
 /// an application never has to call it itself.
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, reconcile, View};
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::slider;
+/// use silka_widgets::slider::sliders;
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mut tree = RenderTree::new();
+/// assert!(sliders(&tree).is_empty());
+///
+/// reconcile(
+///     &mut tree,
+///     column([
+///         View::from(slider(&theme, 0.2).label("Volume")),
+///         View::from(slider(&theme, 0.8).label("Brightness")),
+///     ]),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// // This is how one tick reaches every slider in the tree without anyone
+/// // keeping a registry of them.
+/// assert_eq!(sliders(&tree).len(), 2);
+/// ```
 pub fn sliders(tree: &RenderTree) -> Vec<NodeId> {
     let mut out = Vec::new();
     kumpulkan(tree, tree.root(), &mut out);

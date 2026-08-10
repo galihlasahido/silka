@@ -32,6 +32,20 @@ use crate::{Appearance, ColorToken, Theme};
 /// macOS: "Reduce transparency"; Windows: *Transparency effects* off; GNOME:
 /// no vibrancy at all. The rule (INTEGRASI-NATIVE §6) is the same everywhere:
 /// **no blur, and no token that stays translucent over its backdrop**.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_theme::{flatten, Transparency};
+///
+/// // The platform layer hands over a boolean; this is the whole conversion.
+/// let pref = Transparency::from_reduced(true);
+/// assert!(pref.is_reduced());
+///
+/// // Reduced transparency means flattening a translucent token against its
+/// // backdrop **once**, instead of blending it on every frame.
+/// let opaque = flatten(Color::WHITE.with_alpha(0.4), Color::BLACK);
+/// assert_eq!(opaque.a, 1.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Transparency {
     /// Materials and translucent tokens exactly as the preset wrote them.
@@ -66,12 +80,54 @@ impl Transparency {
 }
 
 /// The WCAG relative luminance of a color, ignoring its alpha.
+///
+/// This is the "how bright does a human read this as" number — computed in
+/// **linear** space, which is why a 50% grey does not come out at 0.5.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_theme::relative_luminance;
+///
+/// assert_eq!(relative_luminance(Color::BLACK), 0.0);
+/// assert!((relative_luminance(Color::WHITE) - 1.0).abs() < 1e-5);
+///
+/// // Green dominates the formula, blue barely registers — which is exactly
+/// // why "is this text readable?" cannot be answered by eye.
+/// let green = relative_luminance(Color::hex(0x00FF00));
+/// let blue = relative_luminance(Color::hex(0x0000FF));
+/// assert!(green > blue * 9.0);
+/// ```
 pub fn relative_luminance(color: Color) -> f32 {
     let [r, g, b, _] = color.to_linear();
     0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 /// The WCAG contrast ratio between two opaque colors, from 1.0 to 21.0.
+///
+/// The thresholds worth remembering: **4.5** for body text, **3.0** for large
+/// text and UI components. Both presets are checked against these by their own
+/// unit tests rather than by review.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_theme::{contrast_ratio, Appearance, ColorToken, Theme};
+///
+/// // The extremes bracket the scale.
+/// assert!((contrast_ratio(Color::BLACK, Color::WHITE) - 21.0).abs() < 0.1);
+/// assert_eq!(contrast_ratio(Color::WHITE, Color::WHITE), 1.0);
+///
+/// // The order of the arguments never matters.
+/// let (a, b) = (Color::hex(0x0A84FF), Color::hex(0x1C1C1E));
+/// assert_eq!(contrast_ratio(a, b), contrast_ratio(b, a));
+///
+/// // Which is how a preset proves its own label token is readable.
+/// let t = Theme::cupertino(Appearance::Dark);
+/// let ratio = contrast_ratio(
+///     t.color_of(ColorToken::Label),
+///     t.color_of(ColorToken::Background),
+/// );
+/// assert!(ratio >= 4.5, "body text must clear the WCAG AA threshold");
+/// ```
 pub fn contrast_ratio(a: Color, b: Color) -> f32 {
     let (x, y) = (relative_luminance(a), relative_luminance(b));
     let (hi, lo) = if x >= y { (x, y) } else { (y, x) };
@@ -85,6 +141,27 @@ pub fn contrast_ratio(a: Color, b: Color) -> f32 {
 /// resolved once, up front, instead of by the blender at paint time. Doing it
 /// in linear space matters — the same operation in sRGB space darkens midtones
 /// visibly.
+///
+/// ```
+/// use silka_paint::Color;
+/// use silka_theme::flatten;
+///
+/// // The result is always opaque: that is the point — nothing is left for the
+/// // blender to do at paint time.
+/// let separator = Color::WHITE.with_alpha(0.2);
+/// let onto = Color::hex(0x1C1C1E);
+/// let solid = flatten(separator, onto);
+/// assert_eq!(solid.a, 1.0);
+///
+/// // A fully transparent top leaves the bottom exactly as it was…
+/// assert_eq!(flatten(Color::WHITE.with_alpha(0.0), onto), onto);
+/// // …and a fully opaque one replaces it (to within float round-tripping
+/// // through linear space and back).
+/// assert!((flatten(Color::WHITE, onto).r - 1.0).abs() < 1e-6);
+///
+/// // Between those it lands between the two, brighter than the backdrop.
+/// assert!(solid.r > onto.r && solid.r < 1.0);
+/// ```
 pub fn flatten(top: Color, bottom: Color) -> Color {
     let a = top.a.clamp(0.0, 1.0);
     let [tr, tg, tb, _] = top.to_linear();

@@ -34,6 +34,19 @@ use std::path::{Path, PathBuf};
 use winit::window::Window;
 
 /// Extensions accepted by one entry of a file dialog's format list.
+///
+/// ```
+/// use silka_platform::dialog::file_dialog;
+///
+/// // Callers write ".csv" about as often as "csv"; both are accepted and
+/// // normalised, because a stray dot silently filters everything out instead
+/// // of erroring — the worst kind of bug to chase.
+/// let dialog = file_dialog().filter("Spreadsheet", &[".CSV", "xlsx"]);
+///
+/// let filter = &dialog.filters()[0];
+/// assert_eq!(filter.name(), "Spreadsheet");
+/// assert_eq!(filter.extensions(), ["csv", "xlsx"]);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileFilter {
     name: String,
@@ -65,6 +78,24 @@ fn rapikan_ekstensi(ext: &str) -> String {
 ///
 /// The lifetime belongs to [`FileDialog::parent`]; without a parent it is
 /// unconstrained.
+///
+/// ```
+/// use silka_platform::dialog::file_dialog;
+///
+/// let dialog = file_dialog()
+///     .title("Import transactions")
+///     .file_name("transactions.csv")
+///     .filter("Comma separated", &["csv"]);
+///
+/// assert_eq!(dialog.filters().len(), 1);
+/// // Without `.parent(window)` the dialog is app-modal rather than a sheet.
+/// assert!(!dialog.has_parent());
+/// ```
+///
+/// Attaching a parent makes it a window sheet on macOS, and the borrow is what
+/// guarantees the dialog can never outlive the window it hangs from. The
+/// blocking calls are [`FileDialog::pick_file`], `pick_files`, `pick_folder`
+/// and `save_file`.
 #[derive(Debug, Clone)]
 pub struct FileDialog<'a> {
     title: Option<String>,
@@ -75,6 +106,28 @@ pub struct FileDialog<'a> {
 }
 
 /// Create a file dialog.
+///
+/// The dialog is the OS's own — on Linux it goes through the XDG portal, so it
+/// works inside a Flatpak sandbox as well as outside one.
+///
+/// ```
+/// use silka_platform::file_dialog;
+///
+/// // Built here, shown by `pick_file`/`pick_files`/`pick_folder`, each of
+/// // which blocks and returns `None` when the user cancels.
+/// let open = file_dialog()
+///     .title("Open document")
+///     .directory("/tmp")
+///     .filter("Documents", &["md", "txt"])
+///     .filter("Images", &["png", "jpg"]);
+///
+/// assert_eq!(open.filters().len(), 2);
+/// assert!(!open.has_parent()); // app-modal rather than window-modal
+///
+/// // A save dialog is the same builder with a suggested name.
+/// let save = file_dialog().file_name("Untitled.md");
+/// # let _ = save;
+/// ```
 pub fn file_dialog<'a>() -> FileDialog<'a> {
     FileDialog {
         title: None,
@@ -173,6 +226,14 @@ impl<'a> FileDialog<'a> {
 
 /// How serious a message is — it picks the icon and, on some systems, the
 /// sound.
+///
+/// ```
+/// use silka_platform::dialog::MessageLevel;
+///
+/// // Information is the default: a dialog that shouts by default trains
+/// // users to dismiss it without reading.
+/// assert_eq!(MessageLevel::default(), MessageLevel::Info);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageLevel {
     /// Ordinary information.
@@ -185,6 +246,17 @@ pub enum MessageLevel {
 }
 
 /// Which buttons a message dialog offers.
+///
+/// ```
+/// use silka_platform::dialog::{message, MessageButtons};
+///
+/// assert_eq!(MessageButtons::default(), MessageButtons::Ok);
+///
+/// let confirm = message("Discard changes?")
+///     .body("Your edits will be lost.")
+///     .buttons(MessageButtons::YesNo);
+/// assert_eq!(confirm.button_set(), MessageButtons::YesNo);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MessageButtons {
     /// A single OK.
@@ -199,6 +271,20 @@ pub enum MessageButtons {
 }
 
 /// What the user chose.
+///
+/// Escape reports [`MessageAnswer::Cancel`], so dismissal and refusal are the
+/// same answer — which is what a user means by pressing it.
+///
+/// ```
+/// use silka_platform::dialog::MessageAnswer;
+///
+/// fn should_discard(answer: MessageAnswer) -> bool {
+///     matches!(answer, MessageAnswer::Yes)
+/// }
+///
+/// assert!(should_discard(MessageAnswer::Yes));
+/// assert!(!should_discard(MessageAnswer::Cancel));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageAnswer {
     /// The affirmative button.
@@ -212,6 +298,21 @@ pub enum MessageAnswer {
 }
 
 /// A message dialog, built by method chaining.
+///
+/// ```
+/// use silka_platform::dialog::{message, MessageButtons, MessageLevel};
+///
+/// let dialog = message("Could not save")
+///     .body("The file is on a volume that is no longer mounted.")
+///     .level(MessageLevel::Error)
+///     .buttons(MessageButtons::Ok);
+///
+/// assert_eq!(dialog.button_set(), MessageButtons::Ok);
+/// ```
+///
+/// [`MessageDialog::ask`] blocks and returns the answer;
+/// [`MessageDialog::show`] just presents it. This is the **OS's own** dialog —
+/// for one drawn inside the window, reach for `silka_widgets::dialog`.
 #[derive(Debug, Clone)]
 pub struct MessageDialog<'a> {
     title: String,
@@ -222,6 +323,25 @@ pub struct MessageDialog<'a> {
 }
 
 /// Create a message dialog with the given title.
+///
+/// This is the **OS's** alert, not the in-app `silka_widgets::dialog`. Reach
+/// for it when the message must survive the application being busy — a startup
+/// failure, a file that cannot be written — and for the in-app one otherwise.
+///
+/// ```
+/// use silka_platform::{message, MessageButtons, MessageLevel};
+///
+/// // A question: `ask()` blocks and returns which button was pressed.
+/// let confirm = message("Discard changes?")
+///     .body("This cannot be undone.")
+///     .level(MessageLevel::Warning)
+///     .buttons(MessageButtons::YesNo);
+/// assert_eq!(confirm.button_set(), MessageButtons::YesNo);
+///
+/// // A statement: `show()` just puts it on screen.
+/// let note = message("Export finished").body("42 files written.");
+/// assert_eq!(note.button_set(), MessageButtons::Ok);
+/// ```
 pub fn message<'a>(title: impl Into<String>) -> MessageDialog<'a> {
     MessageDialog {
         title: title.into(),

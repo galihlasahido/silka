@@ -6,12 +6,51 @@
 //! a widget can be pixel-perfect in one and broken in the other, and light/dark
 //! adds the same split again. So the unit of a golden test is not a widget, it
 //! is a widget **in a case**.
+//!
+//! ```
+//! use silka_testing::{for_each_case, Case};
+//!
+//! // Four cells, and the list is a constant rather than something each test
+//! // spells out for itself.
+//! assert_eq!(Case::ALL.len(), 4);
+//!
+//! // Each cell builds its own theme and names its own golden file, so the four
+//! // captures of one widget can never overwrite each other.
+//! let mut names = Vec::new();
+//! for_each_case(|case| {
+//!     let theme = case.theme();
+//!     assert_eq!(theme.preset, case.preset);
+//!     names.push(case.golden("button").name().to_string());
+//! });
+//! assert!(names.contains(&"button-cupertino-dark".to_string()));
+//! assert!(names.contains(&"button-tailwind-light".to_string()));
+//! assert_eq!(names.len(), 4);
+//! ```
 
 use silka_theme::{Appearance, Preset, Theme};
 
 use crate::golden::Golden;
 
 /// One cell of the matrix: a preset paired with an appearance.
+///
+/// The unit of a golden test is not a widget, it is a widget **in a case**: a
+/// component can be pixel-perfect under Cupertino and broken under Tailwind,
+/// and light/dark splits that again.
+///
+/// ```
+/// use silka_testing::matrix::Case;
+/// use silka_theme::{Appearance, Preset};
+///
+/// // Four cells, and a visual test is expected to walk all of them.
+/// assert_eq!(Case::ALL.len(), 4);
+///
+/// let case = Case::new(Preset::Tailwind, Appearance::Dark);
+/// assert_eq!(case.slug(), "tailwind-dark");
+/// assert_eq!(case.theme().preset, Preset::Tailwind);
+///
+/// // Golden names carry the case, so the four files never collide.
+/// assert_eq!(case.golden("card").name(), "card-tailwind-dark");
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Case {
     /// Which token preset.
@@ -64,6 +103,40 @@ impl Case {
 ///
 /// Without the naming, a failure in the fourth cell reports the same message as
 /// a failure in the first and the reader has to guess which preset broke.
+///
+/// This is the shape every visual test takes: one body, four cells, four
+/// goldens.
+///
+/// ```
+/// use silka_testing::for_each_case;
+///
+/// let mut slugs = Vec::new();
+/// for_each_case(|case| {
+///     // A real test would render a widget with `case.theme()` and compare
+///     // against `case.golden("button")`.
+///     let theme = case.theme();
+///     assert_eq!(theme.appearance, case.appearance);
+///     slugs.push(case.slug());
+/// });
+///
+/// // Every preset × appearance, exactly once.
+/// assert_eq!(
+///     slugs,
+///     ["cupertino-light", "cupertino-dark", "tailwind-light", "tailwind-dark"],
+/// );
+/// ```
+///
+/// When one cell fails, the panic names it — which is the whole reason this
+/// helper exists rather than a bare `for` loop:
+///
+/// ```should_panic
+/// use silka_testing::for_each_case;
+///
+/// // Panics with "kasus tailwind-light: …", not with an anonymous assertion.
+/// for_each_case(|case| {
+///     assert!(case.slug() != "tailwind-light", "radius token drifted");
+/// });
+/// ```
 pub fn for_each_case(mut f: impl FnMut(Case)) {
     for case in Case::ALL {
         let slug = case.slug();

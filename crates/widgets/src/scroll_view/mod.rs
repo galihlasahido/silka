@@ -110,6 +110,16 @@ pub const AUTO_HIDE: Duration = Duration::from_millis(900);
 // ---------------------------------------------------------------------------
 
 /// When the scrollbar is visible.
+/// ```
+/// use silka_widgets::Scrollbar;
+///
+/// // The macOS default since Lion, and ours: appear on use, fade on idle.
+/// assert_eq!(Scrollbar::default(), Scrollbar::Auto);
+///
+/// // `Hidden` is about appearance, not capability — the content still
+/// // scrolls by wheel, by keyboard, and through the a11y SCROLL action.
+/// assert_ne!(Scrollbar::Hidden, Scrollbar::Always);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Scrollbar {
     /// An overlay that appears on scroll/hover and fades away on its own — the
@@ -1122,6 +1132,32 @@ impl ViewNode for ScrollProps {
 /// Every value comes from `theme`: scrollbar color, thickness, corners
 /// (squircle in Cupertino, arc in Tailwind), wheel line height, and the focus
 /// ring.
+///
+/// ```
+/// use silka_core::view::{column, fixed, View};
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{scroll_view, Scrollbar};
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let content = column(
+///     (0..50)
+///         .map(|i| View::from(fixed(200.0, 24.0).label(format!("Row {i}"))))
+///         .collect::<Vec<_>>(),
+/// );
+///
+/// // Vertical by default, with a macOS-style overlay scrollbar that appears
+/// // while scrolling and fades out on its own.
+/// let list = scroll_view(&theme, content);
+/// # let _ = list;
+///
+/// // A horizontal strip with no visible bar. Hiding the bar is a statement
+/// // about appearance, never about capability — it still scrolls.
+/// let strip = scroll_view(&theme, fixed(2_000.0, 80.0))
+///     .horizontal()
+///     .scrollbar(Scrollbar::Hidden);
+/// # let _ = strip;
+/// ```
 pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
     ScrollBuilder {
         key: None,
@@ -1152,6 +1188,24 @@ pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
 /// orphan rule: a widget's method chain may only live in the crate that owns
 /// its type. The way it reads at the call site stays exactly the same as the
 /// core primitives — and that is what matters to the caller (`KOMPONEN.md`).
+/// ```
+/// use silka_core::view::fixed;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{scroll_view, Scrollbar};
+///
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// // Decoration reads exactly like it does on the core primitives, which is
+/// // what matters at the call site.
+/// let panel = scroll_view(&theme, fixed(400.0, 2_000.0))
+///     .vertical()
+///     .background(theme.color.surface)
+///     .corners(theme.corners_of(silka_theme::RadiusToken::Lg))
+///     .border(1.0, theme.color.separator)
+///     .scrollbar(Scrollbar::Always)
+///     .scroll(120.0);
+/// # let _ = panel;
+/// ```
 #[derive(Debug)]
 pub struct ScrollBuilder {
     key: Option<silka_core::signals::Key>,

@@ -14,6 +14,31 @@
 //! with a printed reason — a suite that cannot run its visual tests must say so
 //! out loud instead of quietly passing. When the runner is *supposed* to have a
 //! GPU, set `SILKA_REQUIRE_GPU=1` and the skip becomes a failure.
+//!
+//! ```
+//! use silka_paint::{Color, Quad, Rect, Scene, Size};
+//! use silka_testing::Headless;
+//!
+//! // `try_new` is the whole graceful-degradation story: `None` means this
+//! // machine has no usable adapter, not that the test failed.
+//! let Some(mut gpu) = Headless::try_new() else {
+//!     return; // in a real test, `gpu_or_skip!()` prints why and skips
+//! };
+//!
+//! let mut scene = Scene::new(Color::hex(0x1C1C1E));
+//! scene.push(Quad::new(Rect::new(10.0, 10.0, 40.0, 20.0)).background(Color::WHITE));
+//!
+//! // The capture comes back as plain pixels, at the physical resolution the
+//! // scale factor implies — the same pipeline a window uses, so this really
+//! // is a picture of what a user would see.
+//! let image = gpu.capture(&scene, Size::new(64.0, 48.0), 2.0);
+//! assert_eq!((image.width(), image.height()), (128, 96));
+//!
+//! // The quad landed where it was asked to, in physical pixels.
+//! assert_eq!(image.pixel(40, 40), [255, 255, 255, 255]);
+//! // …and the background is the clear color everywhere else.
+//! assert_ne!(image.pixel(2, 2), [255, 255, 255, 255]);
+//! ```
 
 use silka_paint::{GlyphSource, Scene, Size};
 use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
@@ -35,6 +60,24 @@ pub fn to_image(src: &Rgba8Image) -> Image {
 /// The cache is not premature optimisation: a frame-time benchmark renders
 /// hundreds of frames, and allocating a texture and a readback buffer per frame
 /// would measure the allocator instead of the framework.
+///
+/// ```no_run
+/// use silka_paint::{Color, Scene, Size};
+/// use silka_testing::Headless;
+///
+/// // `None` when the machine has no usable adapter — a normal CI condition,
+/// // unless `SILKA_REQUIRE_GPU=1` turns that skip into a failure.
+/// let Some(mut gpu) = Headless::try_new() else { return };
+///
+/// let image = gpu.capture(&Scene::new(Color::hex(0x1C1C1E)), Size::new(320.0, 200.0), 2.0);
+/// assert_eq!(image.width(), 640);
+///
+/// // Rendering the same size again reuses the cached target, so a benchmark
+/// // measures the framework rather than the allocator.
+/// let _again = gpu.capture(&Scene::new(Color::hex(0xF2F2F7)), Size::new(320.0, 200.0), 2.0);
+/// ```
+///
+/// The macro [`crate::gpu_or_skip`] wraps the `try_new` dance for tests.
 pub struct Headless {
     gpu: Gpu,
     targets: Vec<(TargetKey, OffscreenTarget)>,

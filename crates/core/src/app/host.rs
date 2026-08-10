@@ -14,14 +14,15 @@ use std::rc::{Rc, Weak};
 use std::time::Instant;
 
 use silka_paint::{Color, Scene, Size};
+use silka_theme::Theme;
 
 use crate::access::AccessTree;
 use crate::animation::{AnimationDriver, Motion, Tick};
 use crate::input::{Event, InputRouter, Response};
 use crate::scheduler::{Dirty, FrameScheduler, FrameTiming, Wake};
-use crate::signals::{current_scope, Runtime, ScopeId};
+use crate::signals::{current_scope, Runtime, ScopeId, Signal};
 use crate::tree::{BoxConstraints, NodeId, RenderTree, TextDirection};
-use crate::view::{reconcile_children, DiffStats, View};
+use crate::view::{reconcile_children, with_theme, DiffStats, View};
 
 use super::component::ComponentBox;
 
@@ -45,6 +46,24 @@ type WakeFn = Rc<dyn Fn(Wake)>;
 ///
 /// Keyed by type: one type = one injected value. That is enough, and it closes
 /// the whole "which one do I get" class of bugs that string keys invite.
+///
+/// ```
+/// use silka_core::app::{Env, ScaleFactor};
+/// use silka_core::signals::Runtime;
+/// use silka_theme::{Appearance, Theme};
+///
+/// let rt = Runtime::new();
+/// let mut env = Env::new();
+///
+/// // A signal rather than a plain value: when the OS switches to dark mode
+/// // only the components that actually read the theme are rebuilt.
+/// env.insert(rt.signal(Theme::cupertino(Appearance::Dark)));
+/// env.insert(rt.signal(ScaleFactor(2.0)));
+///
+/// // Keyed by type, so "which one do I get" cannot be asked.
+/// assert!(env.get::<silka_core::signals::Signal<Theme>>().is_some());
+/// assert!(env.get::<String>().is_none());
+/// ```
 #[derive(Default)]
 pub struct Env {
     map: HashMap<TypeId, Box<dyn Any>>,
@@ -99,6 +118,17 @@ impl core::fmt::Debug for Env {
 ///
 /// Logical sizes never change because of it — only the resolution of the glyph
 /// bitmaps does.
+///
+/// ```
+/// use silka_core::app::ScaleFactor;
+///
+/// assert_eq!(ScaleFactor::ONE.get(), 1.0);
+/// assert_eq!(ScaleFactor(2.0).get(), 2.0);
+///
+/// // Nonsense from a driver never reaches the text layer as a divisor.
+/// assert_eq!(ScaleFactor(0.0).get(), 1.0);
+/// assert_eq!(ScaleFactor(f32::NAN).get(), 1.0);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScaleFactor(pub f32);
 
@@ -203,6 +233,18 @@ impl Drop for HostGuard {
 /// children come from [`super::component`], and application-level injected
 /// values from [`BuildCtx::env`]. There is no `setState`, and no widget tree
 /// that can be poked at from here (§2.5).
+///
+/// ```
+/// use silka_core::app::{AppRuntime, ScaleFactor};
+/// use silka_core::view::fixed;
+///
+/// let mut ui = AppRuntime::new(|cx| {
+///     // Application-level values arrive here; component-local state does not.
+///     let scale = cx.env::<ScaleFactor>().map(|s| s.get()).unwrap_or(1.0);
+///     fixed(120.0 * scale, 24.0).into()
+/// });
+/// ui.frame();
+/// ```
 pub struct BuildCtx {
     host: Rc<HostShared>,
 }
@@ -262,6 +304,21 @@ impl core::fmt::Debug for BuildCtx {
 ///
 /// Not decoration: this is what tests use to prove that **only** the relevant
 /// subtree was rebuilt, and what an inspector uses to explain jank.
+///
+/// ```
+/// use silka_core::app::AppRuntime;
+/// use silka_core::view::fixed;
+///
+/// let mut ui = AppRuntime::new(|_cx| fixed(120.0, 24.0).into()).sized(320.0, 200.0);
+///
+/// // The first frame mounts the tree…
+/// let first = ui.frame();
+/// assert_eq!(first.index, 0);
+/// assert!(first.diff.created > 0);
+///
+/// // …and with nothing dirty, there is no second one to run.
+/// assert!(ui.is_idle());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameReport {
     /// Frame sequence number.
@@ -350,6 +407,38 @@ pub struct AppRuntime {
 ///
 /// The closure runs inside the signals runtime's root scope, so
 /// [`crate::signals::use_signal`] may be used directly within it.
+///
+/// ```
+/// use silka_core::app::app;
+/// use silka_core::signals::use_signal;
+/// use silka_core::view::{fixed, View};
+/// use silka_paint::Color;
+///
+/// let mut ui = app(|_cx| {
+///     // Component-local state, created once and kept across every rebuild.
+///     let count = use_signal(|| 0i32);
+///     View::from(
+///         fixed(80.0, 20.0)
+///             .background(Color::hex(0x0A84FF))
+///             .label(format!("Count {}", count.get())),
+///     )
+/// })
+/// .sized(320.0, 200.0);
+///
+/// // One frame: build the view, diff it into the render tree, lay it out,
+/// // and paint a scene. Everything the window shell needs, in one call.
+/// let first = ui.frame();
+/// assert_eq!(first.rebuilt, 1);
+/// assert!(first.diff.created > 0);
+/// assert!(!ui.scene().is_empty());
+///
+/// // Nothing changed, so the next frame rebuilds nothing and the diff is a
+/// // no-op — this is what "render only when dirty" means in practice, and it
+/// // is why the GPU is allowed to sleep.
+/// let idle = ui.frame();
+/// assert_eq!(idle.rebuilt, 0);
+/// assert!(idle.diff.is_noop());
+/// ```
 pub fn app(build: impl Fn(&BuildCtx) -> View + 'static) -> AppRuntime {
     AppRuntime::new(build)
 }
@@ -616,6 +705,35 @@ impl AppRuntime {
         dirty
     }
 
+    /// [`AppRuntime::animate`] with the **engine's own** pass — no widget crate
+    /// required.
+    ///
+    /// [`RenderTree::advance`] ticks every node that owns a spring through the
+    /// [`RenderNode`](crate::tree::RenderNode) contract, which today means every
+    /// `interactive(…)` written with the utility vocabulary: its hover, press,
+    /// focus and disabled states transition rather than cut (§2.6, §3.5). An
+    /// application that also uses `silka-widgets` calls `ui.animate(advance)`
+    /// instead — that function runs this pass first and then the widget springs.
+    ///
+    /// ```
+    /// use silka_core::app::app;
+    /// use silka_core::view::{fixed, interactive};
+    ///
+    /// let mut ui = app(|_cx| interactive(fixed(80.0, 24.0)).into()).sized(200.0, 100.0);
+    /// ui.frame();
+    /// // Nothing has been touched, so nothing moves and the app stays asleep.
+    /// assert!(ui.advance_animations().is_empty());
+    /// assert!(ui.is_idle());
+    /// ```
+    pub fn advance_animations(&mut self) -> Dirty {
+        self.animate(|tree, tick| tree.advance(tick))
+    }
+
+    /// [`AppRuntime::advance_animations`] with a caller-supplied frame time.
+    pub fn advance_animations_at(&mut self, now: Instant) -> Dirty {
+        self.animate_at(now, |tree, tick| tree.advance(tick))
+    }
+
     /// True when the previous animation frame left something still moving.
     pub fn is_animating(&self) -> bool {
         self.anim.is_animating()
@@ -690,15 +808,28 @@ impl AppRuntime {
             vec![self.root]
         };
 
-        // 2. Rebuild + diff, scope by scope.
-        let mut diff = DiffStats::default();
-        let mut rebuilt = 0usize;
-        for scope in antrean {
-            if let Some(stat) = self.rebuild_scope(scope) {
-                diff.merge(stat);
-                rebuilt += 1;
+        // 2. Rebuild + diff, scope by scope — under the **ambient theme**.
+        //
+        // This is what makes `.bg(ColorToken::Surface)` mean a color: the
+        // utility vocabulary of §2.6 resolves its tokens while the view is
+        // built, against whatever theme is installed for the duration of the
+        // pass ([`crate::view::with_theme`]). Installing it here rather than
+        // asking every shell to do it means the promise holds for *every*
+        // rebuild, including the per-component ones a signal triggers halfway
+        // down the tree — those never pass through the shell's root closure.
+        let (diff, rebuilt) = match self.env::<Signal<Theme>>() {
+            // `peek`, not `get`: the theme is read outside any scope here, and
+            // subscribing the frame loop to it would mark work dirty that is
+            // already being done. The components that read the theme subscribe
+            // themselves.
+            Some(theme) => {
+                let tema = theme.peek();
+                with_theme(tema, || self.bangun_ulang(antrean))
             }
-        }
+            // No theme injected (a bare `app(…)` in a unit test): utilities
+            // fall back to `Theme::default`, they never panic.
+            None => self.bangun_ulang(antrean),
+        };
         if diff.removed > 0 {
             self.kumpulkan_sampah();
         }
@@ -742,6 +873,23 @@ impl AppRuntime {
             size,
             timing,
         }
+    }
+
+    /// Run the whole rebuild queue and return `(diff, how many scopes ran)`.
+    ///
+    /// Split out of [`AppRuntime::frame`] only so that the pass can be wrapped
+    /// in one `with_theme` call without the frame body growing an indented
+    /// arm.
+    fn bangun_ulang(&mut self, antrean: Vec<ScopeId>) -> (DiffStats, usize) {
+        let mut diff = DiffStats::default();
+        let mut rebuilt = 0usize;
+        for scope in antrean {
+            if let Some(stat) = self.rebuild_scope(scope) {
+                diff.merge(stat);
+                rebuilt += 1;
+            }
+        }
+        (diff, rebuilt)
     }
 
     /// Rebuild one scope and diff the result into its anchor.

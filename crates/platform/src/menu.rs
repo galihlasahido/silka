@@ -50,6 +50,15 @@ use silka_core::input::{KeyCode, Modifiers, NamedKey};
 /// A string rather than an integer on purpose: menu ids show up in logs, in
 /// tests, and in crash reports, and `"file.save"` is worth more there than
 /// `7`.
+///
+/// ```
+/// use silka_platform::menu::MenuId;
+///
+/// let id = MenuId::new("file.save");
+/// assert_eq!(id.as_str(), "file.save");
+/// // Ids sort and hash, which is what makes duplicate detection cheap.
+/// assert!(MenuId::new("file.new") < id);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MenuId(String);
 
@@ -94,6 +103,22 @@ impl AsRef<str> for MenuId {
 /// Expressed in the framework's own input vocabulary
 /// ([`silka_core::input`]) so an application writes a shortcut **once**:
 /// [`Modifiers::COMMAND`] is ⌘ on macOS and Ctrl everywhere else.
+///
+/// ```
+/// use silka_core::input::{KeyCode, Modifiers};
+/// use silka_platform::menu::{cmd, cmd_shift, shortcut};
+///
+/// // Written once, correct on every OS.
+/// let save = cmd(KeyCode::Character('s'));
+/// assert_eq!(save.modifiers(), Modifiers::COMMAND);
+///
+/// // ⇧⌘S / Ctrl+Shift+S — "save as".
+/// let save_as = cmd_shift(KeyCode::Character('s'));
+/// assert!(save_as.modifiers().contains(Modifiers::SHIFT));
+///
+/// // Anything else is spelled out explicitly.
+/// let _ = shortcut(Modifiers::ALT, KeyCode::Character('f'));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shortcut {
     modifiers: Modifiers,
@@ -113,16 +138,48 @@ impl Shortcut {
 }
 
 /// A shortcut with an explicit modifier set.
+///
+/// ```
+/// use silka_core::input::{KeyCode, Modifiers, NamedKey};
+/// use silka_platform::shortcut;
+///
+/// // For the combinations `cmd`/`cmd_shift` do not cover.
+/// let escape_all = shortcut(Modifiers::ALT, KeyCode::Named(NamedKey::Escape));
+/// assert_eq!(escape_all.modifiers(), Modifiers::ALT);
+/// assert_eq!(escape_all.key(), &KeyCode::Named(NamedKey::Escape));
+/// ```
 pub fn shortcut(modifiers: Modifiers, key: KeyCode) -> Shortcut {
     Shortcut { modifiers, key }
 }
 
 /// ⌘/Ctrl + `key` — by far the most common shape.
+///
+/// `COMMAND` is ⌘ on macOS and Ctrl elsewhere, so one line is right on all
+/// three platforms — the application never writes a `cfg!` for a shortcut.
+///
+/// ```
+/// use silka_core::input::KeyCode;
+/// use silka_platform::{cmd, item};
+///
+/// let save = item("file.save", "Save").shortcut(cmd(KeyCode::Character('s')));
+/// assert!(save.accelerator().is_some());
+/// ```
 pub fn cmd(key: KeyCode) -> Shortcut {
     shortcut(Modifiers::COMMAND, key)
 }
 
 /// ⌘/Ctrl + ⇧ + `key`.
+///
+/// ```
+/// use silka_core::input::{KeyCode, Modifiers};
+/// use silka_platform::{cmd, cmd_shift};
+///
+/// let save_as = cmd_shift(KeyCode::Character('s'));
+/// assert!(save_as.modifiers().contains(Modifiers::SHIFT));
+///
+/// // …and it is genuinely a different shortcut from plain ⌘S.
+/// assert_ne!(save_as, cmd(KeyCode::Character('s')));
+/// ```
 pub fn cmd_shift(key: KeyCode) -> Shortcut {
     shortcut(Modifiers::COMMAND | Modifiers::SHIFT, key)
 }
@@ -134,6 +191,15 @@ pub fn cmd_shift(key: KeyCode) -> Shortcut {
 /// native text field and what gives `Quit` its correct termination behaviour.
 /// Re-implementing them as ordinary items is the classic way to end up with a
 /// menubar that looks right and does nothing.
+///
+/// ```
+/// use silka_platform::menu::{menu, MenuRole};
+///
+/// // A role is handed to the OS, not handled by the application: `About`
+/// // opens the standard panel, `Hide` really hides.
+/// let app = menu("Editor").role(MenuRole::About).separator().role(MenuRole::Hide);
+/// assert_eq!(app.entries().len(), 3);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum MenuRole {
@@ -174,6 +240,24 @@ pub enum MenuRole {
 }
 
 /// One line in a menu.
+///
+/// Rarely named directly: `.item()`, `.submenu()`, `.role()` and `.separator()`
+/// build the variants, and `From` conversions let `.entry()` take any of them.
+///
+/// ```
+/// use silka_platform::menu::{item, menu, MenuEntry, MenuRole};
+///
+/// let file = menu("File")
+///     .item(item("file.new", "New"))
+///     .separator()
+///     .submenu(menu("Recent").item(item("file.recent.clear", "Clear")))
+///     .role(MenuRole::About);
+///
+/// assert!(matches!(file.entries()[0], MenuEntry::Item(_)));
+/// assert!(matches!(file.entries()[1], MenuEntry::Separator));
+/// assert!(matches!(file.entries()[2], MenuEntry::Submenu(_)));
+/// assert!(matches!(file.entries()[3], MenuEntry::Role(_)));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MenuEntry {
     /// An item the application handles, identified by its [`MenuId`].
@@ -205,6 +289,22 @@ impl From<MenuRole> for MenuEntry {
 }
 
 /// An application-handled menu item.
+///
+/// ```
+/// use silka_core::input::KeyCode;
+/// use silka_platform::menu::{cmd, item};
+///
+/// let save = item("file.save", "Save")
+///     .shortcut(cmd(KeyCode::Character('s')))
+///     .enabled(true);
+///
+/// assert_eq!(save.id().as_str(), "file.save");
+/// assert!(save.accelerator().is_some());
+///
+/// // `checked` turns it into a checkmark item; `None` means it is not one.
+/// assert_eq!(save.check_state(), None);
+/// assert_eq!(item("view.grid", "Show Grid").checked(true).check_state(), Some(true));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuItem {
     id: MenuId,
@@ -216,6 +316,27 @@ pub struct MenuItem {
 }
 
 /// Create a menu item.
+///
+/// The `id` is what comes back when the user picks it — the application never
+/// matches on the title, which would break the moment the app is translated.
+///
+/// ```
+/// use silka_core::input::KeyCode;
+/// use silka_platform::{cmd, item};
+///
+/// let save = item("file.save", "Save")
+///     .shortcut(cmd(KeyCode::Character('s')))
+///     .enabled(true);
+///
+/// assert_eq!(save.id().as_str(), "file.save");
+/// assert_eq!(save.title(), "Save");
+/// assert!(save.is_enabled());
+/// assert_eq!(save.check_state(), None); // not a checkmark item
+///
+/// // A checkmark item is the same constructor with a state attached.
+/// let wrap = item("view.wrap", "Wrap Lines").checked(true);
+/// assert_eq!(wrap.check_state(), Some(true));
+/// ```
 pub fn item(id: impl Into<MenuId>, title: impl Into<String>) -> MenuItem {
     MenuItem {
         id: id.into(),
@@ -279,6 +400,21 @@ impl MenuItem {
 /// gets the search field. Naming the kind is what lets [`MenuBar::install`]
 /// hand each one to the right AppKit call instead of guessing from the title —
 /// a guess that would break the moment the application is translated.
+///
+/// ```
+/// use silka_platform::menu::{menubar, MenuKind};
+///
+/// // The standard Edit menu ships by default, because that is what puts
+/// // cut/copy/paste on the macOS responder chain — the difference between
+/// // ⌘V working and not.
+/// let bar = menubar("Editor");
+/// assert!(bar.has_standard_edit_menu());
+/// assert!(bar.index_of_kind(MenuKind::Edit).is_some());
+/// assert_eq!(bar.index_of_kind(MenuKind::App), Some(0));
+///
+/// // Opting out is possible, but it has to be said out loud.
+/// assert!(!menubar("Editor").without_standard_edit_menu().has_standard_edit_menu());
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MenuKind {
     /// The application menu (first on the macOS menubar).
@@ -294,6 +430,21 @@ pub enum MenuKind {
 }
 
 /// A menu: a title and a list of entries.
+///
+/// ```
+/// use silka_core::input::KeyCode;
+/// use silka_platform::menu::{cmd, item, menu, MenuKind};
+///
+/// let file = menu("File")
+///     .item(item("file.new", "New").shortcut(cmd(KeyCode::Character('n'))))
+///     .item(item("file.open", "Open…"))
+///     .separator()
+///     .item(item("file.close", "Close").enabled(false));
+///
+/// assert_eq!(file.title(), "File");
+/// assert_eq!(file.menu_kind(), MenuKind::Custom);
+/// assert_eq!(file.entries().len(), 4);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Menu {
     title: String,
@@ -303,6 +454,24 @@ pub struct Menu {
 }
 
 /// Create an ordinary menu.
+///
+/// ```
+/// use silka_platform::{item, menu, MenuRole};
+///
+/// let file = menu("File")
+///     .item(item("file.new", "New"))
+///     .item(item("file.open", "Open…"))
+///     .separator()
+///     .role(MenuRole::CloseWindow);
+///
+/// assert_eq!(file.title(), "File");
+/// assert!(file.is_enabled());
+/// assert_eq!(file.entries().len(), 4);
+///
+/// // Submenus nest by holding another menu, not by a second type.
+/// let with_recents = menu("File").submenu(menu("Open Recent"));
+/// assert_eq!(with_recents.entries().len(), 1);
+/// ```
 pub fn menu(title: impl Into<String>) -> Menu {
     Menu {
         title: title.into(),
@@ -445,6 +614,24 @@ const EDIT_ROLES_WAJIB: [MenuRole; 4] = [
 ];
 
 /// The application menubar.
+///
+/// ```
+/// use silka_platform::menu::{item, menu, menubar, MenuKind};
+///
+/// let bar = menubar("Editor")
+///     .menu(menu("File").item(item("file.new", "New")).item(item("file.open", "Open…")));
+///
+/// // Application menus land before the Window menu, which is where the HIG
+/// // puts File/View/anything application-specific.
+/// let names: Vec<_> = bar.menus().iter().map(|m| m.title()).collect();
+/// assert_eq!(names, ["Editor", "Edit", "File", "Window"]);
+///
+/// // Duplicate ids would make an activation ambiguous, so they are findable
+/// // before the menu is ever installed.
+/// assert!(bar.duplicate_ids().is_empty());
+/// assert!(bar.ids().iter().any(|id| id.as_str() == "file.new"));
+/// assert_eq!(bar.index_of_kind(MenuKind::Edit), Some(1));
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MenuBar {
     menus: Vec<Menu>,
@@ -456,6 +643,28 @@ pub struct MenuBar {
 /// documentation for why the Edit menu is not optional in practice. Menus added
 /// with [`MenuBar::menu`] land **before** the Window menu, which is where the
 /// HIG puts File/View/anything application-specific.
+///
+/// ```
+/// use silka_platform::{item, menu, menubar, MenuKind};
+///
+/// let bar = menubar("Silka").menu(menu("File").item(item("file.new", "New")));
+///
+/// // App, Edit, Window come for free — and the Edit menu is not optional in
+/// // practice, because on macOS it is what wires ⌘C to the responder chain.
+/// assert!(bar.has_standard_edit_menu());
+/// assert!(bar.index_of_kind(MenuKind::App).is_some());
+///
+/// // Application menus land before Window, which is where the HIG puts them.
+/// let window_at = bar.index_of_kind(MenuKind::Window).unwrap();
+/// let titles: Vec<&str> = bar.menus().iter().map(|m| m.title()).collect();
+/// let file_at = titles.iter().position(|t| *t == "File").unwrap();
+/// assert!(file_at < window_at);
+///
+/// // Every id in the bar, so duplicates are caught before the OS sees them
+/// // rather than as a menu item that mysteriously never fires.
+/// assert!(bar.duplicate_ids().is_empty());
+/// assert!(bar.ids().iter().any(|id| id.as_str() == "file.new"));
+/// ```
 pub fn menubar(app_name: impl Into<String>) -> MenuBar {
     MenuBar {
         menus: vec![
@@ -550,6 +759,20 @@ impl MenuBar {
 }
 
 /// Something went wrong installing a menu.
+///
+/// [`MenuError::DuplicateId`] is the one worth catching in a test rather than
+/// at runtime: two items sharing an id make every activation ambiguous, and the
+/// symptom is a menu item that runs the wrong command.
+///
+/// ```
+/// use silka_platform::menu::{item, menu, MenuId};
+///
+/// let broken = menu("File")
+///     .item(item("file.save", "Save"))
+///     .item(item("file.save", "Save As…")); // the same id twice
+///
+/// assert_eq!(broken.duplicate_ids(), vec![MenuId::new("file.save")]);
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MenuError {
@@ -752,6 +975,23 @@ fn isi(target: &dyn Penampung, entries: &[MenuEntry]) -> Result<(), MenuError> {
 /// **Keep it alive.** Dropping it takes the menu down with it — on macOS the
 /// menubar reverts to the bare default, on Windows the window loses its menu.
 /// The shell stores one of these next to the window for exactly that reason.
+///
+/// Applications normally never name this type: [`crate::WindowConfig::menubar`]
+/// installs the menubar and the shell holds the handle. Reach for
+/// [`MenuBar::install`] only when driving the event loop by hand.
+///
+/// ```no_run
+/// use silka_platform::menu::{item, menu, menubar, InstalledMenu};
+/// use silka_platform::winit::window::Window;
+///
+/// fn install(window: &Window) -> Result<InstalledMenu, Box<dyn std::error::Error>> {
+///     let bar = menubar("Editor").menu(menu("File").item(item("file.new", "New")));
+///     let installed = bar.install(window)?;
+///     assert_eq!(installed.description().menus().len(), 4);
+///     // Returning it is the point: dropping it takes the menu down too.
+///     Ok(installed)
+/// }
+/// ```
 pub struct InstalledMenu {
     /// The live OS menu. Only read where a platform has something to do with
     /// it (macOS unhooks it on drop, Windows owns it per window) — but held
@@ -880,6 +1120,25 @@ impl MenuBar {
 /// A standalone popup menu: a context menu, or the menu behind a tray icon.
 ///
 /// Same rule as [`InstalledMenu`] — while this value lives, the OS menu lives.
+///
+/// This is the **OS's** context menu, drawn by the window server. For one drawn
+/// inside the window — with our own tokens, springs and focus ring — reach for
+/// `silka_widgets::menu` instead; the tray is the case where only this one will
+/// do.
+///
+/// ```no_run
+/// use silka_platform::menu::{item, menu};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let popup = menu("Status")
+///     .item(item("app.open", "Open"))
+///     .separator()
+///     .item(item("app.quit", "Quit"))
+///     .popup()?;
+///
+/// assert_eq!(popup.description().entries().len(), 3);
+/// # Ok(()) }
+/// ```
 pub struct PopupMenu {
     root: muda::Menu,
     description: Menu,
@@ -1002,6 +1261,18 @@ fn cari_ganda(ids: Vec<MenuId>) -> Vec<MenuId> {
 }
 
 /// An item the user chose from a menu.
+///
+/// ```
+/// use silka_core::scheduler::Dirty;
+/// use silka_platform::menu::{MenuActivation, MenuId};
+///
+/// // `new` exists so a handler can be exercised without a live menu.
+/// let activation = MenuActivation::new(MenuId::new("file.new"));
+///
+/// let dirty = if activation.is("file.new") { Dirty::LAYOUT } else { Dirty::NONE };
+/// assert_eq!(dirty, Dirty::LAYOUT);
+/// assert_eq!(activation.id().as_str(), "file.new");
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuActivation {
     id: MenuId,

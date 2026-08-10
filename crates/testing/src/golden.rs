@@ -40,6 +40,17 @@ pub const CHANNEL_ENV: &str = "SILKA_GOLDEN_TOLERANCE";
 pub const RATIO_ENV: &str = "SILKA_GOLDEN_RATIO";
 
 /// What a golden assertion does when it runs.
+///
+/// ```
+/// use silka_testing::golden::Mode;
+///
+/// // The safe default is the strict one: CI must never write goldens.
+/// assert_eq!(Mode::default(), Mode::Compare);
+/// ```
+///
+/// Locally, `SILKA_GOLDEN=new` writes the goldens that do not exist yet and
+/// `SILKA_GOLDEN=update` overwrites all of them; anything unrecognised falls
+/// back to [`Mode::Compare`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
     /// Compare, and fail when the golden is missing. The only mode CI may run.
@@ -64,6 +75,21 @@ impl Mode {
 }
 
 /// What happened when a golden was asserted.
+///
+/// ```
+/// use silka_testing::{golden::{Golden, Mode, Outcome}, Image, Tolerance};
+///
+/// let dir = std::env::temp_dir().join("silka-doc-golden");
+/// let capture = Image::filled(4, 4, [0x1C, 0x1C, 0x1E, 0xFF]);
+///
+/// // First run in `New` mode: nothing on disk yet, so it is written.
+/// let golden = Golden::in_dir(&dir, "card").mode(Mode::New).tolerance(Tolerance::EXACT);
+/// assert!(matches!(golden.check(&capture), Ok(Outcome::Written(_))));
+///
+/// // Second run: the same capture now compares against the file.
+/// assert!(matches!(golden.check(&capture), Ok(Outcome::Matched(_))));
+/// # let _ = std::fs::remove_dir_all(&dir);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
     /// The capture matched the stored golden.
@@ -73,6 +99,23 @@ pub enum Outcome {
 }
 
 /// Why a golden assertion failed.
+///
+/// ```
+/// use silka_testing::{golden::{Golden, GoldenFailure, Mode}, Image, Tolerance};
+///
+/// let dir = std::env::temp_dir().join("silka-doc-golden-missing");
+/// let golden = Golden::in_dir(&dir, "never-recorded").mode(Mode::Compare);
+///
+/// // In the mode CI runs, a missing golden is a failure rather than a
+/// // silently created file — otherwise the first CI run records the bug.
+/// assert!(matches!(
+///     golden.check(&Image::filled(2, 2, [0, 0, 0, 255])),
+///     Err(GoldenFailure::Missing { .. })
+/// ));
+/// ```
+///
+/// On a mismatch the capture and a difference visualisation are written next to
+/// the golden, so a failing CI job leaves behind something to look at.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GoldenFailure {
     /// No golden file exists and the mode does not allow creating one.
@@ -153,6 +196,29 @@ impl fmt::Display for GoldenFailure {
 impl std::error::Error for GoldenFailure {}
 
 /// One golden file and the rules for comparing against it.
+///
+/// ```
+/// use silka_testing::{golden::{Golden, Mode}, Image, Tolerance};
+///
+/// let dir = std::env::temp_dir().join("silka-doc-golden-usage");
+/// let capture = Image::filled(8, 8, [0x0A, 0x84, 0xFF, 0xFF]);
+///
+/// let golden = Golden::in_dir(&dir, "button-primary")
+///     // Pick the tolerance by what the scene draws, not by what goes green.
+///     .tolerance(Tolerance::SHAPES)
+///     .mode(Mode::New);
+///
+/// assert_eq!(golden.name(), "button-primary");
+/// assert!(golden.path().ends_with("button-primary.png"));
+///
+/// let diff = golden.assert(&capture); // writes it the first time…
+/// assert!(golden.assert(&capture).is_match()); // …compares it afterwards
+/// # let _ = diff;
+/// # let _ = std::fs::remove_dir_all(&dir);
+/// ```
+///
+/// [`Golden::new`] stores files under the **calling crate's** `tests/golden/`,
+/// so each crate keeps its goldens next to the tests that produce them.
 #[derive(Debug, Clone)]
 pub struct Golden {
     name: String,

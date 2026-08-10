@@ -19,6 +19,44 @@ use super::node::{AccessActions, AccessNode, AccessRole};
 /// The split between the fields is the contract: the widget fills in
 /// [`AccessEntry::node`], the engine fills in the rest. A widget structurally
 /// **cannot** lie about `bounds` — it never holds this type.
+///
+/// The `id` is the same one layout, hit-testing and Taffy use: one identity
+/// space for everything, which is why what is announced and what is drawn
+/// cannot drift apart.
+///
+/// ```
+/// use silka_core::access::AccessRole;
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, interactive, reconcile, View};
+/// use silka_paint::Size;
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(
+///     &mut tree,
+///     column([View::from(
+///         interactive(fixed(120.0, 44.0))
+///             .role(AccessRole::Button)
+///             .label("Save"),
+///     )]),
+/// );
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// let access = tree.access_tree(None);
+/// let entry = access.find_label("Save").expect("the button announces itself");
+///
+/// // The widget supplied the role and the name…
+/// assert_eq!(entry.node.role, AccessRole::Button);
+/// assert_eq!(entry.node.label.as_deref(), Some("Save"));
+///
+/// // …and the engine supplied the geometry, straight from this frame's
+/// // layout. A widget never holds this type, so it cannot report a box it is
+/// // not actually drawing.
+/// assert_eq!(entry.bounds.size, Size::new(120.0, 44.0));
+///
+/// // One identity space: the a11y id is the render node id, which is what
+/// // lets a test click by accessible name and land on the real widget.
+/// assert!(tree.contains(entry.id));
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessEntry {
     /// The render node it came from — the same id used by layout, hit-testing
@@ -44,6 +82,29 @@ pub struct AccessEntry {
 /// pre-order** — a parent always precedes its children, siblings follow paint
 /// order. That is what makes [`AccessTree::dump`] deterministic and usable as
 /// a golden test.
+///
+/// ```
+/// use silka_core::input::FocusManager;
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, reconcile};
+/// use silka_paint::Size;
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, column([fixed(120.0, 24.0)]));
+/// tree.perform_layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+///
+/// let focus = FocusManager::new();
+/// let snapshot = tree.access_tree(focus.focused());
+/// assert_eq!(snapshot.root(), tree.root());
+///
+/// // A deterministic DFS pre-order dump — the shape a golden test asserts on.
+/// assert!(snapshot.dump().contains("window"));
+///
+/// // The first snapshot has no predecessor, so everything is "changed";
+/// // an identical second one produces nothing to send.
+/// assert!(!snapshot.changes_since(None).is_empty());
+/// assert!(snapshot.changes_since(Some(&snapshot)).is_empty());
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessTree {
     tree: TreeId,
@@ -309,6 +370,53 @@ impl AccessTree {
 /// enough that their parent appears in `changed` with a new child list.
 /// `removed` is still provided because it is useful for logs, tests and other
 /// backends.
+///
+/// `focus_changed` is separate on purpose: tabbing between two buttons changes
+/// no node's content at all, and without that flag the move would never be
+/// announced.
+///
+/// ```
+/// use silka_core::access::{AccessRole, AccessTree};
+/// use silka_core::tree::{BoxConstraints, RenderTree};
+/// use silka_core::view::{column, fixed, interactive, reconcile, View};
+/// use silka_paint::Size;
+///
+/// fn page(label: &str) -> View {
+///     View::from(column([View::from(
+///         interactive(fixed(120.0, 44.0))
+///             .role(AccessRole::Button)
+///             .label(label.to_string()),
+///     )]))
+/// }
+///
+/// let mut tree = RenderTree::new();
+/// reconcile(&mut tree, page("Save"));
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+/// let first = tree.access_tree(None);
+///
+/// // The first snapshot has nothing to diff against, so it goes out whole.
+/// let full = first.changes_since(None);
+/// assert!(full.full);
+/// assert!(!full.changed.is_empty());
+///
+/// // A label change is a delta: only what actually changed is sent, which is
+/// // what keeps the a11y bridge off the critical path of a busy frame.
+/// reconcile(&mut tree, page("Saved"));
+/// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
+/// let second = tree.access_tree(None);
+/// let delta = second.changes_since(Some(&first));
+/// assert!(!delta.full);
+/// assert!(delta
+///     .changed
+///     .iter()
+///     .any(|e| e.node.label.as_deref() == Some("Saved")));
+///
+/// // An identical frame produces no node changes at all.
+/// let quiet = second.changes_since(Some(&second));
+/// assert!(quiet.changed.is_empty());
+/// assert!(quiet.removed.is_empty());
+/// assert!(!quiet.focus_changed);
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct AccessUpdate {
     /// The root of the tree.
