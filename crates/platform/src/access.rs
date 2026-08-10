@@ -1,24 +1,24 @@
-//! Adapter aksesibilitas winit — jembatan antara pass a11y `silka-core` dan
-//! API aksesibilitas OS (REKOMENDASI §3.8).
+//! winit accessibility adapter — the bridge between the `silka-core` a11y pass
+//! and the OS accessibility APIs (REKOMENDASI §3.8).
 //!
-//! Yang menyeberang dari framework ke sini hanyalah
-//! [`AccessTree`]/[`AccessUpdate`]: satu snapshot pohon beserta selisihnya.
-//! Yang menyeberang balik hanyalah [`AccessActionRequest`] yang sudah
-//! divalidasi. `accesskit_winit` mengurus sisanya per platform: UIA di
-//! Windows, NSAccessibility di macOS, AT-SPI di Linux.
+//! The only thing that crosses from the framework into here is
+//! [`AccessTree`]/[`AccessUpdate`]: one tree snapshot plus its diff. The only
+//! thing that crosses back is an already-validated [`AccessActionRequest`].
+//! `accesskit_winit` handles the rest per platform: UIA on Windows,
+//! NSAccessibility on macOS, AT-SPI on Linux.
 //!
-//! ## Tiga aturan yang mudah dilanggar dan sudah dikunci di sini
+//! ## Three easily broken rules, locked down here
 //!
-//! 1. **Adapter dibuat sebelum window terlihat.** `accesskit_winit` panik
-//!    kalau tidak — jadi shell membuat window dalam keadaan tersembunyi,
-//!    memasang adapter, baru menampilkannya.
-//! 2. **Nol biaya saat tidak ada teknologi bantu.** Pass a11y hanya dijalankan
-//!    kalau adapter sedang aktif ([`AccessAdapter::update_with`]); pengguna
-//!    yang tidak memakai screen reader tidak membayar apa pun. Ini perpanjangan
-//!    langsung dari "render hanya saat dirty" (§3.5).
-//! 3. **Aktivasi ulang selalu mengirim pohon penuh.** Screen reader yang baru
-//!    dinyalakan tidak punya riwayat; mengirim delta ke sana berarti pohon yang
-//!    tidak pernah lengkap.
+//! 1. **The adapter is created before the window becomes visible.**
+//!    `accesskit_winit` panics otherwise — so the shell creates the window
+//!    hidden, attaches the adapter, and only then shows it.
+//! 2. **Zero cost when no assistive technology is present.** The a11y pass runs
+//!    only while the adapter is active ([`AccessAdapter::update_with`]); users
+//!    without a screen reader pay nothing at all. This is a direct extension of
+//!    "render only when dirty" (§3.5).
+//! 3. **Re-activation always sends the full tree.** A screen reader that was
+//!    just switched on has no history; sending it a delta would leave it with a
+//!    tree that is never complete.
 
 use accesskit_winit::Adapter;
 use silka_core::access::{AccessActionRequest, AccessTree};
@@ -26,11 +26,11 @@ use winit::event::WindowEvent as WinitWindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoopProxy};
 use winit::window::{Window, WindowId};
 
-/// Event aksesibilitas yang datang dari OS lewat event loop winit.
+/// An accessibility event arriving from the OS through the winit event loop.
 ///
-/// Dipakai sebagai *user event* event loop shell. Newtype, bukan alias, supaya
-/// event loop aplikasi bisa membawa event lain di kemudian hari tanpa memaksa
-/// perubahan API.
+/// Used as the shell event loop's *user event*. A newtype rather than an alias,
+/// so the application event loop can carry other events later without forcing
+/// an API change.
 #[derive(Debug)]
 pub struct AccessEvent(pub accesskit_winit::Event);
 
@@ -41,39 +41,39 @@ impl From<accesskit_winit::Event> for AccessEvent {
 }
 
 impl AccessEvent {
-    /// Window yang dimaksud event ini.
+    /// The window this event refers to.
     pub fn window_id(&self) -> WindowId {
         self.0.window_id
     }
 }
 
-/// Apa yang harus dilakukan shell setelah sebuah [`AccessEvent`] diproses.
+/// What the shell must do after an [`AccessEvent`] has been processed.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccessOutcome {
-    /// Teknologi bantu meminta pohon lengkap — kirim satu update penuh.
+    /// Assistive technology asked for the whole tree — send one full update.
     NeedsFullTree,
-    /// Teknologi bantu meminta sebuah aksi pada sebuah node.
+    /// Assistive technology requested an action on a node.
     Action(AccessActionRequest),
-    /// Tidak ada yang perlu dilakukan (mis. aksesibilitas dimatikan).
+    /// Nothing to do (e.g. accessibility was switched off).
     Idle,
 }
 
-/// Adapter aksesibilitas untuk satu window.
+/// Accessibility adapter for a single window.
 pub struct AccessAdapter {
     inner: Adapter,
-    /// Snapshot terakhir yang benar-benar dikirim — dasar delta **dan** dasar
-    /// penerjemahan permintaan aksi. Sengaja bukan pohon terbaru: teknologi
-    /// bantu selalu berbicara tentang pohon yang pernah ia lihat.
+    /// The last snapshot actually sent — the basis for the delta **and** for
+    /// resolving action requests. Deliberately not the newest tree: assistive
+    /// technology always talks about the tree it has already seen.
     terkirim: Option<AccessTree>,
-    /// Benar setelah aktivasi, sampai teknologi bantu dimatikan lagi.
+    /// True from activation until assistive technology is switched off again.
     aktif: bool,
 }
 
 impl AccessAdapter {
-    /// Pasang adapter pada sebuah window.
+    /// Attach the adapter to a window.
     ///
-    /// **Wajib dipanggil sebelum window ditampilkan** — buat window dengan
-    /// `with_visible(false)`, panggil ini, lalu `set_visible(true)`.
+    /// **Must be called before the window is shown** — create the window with
+    /// `with_visible(false)`, call this, then `set_visible(true)`.
     pub fn new(
         event_loop: &ActiveEventLoop,
         window: &Window,
@@ -86,27 +86,26 @@ impl AccessAdapter {
         }
     }
 
-    /// Benar bila ada teknologi bantu yang sedang mendengarkan.
+    /// True while some assistive technology is listening.
     pub fn is_active(&self) -> bool {
         self.aktif
     }
 
-    /// Teruskan event window ke adapter.
+    /// Forward a window event to the adapter.
     ///
-    /// Harus dipanggil untuk **setiap** event window, sebelum shell
-    /// memprosesnya sendiri: fokus dan geometri window ikut dari sini.
+    /// Must be called for **every** window event, before the shell handles it
+    /// itself: window focus and geometry are tracked from here.
     pub fn process_event(&mut self, window: &Window, event: &WinitWindowEvent) {
         self.inner.process_event(window, event);
     }
 
-    /// Tangani event aksesibilitas dari event loop.
+    /// Handle an accessibility event coming from the event loop.
     pub fn handle(&mut self, event: &AccessEvent) -> AccessOutcome {
         match &event.0.window_event {
             accesskit_winit::WindowEvent::InitialTreeRequested => {
                 self.aktif = true;
-                // Riwayat dibuang: penerima yang baru datang harus mendapat
-                // pohon penuh, bukan potongan perubahan yang tidak ia punya
-                // dasarnya.
+                // Drop the history: a newly arrived consumer must receive the
+                // full tree, not a slice of changes it has no basis for.
                 self.terkirim = None;
                 AccessOutcome::NeedsFullTree
             }
@@ -124,12 +123,12 @@ impl AccessAdapter {
         }
     }
 
-    /// Bangun pohon a11y **hanya bila ada yang mendengarkan**, lalu kirim
-    /// selisihnya.
+    /// Build the a11y tree **only if someone is listening**, then send the
+    /// diff.
     ///
-    /// `scale_factor` adalah scale factor window: AccessKit menuntut koordinat
-    /// piksel fisik, sedangkan seluruh framework di atasnya berbicara poin
-    /// logis.
+    /// `scale_factor` is the window's scale factor: AccessKit demands physical
+    /// pixel coordinates, whereas the whole framework above it speaks in
+    /// logical points.
     pub fn update_with(&mut self, scale_factor: f64, build: impl FnOnce() -> AccessTree) {
         if !self.aktif {
             return;
@@ -144,9 +143,9 @@ impl AccessAdapter {
         self.terkirim = Some(pohon);
     }
 
-    /// Kirim satu pohon penuh, apa pun riwayatnya.
+    /// Send one full tree, whatever the history says.
     ///
-    /// Dipakai saat menjawab [`AccessOutcome::NeedsFullTree`].
+    /// Used when answering [`AccessOutcome::NeedsFullTree`].
     pub fn update_full(&mut self, scale_factor: f64, pohon: AccessTree) {
         self.aktif = true;
         self.inner
@@ -154,7 +153,7 @@ impl AccessAdapter {
         self.terkirim = Some(pohon);
     }
 
-    /// Snapshot terakhir yang dikirim — sudut pandang teknologi bantu saat ini.
+    /// The last snapshot sent — the assistive technology's current view.
     pub fn last_sent(&self) -> Option<&AccessTree> {
         self.terkirim.as_ref()
     }

@@ -1,49 +1,50 @@
 //! # silka-text
 //!
-//! Wrapper tipis di atas **cosmic-text** (REKOMENDASI §3.3) — lapisan tersulit
-//! di seluruh framework dan pembunuh #1 framework GUI baru (§5 failure mode #1).
-//! Kontrak yang MENGIKAT: **jangan pernah menulis shaper sendiri.**
+//! A thin wrapper over **cosmic-text** (REKOMENDASI §3.3) — the hardest layer
+//! in the whole framework and the #1 killer of new GUI frameworks (§5 failure
+//! mode #1). The BINDING contract: **never write your own shaper.**
 //!
-//! Tanggung jawab crate ini:
+//! What this crate is responsible for:
 //!
-//! - **Shaping** lewat cosmic-text (fontdb + rustybuzz + swash), termasuk font
-//!   fallback per platform, bidi (UAX #9), dan emoji ZWJ/warna.
-//! - **Glyph atlas** — glyph di-rasterisasi ke atlas dan dirujuk lewat id;
-//!   `silka-paint` hanya berbicara dalam id itu, tidak pernah menyentuh font.
-//! - **Measure** — fungsi ukur untuk leaf node layout, dipakai `silka-core`
-//!   (box constraints) dan Taffy lewat measure function (§3.4).
+//! - **Shaping** through cosmic-text (fontdb + rustybuzz + swash), including
+//!   per-platform font fallback, bidi (UAX #9), and ZWJ/color emoji.
+//! - **Glyph atlas** — glyphs are rasterized into an atlas and referred to by
+//!   id; `silka-paint` speaks only in those ids and never touches a font.
+//! - **Measure** — the measurement function for layout leaf nodes, used by
+//!   `silka-core` (box constraints) and by Taffy through its measure function
+//!   (§3.4).
 //!
-//! Yang wajib benar sejak awal (§3.3): subpixel *positioning* (bukan subpixel
-//! AA), gerakan kursor per grapheme cluster (UAX #29), dan preedit IME yang
-//! dirender inline. `parley` adalah arah masa depan, tapi bukan untuk v1.
+//! What has to be right from day one (§3.3): subpixel *positioning* (not
+//! subpixel AA), caret movement per grapheme cluster (UAX #29), and IME preedit
+//! rendered inline. `parley` is the future direction, but not for v1.
 //!
-//! ## Batas yang dijaga
+//! ## The boundary this crate keeps
 //!
-//! Tipe cosmic-text **tidak pernah muncul di API publik** crate ini. Pemanggil
-//! berbicara dalam [`TextStyle`], [`TextConstraints`], [`TextMeasure`],
-//! [`TextLayout`], dan `silka_paint::GlyphRun`. Dengan begitu pindah ke
-//! `parley` nanti adalah pekerjaan di dalam crate ini saja, dan kode widget
-//! tetap tidak tahu apa itu font (§3.2, §3.3).
+//! cosmic-text types **never appear in this crate's public API**. Callers speak
+//! in [`TextStyle`], [`TextConstraints`], [`TextMeasure`], [`TextLayout`], and
+//! `silka_paint::GlyphRun`. That way, moving to `parley` later is work confined
+//! to this crate alone, and widget code still has no idea what a font is
+//! (§3.2, §3.3).
 //!
-//! ## Alur pemakaian
+//! ## Usage flow
 //!
 //! ```
 //! use silka_paint::{Color, Point, Scene};
 //! use silka_text::{TextConstraints, TextEngine, TextStyle};
 //!
-//! // Satu mesin untuk seluruh aplikasi. `bundled_only` = tanpa font sistem,
-//! // dipakai test/CI agar hasilnya deterministik.
+//! // One engine for the whole application. `bundled_only` = no system fonts,
+//! // used by tests/CI so results stay deterministic.
 //! let mut teks = TextEngine::bundled_only();
 //! teks.set_scale_factor(2.0); // Retina
 //!
-//! // Gaya selalu dibangun dari token theme, tidak pernah angka literal.
+//! // Styles are always built from theme tokens, never from literal numbers.
 //! let gaya = TextStyle::new().size(17.0);
 //!
-//! // 1. Ukur — inilah yang dipakai sistem layout (box constraints, §3.4).
+//! // 1. Measure — this is what the layout system uses (box constraints, §3.4).
 //! let ukuran = teks.measure("Halo, dunia", &gaya, TextConstraints::width(280.0));
 //! assert!(ukuran.width() > 0.0 && ukuran.line_count == 1);
 //!
-//! // 2. Gambar — hasilnya perintah `GlyphRun` berisi id atlas, bukan font.
+//! // 2. Draw — the result is a `GlyphRun` command holding atlas ids, not fonts.
 //! let mut scene = Scene::new(Color::hex(0x1C1C1E));
 //! teks.draw(
 //!     &mut scene,
@@ -56,12 +57,12 @@
 //! assert_eq!(scene.len(), 1);
 //! ```
 //!
-//! ## Yang dilihat backend
+//! ## What the backend sees
 //!
-//! Perintah `GlyphRun` hanya membawa **id atlas + kotak tujuan logis**. Backend
-//! menukar id itu jadi tekstur lewat trait [`silka_paint::GlyphSource`], yang
-//! diimplementasikan [`TextEngine`] (dan [`GlyphCache`]) — itulah satu-satunya
-//! permukaan yang dilihat backend:
+//! A `GlyphRun` command carries only **atlas ids + logical destination rects**.
+//! The backend turns those ids into textures through the
+//! [`silka_paint::GlyphSource`] trait, implemented by [`TextEngine`] (and
+//! [`GlyphCache`]) — that trait is the entire surface the backend sees:
 //!
 //! ```
 //! use silka_paint::{GlyphFormat, GlyphSource};
@@ -72,34 +73,35 @@
 //! # let l = teks.layout("Halo", &gaya, silka_text::TextConstraints::UNBOUNDED);
 //! # let run = teks.rasterize(&l, silka_paint::Point::ZERO, silka_paint::Color::WHITE);
 //!
-//! // Yang dilakukan backend tiap frame — tanpa pernah menyebut "font":
+//! // What the backend does every frame — without ever saying "font":
 //! let sisi = teks.atlas_size(GlyphFormat::Mask);
 //! if let Some(kotak) = teks.take_dirty(GlyphFormat::Mask) {
-//!     let _piksel = teks.atlas_pixels(GlyphFormat::Mask); // unggah kotak ini saja
+//!     let _piksel = teks.atlas_pixels(GlyphFormat::Mask); // upload just this rect
 //!     let _uv = kotak.uv(sisi);
 //! }
-//! let _letak = teks.placement(run.glyphs[0].image); // id → kotak di atlas
+//! let _letak = teks.placement(run.glyphs[0].image); // id → rect in the atlas
 //! ```
 //!
-//! Tidak ada tipe GPU di sini: backend wgpu hari ini dan backend GL/CPU nanti
-//! membaca sumber yang sama (§3.2, §5 failure mode #7). Sebaliknya, backend
-//! juga tidak perlu tahu crate ini ada — ia hanya memegang `&mut dyn
-//! GlyphSource`, sehingga pindah ke `parley` nanti tidak menyentuh renderer.
+//! There are no GPU types here: today's wgpu backend and a later GL/CPU backend
+//! read the same source (§3.2, §5 failure mode #7). Conversely, the backend
+//! does not need to know this crate exists — it only holds a `&mut dyn
+//! GlyphSource`, so moving to `parley` later never touches the renderer.
 //!
-//! ## Yang belum ada (utang teknis yang disadari)
+//! ## Not here yet (technical debt we know about)
 //!
-//! - Axis `opsz` (optical size) Inter belum di-set otomatis per ukuran font;
-//!   yang sudah jalan adalah axis `wght` lewat berat variable font (§3.6).
-//! - Rich text (banyak gaya dalam satu paragraf) dan ellipsis otomatis; yang
-//!   tersedia baru `max_lines` + penanda `overflowed` sebagai fondasinya.
-//! - Rentang seleksi yang menyeberangi baris belum menyorot pemisah barisnya
-//!   sendiri (terlihat saat `text_area` multi-baris nanti); yang sudah benar
-//!   adalah sorotan per potongan visual di dalam tiap baris.
+//! - Inter's `opsz` (optical size) axis is not yet set automatically per font
+//!   size; what does work is the `wght` axis through variable font weight
+//!   (§3.6).
+//! - Rich text (several styles in one paragraph) and automatic ellipsis; so far
+//!   only `max_lines` plus the `overflowed` flag exist as the foundation.
+//! - A selection range spanning lines does not yet highlight the line break
+//!   itself (visible once multi-line `text_area` lands); what is already
+//!   correct is the highlight per visual segment within each line.
 //!
-//! Yang **sudah** ada dan dulu tercatat sebagai utang: editing, caret per
-//! grapheme, dan preedit IME hidup di [`edit`] (model murni, tanpa piksel),
-//! dengan geometrinya — [`TextLayout::hit`], [`TextLayout::caret`], dan
-//! [`TextLayout::selection_rects`] — di [`layout`]. Keduanya dipakai
+//! What **does** exist and used to be listed as debt: editing, per-grapheme
+//! carets, and IME preedit live in [`edit`] (a pure model, no pixels), with
+//! their geometry — [`TextLayout::hit`], [`TextLayout::caret`], and
+//! [`TextLayout::selection_rects`] — in [`layout`]. Both are used by
 //! `text_field` (KOMPONEN.md Tier 2).
 
 #![warn(missing_docs)]

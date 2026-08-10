@@ -1,27 +1,27 @@
-//! Node render tabel: [`TableBody`], [`TableHeaderBox`], [`TableRowBox`], dan
+//! Table render nodes: [`TableBody`], [`TableHeaderBox`], [`TableRowBox`], and
 //! [`TableCellBox`].
 //!
-//! Pembagian kerjanya sengaja dibuat setipis mungkin, karena setiap node
-//! tambahan adalah satu tempat baru di mana geometri kolom bisa berbeda dari
-//! tetangganya:
+//! The division of labour is deliberately kept as thin as possible, because
+//! every extra node is one more place where column geometry could drift from
+//! its neighbour's:
 //!
-//! | Node | Yang benar-benar dikerjakannya |
+//! | Node | What it actually does |
 //! |---|---|
-//! | [`TableBody`] | jendela baris, seleksi, keyboard, sorotan — peran a11y `Table` |
-//! | [`TableHeaderBox`] | seret resize, seret geser kolom, klik sort — peran a11y `Row` |
-//! | [`TableRowBox`] | menempatkan sel pada kolomnya — peran a11y `Row` |
-//! | [`TableCellBox`] | perataan + padding satu sel — peran a11y `Cell` |
+//! | [`TableBody`] | row window, selection, keyboard, highlights — a11y role `Table` |
+//! | [`TableHeaderBox`] | resize drag, column reorder drag, sort click — a11y role `Row` |
+//! | [`TableRowBox`] | places each cell in its column — a11y role `Row` |
+//! | [`TableCellBox`] | alignment + padding of one cell — a11y role `Cell` |
 //!
-//! Ketiganya menyelesaikan lebar kolom lewat fungsi yang **sama**
-//! ([`solve_widths`]) dari lebar layout masing-masing, jadi tidak ada satu pun
-//! yang perlu bertanya kepada yang lain — dan tidak ada satu poin pun selisih
-//! antara garis header dan garis barisnya.
+//! All of them resolve column widths through the **same** function
+//! ([`solve_widths`]) from their own layout width, so none of them ever has to
+//! ask another — and there is not a single point of drift between the header
+//! lines and the row lines.
 //!
-//! Guliran, pantulan, dan scrollbar tidak ada di berkas ini sama sekali:
-//! semuanya milik [`scroll_view`](mod@crate::scroll_view), tempat tabel ini
-//! tinggal. Aritmetika virtualisasinya pun bukan milik tabel — ia
-//! [`ListMetrics`], objek yang sama persis dengan yang dipakai
-//! [`list`](mod@crate::list) (`KOMPONEN.md` aturan urutan #4).
+//! Scrolling, bounce, and scrollbars do not appear in this file at all: they
+//! all belong to [`scroll_view`](mod@crate::scroll_view), where this table
+//! lives. The virtualization arithmetic isn't the table's either — it is
+//! [`ListMetrics`], the very same object [`list`](mod@crate::list) uses
+//! (`KOMPONEN.md` ordering rule #4).
 
 use std::rc::Rc;
 
@@ -43,51 +43,55 @@ use super::column::{
 use super::selection::{Selection, SelectionMode};
 use super::state::TableState;
 
-/// Sejauh apa penunjuk harus bergerak sebelum tekan pada judul kolom berubah
-/// dari "klik untuk mengurutkan" menjadi "seret untuk memindahkan".
+/// How far the pointer must travel before a press on a column heading turns
+/// from "click to sort" into "drag to move".
 ///
-/// Tanpa ambang ini setiap klik sort yang tangannya sedikit bergetar akan
-/// diam-diam menggeser kolom — kegagalan yang membuat tabel terasa licin.
+/// Without this threshold every sort click made by a slightly unsteady hand
+/// would quietly shift a column — the kind of failure that makes a table feel
+/// slippery.
 pub const REORDER_THRESHOLD: f32 = 4.0;
 
-/// Jumlah bilah penyusun segitiga penanda urutan.
+/// Number of bars that make up the sort indicator triangle.
 const SORT_BARS: usize = 5;
 
 // ---------------------------------------------------------------------------
-// Gaya
+// Style
 // ---------------------------------------------------------------------------
 
-/// Nilai token yang **sudah diresolusi** untuk isi sebuah tabel.
+/// **Already resolved** token values for a table's body.
 ///
-/// Tidak satu pun angka warna lahir di lapisan ini: semuanya datang dari
-/// [`silka_theme::Theme`] satu tingkat di atas (§2.6, §2.7), sehingga preset
-/// Cupertino dan Tailwind berganti tanpa satu baris pun berubah di sini.
+/// Not a single color number is born at this layer: they all come from
+/// [`silka_theme::Theme`] one level up (§2.6, §2.7), so the Cupertino and
+/// Tailwind presets can swap without a single line changing here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TableStyle {
-    /// Latar isi tabel.
+    /// Background of the table body.
     pub decoration: Decoration,
-    /// Bentuk sudut sorotan baris.
+    /// Corner shape of the row highlight.
     pub row_corners: Corners,
-    /// Latar baris terpilih saat tabel memegang fokus (token `selection`).
+    /// Background of a selected row while the table holds focus (token
+    /// `selection`).
     pub selection: Color,
-    /// Latar baris terpilih saat fokus ada di tempat lain — kebiasaan macOS:
-    /// seleksi tidak hilang, ia meredup.
+    /// Background of a selected row while focus is elsewhere — the macOS
+    /// convention: the selection doesn't disappear, it dims.
     pub selection_idle: Color,
-    /// Latar baris di bawah penunjuk (token `surface_hover`).
+    /// Background of the row under the pointer (token `surface_hover`).
     pub hover: Color,
-    /// Latar baris yang sedang ditekan (token `surface_pressed`).
+    /// Background of the row being pressed (token `surface_pressed`).
     pub pressed: Color,
-    /// Latar baris ganjil bila [`TableStyle::striped`] menyala.
+    /// Background of odd rows when [`TableStyle::striped`] is on.
     pub stripe: Color,
-    /// Baris berselang-seling berlatar `stripe` — kebiasaan tabel data padat.
+    /// Alternate rows get the `stripe` background — the convention for dense
+    /// data tables.
     pub striped: bool,
-    /// Warna garis antar baris dan antar kolom (token `separator`).
+    /// Color of the lines between rows and between columns (token
+    /// `separator`).
     pub separator: Color,
-    /// Tebal garis antar baris; `0` = tanpa garis.
+    /// Thickness of the line between rows; `0` = no line.
     pub separator_width: f32,
-    /// Tebal garis antar kolom; `0` = tanpa garis.
+    /// Thickness of the line between columns; `0` = no line.
     pub grid_width: f32,
-    /// Cincin fokus keyboard di sekeliling **sel** aktif (token `focus_ring`).
+    /// Keyboard focus ring around the active **cell** (token `focus_ring`).
     pub focus_ring: Option<FocusRing>,
 }
 
@@ -110,27 +114,27 @@ impl Default for TableStyle {
     }
 }
 
-/// Nilai token yang sudah diresolusi untuk **header** sebuah tabel.
+/// Already resolved token values for a table's **header**.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HeaderStyle {
-    /// Latar header — wajib buram: baris yang lewat di bawahnya tidak boleh
-    /// tembus saat header menempel.
+    /// Header background — must be opaque: rows passing underneath must not
+    /// show through while the header is sticky.
     pub background: Color,
-    /// Latar judul kolom di bawah penunjuk.
+    /// Background of the column heading under the pointer.
     pub hover: Color,
-    /// Latar judul kolom yang sedang ditekan.
+    /// Background of the column heading being pressed.
     pub pressed: Color,
-    /// Warna garis pemisah (bawah header dan antar kolom).
+    /// Color of the separator lines (below the header and between columns).
     pub separator: Color,
-    /// Tebal garis pemisah.
+    /// Thickness of the separator lines.
     pub separator_width: f32,
-    /// Warna segitiga penanda urutan dan garis penunjuk tujuan geser.
+    /// Color of the sort indicator triangle and of the reorder drop line.
     pub indicator: Color,
-    /// Lebar segitiga penanda urutan.
+    /// Width of the sort indicator triangle.
     pub indicator_size: f32,
-    /// Warna pegangan resize saat penunjuk berada di atasnya.
+    /// Color of the resize handle while the pointer is over it.
     pub handle: Color,
-    /// Tebal pegangan resize saat disorot.
+    /// Thickness of the resize handle while highlighted.
     pub handle_width: f32,
 }
 
@@ -154,14 +158,14 @@ impl Default for HeaderStyle {
 // TableBody
 // ---------------------------------------------------------------------------
 
-/// Node isi tabel tervirtualisasi.
+/// Virtualized table body node.
 ///
-/// Seperti [`ListBody`](crate::list::ListBody), ia melapor setinggi **seluruh**
-/// isi (`header + count × extent`) tapi hanya memiliki node untuk baris di
-/// dalam jendela. Baris ke-99.999 karena itu bisa ditempatkan tanpa pernah
-/// membangun 99.998 node sebelumnya.
+/// Like [`ListBody`](crate::list::ListBody), it reports the height of the
+/// **entire** content (`header + count × extent`) but only owns nodes for the
+/// rows inside the window. Row 99,999 can therefore be placed without ever
+/// building the 99,998 nodes before it.
 pub struct TableBody {
-    // -- properti (datang dari view) -------------------------------------
+    // -- properties (supplied by the view) -------------------------------
     pub(super) metrics: ListMetrics,
     pub(super) offset: f32,
     pub(super) first: usize,
@@ -176,16 +180,17 @@ pub struct TableBody {
     pub(super) style: TableStyle,
     pub(super) state: Option<TableState>,
     pub(super) on_activate: Option<RowAction>,
-    /// Lebar jalur scrollbar di tepi yang **tidak** boleh menelan klik.
+    /// Width of the scrollbar track at the edge that must **not** swallow
+    /// clicks.
     pub(super) bar_inset: f32,
 
-    // -- keadaan runtime (tidak pernah disentuh diffing) -----------------
-    /// Tepi atas sorotan baris aktif — springnya yang membuat seleksi
-    /// *meluncur* antar baris alih-alih berkedip pindah.
+    // -- runtime state (never touched by diffing) ------------------------
+    /// Top edge of the active row highlight — its spring is what makes the
+    /// selection *glide* between rows instead of blinking across.
     lead_y: SpringValue<f32>,
-    /// Kepekatan sorotan baris aktif.
+    /// Opacity of the active row highlight.
     lead_alpha: SpringValue<f32>,
-    /// Kepekatan sorotan baris terpilih lainnya (seleksi jamak).
+    /// Opacity of the highlight on the other selected rows (multi-selection).
     sel_alpha: SpringValue<f32>,
     hover_y: SpringValue<f32>,
     hover_alpha: SpringValue<f32>,
@@ -194,23 +199,23 @@ pub struct TableBody {
     hovered: Option<usize>,
     pressed: Option<usize>,
     focused: bool,
-    /// Baris yang menunggu digulirkan ke layar (dilayani [`super::sync`]).
+    /// Row waiting to be scrolled into view (served by [`super::sync`]).
     reveal: Option<usize>,
     width: f32,
     rtl: bool,
 }
 
-/// Spring sorotan baris.
+/// Spring for the row highlight.
 ///
-/// **Dekoratif** dengan sengaja: yang membawa informasi adalah baris mana yang
-/// terpilih, bukan perjalanan sorotannya. Di bawah reduced-motion sorotan
-/// langsung berada di tempatnya (§3.5).
+/// Deliberately **decorative**: what carries the information is which row is
+/// selected, not the highlight's journey there. Under reduced-motion the
+/// highlight is simply already in place (§3.5).
 fn sorotan_spring(spring: Spring) -> SpringValue<f32> {
     SpringValue::new(0.0).with_spring(spring).decorative()
 }
 
 impl TableBody {
-    /// Node baru dari props yang sudah diresolusi.
+    /// A new node from already resolved props.
     pub(super) fn from_props(props: &super::view::TableProps) -> Self {
         let mut node = Self {
             metrics: props.metrics,
@@ -241,68 +246,68 @@ impl TableBody {
             width: 0.0,
             rtl: false,
         };
-        // Tabel yang lahir dengan seleksi (state yang dipulihkan) **tidak**
-        // menganimasikan sorotannya masuk: itu bukan gerakan, itu keadaan awal.
+        // A table born with a selection (restored state) does **not** animate
+        // its highlight in: that isn't motion, it's the initial state.
         node.pasang_sorotan(false);
         node
     }
 
-    /// Ukuran-ukuran tabel yang berlaku.
+    /// The table metrics in effect.
     pub fn metrics(&self) -> ListMetrics {
         self.metrics
     }
 
-    /// Baris-baris yang sedang terpilih.
+    /// The rows that are currently selected.
     pub fn selection(&self) -> &Selection {
         &self.selection
     }
 
-    /// Baris aktif (pemegang cincin fokus).
+    /// The active row (the one holding the focus ring).
     pub fn lead(&self) -> Option<usize> {
         self.selection.lead()
     }
 
-    /// Kolom aktif, sebagai indeks **tampil**.
+    /// The active column, as a **display** index.
     pub fn active_column(&self) -> usize {
         self.active
     }
 
-    /// Baris di bawah penunjuk.
+    /// The row under the pointer.
     pub fn hovered(&self) -> Option<usize> {
         self.hovered
     }
 
-    /// Benar bila tabel memegang fokus keyboard.
+    /// True while the table holds keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// State yang dipakai tabel ini, bila ada.
+    /// The state this table uses, if any.
     pub fn state(&self) -> Option<TableState> {
         self.state
     }
 
-    /// Indeks baris pertama yang benar-benar dimaterialisasi.
+    /// Index of the first row that is actually materialized.
     pub fn first(&self) -> usize {
         self.first
     }
 
-    /// Berapa baris yang benar-benar dimaterialisasi menjadi node.
+    /// How many rows are actually materialized into nodes.
     pub fn materialized(&self) -> usize {
         self.rows
     }
 
-    /// Kolom-kolom dalam urutan tampil.
+    /// The columns in display order.
     pub fn columns(&self) -> &[ColumnLayout] {
         &self.columns
     }
 
-    /// Lebar tiap kolom pada lebar tabel hasil layout terakhir.
+    /// Width of each column at the table width from the last layout.
     pub fn column_widths(&self) -> Vec<f32> {
         solve_widths(&self.columns, self.width)
     }
 
-    /// Kotak baris `index` dalam **koordinat isi**.
+    /// Rect of row `index` in **content coordinates**.
     pub fn row_rect(&self, index: usize) -> Rect {
         Rect::new(
             0.0,
@@ -312,14 +317,14 @@ impl TableBody {
         )
     }
 
-    /// Ambil permintaan "gulirkan baris ini ke layar" yang tertunda.
+    /// Take the pending "scroll this row into view" request.
     pub(super) fn take_reveal(&mut self) -> Option<usize> {
         self.reveal.take()
     }
 
-    // -- animasi ----------------------------------------------------------
+    // -- animation --------------------------------------------------------
 
-    /// Benar bila masih ada sorotan yang bergerak.
+    /// True while any highlight is still moving.
     pub fn is_animating(&self) -> bool {
         self.lead_y.is_animating()
             || self.lead_alpha.is_animating()
@@ -329,7 +334,7 @@ impl TableBody {
             || self.press_alpha.is_animating()
     }
 
-    /// Majukan sorotan satu frame; benar bila ada piksel yang berubah.
+    /// Advance the highlights by one frame; true if any pixel changed.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let sebelum = self.snapshot();
         tick.advance(&mut self.lead_y);
@@ -352,7 +357,7 @@ impl TableBody {
         ]
     }
 
-    /// Selesaikan seluruh gerakan sorotan seketika (uji, snapshot).
+    /// Finish every highlight movement instantly (tests, snapshots).
     pub fn settle(&mut self) {
         self.lead_y.settle();
         self.lead_alpha.settle();
@@ -362,7 +367,7 @@ impl TableBody {
         self.press_alpha.settle();
     }
 
-    /// Ganti spring seluruh sorotan tanpa mengganggu gerakan yang berjalan.
+    /// Swap the spring of every highlight without disturbing motion in flight.
     pub fn set_spring(&mut self, spring: Spring) {
         self.lead_y.set_spring(spring);
         self.lead_alpha.set_spring(spring);
@@ -372,21 +377,21 @@ impl TableBody {
         self.press_alpha.set_spring(spring);
     }
 
-    /// Spring yang menjalankan sorotan.
+    /// The spring that drives the highlights.
     pub fn spring(&self) -> Spring {
         self.lead_y.spring()
     }
 
-    /// Arahkan sorotan ke keadaan seleksi sekarang.
+    /// Point the highlights at the current selection state.
     fn pasang_sorotan(&mut self, animasi: bool) {
         let ada = !self.selection.is_empty();
         self.sel_alpha.set_target(if ada { 1.0 } else { 0.0 });
         match self.selection.lead() {
             Some(i) => {
                 let y = self.metrics.row_top(i);
-                // Sorotan yang baru muncul **tidak** meluncur dari baris lama:
-                // ia memudar masuk di tempatnya. Yang meluncur hanya
-                // perpindahan saat sorotannya memang sudah terlihat.
+                // A highlight that has just appeared does **not** glide in
+                // from the old row: it fades in where it belongs. Only moves
+                // made while the highlight is already visible glide.
                 if self.lead_alpha.position() <= 0.0 || !animasi {
                     self.lead_y.jump_to(y);
                 } else {
@@ -417,9 +422,9 @@ impl TableBody {
         self.hover_alpha.set_target(1.0);
     }
 
-    // -- seleksi ----------------------------------------------------------
+    // -- selection --------------------------------------------------------
 
-    /// Setel seleksi di node **dan** terbitkan ke [`TableState`].
+    /// Set the selection on the node **and** publish it to [`TableState`].
     pub(super) fn set_selection(&mut self, selection: Selection, animasi: bool) -> bool {
         if self.selection == selection {
             return false;
@@ -444,7 +449,7 @@ impl TableBody {
         }
     }
 
-    /// Berapa baris yang muat dalam satu layar penuh (Page Up/Down).
+    /// How many rows fit in one full screen (Page Up/Down).
     fn sehalaman(&self) -> usize {
         if self.metrics.extent <= 0.0 {
             return 1;
@@ -462,7 +467,7 @@ impl TableBody {
         }
     }
 
-    /// Baris tujuan setelah bergeser `delta` langkah dari baris aktif.
+    /// The target row after moving `delta` steps from the active row.
     fn langkah(&self, delta: isize) -> usize {
         let terakhir = (self.metrics.count - 1) as isize;
         match self.selection.lead() {
@@ -472,8 +477,8 @@ impl TableBody {
         }
     }
 
-    /// Koordinat mendatar dalam **arah baca**: di RTL, kolom pertama ada di
-    /// kanan, jadi seluruh aritmetika kolom bekerja pada nilai yang dicerminkan
+    /// Horizontal coordinate in **reading direction**: in RTL the first column
+    /// sits on the right, so all column arithmetic works on mirrored values
     /// (§9.8).
     fn reading_x(&self, x: f32) -> f32 {
         if self.rtl {
@@ -483,10 +488,10 @@ impl TableBody {
         }
     }
 
-    /// Baris yang berada di titik lokal `p` (koordinat isi).
+    /// The row at local point `p` (content coordinates).
     fn baris_di(&self, p: Point) -> Option<usize> {
-        // Header yang menempel menutupi baris di bawahnya: klik di atasnya
-        // adalah klik pada header, bukan pada baris yang kebetulan lewat.
+        // A sticky header covers the rows beneath it: a click on it is a click
+        // on the header, not on whichever row happens to be passing under.
         if self.has_header && self.metrics.sticky {
             let atas = self.offset;
             if p.y >= atas && p.y < atas + self.metrics.header {
@@ -496,15 +501,15 @@ impl TableBody {
         self.metrics.index_at(p.y)
     }
 
-    /// Benar bila titik ini berada di jalur scrollbar yang melayang di atas
-    /// tabel.
+    /// True when this point falls in the scrollbar track that floats over the
+    /// table.
     fn di_jalur_scrollbar(&self, p: Point) -> bool {
         self.bar_inset > 0.0
             && self.metrics.max_scroll() > 0.0
             && p.x >= self.width - self.bar_inset
     }
 
-    /// Kotak sel `(baris, kolom tampil)` dalam koordinat isi.
+    /// Rect of the cell at `(row, display column)` in content coordinates.
     pub fn cell_rect(&self, row: usize, column: usize) -> Rect {
         let widths = self.column_widths();
         let tepi = offsets(&widths);
@@ -548,8 +553,8 @@ impl TableBody {
                 ctx.capture_pointer();
                 if self.mode.is_selectable() {
                     ctx.request_focus();
-                    // Kolom yang diklik menjadi sel aktif: navigasi keyboard
-                    // berikutnya melanjutkan dari tempat jari berhenti.
+                    // The clicked column becomes the active cell: the next
+                    // keyboard navigation resumes where the finger stopped.
                     let widths = self.column_widths();
                     if let Some(k) = column_at(&widths, self.reading_x(ctx.local().x)) {
                         self.set_active(k);
@@ -571,9 +576,9 @@ impl TableBody {
                 }
                 self.press_alpha.set_target(0.0);
                 ctx.release_pointer();
-                // Ketuk-ganda membuka, ketuk tunggal hanya memilih — kebiasaan
-                // setiap tabel macOS. `== 2` dan bukan `>= 2`: ketukan ketiga
-                // dan keempat tidak boleh membuka baris yang sama lagi.
+                // Double-click opens, single click only selects — the habit of
+                // every macOS table. `== 2` rather than `>= 2`: the third and
+                // fourth click must not open the same row again.
                 if ditekan == baris && p.click_count == 2 {
                     if let (Some(i), Some(aksi)) = (baris, self.on_activate.clone()) {
                         aksi.call(i);
@@ -598,7 +603,7 @@ impl TableBody {
         }
         let m = k.modifiers;
 
-        // ⌘A memilih seluruh baris — satu rentang, berapa pun jumlahnya.
+        // ⌘A selects every row — a single range, however many there are.
         if self.mode == SelectionMode::Multiple
             && m.is_exactly(Modifiers::COMMAND)
             && matches!(&k.code, KeyCode::Character(c) if c.eq_ignore_ascii_case(&'a'))
@@ -613,7 +618,7 @@ impl TableBody {
             return;
         }
 
-        // Esc melepas seleksi — jalan keluar yang selalu ada.
+        // Esc clears the selection — the escape hatch that is always there.
         if k.code.is(NamedKey::Escape) && m.is_empty() && !self.selection.is_empty() {
             if self.set_selection(Selection::default(), true) {
                 ctx.request_animation();
@@ -623,8 +628,9 @@ impl TableBody {
             return;
         }
 
-        // Navigasi **antar sel**: kolom aktif bergeser, seleksi baris tidak
-        // tersentuh. Di RTL panah kanan berarti kolom sebelumnya (§9.8).
+        // **Cell-to-cell** navigation: the active column moves, the row
+        // selection is untouched. In RTL the right arrow means the previous
+        // column (§9.8).
         let maju = if self.rtl {
             NamedKey::ArrowLeft
         } else {
@@ -678,14 +684,14 @@ impl TableBody {
         let mut seleksi = self.selection.clone();
         seleksi.apply_move(index, extend, self.mode);
         self.set_selection(seleksi, true);
-        // Guliran ke baris aktif dijalankan `sync`, yang memegang pohon.
+        // Scrolling to the active row is done by `sync`, which owns the tree.
         self.reveal = Some(index);
         ctx.request_animation();
         ctx.request_paint();
         ctx.handled();
     }
 
-    // -- gambar -----------------------------------------------------------
+    // -- painting ---------------------------------------------------------
 
     fn sorot(&self, ctx: &mut PaintCtx<'_>, y: f32, warna: Color, alpha: f32) {
         if alpha <= 0.0 || warna.a <= 0.0 {
@@ -712,15 +718,15 @@ impl RenderNode for TableBody {
         "TableBody"
     }
 
-    /// Baris ditempatkan sendiri, jadi node ini menyerap penunjuk yang tidak
-    /// diambil isinya — tombol di dalam sel tetap menang karena hit-test
-    /// menelusuri anak lebih dulu.
+    /// Rows are placed by hand, so this node absorbs any pointer its content
+    /// doesn't take — a button inside a cell still wins, because hit testing
+    /// walks the children first.
     fn hit_behavior(&self) -> HitBehavior {
         HitBehavior::Opaque
     }
 
-    /// Tabel yang bisa dipilih adalah **satu** perhentian Tab (pola NSTableView
-    /// dan ARIA grid): di dalamnya panah yang berkuasa, bukan Tab.
+    /// A selectable table is **one** tab stop (the NSTableView and ARIA grid
+    /// pattern): inside it the arrow keys rule, not Tab.
     fn focus_policy(&self) -> FocusPolicy {
         if self.mode.is_selectable() && self.metrics.count > 0 {
             FocusPolicy::FOCUSABLE
@@ -751,9 +757,8 @@ impl RenderNode for TableBody {
         let mut idx = baris;
         if self.has_empty && idx < jumlah_anak {
             let anak = ctx.child(idx);
-            // Empty state mengisi jendela pandang bila tingginya sudah
-            // diketahui, supaya isinya bisa diratakan di tengah oleh
-            // aplikasinya sendiri.
+            // The empty state fills the viewport once its height is known, so
+            // that the app itself can center its content inside it.
             let ruang = (self.metrics.viewport - self.metrics.header).max(0.0);
             let c = if ruang > 0.0 {
                 BoxConstraints::new(lebar, lebar, ruang, ruang)
@@ -765,8 +770,8 @@ impl RenderNode for TableBody {
             tinggi = tinggi.max(self.metrics.header + ukuran.height);
             idx += 1;
         }
-        // Header **terakhir** supaya ia tergambar di atas baris tanpa perlu
-        // pembungkus clip kedua.
+        // The header goes **last** so it paints above the rows without needing
+        // a second clipping wrapper.
         if self.has_header && idx < jumlah_anak {
             let anak = ctx.child(idx);
             let c = BoxConstraints::new(lebar, lebar, self.metrics.header, self.metrics.header);
@@ -793,8 +798,8 @@ impl RenderNode for TableBody {
         ctx.decorate(&self.style.decoration);
         let akhir = (self.first + self.rows).min(self.metrics.count);
 
-        // Zebra: hanya untuk baris yang dimaterialisasi — seratus ribu baris
-        // tetap menghasilkan belasan perintah gambar.
+        // Zebra striping: only for materialized rows — a hundred thousand rows
+        // still produce a dozen or so draw commands.
         if self.style.striped && self.style.stripe.a > 0.0 {
             for i in self.first..akhir {
                 if i % 2 == 1 {
@@ -812,9 +817,8 @@ impl RenderNode for TableBody {
                     self.hover_alpha.position(),
                 );
             }
-            // Baris terpilih **selain** yang aktif: mereka tidak sedang
-            // bergerak ke mana-mana, jadi mereka tidak meluncur — hanya
-            // kepekatannya yang bertransisi.
+            // Selected rows **other than** the active one: they aren't moving
+            // anywhere, so they don't glide — only their opacity transitions.
             let warna = self.warna_seleksi();
             let lead = self.selection.lead();
             for (a, b) in self.selection.ranges_within(self.first, self.rows) {
@@ -830,7 +834,7 @@ impl RenderNode for TableBody {
                     );
                 }
             }
-            // Baris aktif: inilah yang meluncur antar baris.
+            // The active row: this is the one that glides between rows.
             self.sorot(
                 ctx,
                 self.lead_y.position(),
@@ -847,7 +851,7 @@ impl RenderNode for TableBody {
             }
         }
 
-        // Garis antar baris.
+        // Lines between rows.
         if self.style.separator_width > 0.0 && self.style.separator.a > 0.0 {
             for i in self.first.max(1)..akhir {
                 ctx.quad(
@@ -862,8 +866,9 @@ impl RenderNode for TableBody {
             }
         }
 
-        // Garis antar kolom: satu perintah per kolom, membentang setinggi isi.
-        // Clip wadah gulir yang memotongnya — bukan aritmetika di sini.
+        // Lines between columns: one command per column, spanning the full
+        // content height. The scroll container's clip trims them — not
+        // arithmetic here.
         if self.style.grid_width > 0.0 && self.style.separator.a > 0.0 && self.metrics.count > 0 {
             let widths = self.column_widths();
             let tepi = offsets(&widths);
@@ -884,8 +889,8 @@ impl RenderNode for TableBody {
 
         ctx.paint_children();
 
-        // Cincin fokus mengelilingi **sel** aktif, bukan seluruh baris: itulah
-        // yang membuat navigasi ← → punya arti yang terlihat.
+        // The focus ring surrounds the active **cell**, not the whole row:
+        // that is what gives ← → navigation a visible meaning.
         if self.focused && self.lead_alpha.position() > 0.0 {
             if let (Some(ring), Some(baris)) = (
                 self.style
@@ -894,9 +899,9 @@ impl RenderNode for TableBody {
                 self.selection.lead(),
             ) {
                 let mut kotak = self.cell_rect(baris, self.active);
-                // Sel mengikuti sorotan yang sedang meluncur, bukan koordinat
-                // statis barisnya — kalau tidak, cincin fokus akan mendahului
-                // sorotan yang menyusulnya.
+                // The cell follows the gliding highlight rather than the row's
+                // static coordinates — otherwise the focus ring would arrive
+                // ahead of the highlight trailing behind it.
                 kotak = Rect::new(
                     kotak.origin.x,
                     self.lead_y.position(),
@@ -931,9 +936,9 @@ impl RenderNode for TableBody {
             Event::Key(k) if k.is_pressed() => self.tombol(ctx, k),
             Event::Focus(f) => {
                 self.focused = *f == FocusEvent::Gained;
-                // Tabel yang baru menerima fokus tanpa seleksi tidak punya
-                // tempat untuk cincin fokusnya. Kebiasaan AppKit: baris pertama
-                // yang terlihat menjadi titik mulai.
+                // A table that has just received focus with no selection has
+                // nowhere to put its focus ring. The AppKit convention: the
+                // first visible row becomes the starting point.
                 if self.focused
                     && self.mode.is_selectable()
                     && self.metrics.count > 0
@@ -967,24 +972,25 @@ impl core::fmt::Debug for TableBody {
 // TableHeaderBox
 // ---------------------------------------------------------------------------
 
-/// Apa yang sedang diseret di header.
+/// What is currently being dragged in the header.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Drag {
-    /// Menyeret batas kolom `boundary` (indeks tampil kolom di kirinya).
+    /// Dragging column boundary `boundary` (display index of the column to its
+    /// left).
     Resize {
-        /// Kolom yang lebarnya berubah.
+        /// The column whose width is changing.
         boundary: usize,
     },
-    /// Menyeret judul kolom `from` ke posisi `to`.
+    /// Dragging the heading of column `from` to position `to`.
     Reorder {
-        /// Kolom yang diangkat, indeks tampil.
+        /// The column being lifted, as a display index.
         from: usize,
-        /// Posisi tampil tujuan saat ini.
+        /// The current target display position.
         to: usize,
     },
 }
 
-/// Node baris judul kolom: sort, resize, dan geser kolom.
+/// Node for the heading row: sorting, resizing, and reordering columns.
 pub struct TableHeaderBox {
     pub(super) columns: Rc<[ColumnLayout]>,
     pub(super) sort: Option<SortBy>,
@@ -993,31 +999,31 @@ pub struct TableHeaderBox {
     pub(super) on_sort: Option<SortAction>,
 
     hovered: Option<usize>,
-    /// Batas kolom yang sedang disorot penunjuk (pegangan resize).
+    /// Column boundary currently highlighted by the pointer (resize handle).
     handle: Option<usize>,
     pressed: Option<usize>,
-    /// Titik tekan awal, untuk membedakan klik sort dari seret geser.
+    /// The initial press point, used to tell a sort click from a reorder drag.
     press_x: f32,
     drag: Option<Drag>,
     hover_alpha: SpringValue<f32>,
     hover_x: SpringValue<f32>,
-    /// Posisi garis penunjuk tujuan geser, koordinat lokal.
+    /// Position of the reorder drop line, in local coordinates.
     drop_x: SpringValue<f32>,
     size: Size,
     rtl: bool,
 }
 
-/// Aksi yang menerima kolom pengurut baru — `on_sort` gaya Dart (§2.5).
+/// Action that receives the new sort column — a Dart-style `on_sort` (§2.5).
 #[derive(Clone)]
 pub struct SortAction(Rc<dyn Fn(SortBy)>);
 
 impl SortAction {
-    /// Bungkus sebuah closure menjadi aksi pengurutan.
+    /// Wrap a closure into a sort action.
     pub fn new(f: impl Fn(SortBy) + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Jalankan aksi.
+    /// Run the action.
     pub fn call(&self, sort: SortBy) {
         (self.0)(sort)
     }
@@ -1036,7 +1042,7 @@ impl core::fmt::Debug for SortAction {
 }
 
 impl TableHeaderBox {
-    /// Node baru dari props yang sudah diresolusi.
+    /// A new node from already resolved props.
     pub(super) fn from_props(props: &super::view::TableHeaderProps) -> Self {
         Self {
             columns: props.columns.clone(),
@@ -1057,27 +1063,27 @@ impl TableHeaderBox {
         }
     }
 
-    /// Lebar tiap kolom pada lebar header hasil layout terakhir.
+    /// Width of each column at the header width from the last layout.
     pub fn column_widths(&self) -> Vec<f32> {
         solve_widths(&self.columns, self.size.width)
     }
 
-    /// Kolom yang sedang di bawah penunjuk (indeks tampil).
+    /// The column currently under the pointer (display index).
     pub fn hovered(&self) -> Option<usize> {
         self.hovered
     }
 
-    /// Batas kolom yang siap diseret, bila penunjuk berada di atasnya.
+    /// The column boundary ready to be dragged, if the pointer is over it.
     pub fn handle(&self) -> Option<usize> {
         self.handle
     }
 
-    /// Benar bila lebar sebuah kolom sedang diseret.
+    /// True while a column width is being dragged.
     pub fn is_resizing(&self) -> bool {
         matches!(self.drag, Some(Drag::Resize { .. }))
     }
 
-    /// Kolom yang sedang dipindahkan beserta tujuannya, bila ada.
+    /// The column being moved along with its target, if any.
     pub fn reordering(&self) -> Option<(usize, usize)> {
         match self.drag {
             Some(Drag::Reorder { from, to }) => Some((from, to)),
@@ -1085,12 +1091,12 @@ impl TableHeaderBox {
         }
     }
 
-    /// Benar bila masih ada sorotan header yang bergerak.
+    /// True while any header highlight is still moving.
     pub fn is_animating(&self) -> bool {
         self.hover_alpha.is_animating() || self.hover_x.is_animating() || self.drop_x.is_animating()
     }
 
-    /// Majukan sorotan satu frame; benar bila ada piksel yang berubah.
+    /// Advance the highlights by one frame; true if any pixel changed.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let sebelum = (
             self.hover_alpha.position(),
@@ -1108,21 +1114,21 @@ impl TableHeaderBox {
             )
     }
 
-    /// Selesaikan seluruh gerakan seketika (uji, snapshot).
+    /// Finish every movement instantly (tests, snapshots).
     pub fn settle(&mut self) {
         self.hover_alpha.settle();
         self.hover_x.settle();
         self.drop_x.settle();
     }
 
-    /// Ganti spring tanpa mengganggu gerakan yang berjalan.
+    /// Swap the spring without disturbing motion in flight.
     pub fn set_spring(&mut self, spring: Spring) {
         self.hover_alpha.set_spring(spring);
         self.hover_x.set_spring(spring);
         self.drop_x.set_spring(spring);
     }
 
-    /// Spring yang menjalankan sorotan header.
+    /// The spring that drives the header highlights.
     pub fn spring(&self) -> Spring {
         self.hover_alpha.spring()
     }
@@ -1135,7 +1141,7 @@ impl TableHeaderBox {
         }
     }
 
-    /// Tepi kiri kolom `k` dalam koordinat **lokal** (sudah dicerminkan).
+    /// Left edge of column `k` in **local** coordinates (already mirrored).
     fn column_x(&self, widths: &[f32], k: usize) -> f32 {
         let tepi = offsets(widths);
         let x = tepi.get(k).copied().unwrap_or(0.0);
@@ -1170,7 +1176,8 @@ impl TableHeaderBox {
                     return;
                 }
                 if let Some(k) = self.pressed {
-                    // Ambang geser: di bawahnya ini masih calon klik sort.
+                    // Reorder threshold: below it this is still a candidate
+                    // sort click.
                     if (ctx.local().x - self.press_x).abs() > REORDER_THRESHOLD
                         && self.columns.get(k).is_some_and(|c| c.movable)
                     {
@@ -1186,9 +1193,9 @@ impl TableHeaderBox {
                     self.handle = pegangan;
                     ctx.request_paint();
                 }
-                // Judul kolom yang sedang "menjadi pegangan" tidak ikut
-                // disorot: dua umpan balik sekaligus di satu titik hanya
-                // membingungkan.
+                // A column heading that is currently "acting as a handle" is
+                // not highlighted too: two pieces of feedback at one point
+                // only confuse.
                 let sorot = if pegangan.is_some() { None } else { kolom };
                 if self.hovered != sorot {
                     self.hovered = sorot;
@@ -1237,7 +1244,7 @@ impl TableHeaderBox {
                         ctx.request_paint();
                         ctx.handled();
                     }
-                    // Tanpa seret sama sekali: inilah klik sort.
+                    // No drag at all: this is the sort click.
                     None => {
                         if let Some(k) = ditekan {
                             if column_at(&widths, x) == Some(k) {
@@ -1250,8 +1257,9 @@ impl TableHeaderBox {
                 }
             }
             PointerPhase::Cancel => {
-                // Kedua `take` harus tetap dijalankan — dibatalkan OS berarti
-                // seret **dan** tekanan sama-sama dilepas, bukan salah satu.
+                // Both `take` calls must still run — an OS cancellation means
+                // the drag **and** the press are both released, not one of
+                // them.
                 let seret = self.drag.take().is_some();
                 let tekan = self.pressed.take().is_some();
                 if seret || tekan {
@@ -1292,7 +1300,8 @@ impl TableHeaderBox {
         let mut order: Vec<usize> = self.columns.iter().map(|c| c.source).collect();
         reorder(&mut order, from, to);
         state.set_order(order);
-        // Sel aktif ikut kolomnya, bukan tinggal di posisi lamanya.
+        // The active cell follows its column instead of staying behind at the
+        // old position.
         state.set_active_column(to);
     }
 
@@ -1310,7 +1319,7 @@ impl TableHeaderBox {
         }
     }
 
-    /// Segitiga penanda urutan di kotak `bounds`.
+    /// The sort indicator triangle inside the `bounds` rect.
     fn gambar_indikator(&self, ctx: &mut PaintCtx<'_>, bounds: Rect, ascending: bool) {
         let w = self.style.indicator_size.max(0.0);
         if w <= 0.0 || self.style.indicator.a <= 0.0 {
@@ -1344,8 +1353,8 @@ impl RenderNode for TableHeaderBox {
         "TableHeader"
     }
 
-    /// Header buram: klik di atasnya adalah klik pada header, bukan pada baris
-    /// yang kebetulan lewat di bawahnya.
+    /// The header is opaque: a click on it is a click on the header, not on
+    /// whichever row happens to be passing underneath.
     fn hit_behavior(&self) -> HitBehavior {
         HitBehavior::Opaque
     }
@@ -1396,7 +1405,7 @@ impl RenderNode for TableHeaderBox {
 
         let widths = self.column_widths();
 
-        // Sorotan judul kolom di bawah penunjuk / yang sedang ditekan.
+        // Highlight for the column heading under the pointer / being pressed.
         let alpha = self.hover_alpha.position();
         if alpha > 0.0 {
             let k = self.hovered.or(self.pressed);
@@ -1422,7 +1431,7 @@ impl RenderNode for TableHeaderBox {
 
         ctx.paint_children();
 
-        // Garis antar kolom + pegangan resize yang sedang disorot.
+        // Lines between columns + the highlighted resize handle.
         if self.style.separator_width > 0.0 && self.style.separator.a > 0.0 {
             for k in 0..widths.len().saturating_sub(1) {
                 let x = self.column_x(&widths, k) + if self.rtl { 0.0 } else { widths[k] }
@@ -1443,7 +1452,7 @@ impl RenderNode for TableHeaderBox {
                     );
                 }
             }
-            // Garis bawah header: batas antara judul dan datanya.
+            // The header's bottom line: the boundary between headings and data.
             ctx.quad(
                 Quad::new(Rect::new(
                     0.0,
@@ -1455,7 +1464,7 @@ impl RenderNode for TableHeaderBox {
             );
         }
 
-        // Segitiga penanda urutan, di tepi akhir judul kolomnya.
+        // The sort indicator triangle, at the trailing edge of its heading.
         if let Some(sort) = self.sort {
             if let Some(k) = self.columns.iter().position(|c| c.source == sort.column) {
                 if let Some(w) = widths.get(k) {
@@ -1476,7 +1485,7 @@ impl RenderNode for TableHeaderBox {
             }
         }
 
-        // Garis penunjuk tujuan saat kolom sedang dipindahkan.
+        // The drop indicator line while a column is being moved.
         if let Some((from, _)) = self.reordering() {
             if let Some(w) = widths.get(from) {
                 if self.style.indicator.a > 0.0 {
@@ -1504,8 +1513,8 @@ impl RenderNode for TableHeaderBox {
     }
 
     fn access(&self, node: &mut AccessNode) {
-        // Baris judul **adalah** sebuah baris tabel bagi teknologi bantu —
-        // sel-selnya yang menjadi judul kolom.
+        // The heading row **is** a table row to assistive technology — its
+        // cells are the column headings.
         node.role = AccessRole::Row;
     }
 
@@ -1530,27 +1539,27 @@ impl core::fmt::Debug for TableHeaderBox {
 // TableRowBox
 // ---------------------------------------------------------------------------
 
-/// Node satu baris tabel: menempatkan sel pada kolomnya, dan mengumumkan
-/// dirinya sebagai `Row` bagi teknologi bantu.
+/// Node for a single table row: it places the cells in their columns and
+/// announces itself as a `Row` to assistive technology.
 ///
-/// Ia tidak menggambar apa pun — sorotan seleksi milik [`TableBody`], yang tahu
-/// geometri seluruh tabel.
+/// It paints nothing — the selection highlight belongs to [`TableBody`], which
+/// knows the geometry of the whole table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableRowBox {
-    /// Nomor baris ini di dalam data (bukan di dalam jendela).
+    /// This row's index within the data (not within the window).
     pub index: usize,
-    /// Terpilih atau tidak; `None` = tabel ini memang tidak punya seleksi.
+    /// Selected or not; `None` = this table has no selection at all.
     pub selected: Option<bool>,
-    /// Baris ini bisa diaktifkan (ketuk-ganda / Enter).
+    /// This row can be activated (double-click / Enter).
     pub activatable: bool,
-    /// Kolom dalam urutan tampil.
+    /// The columns in display order.
     pub columns: Rc<[ColumnLayout]>,
-    /// Arah baca hasil layout terakhir.
+    /// Reading direction from the last layout.
     rtl: bool,
 }
 
 impl TableRowBox {
-    /// Baris baru.
+    /// A new row.
     pub fn new(
         index: usize,
         selected: Option<bool>,
@@ -1617,23 +1626,24 @@ impl RenderNode for TableRowBox {
 // TableCellBox
 // ---------------------------------------------------------------------------
 
-/// Node satu sel: perataan + padding, dan peran `Cell` bagi teknologi bantu.
+/// Node for a single cell: alignment + padding, and the `Cell` role for
+/// assistive technology.
 ///
-/// Isinya boleh view apa pun — teks, badge, tombol, sakelar — dan itulah yang
-/// dimaksud "sel kustom" di `KOMPONEN.md`: tidak ada tipe sel khusus, hanya
-/// sebuah kotak yang tahu cara meratakan isinya.
+/// Its content may be any view — text, a badge, a button, a switch — and that
+/// is exactly what "custom cells" means in `KOMPONEN.md`: there is no special
+/// cell type, only a box that knows how to align its content.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TableCellBox {
-    /// Perataan isi di dalam kolomnya.
+    /// Alignment of the content within its column.
     pub align: CellAlign,
-    /// Jarak isi ke tepi sel.
+    /// Spacing between the content and the cell edges.
     pub padding: Insets,
-    /// Arah baca hasil layout terakhir.
+    /// Reading direction from the last layout.
     rtl: bool,
 }
 
 impl TableCellBox {
-    /// Sel baru.
+    /// A new cell.
     pub fn new(align: CellAlign, padding: Insets) -> Self {
         Self {
             align,
@@ -1670,8 +1680,9 @@ impl RenderNode for TableCellBox {
 
         let ruang = (ukuran.width - self.padding.horizontal()).max(0.0);
         let sisa = (ruang - isi.width).max(0.0);
-        // Perataan "start"/"end" mengikuti arah baca, bukan kiri/kanan layar
-        // (§9.8): kolom angka tetap rata ke akhir baris di RTL.
+        // "start"/"end" alignment follows the reading direction, not screen
+        // left/right (§9.8): a numeric column still aligns to the end of the
+        // row in RTL.
         let geser = match (self.align, self.rtl) {
             (CellAlign::Start, false) | (CellAlign::End, true) => 0.0,
             (CellAlign::Center, _) => sisa / 2.0,

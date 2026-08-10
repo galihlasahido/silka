@@ -1,24 +1,23 @@
-//! Sumber detak vsync per platform (REKOMENDASI §3.5).
+//! Per-platform vsync clock sources (REKOMENDASI §3.5).
 //!
-//! Scheduler di `silka-core` memutuskan **apakah** perlu menggambar; modul ini
-//! memutuskan **kapan** — dan menjawabnya dengan bertanya ke OS, bukan dengan
-//! menebak.
+//! The scheduler in `silka-core` decides **whether** to draw; this module
+//! decides **when** — and it answers by asking the OS rather than by guessing.
 //!
-//! | Platform | Sumber detak | Interval |
+//! | Platform | Clock source | Interval |
 //! |---|---|---|
-//! | macOS | `CADisplayLink` di run loop utama | `targetTimestamp - timestamp` tiap tick — ikut ProMotion 120 Hz, adaptive refresh, dan perpindahan monitor |
-//! | lain | [`winit::window::Window::request_redraw`] | ditaksir dari jarak antar-frame nyata oleh [`silka_core::scheduler::RefreshEstimator`] |
+//! | macOS | `CADisplayLink` on the main run loop | `targetTimestamp - timestamp` on every tick — follows ProMotion 120 Hz, adaptive refresh, and monitor changes |
+//! | others | [`winit::window::Window::request_redraw`] | estimated from real frame-to-frame spacing by [`silka_core::scheduler::RefreshEstimator`] |
 //!
-//! **Tidak ada 16,6 ms di mana pun.** Kalau interval belum diketahui, ia
-//! bernilai `None` dan lapisan di atas menanganinya sebagai ketidaktahuan.
+//! **There is no 16.6 ms anywhere.** While the interval is still unknown it is
+//! `None`, and the layers above treat that as genuine ignorance.
 //!
-//! ## Idle tetap idle
+//! ## Idle stays idle
 //!
-//! Display link adalah timer yang berdetak terus — persis yang dilarang §3.5.
-//! Karena itu ia dibuat dalam keadaan **paused**: [`VsyncSource::schedule`]
-//! melepasnya hanya ketika ada yang dirty, dan [`VsyncSource::idle`]
-//! menghentikannya lagi begitu frame selesai tanpa sisa pekerjaan. Saat
-//! aplikasi diam, tidak ada satu pun callback yang berjalan.
+//! A display link is a timer that ticks continuously — exactly what §3.5
+//! forbids. It is therefore created **paused**: [`VsyncSource::schedule`]
+//! releases it only when something is dirty, and [`VsyncSource::idle`] stops it
+//! again as soon as a frame finishes with no work left. While the application
+//! sits still, not a single callback runs.
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -30,18 +29,18 @@ use std::time::Duration;
 use silka_core::scheduler::Vsync;
 use winit::window::Window;
 
-/// Dari mana detak frame datang di proses ini.
+/// Where the frame clock comes from in this process.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VsyncKind {
-    /// `CADisplayLink` macOS — mengikuti laju layar yang sedang aktif.
+    /// macOS `CADisplayLink` — follows the currently active display rate.
     DisplayLink,
-    /// `request_redraw` winit; interval ditaksir dari frame yang benar-benar
-    /// terjadi.
+    /// winit's `request_redraw`; the interval is estimated from the frames that
+    /// actually happened.
     RequestRedraw,
 }
 
 impl VsyncKind {
-    /// Nama pendek untuk log.
+    /// Short name for logs.
     pub const fn label(self) -> &'static str {
         match self {
             VsyncKind::DisplayLink => "CADisplayLink",
@@ -50,25 +49,25 @@ impl VsyncKind {
     }
 }
 
-/// Jam vsync yang dibagi antara callback OS dan event loop.
+/// The vsync clock shared between the OS callback and the event loop.
 ///
-/// Callback display link berjalan di run loop utama, sama seperti event loop
-/// winit, tapi keduanya adalah *reentrancy boundary* yang berbeda — jadi
-/// nilainya disimpan sebagai atomik alih-alih dipinjam.
+/// The display link callback runs on the main run loop, just like the winit
+/// event loop, but the two are different *reentrancy boundaries* — so the
+/// values are stored atomically instead of being borrowed.
 #[derive(Debug, Default)]
 pub struct VsyncClock {
-    /// Interval terakhir yang dilaporkan OS, dalam nanodetik. `0` = belum tahu.
+    /// Last interval reported by the OS, in nanoseconds. `0` = not yet known.
     interval_nanos: AtomicU64,
     ticks: AtomicU64,
 }
 
 impl VsyncClock {
-    /// Jam kosong: belum ada tick, interval belum diketahui.
+    /// An empty clock: no ticks yet, interval still unknown.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Catat satu tick beserta interval yang dilaporkan OS.
+    /// Record one tick together with the interval the OS reported.
     pub fn tick(&self, interval: Option<Duration>) {
         if let Some(d) = interval {
             let nanos = d.as_nanos().min(u64::MAX as u128) as u64;
@@ -79,8 +78,8 @@ impl VsyncClock {
         self.ticks.fetch_add(1, Ordering::Relaxed);
     }
 
-    /// Setel interval tanpa menghitungnya sebagai tick (mis. nilai awal dari
-    /// `NSScreen.maximumFramesPerSecond`).
+    /// Set the interval without counting it as a tick (e.g. the seed value
+    /// from `NSScreen.maximumFramesPerSecond`).
     pub fn seed_interval(&self, interval: Duration) {
         let nanos = interval.as_nanos().min(u64::MAX as u128) as u64;
         if nanos > 0 {
@@ -90,7 +89,7 @@ impl VsyncClock {
         }
     }
 
-    /// Interval vsync terakhir yang dilaporkan OS.
+    /// The last vsync interval reported by the OS.
     pub fn interval(&self) -> Option<Duration> {
         match self.interval_nanos.load(Ordering::Relaxed) {
             0 => None,
@@ -98,12 +97,12 @@ impl VsyncClock {
         }
     }
 
-    /// Jumlah tick sejak jam dibuat.
+    /// Number of ticks since the clock was created.
     pub fn ticks(&self) -> u64 {
         self.ticks.load(Ordering::Relaxed)
     }
 
-    /// Detak layar dalam bentuk yang dimengerti scheduler.
+    /// The display clock in the form the scheduler understands.
     pub fn vsync(&self) -> Vsync {
         self.interval()
             .and_then(Vsync::display_link)
@@ -111,11 +110,11 @@ impl VsyncClock {
     }
 }
 
-/// Sumber detak vsync untuk satu window.
+/// The vsync clock source for a single window.
 ///
-/// Bentuknya sengaja hanya dua tombol — [`VsyncSource::schedule`] dan
-/// [`VsyncSource::idle`] — supaya jalur macOS dan jalur fallback benar-benar
-/// dipakai lewat kode yang sama di event loop.
+/// Its surface is deliberately just two buttons — [`VsyncSource::schedule`] and
+/// [`VsyncSource::idle`] — so that the macOS path and the fallback path are
+/// genuinely driven by the same event loop code.
 pub struct VsyncSource {
     window: Arc<Window>,
     clock: Arc<VsyncClock>,
@@ -125,11 +124,11 @@ pub struct VsyncSource {
 }
 
 impl VsyncSource {
-    /// Pasang sumber vsync terbaik yang tersedia untuk `window`.
+    /// Attach the best vsync source available for `window`.
     ///
-    /// Di macOS ini mencoba `CADisplayLink` (butuh macOS 14+); bila tidak
-    /// tersedia — dan di seluruh OS lain — ia turun ke `request_redraw` winit
-    /// tanpa mengubah kontrak apa pun bagi pemanggil.
+    /// On macOS this tries `CADisplayLink` (needs macOS 14+); when that is not
+    /// available — and on every other OS — it falls back to winit's
+    /// `request_redraw` without changing the contract for callers at all.
     pub fn attach(window: Arc<Window>) -> Self {
         let clock = Arc::new(VsyncClock::new());
 
@@ -158,22 +157,22 @@ impl VsyncSource {
         }
     }
 
-    /// Sumber detak yang benar-benar dipakai.
+    /// The clock source actually in use.
     pub fn kind(&self) -> VsyncKind {
         self.kind
     }
 
-    /// Jam vsync bersama — dibaca event loop tiap frame.
+    /// The shared vsync clock — read by the event loop every frame.
     pub fn clock(&self) -> &Arc<VsyncClock> {
         &self.clock
     }
 
-    /// Detak layar yang dilaporkan OS, bila sudah diketahui.
+    /// The display clock reported by the OS, once it is known.
     pub fn vsync(&self) -> Vsync {
         self.clock.vsync()
     }
 
-    /// Minta satu frame pada vsync berikutnya.
+    /// Ask for one frame on the next vsync.
     pub fn schedule(&self) {
         #[cfg(target_os = "macos")]
         if let Some(link) = self.link.as_ref() {
@@ -183,7 +182,7 @@ impl VsyncSource {
         self.window.request_redraw();
     }
 
-    /// Tidak ada lagi yang perlu digambar — hentikan detak sampai dibangunkan.
+    /// Nothing left to draw — stop the clock until something wakes it again.
     pub fn idle(&self) {
         #[cfg(target_os = "macos")]
         if let Some(link) = self.link.as_ref() {
@@ -219,7 +218,7 @@ mod tests {
     #[test]
     fn tick_membawa_interval_promotion() {
         let c = VsyncClock::new();
-        // 120 Hz: 8,333 ms — bukan 16,6 ms.
+        // 120 Hz: 8.333 ms — not 16.6 ms.
         c.tick(Some(Duration::from_nanos(8_333_333)));
         assert_eq!(c.ticks(), 1);
         let v = c.vsync();
@@ -240,7 +239,7 @@ mod tests {
     fn interval_terbaru_menang_saat_laju_layar_berubah() {
         let c = VsyncClock::new();
         c.tick(Some(Duration::from_nanos(16_666_667))); // 60 Hz
-        c.tick(Some(Duration::from_nanos(8_333_333))); // naik ke 120 Hz
+        c.tick(Some(Duration::from_nanos(8_333_333))); // stepped up to 120 Hz
         assert!((c.vsync().hz().unwrap() - 120.0).abs() < 0.1);
     }
 
@@ -249,10 +248,10 @@ mod tests {
         let c = VsyncClock::new();
         c.seed_interval(Duration::from_nanos(16_666_667));
         assert!((c.vsync().hz().unwrap() - 60.0).abs() < 0.1);
-        // Tick sungguhan dari display link berhak menimpa seed.
+        // A real tick from the display link is allowed to overwrite the seed.
         c.tick(Some(Duration::from_nanos(8_333_333)));
         assert!((c.vsync().hz().unwrap() - 120.0).abs() < 0.1);
-        // Seed berikutnya tidak boleh menurunkan lagi.
+        // A later seed must not drag it back down.
         c.seed_interval(Duration::from_nanos(16_666_667));
         assert!((c.vsync().hz().unwrap() - 120.0).abs() < 0.1);
         assert_eq!(c.ticks(), 1, "seed bukan tick");

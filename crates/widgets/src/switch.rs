@@ -1,6 +1,6 @@
-//! `switch()` / `toggle()` — sakelar on/off Tier 2 (`KOMPONEN.md`), **dengan
-//! seretan spring** seperti yang diminta catatan khususnya: *"Spring drag —
-//! bisa di-drag, bukan cuma klik (rasa iOS/macOS)"*.
+//! `switch()` / `toggle()` — the Tier 2 on/off switch (`KOMPONEN.md`),
+//! **with spring dragging** as its special notes ask for: a spring drag that
+//! can be dragged, not merely clicked — the iOS/macOS feel.
 //!
 //! ```
 //! # use silka_widgets::{switch, Fonts};
@@ -16,48 +16,50 @@
 //!     .on_change(move |nyala| wifi.set(nyala));
 //! ```
 //!
-//! ## Kenapa ini node sendiri, bukan pembungkus `Interactive`
+//! ## Why this is its own node, not an `Interactive` wrapper
 //!
-//! Karena sakelar adalah satu-satunya kontrol Tier 2 yang **mengikuti jari**.
-//! Pembungkus interaktif serba guna hanya mengenal tekan-lepas; sakelar harus
-//! menyeret thumb 1:1 sepanjang lintasan, lalu **menyerahkan kecepatan jari ke
-//! spring** saat dilepas (REKOMENDASI §3.5: handoff fling → spring, lewat
-//! [`VelocityTracker`] milik lapisan input — bukan taksiran sendiri). Dua hal
-//! lain ikut menuntut node sendiri: keadaan on/off yang sampai ke screen reader
-//! sebagai [`AccessToggled`], dan lintasan kecil di dalam area sentuh ≥ 44pt.
+//! Because a switch is the only Tier 2 control that **follows the finger**. A
+//! general-purpose interactive wrapper only knows press-and-release; a switch
+//! has to drag its thumb 1:1 along the track and then **hand the finger's
+//! velocity to the spring** on release (REKOMENDASI §3.5: fling → spring
+//! handoff, through the input layer's [`VelocityTracker`] — not a guess of
+//! its own). Two other things demand a node of its own: an on/off state that
+//! reaches the screen reader as [`AccessToggled`], and a small track inside a
+//! hit area of ≥ 44pt.
 //!
-//! ## Siapa yang memiliki nilainya
+//! ## Who owns the value
 //!
-//! Aplikasi. Node **tidak pernah** mengubah `on`-nya sendiri: ia menceritakan
-//! keinginan pengguna lewat [`Builder::on_change`], aplikasi menulis signal, dan
-//! nilai barunya kembali lewat rebuild ([`SwitchProps::update`]) — aturan yang
-//! sama dengan [`crate::checkbox`] dan [`crate::button`]. Kalau node menebak
-//! duluan, sakelar yang perubahannya ditolak aplikasi akan terlihat berpindah
-//! selama satu frame.
+//! The application. The node **never** changes its own `on`: it reports what
+//! the user wants through [`Builder::on_change`], the application writes the
+//! signal, and the new value comes back through a rebuild
+//! ([`SwitchProps::update`]) — the same rule as [`crate::checkbox`] and
+//! [`crate::button`]. If the node guessed first, a switch whose change the
+//! application rejects would look moved for a whole frame.
 //!
-//! Yang **milik node** hanyalah presentasi: posisi thumb, warna lintasan,
-//! tekanan, dan cincin fokus — empat [`SpringValue`] yang dimajukan
-//! [`crate::advance`] sekali per frame bersama seluruh pohon.
+//! What **belongs to the node** is presentation only: thumb position, track
+//! color, press, and focus ring — four [`SpringValue`]s advanced by
+//! [`crate::advance`] once per frame together with the whole tree.
 //!
 //! ## Definition of Done (`KOMPONEN.md`)
 //!
-//! - **Kedua preset** — setiap angka lewat [`SwitchStyle::from_theme`];
-//!   lintasan 52×32 di Cupertino (HIG 51×31) dan 44×24 di Tailwind/shadcn
-//!   (`w-11 h-6`), sudutnya `radius.full` yang di Cupertino squircle dan di
-//!   Tailwind arc — parameter shader, bukan konstanta (§2.7, §3.6).
-//! - **Semua state interaktif dengan spring** — posisi thumb, warna lintasan
-//!   (diam/hover/tekan), pelebaran thumb saat ditekan, dan cincin fokus,
-//!   semuanya di-retarget di tengah jalan sambil membawa kecepatan (§3.5).
-//! - **Keyboard + focus ring** — Space mengaktifkan; panah kiri/kanan dan
-//!   Home/End menyetel nilai **eksplisit** (kebiasaan AppKit dan ARIA: panah
-//!   kiri selalu mematikan, tidak pernah sekadar membalik).
-//! - **Node AccessKit** — peran [`AccessRole::Switch`], nama dari labelnya,
-//!   keadaan [`AccessToggled`], aksi klik + fokus.
-//! - **Dark mode** — seluruh warna token, tanpa satu literal pun.
-//! - **Hit target ≥ 44pt** — dijamin [`SwitchNode::layout`], bukan pemanggil.
-//! - **Reduced-motion** — gerakan yang *menjelaskan* (thumb, warna lintasan)
-//!   tetap berjalan tanpa pantulan; yang cuma menghias (pelebaran tekan, cincin
-//!   fokus) ditandai [`MotionRole::Decorative`] dan hilang sepenuhnya.
+//! - **Both presets** — every number goes through [`SwitchStyle::from_theme`];
+//!   a 52×32 track in Cupertino (HIG 51×31) and 44×24 in Tailwind/shadcn
+//!   (`w-11 h-6`), with `radius.full` corners that are a squircle in Cupertino
+//!   and an arc in Tailwind — shader parameters, not constants (§2.7, §3.6).
+//! - **Every interactive state springs** — thumb position, track color
+//!   (rest/hover/press), thumb stretch while pressed, and the focus ring, all
+//!   retargeted mid-flight while carrying their velocity (§3.5).
+//! - **Keyboard + focus ring** — Space activates; the left/right arrows and
+//!   Home/End set the value **explicitly** (the AppKit and ARIA habit: the
+//!   left arrow always turns it off, it never merely flips it).
+//! - **AccessKit node** — the [`AccessRole::Switch`] role, the name from its
+//!   label, an [`AccessToggled`] state, click + focus actions.
+//! - **Dark mode** — every color a token, without a single literal.
+//! - **Hit target ≥ 44pt** — guaranteed by [`SwitchNode::layout`], not by the
+//!   caller.
+//! - **Reduced-motion** — motion that *explains* (thumb, track color) keeps
+//!   running without its bounce; motion that merely decorates (press stretch,
+//!   focus ring) is marked [`MotionRole::Decorative`] and disappears entirely.
 
 use std::rc::Rc;
 
@@ -79,42 +81,42 @@ use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 use crate::text::text;
 
-/// Kecepatan (bagian lintasan per detik) yang sudah dianggap lemparan.
+/// The velocity (fractions of the track per second) already counted as a fling.
 ///
-/// Di atasnya **arah lemparan mengalahkan posisi**: jari yang melempar ke kanan
-/// menyalakan sakelar walau baru lewat sepertiga lintasan — perilaku yang sama
-/// dengan `UISwitch`.
+/// Above it the **fling direction beats the position**: a finger flicked to
+/// the right turns the switch on even a third of the way along the track —
+/// the same behaviour as `UISwitch`.
 pub const FLING: f32 = 1.5;
 
-/// Batas atas kecepatan yang boleh diserahkan ke spring, bagian lintasan per
-/// detik.
+/// Upper bound on the velocity that may be handed to the spring, in fractions
+/// of the track per second.
 ///
-/// Satu sampel gila dari driver trackpad tidak boleh melempar thumb entah ke
-/// mana (§3.5).
+/// One mad sample from a trackpad driver must not throw the thumb off to who
+/// knows where (§3.5).
 pub const MAX_FLING: f32 = 12.0;
 
-/// Seberapa jauh warna dipudarkan ke arah latar saat sakelar dimatikan.
+/// How far colors are faded toward the background when a switch is disabled.
 const REDUP: f32 = 0.5;
 
 // ---------------------------------------------------------------------------
-// Warna per keadaan
+// Colors per state
 // ---------------------------------------------------------------------------
 
-/// Tiga warna satu keadaan kontrol: diam, di-hover, ditekan.
+/// The three colors of one control state: at rest, hovered, pressed.
 ///
-/// Ketiganya token; komponen tidak pernah menghitung warna sendiri (§2.6).
+/// All three are tokens; a component never computes a color itself (§2.6).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct StateColors {
-    /// Keadaan diam.
+    /// At rest.
     pub idle: Color,
-    /// Penunjuk di atasnya.
+    /// The pointer is over it.
     pub hover: Color,
-    /// Sedang ditekan.
+    /// Currently pressed.
     pub press: Color,
 }
 
 impl StateColors {
-    /// Warna yang berlaku untuk keadaan penunjuk saat ini.
+    /// The color that applies to the current pointer state.
     pub fn pick(self, hovered: bool, pressed: bool) -> Color {
         match (pressed, hovered) {
             (true, _) => self.press,
@@ -125,57 +127,57 @@ impl StateColors {
 }
 
 // ---------------------------------------------------------------------------
-// Gaya
+// Style
 // ---------------------------------------------------------------------------
 
-/// Seluruh ukuran, warna, dan bentuk sebuah sakelar — **sudah diresolusi dari
-/// token** theme aktif.
+/// Every size, color, and shape of a switch — **already resolved from the
+/// tokens** of the active theme.
 ///
-/// Ukuran lintasan adalah satu-satunya tempat di komponen ini yang perlu tahu
-/// preset mana yang aktif: sakelar iOS dan sakelar shadcn memang berbeda
-/// ukuran, dan keduanya tetap ditulis sebagai **kelipatan skala spacing**, tidak
-/// pernah sebagai angka lepas.
+/// The track size is the only place in this component that needs to know
+/// which preset is active: an iOS switch and a shadcn switch genuinely are
+/// different sizes, and both are still written as **multiples of the spacing
+/// scale**, never as loose numbers.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SwitchStyle {
-    /// Ukuran lintasan (track).
+    /// Size of the track.
     pub track: Size,
-    /// Jarak thumb ke tepi lintasan.
+    /// Gap between the thumb and the edge of the track.
     pub inset: f32,
-    /// Jarak lintasan ke label.
+    /// Gap between the track and the label.
     pub gap: f32,
-    /// Sisi terpendek area sentuh (HIG).
+    /// Shortest side of the hit area (HIG).
     pub min_target: f32,
-    /// Warna lintasan saat mati.
+    /// Track color while off.
     pub off: StateColors,
-    /// Warna lintasan saat nyala.
+    /// Track color while on.
     pub on: StateColors,
-    /// Warna garis tepi lintasan.
+    /// Color of the track's outline.
     pub border: Color,
-    /// Tebal garis tepi lintasan.
+    /// Width of the track's outline.
     pub border_width: f32,
-    /// Warna thumb.
+    /// Thumb color.
     pub thumb: Color,
-    /// Bayangan ganda thumb (ambient + key ala HIG).
+    /// Paired thumb shadow (HIG-style ambient + key).
     pub thumb_shadow: ShadowPair,
-    /// Warna cincin fokus.
+    /// Focus ring color.
     pub focus_ring: Color,
-    /// Tebal cincin fokus.
+    /// Focus ring width.
     pub focus_width: f32,
-    /// Ke mana warna dipudarkan saat sakelar dimatikan.
+    /// The color everything fades toward when the switch is disabled.
     pub dim: Color,
-    /// Bentuk sudut "pil": radius penuh dengan geometri preset (§3.6).
+    /// The "pill" corner shape: full radius with the preset geometry (§3.6).
     pub pill: Corners,
-    /// Pelebaran thumb saat ditekan (rasa iOS).
+    /// How far the thumb stretches while pressed (the iOS feel).
     pub press_stretch: f32,
 }
 
 impl SwitchStyle {
-    /// Gaya baku untuk theme aktif.
+    /// The default style for the active theme.
     pub fn from_theme(theme: &Theme) -> Self {
         let (lebar, tinggi) = match theme.preset {
-            // 13 × 8 langkah = 52 × 32pt (HIG: 51 × 31).
+            // 13 × 8 steps = 52 × 32pt (HIG: 51 × 31).
             Preset::Cupertino => (13.0, 8.0),
-            // 11 × 6 langkah = 44 × 24pt (shadcn `w-11 h-6`).
+            // 11 × 6 steps = 44 × 24pt (shadcn `w-11 h-6`).
             Preset::Tailwind => (11.0, 6.0),
         };
         Self {
@@ -183,9 +185,9 @@ impl SwitchStyle {
             inset: theme.space(0.5),
             gap: theme.space(2.0),
             min_target: MIN_HIT_TARGET,
-            // Lintasan mati = token `separator`: abu-abu tembus pandang di
-            // Cupertino (systemFill) dan slate-200/800 di Tailwind — persis
-            // warna yang dipakai sakelar aslinya di kedua kiblat.
+            // An off track = the `separator` token: translucent grey in
+            // Cupertino (systemFill) and slate-200/800 in Tailwind — exactly
+            // the color the real switch uses in both traditions.
             off: StateColors {
                 idle: theme.color.separator,
                 hover: theme.color.surface_hover,
@@ -198,8 +200,8 @@ impl SwitchStyle {
             },
             border: theme.color.separator,
             border_width: 0.0,
-            // Warna yang memang "terbaca di atas accent": putih di kedua
-            // preset, dan tetap terbaca di atas lintasan mati.
+            // A color that genuinely "reads on top of accent": white in both
+            // presets, and still readable on top of an off track.
             thumb: theme.color.on_accent,
             thumb_shadow: theme.shadow.sm,
             focus_ring: theme.color.focus_ring,
@@ -210,21 +212,20 @@ impl SwitchStyle {
         }
     }
 
-    /// Garis tengah thumb.
+    /// Diameter of the thumb.
     pub fn thumb_size(self) -> f32 {
         (self.track.height - self.inset * 2.0).max(0.0)
     }
 
-    /// Jarak tempuh thumb dari mati ke nyala.
+    /// How far the thumb travels from off to on.
     ///
-    /// Sama dengan `lebar - tinggi`: inset dan garis tengah thumb saling
-    /// meniadakan, jadi lintasan yang lebih tebal tidak pernah memendekkan
-    /// perjalanannya.
+    /// Equal to `width - height`: the inset and the thumb's diameter cancel
+    /// each other out, so a thicker track never shortens the journey.
     pub fn travel(self) -> f32 {
         (self.track.width - self.track.height).max(0.0)
     }
 
-    /// Warna lintasan untuk keadaan tertentu.
+    /// The track color for a given state.
     pub fn track_for(self, on: bool, disabled: bool, hovered: bool, pressed: bool) -> Color {
         let aktif = !disabled;
         let c = if on {
@@ -239,7 +240,7 @@ impl SwitchStyle {
         }
     }
 
-    /// Warna thumb untuk keadaan tertentu.
+    /// The thumb color for a given state.
     pub fn thumb_for(self, disabled: bool) -> Color {
         if disabled {
             self.thumb.lerp(self.dim, REDUP)
@@ -248,11 +249,11 @@ impl SwitchStyle {
         }
     }
 
-    /// Kotak thumb di dalam `track` untuk posisi `fraction` (0..1) dan
-    /// pelebaran `stretch` poin.
+    /// The thumb rect inside `track` for position `fraction` (0..1) and a
+    /// stretch of `stretch` points.
     ///
-    /// Pelebarannya tumbuh **menjauhi sisi yang sedang ditempati**: thumb yang
-    /// menempel di kanan melar ke kiri, jadi ia tidak pernah keluar lintasan.
+    /// The stretch grows **away from the side it currently occupies**: a thumb
+    /// resting on the right stretches leftwards, so it never leaves the track.
     pub fn thumb_rect(self, track: Rect, fraction: f32, stretch: f32) -> Rect {
         let f = fraction.clamp(0.0, 1.0);
         let d = self.thumb_size();
@@ -270,24 +271,24 @@ impl SwitchStyle {
 // Callback
 // ---------------------------------------------------------------------------
 
-/// Aksi yang menerima nilai baru sebuah sakelar.
+/// The action that receives a switch's new value.
 #[derive(Clone)]
 pub struct SwitchCallback(Rc<dyn Fn(bool)>);
 
 impl SwitchCallback {
-    /// Bungkus sebuah closure.
+    /// Wrap a closure.
     pub fn new(f: impl Fn(bool) + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Jalankan aksinya.
+    /// Run the action.
     pub fn call(&self, on: bool) {
         (self.0)(on)
     }
 }
 
 impl PartialEq for SwitchCallback {
-    /// Identitas, bukan isi — aturan yang sama dengan [`silka_core::Callback`].
+    /// Identity, not contents — the same rule as [`silka_core::Callback`].
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
@@ -303,42 +304,42 @@ impl core::fmt::Debug for SwitchCallback {
 // Node
 // ---------------------------------------------------------------------------
 
-/// Seretan yang sedang berlangsung.
+/// A drag in progress.
 #[derive(Debug, Clone)]
 struct Seretan {
-    /// Koordinat lokal x saat jari menyentuh.
+    /// The local x coordinate where the finger touched down.
     awal_x: f32,
-    /// Posisi thumb saat jari menyentuh.
+    /// The thumb position when the finger touched down.
     awal_fraksi: f32,
-    /// Benar begitu jari melewati ambang seret — sebelum itu ini masih ketukan.
+    /// True once the finger passes the drag threshold — before that, a tap.
     bergeser: bool,
-    /// Pelacak kecepatan milik lapisan input, untuk handoff ke spring (§3.5).
+    /// The input layer's velocity tracker, for the handoff to the spring (§3.5).
     velocity: VelocityTracker,
 }
 
-/// Node render sebuah sakelar: lintasan + thumb, dengan label opsional sebagai
-/// satu-satunya anak.
+/// Render node of a switch: track + thumb, with an optional label as its only
+/// child.
 pub struct SwitchNode {
-    /// Ukuran, warna, dan bentuk — semuanya token.
+    /// Sizes, colors, and shapes — all of them tokens.
     pub style: SwitchStyle,
-    /// Nilai sakelar. **Milik aplikasi**; node tidak pernah mengubahnya sendiri.
+    /// The switch value. **Owned by the application**; the node never sets it.
     pub on: bool,
-    /// Tidak bisa dipakai (tetap dibacakan sebagai dimmed).
+    /// Unusable (still announced as dimmed).
     pub disabled: bool,
-    /// Nama yang dibacakan screen reader.
+    /// The name announced by screen readers.
     pub label: Option<String>,
-    /// Peran fokus keyboard.
+    /// Keyboard focus policy.
     pub focus: FocusPolicy,
-    /// Apa yang dijalankan saat pengguna meminta nilai baru.
+    /// What runs when the user asks for a new value.
     pub on_change: Option<SwitchCallback>,
 
-    /// Posisi thumb (0 = mati, 1 = nyala).
+    /// Thumb position (0 = off, 1 = on).
     progress: SpringValue<f32>,
-    /// Warna lintasan.
+    /// Track color.
     bg: SpringValue<Color>,
-    /// Pelebaran thumb saat ditekan (dekoratif).
+    /// Thumb stretch while pressed (decorative).
     press_t: SpringValue<f32>,
-    /// Kemunculan cincin fokus (dekoratif).
+    /// Appearance of the focus ring (decorative).
     ring_t: SpringValue<f32>,
 
     hovered: bool,
@@ -350,7 +351,7 @@ pub struct SwitchNode {
 }
 
 impl SwitchNode {
-    /// Node baru yang **sudah berada** di keadaan `on` — tanpa animasi masuk.
+    /// A new node **already sitting** at `on` — with no animation in.
     pub fn new(style: SwitchStyle, on: bool, disabled: bool, spring: Spring) -> Self {
         Self {
             style,
@@ -361,9 +362,9 @@ impl SwitchNode {
             on_change: None,
             progress: SpringValue::new(if on { 1.0 } else { 0.0 })
                 .with_spring(spring)
-                // Satuan posisinya **bagian lintasan**, bukan poin: toleransi
-                // kecepatan yang lebih longgar mencegah ekor gerakan yang tak
-                // terlihat tapi terus meminta frame (§3.5).
+                // Its position is measured in **fractions of the track**,
+                // not in points: a looser velocity tolerance stops an
+                // invisible tail of motion from asking for frames (§3.5).
                 .with_tolerance(silka_core::animation::Tolerance::new(
                     1.0 / 512.0,
                     1.0 / 64.0,
@@ -380,81 +381,81 @@ impl SwitchNode {
         }
     }
 
-    /// Nilai sakelar.
+    /// The switch value.
     pub fn is_on(&self) -> bool {
         self.on
     }
 
-    /// Gaya yang sedang dipakai.
+    /// The style currently in use.
     pub fn style(&self) -> SwitchStyle {
         self.style
     }
 
-    /// Tidak bisa dipakai.
+    /// Unusable.
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
 
-    /// Kotak lintasan hasil layout terakhir (koordinat lokal node).
+    /// The track rect from the last layout (node-local coordinates).
     pub fn track_rect(&self) -> Rect {
         self.track_rect
     }
 
-    /// Posisi thumb yang digambar frame ini (0..1).
+    /// The thumb position drawn this frame (0..1).
     pub fn fraction(&self) -> f32 {
         self.progress.position().clamp(0.0, 1.0)
     }
 
-    /// Warna lintasan yang digambar frame ini.
+    /// The track color drawn this frame.
     pub fn track_color(&self) -> Color {
         self.bg.position()
     }
 
-    /// Warna lintasan yang sedang dituju.
+    /// The track color being headed for.
     pub fn track_target(&self) -> Color {
         self.bg.target()
     }
 
-    /// Kemajuan pelebaran thumb (0..1).
+    /// Thumb stretch progress (0..1).
     pub fn press_progress(&self) -> f32 {
         self.press_t.position()
     }
 
-    /// Kemajuan cincin fokus (0..1).
+    /// Focus ring progress (0..1).
     pub fn focus_progress(&self) -> f32 {
         self.ring_t.position()
     }
 
-    /// Penunjuk sedang di atasnya.
+    /// The pointer is over it.
     pub fn is_hovered(&self) -> bool {
         self.hovered
     }
 
-    /// Sedang ditekan.
+    /// Currently pressed.
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
 
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// Benar bila jari sedang benar-benar menyeret thumb.
+    /// True while a finger really is dragging the thumb.
     pub fn is_dragging(&self) -> bool {
         self.seret.as_ref().is_some_and(|s| s.bergeser)
     }
 
-    /// Berapa kali pengguna mengaktifkannya sejak node dibuat.
+    /// How many times the user has activated it since the node was built.
     pub fn activations(&self) -> u32 {
         self.activations
     }
 
-    /// Nilai yang sedang **terlihat**: saat diseret, sisi lintasan tempat thumb
-    /// berada — bukan nilai yang masih dipegang aplikasi.
+    /// The value currently **visible**: while dragging, the side of the track
+    /// the thumb sits on — not the value the application still holds.
     ///
-    /// Inilah yang membuat warna lintasan berganti tepat saat thumb melewati
-    /// tengah, bukan sesaat setelah jari diangkat.
+    /// This is what makes the track color change exactly as the thumb passes
+    /// the middle, rather than a moment after the finger lifts.
     pub fn visual_on(&self) -> bool {
         match &self.seret {
             Some(s) if s.bergeser => self.progress.position() >= 0.5,
@@ -462,7 +463,7 @@ impl SwitchNode {
         }
     }
 
-    /// Benar bila masih ada spring yang bergerak.
+    /// True while any spring is still moving.
     pub fn is_animating(&self) -> bool {
         self.progress.is_animating()
             || self.bg.is_animating()
@@ -470,17 +471,16 @@ impl SwitchNode {
             || self.ring_t.is_animating()
     }
 
-    /// Arahkan seluruh spring ke keadaan sekarang.
+    /// Point every spring at the current state.
     ///
-    /// **Retarget, bukan animasi baru** (§3.5): sakelar yang dibalik dua kali
-    /// dengan cepat berbalik arah membawa kecepatannya. Satu fungsi untuk empat
-    /// nilai, dipanggil setiap kali apa pun berubah — dengan begitu tidak
-    /// mungkin ada satu spring yang lupa di-retarget dan tertinggal menampilkan
-    /// keadaan kemarin.
+    /// **Retarget, not a new animation** (§3.5): a switch flipped twice in
+    /// quick succession reverses carrying its velocity. One function for four
+    /// values, called whenever anything changes — that way it is impossible
+    /// for a single spring to be forgotten and left showing yesterday's state.
     fn retarget(&mut self) {
         let aktif = !self.disabled;
-        // Selama jari menempel, posisi thumb **milik jari**: spring tidak boleh
-        // menariknya ke mana-mana.
+        // While the finger is down, the thumb position **belongs to the
+        // finger**: the spring must not pull it anywhere.
         if !self.is_dragging() {
             self.progress.set_target(if self.on { 1.0 } else { 0.0 });
         }
@@ -499,9 +499,9 @@ impl SwitchNode {
             .set_target(if self.focused && aktif { 1.0 } else { 0.0 });
     }
 
-    /// Majukan seluruh spring satu frame; benar bila ada yang bergeser.
+    /// Advance every spring by one frame; true if anything moved.
     ///
-    /// Dipanggil [`crate::advance`], satu tempat untuk seluruh pohon.
+    /// Called by [`crate::advance`], one place for the whole tree.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let mut bergeser = false;
         bergeser |= maju(&mut self.progress, tick);
@@ -511,7 +511,7 @@ impl SwitchNode {
         bergeser
     }
 
-    /// Selesaikan seluruh gerakan seketika (uji, snapshot, golden test).
+    /// Finish every motion instantly (tests, snapshots, golden tests).
     pub fn settle(&mut self) {
         self.progress.settle();
         self.bg.settle();
@@ -519,11 +519,11 @@ impl SwitchNode {
         self.ring_t.settle();
     }
 
-    /// Minta nilai `baru` ke aplikasi.
+    /// Ask the application for the new value.
     ///
-    /// Node **tidak** mengubah `on`-nya sendiri (lihat dokumentasi modul).
-    /// Callback disalin keluar dulu: ia hampir selalu menulis signal, dan itu
-    /// tidak boleh terjadi sambil node ini dipinjam `&mut`.
+    /// The node does **not** change its own `on` (see the module docs). The
+    /// callback is copied out first: it almost always writes a signal, and
+    /// that must not happen while this node is borrowed `&mut`.
     fn minta(&mut self, baru: bool) {
         if self.disabled || baru == self.on {
             return;
@@ -534,12 +534,12 @@ impl SwitchNode {
         }
     }
 
-    /// Ambang jari berubah dari ketukan menjadi seretan, poin logis.
+    /// The threshold where a finger turns from a tap into a drag, in points.
     fn ambang_seret(&self) -> f32 {
         (self.style.inset * 2.0).max(1.0)
     }
 
-    /// Kotak thumb yang benar-benar digambar frame ini.
+    /// The thumb rect actually drawn this frame.
     fn thumb_tergambar(&self) -> Rect {
         let stretch = self.press_t.position() * self.style.press_stretch;
         self.style
@@ -564,11 +564,12 @@ impl RenderNode for SwitchNode {
         "Switch"
     }
 
-    /// Lintasan di sisi awal baca, label mengikuti, dan **area sentuh ≥ 44pt**.
+    /// The track on the reading-start side, the label after it, and a
+    /// **hit area ≥ 44pt**.
     ///
-    /// RTL ditangani di sini dan hanya di sini: lintasannya pindah ke kanan
-    /// bersama isinya, karena arah baca adalah urusan layout — bukan urusan
-    /// tiap widget menghitungnya sendiri (§9.8).
+    /// RTL is handled here and only here: the track moves to the right
+    /// together with the contents, because reading direction is layout's
+    /// business — not something every widget works out for itself (§9.8).
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
         let t = self.style.track;
 
@@ -628,8 +629,8 @@ impl RenderNode for SwitchNode {
         }
         let pill = s.pill.clamp_to(track.size);
 
-        // Cincin fokus digambar **di luar** lintasan supaya tidak menutupi
-        // isinya, dan tumbuh dengan spring — bukan berkedip muncul.
+        // The focus ring is drawn **outside** the track so it never covers
+        // its contents, and it grows on a spring — it does not blink in.
         let ring = self.ring_t.position();
         if ring > 0.0 && s.focus_width > 0.0 && !self.disabled {
             let w = s.focus_width * ring;
@@ -681,8 +682,8 @@ impl RenderNode for SwitchNode {
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Sakelar yang dimatikan tetap **menyerap** penunjuk: kliknya tidak
-        // boleh tembus ke baris di belakangnya.
+        // A disabled switch still **absorbs** the pointer: its clicks must
+        // not fall through to the row behind it.
         HitBehavior::Opaque
     }
 
@@ -700,7 +701,7 @@ impl RenderNode for SwitchNode {
 
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         if self.disabled {
-            // Tetap menyerap agar tidak tembus, tapi tidak mengubah apa pun.
+            // Still absorbing so nothing falls through, but changing nothing.
             if matches!(event, Event::Pointer(p) if matches!(p.phase, PointerPhase::Down | PointerPhase::Up))
             {
                 ctx.handled();
@@ -756,8 +757,8 @@ impl RenderNode for SwitchNode {
                         s.bergeser = true;
                     }
                     if s.bergeser && travel > 0.0 {
-                        // Thumb mengikuti jari **1:1**, tanpa spring: kontrol
-                        // yang "tertinggal" dari jari terasa rusak.
+                        // The thumb follows the finger **1:1**, with no
+                        // spring: a control that lags the finger feels broken.
                         let f = (s.awal_fraksi + dx / travel).clamp(0.0, 1.0);
                         self.progress.jump_to(f);
                         self.retarget();
@@ -781,9 +782,9 @@ impl RenderNode for SwitchNode {
                     ctx.handled();
 
                     match selesai {
-                        // Seretan: posisi **dan** kecepatan jari yang
-                        // memutuskan, lalu kecepatan itu diserahkan ke spring
-                        // apa adanya (§3.5).
+                        // A drag: the finger's position **and** velocity
+                        // decide, and that velocity is then handed to the
+                        // spring exactly as it is (§3.5).
                         Some(s) if s.bergeser => {
                             let f = self.progress.position().clamp(0.0, 1.0);
                             let v = if travel > 0.0 {
@@ -793,13 +794,13 @@ impl RenderNode for SwitchNode {
                             };
                             let baru = if v.abs() >= FLING { v > 0.0 } else { f >= 0.5 };
                             self.progress.set_velocity(v);
-                            // Retarget lebih dulu supaya thumb tetap bergerak
-                            // walau aplikasi menolak perubahannya.
+                            // Retarget first so the thumb keeps moving even
+                            // if the application refuses the change.
                             self.retarget();
                             self.minta(baru);
                         }
-                        // Ketukan biasa — dan seperti tombol AppKit, jari yang
-                        // ditarik keluar sebelum dilepas berarti batal.
+                        // An ordinary tap — and, like an AppKit button, a
+                        // finger dragged out before release means cancelled.
                         Some(_) if di_dalam => {
                             self.retarget();
                             self.minta(!self.on);
@@ -807,8 +808,8 @@ impl RenderNode for SwitchNode {
                         _ => self.retarget(),
                     }
                 }
-                // Dibatalkan OS ≠ dilepas: tidak ada perubahan nilai, dan thumb
-                // kembali ke tempatnya.
+                // Cancelled by the OS ≠ released: the value does not change
+                // and the thumb returns to where it was.
                 PointerPhase::Cancel => {
                     if self.seret.take().is_some() || self.pressed {
                         self.pressed = false;
@@ -821,8 +822,9 @@ impl RenderNode for SwitchNode {
             },
 
             Event::Key(k) if k.is_pressed() && k.modifiers.is_empty() => match k.code {
-                // Space mengaktifkan kontrol on/off — di HIG maupun di web.
-                // Enter sengaja tidak: ia milik tombol default sebuah form.
+                // Space activates an on/off control — in the HIG and on the
+                // web alike. Enter deliberately does not: it belongs to a
+                // form's default button.
                 KeyCode::Named(NamedKey::Space) => {
                     self.minta(!self.on);
                     ctx.request_animation();
@@ -876,7 +878,7 @@ impl core::fmt::Debug for SwitchNode {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props [`SwitchNode`] — bentuk view sebuah sakelar.
+/// Props of [`SwitchNode`] — the view form of a switch.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchProps {
     style: SwitchStyle,
@@ -890,7 +892,7 @@ pub struct SwitchProps {
 }
 
 impl SwitchProps {
-    /// Props bawaan untuk theme aktif.
+    /// The default props for the active theme.
     pub fn from_theme(theme: &Theme) -> Self {
         Self {
             style: SwitchStyle::from_theme(theme),
@@ -912,8 +914,8 @@ impl ViewNode for SwitchProps {
         node.focus = self.focus;
         node.on_change.clone_from(&self.on_change);
         if self.motion == MotionRole::Decorative {
-            // Aplikasi yang menyatakan gerakan ini sekadar hiasan: reduced-
-            // motion mematikannya sepenuhnya, bukan cuma membuang pantulannya.
+            // The application declaring this motion mere decoration:
+            // reduced-motion drops it entirely, not only its bounce.
             node.progress = node.progress.decorative();
             node.bg = node.bg.decorative();
         }
@@ -927,8 +929,8 @@ impl ViewNode for SwitchProps {
         let mut dirty = Dirty::NONE;
 
         if n.style != self.style {
-            // Ukuran lintasan dan jarak ke label ikut di sini, jadi preset yang
-            // berganti memang harus di-layout ulang — bukan cuma digambar ulang.
+            // Track size and the gap to the label are in here too, so a
+            // preset switch really needs a relayout — not just a repaint.
             n.style = self.style;
             dirty |= Dirty::LAYOUT | Dirty::PAINT | Dirty::ANIMATION;
         }
@@ -949,8 +951,8 @@ impl ViewNode for SwitchProps {
         if n.disabled != self.disabled {
             n.disabled = self.disabled;
             if self.disabled {
-                // Kontrol yang baru dimatikan tidak boleh membeku dalam keadaan
-                // ditekan/hover: penunjuknya tidak akan pernah datang lagi.
+                // A control that was just disabled must not freeze in a
+                // pressed/hovered state: its pointer is never coming back.
                 n.pressed = false;
                 n.hovered = false;
                 n.seret = None;
@@ -961,23 +963,23 @@ impl ViewNode for SwitchProps {
             n.on = self.on;
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
-        // Selalu di-retarget: murah, dan menutup setiap kombinasi perubahan di
-        // atas sekaligus. Yang tidak berubah tidak menghasilkan gerakan apa pun
-        // karena `set_target` ke nilai yang sama tidak membangunkan spring.
+        // Always retargeted: it is cheap, and it covers every combination of
+        // the changes above at once. Anything that did not change produces no
+        // motion at all: `set_target` to the same value never wakes a spring.
         n.retarget();
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (pola `InteractiveProps`).
+        // The callback is always replaced without comparison: closures are
+        // rebuilt every rebuild and capture new values (`InteractiveProps`).
         n.on_change.clone_from(&self.on_change);
         dirty
     }
 }
 
-/// Builder sebuah sakelar.
+/// The builder for a switch.
 ///
-/// Tipe sendiri, bukan [`Builder`], karena label dan sakelarnya baru dirakit
-/// saat pohon dibentuk: [`switch_only`] tetap punya nama a11y tanpa satu glyph
-/// pun, dan warna labelnya ikut keadaan `disabled` yang bisa saja disetel
-/// belakangan di rantai method.
+/// Its own type rather than [`Builder`], because the label and the switch are
+/// only assembled as the tree is built: [`switch_only`] still has an a11y
+/// name without a single glyph, and the label color follows a `disabled`
+/// state that may well be set later in the method chain.
 pub struct Switch {
     fonts: Option<Fonts>,
     theme: Theme,
@@ -992,11 +994,11 @@ pub struct Switch {
     key: Option<Key>,
 }
 
-/// Sakelar berlabel.
+/// A labelled switch.
 ///
-/// Labelnya ikut bisa diklik **dan sekaligus** menjadi nama yang dibacakan
-/// screen reader — satu sumber, jadi tidak mungkin yang terlihat dan yang
-/// terdengar berbeda.
+/// Its label is clickable **and at the same time** becomes the name announced
+/// by screen readers — one source, so what is seen and what is heard can
+/// never disagree.
 ///
 /// ```
 /// # use silka_widgets::{switch, Fonts};
@@ -1015,18 +1017,18 @@ pub fn switch(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch 
     }
 }
 
-/// Nama lain [`switch`] — `KOMPONEN.md` menyebut komponen ini
+/// Another name for [`switch`] — `KOMPONEN.md` calls this component
 /// "`switch` / `toggle`".
 pub fn toggle(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch {
     switch(fonts, theme, label)
 }
 
-/// Sakelar tanpa label terlihat — di dalam sel tabel atau di ujung baris
-/// daftar yang sudah punya judulnya sendiri.
+/// A switch with no visible label — inside a table cell, or at the end of a
+/// list row that already carries its own title.
 ///
-/// Tetap **wajib** punya nama lewat [`Switch::label`]: kontrol tanpa nama
-/// adalah kontrol yang tidak ada bagi screen reader (§3.8), dan itu bug, bukan
-/// pilihan desain.
+/// It **must** still have a name through [`Switch::label`]: a control without
+/// a name is a control that does not exist for a screen reader (§3.8), and
+/// that is a bug, not a design choice.
 ///
 /// ```
 /// # use silka_widgets::switch_only;
@@ -1051,79 +1053,79 @@ pub fn switch_only(theme: &Theme) -> Switch {
 }
 
 impl Switch {
-    /// Kunci identitas — wajib untuk anggota daftar dinamis (§2.5).
+    /// Identity key — required for members of a dynamic list (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Nilai sakelar.
+    /// The switch value.
     pub fn on(mut self, on: bool) -> Self {
         self.on = on;
         self
     }
 
-    /// Nama lain [`Switch::on`], senada dengan `checkbox`.
+    /// Another name for [`Switch::on`], matching `checkbox`.
     pub fn checked(self, checked: bool) -> Self {
         self.on(checked)
     }
 
-    /// Nama yang dibacakan screen reader.
+    /// The name announced by screen readers.
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Matikan interaksi (tetap dibacakan sebagai dimmed).
+    /// Disable interaction (still announced as dimmed).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Bisa menerima fokus keyboard atau tidak.
+    /// Whether it can take keyboard focus.
     pub fn focusable(mut self, focusable: bool) -> Self {
         self.focus.focusable = focusable;
         self
     }
 
-    /// Urutan tab eksplisit (mendahului urutan pohon).
+    /// Explicit tab order (takes precedence over tree order).
     pub fn tab_order(mut self, order: i32) -> Self {
         self.focus.focusable = true;
         self.focus.order = Some(order);
         self
     }
 
-    /// Apa yang dijalankan saat **pengguna** meminta nilai baru.
+    /// What runs when **the user** asks for a new value.
     ///
-    /// Tidak dipanggil saat aplikasi sendiri yang menulis nilainya — sama
-    /// seperti `onChanged` di Flutter.
+    /// Not called when the application itself writes the value — just like
+    /// `onChanged` in Flutter.
     pub fn on_change(mut self, f: impl Fn(bool) + 'static) -> Self {
         self.on_change = Some(SwitchCallback::new(f));
         self
     }
 
-    /// Nama lain [`Switch::on_change`], senada dengan `checkbox`.
+    /// Another name for [`Switch::on_change`], matching `checkbox`.
     pub fn on_toggle(self, f: impl Fn(bool) + 'static) -> Self {
         self.on_change(f)
     }
 
-    /// Ganti spring-nya (`smooth`/`snappy`/`bouncy`).
+    /// Swap its spring (`smooth`/`snappy`/`bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Tandai gerakan thumb **dekoratif**: reduced-motion mematikannya
-    /// sepenuhnya alih-alih sekadar membuang pantulannya.
+    /// Mark the thumb motion **decorative**: reduced-motion drops it
+    /// entirely instead of merely removing its bounce.
     ///
-    /// Bawaannya [`MotionRole::Essential`] — thumb yang bergeser *menjelaskan*
-    /// perubahan nilai, jadi menghapusnya berarti menghapus informasi.
+    /// The default is [`MotionRole::Essential`] — a thumb that slides across
+    /// *explains* the change of value, so removing it removes information.
     pub fn decorative(mut self) -> Self {
         self.motion = MotionRole::Decorative;
         self
     }
 
-    /// Gaya kustom — jarang dipakai; bawaannya sudah token.
+    /// A custom style — rarely needed; the default is already all tokens.
     pub fn style(mut self, style: SwitchStyle) -> Self {
         self.style = style;
         self
@@ -1144,8 +1146,8 @@ impl From<Switch> for View {
             on_change: s.on_change,
         });
 
-        // Label hanya digambar bila memang ada mesin teksnya; `switch_only`
-        // tetap punya nama a11y tanpa satu glyph pun.
+        // The label is only drawn when there really is a text engine;
+        // `switch_only` still has an a11y name without a single glyph.
         if let (Some(fonts), Some(label)) = (s.fonts, s.label) {
             let warna = if s.disabled {
                 t.color.disabled_label
@@ -1158,8 +1160,8 @@ impl From<Switch> for View {
                     .line_height(t.typography.body_line_height)
                     .weight(FontWeight::REGULAR)
                     .color(warna)
-                    // Nama kontrol dibacakan sekali, dari node sakelarnya —
-                    // bukan dua kali (aturan yang sama dengan `button`).
+                    // The control's name is announced once, by the switch
+                    // node — not twice (the same rule as `button`).
                     .role(AccessRole::Container),
             );
         }

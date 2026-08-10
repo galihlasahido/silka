@@ -1,34 +1,33 @@
 //! # silka-theme
 //!
-//! Token semantik dan **dual preset first-party** (REKOMENDASI §2.7):
-//! **Cupertino** (HIG Apple, default) dan **Tailwind/shadcn**.
+//! Semantic tokens and **dual first-party presets** (REKOMENDASI §2.7):
+//! **Cupertino** (Apple HIG, the default) and **Tailwind/shadcn**.
 //!
-//! Kontrak yang MENGIKAT:
+//! The BINDING contract:
 //!
-//! - Utility styling (`bg`, `rounded_lg`, `shadow_md`, `p_4`, `text_sm`, …)
-//!   **tidak pernah hard-code angka** — selalu resolve lewat token theme yang
-//!   aktif ([`Token`]). Widget ditulis sekali terhadap token semantik
-//!   ([`ColorToken::Surface`], [`RadiusToken::Md`], [`FontToken::Body`])
-//!   sehingga otomatis benar di kedua preset.
-//! - **Geometri sudut adalah parameter shader, bukan konstanta**:
-//!   [`RadiusToken`] menghasilkan [`Corners`] — di Cupertino squircle
-//!   (superellipse G2-continuous), di Tailwind arc biasa. Nilainya mengalir
-//!   lewat perintah `silka-paint` sampai ke shader **dan** ke hit-testing
-//!   (§2.7, §3.6).
-//! - Token warna harus **reaktif** terhadap perubahan OS: dark mode live,
-//!   accent color sistem, reduce transparency (INTEGRASI-NATIVE §6). Karena
-//!   itu [`Theme`] murni nilai dan dibangun ulang dari `(Preset, Appearance)`
-//!   setiap kali OS berubah — tidak ada state tersembunyi yang perlu
-//!   di-invalidate.
+//! - Styling utilities (`bg`, `rounded_lg`, `shadow_md`, `p_4`, `text_sm`, …)
+//!   **never hard-code numbers** — they always resolve through the active
+//!   theme's tokens ([`Token`]). A widget is written once against semantic
+//!   tokens ([`ColorToken::Surface`], [`RadiusToken::Md`], [`FontToken::Body`])
+//!   and is therefore automatically correct under both presets.
+//! - **Corner geometry is a shader parameter, not a constant**:
+//!   [`RadiusToken`] yields [`Corners`] — a squircle (G2-continuous
+//!   superellipse) under Cupertino, a plain arc under Tailwind. The value
+//!   flows through `silka-paint` commands all the way to the shader **and**
+//!   to hit-testing (§2.7, §3.6).
+//! - Color tokens must be **reactive** to OS changes: live dark mode, system
+//!   accent color, reduce transparency (INTEGRASI-NATIVE §6). That is why
+//!   [`Theme`] is pure value and gets rebuilt from `(Preset, Appearance)`
+//!   every time the OS changes — there is no hidden state to invalidate.
 //!
-//! ## Lapisan
+//! ## Layers
 //!
-//! | Lapisan | Modul | Isi |
+//! | Layer | Module | Contents |
 //! |---|---|---|
-//! | Palet mentah | [`palette`] | Ramp Tailwind 50–950, warna sistem HIG. Satu-satunya tempat literal warna hidup. |
-//! | Token semantik | [`color`], [`radius`], [`shadow`], [`spacing`], [`typography`] | Peran (`surface`, `accent`, `radius_md`, `shadow_md`, skala 4pt, skala font). |
-//! | Resolusi | [`token`] | [`Token`] — nilai yang belum punya arti sampai bertemu theme aktif. |
-//! | Preset | [`preset`] | Satu-satunya tempat token bertemu angka. |
+//! | Raw palette | [`palette`] | Tailwind 50–950 ramps, HIG system colors. Only place color literals live. |
+//! | Semantic tokens | [`color`], [`radius`], [`shadow`], [`spacing`], [`typography`] | Roles (`surface`, `accent`, `radius_md`, `shadow_md`, 4pt scale, type scale). |
+//! | Resolution | [`token`] | [`Token`] — a value with no meaning until it meets the theme. |
+//! | Presets | [`preset`] | The only place tokens meet numbers. |
 //!
 //! ```
 //! use silka_theme::{Appearance, ColorToken, FontToken, Preset, RadiusToken, SpaceToken, Theme};
@@ -36,20 +35,20 @@
 //! let theme = Theme::cupertino(Appearance::Dark);
 //! assert_eq!(theme.preset, Preset::Cupertino);
 //!
-//! // Widget menyebut peran, bukan angka…
+//! // Widgets name roles, not numbers…
 //! let latar = theme.resolve(ColorToken::Surface);
 //! let sudut = theme.resolve(RadiusToken::Md);
 //! let padding = theme.resolve(SpaceToken::S4);
 //! let judul = theme.resolve(FontToken::Title2);
 //! # let _ = (latar, sudut, padding, judul);
 //!
-//! // …dan preset yang menentukan hasilnya.
+//! // …and the preset decides what comes out.
 //! let sama_tapi_web = theme.with_preset(Preset::Tailwind);
 //! assert_ne!(sudut.style, sama_tapi_web.resolve(RadiusToken::Md).style);
 //! ```
 //!
-//! Preset ketiga (brand kustom) cukup mengisi token yang sama — tidak ada CSS,
-//! tidak ada cascade, tidak ada parser (§2.6). Lihat [`Theme::with_colors`].
+//! A third preset (a custom brand) only has to fill in the same tokens — no
+//! CSS, no cascade, no parser (§2.6). See [`Theme::with_colors`].
 
 #![warn(missing_docs)]
 
@@ -71,23 +70,23 @@ pub use typography::{FontToken, TypeStyle, TypographyTokens};
 
 use silka_paint::{Color, Corners, ShadowPair};
 
-/// Terang atau gelap. Mengikuti setting OS kecuali aplikasi menguncinya.
+/// Light or dark. Follows the OS setting unless the app pins it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Appearance {
-    /// Mode terang.
+    /// Light mode.
     #[default]
     Light,
-    /// Mode gelap.
+    /// Dark mode.
     Dark,
 }
 
 impl Appearance {
-    /// Benar bila mode gelap.
+    /// True when this is dark mode.
     pub fn is_dark(self) -> bool {
         matches!(self, Appearance::Dark)
     }
 
-    /// Lawan dari appearance ini.
+    /// The opposite of this appearance.
     pub fn toggled(self) -> Self {
         match self {
             Appearance::Light => Appearance::Dark,
@@ -96,23 +95,24 @@ impl Appearance {
     }
 }
 
-/// Preset design system first-party.
+/// A first-party design-system preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Preset {
-    /// Kiblat Apple HIG/macOS: squircle, palet semantik HIG, shadow ganda,
-    /// Inter dengan optical size.
+    /// Modeled on Apple HIG/macOS: squircles, the HIG semantic palette, paired
+    /// shadows, Inter with optical sizing.
     #[default]
     Cupertino,
-    /// Kiblat shadcn/ui: arc 8px, palet slate/blue step 50–950, skala font
-    /// Tailwind.
+    /// Modeled on shadcn/ui: 8px arcs, slate/blue 50–950 ramps, the Tailwind
+    /// type scale.
     Tailwind,
 }
 
 impl Preset {
-    /// Kedua preset first-party — dipakai gallery app dan uji lintas-preset.
+    /// Both first-party presets — used by the gallery app and cross-preset
+    /// tests.
     pub const ALL: [Preset; 2] = [Preset::Cupertino, Preset::Tailwind];
 
-    /// Nama preset untuk CLI/gallery/debug.
+    /// Preset name for CLI/gallery/debug output.
     pub const fn name(self) -> &'static str {
         match self {
             Preset::Cupertino => "cupertino",
@@ -121,22 +121,23 @@ impl Preset {
     }
 }
 
-/// Theme aktif: preset + appearance yang sudah diresolusi jadi nilai token.
+/// The active theme: a preset plus an appearance, already resolved into token
+/// values.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Theme {
-    /// Preset yang dipakai.
+    /// The preset in use.
     pub preset: Preset,
-    /// Terang/gelap.
+    /// Light/dark.
     pub appearance: Appearance,
-    /// Token warna.
+    /// Color tokens.
     pub color: ColorTokens,
-    /// Token radius + bentuk sudut.
+    /// Radius tokens plus the corner shape.
     pub radius: RadiusTokens,
-    /// Token bayangan ganda per elevasi.
+    /// Paired shadow tokens, one per elevation.
     pub shadow: ShadowTokens,
-    /// Token spacing.
+    /// Spacing tokens.
     pub spacing: SpacingTokens,
-    /// Token tipografi.
+    /// Typography tokens.
     pub typography: TypographyTokens,
 }
 
@@ -147,7 +148,7 @@ impl Default for Theme {
 }
 
 impl Theme {
-    /// Bangun theme dari preset dan appearance.
+    /// Build a theme from a preset and an appearance.
     pub fn new(preset: Preset, appearance: Appearance) -> Self {
         match preset {
             Preset::Cupertino => preset::cupertino::theme(appearance),
@@ -155,120 +156,122 @@ impl Theme {
         }
     }
 
-    /// Preset Cupertino (default framework).
+    /// The Cupertino preset (framework default).
     pub fn cupertino(appearance: Appearance) -> Self {
         preset::cupertino::theme(appearance)
     }
 
-    /// Preset Tailwind/shadcn.
+    /// The Tailwind/shadcn preset.
     pub fn tailwind(appearance: Appearance) -> Self {
         preset::tailwind::theme(appearance)
     }
 
-    /// Theme yang sama dengan appearance berbeda.
+    /// The same theme under a different appearance.
     ///
-    /// Inilah jalur yang dipakai saat OS mengirim perubahan dark mode:
-    /// token dibangun ulang, tidak ditambal. Kustomisasi token (lihat
-    /// [`Theme::with_colors`]) karena itu **hilang** — aplikasi yang punya
-    /// brand sendiri harus membangun ulang theme-nya dari fungsi yang sama
-    /// yang dipakai saat start.
+    /// This is the path taken when the OS reports a dark-mode change: tokens
+    /// are rebuilt, not patched. Token customizations (see
+    /// [`Theme::with_colors`]) are therefore **lost** — an app with its own
+    /// brand must rebuild its theme through the same function it used at
+    /// startup.
     pub fn with_appearance(self, appearance: Appearance) -> Self {
         Theme::new(self.preset, appearance)
     }
 
-    /// Theme yang sama dengan preset berbeda (switcher di gallery app).
+    /// The same theme under a different preset (the gallery app's switcher).
     pub fn with_preset(self, preset: Preset) -> Self {
         Theme::new(preset, self.appearance)
     }
 
-    // --- Resolusi token (§2.7: utility tidak pernah hard-code angka) -------
+    // --- Token resolution (§2.7: utilities never hard-code numbers) --------
 
-    /// Resolusi sebuah token terhadap theme ini.
+    /// Resolve a token against this theme.
     ///
-    /// Ini pintu tunggal yang dipakai seluruh utility styling; nilai konkret
-    /// (mis. [`Color`]) juga lewat sini sebagai identitas, sehingga satu tanda
-    /// tangan melayani token maupun escape hatch.
+    /// This is the single door every styling utility goes through; concrete
+    /// values (e.g. [`Color`]) also pass through it as the identity, so one
+    /// signature serves both tokens and escape hatches.
     pub fn resolve<T: Token>(&self, token: T) -> T::Value {
         token.resolve(self)
     }
 
-    /// Warna satu token.
+    /// The color of one token.
     pub fn color_of(&self, token: ColorToken) -> Color {
         self.color.get(token)
     }
 
-    /// Jarak satu token skala spacing, poin logis.
+    /// The distance of one spacing-scale token, in logical points.
     pub fn space_of(&self, token: SpaceToken) -> f32 {
         self.spacing.get(token)
     }
 
-    /// Nilai radius satu token, poin logis (tanpa bentuknya).
+    /// The radius value of one token, in logical points (without its shape).
     pub fn radius_of(&self, token: RadiusToken) -> f32 {
         self.radius.get(token)
     }
 
-    /// Paket sudut satu token: radius **dan** bentuk preset.
+    /// The full corner package for one token: radius **and** the preset's
+    /// shape.
     pub fn corners_of(&self, token: RadiusToken) -> Corners {
         self.radius.corners(token)
     }
 
-    /// Resep bayangan satu token elevasi.
+    /// The shadow recipe for one elevation token.
     pub fn shadow_of(&self, token: ShadowToken) -> ShadowPair {
         self.shadow.get(token)
     }
 
-    /// Gaya teks satu token tipografi.
+    /// The text style of one typography token.
     pub fn font(&self, token: FontToken) -> TypeStyle {
         self.typography.get(token)
     }
 
-    /// Paket sudut untuk sebuah radius **bebas** — radius dan bentuknya.
+    /// The corner package for an **arbitrary** radius — the radius and its
+    /// shape.
     ///
-    /// Dipakai saat radius datang dari perhitungan (mis. setengah tinggi
-    /// kontrol), bukan dari token. Bentuk sudutnya tetap milik preset, jadi
-    /// squircle/arc tetap otomatis benar.
+    /// Used when the radius comes from a computation (e.g. half a control's
+    /// height) rather than from a token. The corner shape still belongs to the
+    /// preset, so squircle/arc stays automatically correct.
     pub fn corners(self, radius: f32) -> Corners {
         Corners::uniform(radius, self.radius.style)
     }
 
-    /// Jarak `steps` langkah pada skala spacing.
+    /// The distance of `steps` steps on the spacing scale.
     pub fn space(self, steps: f32) -> f32 {
         self.spacing.space(steps)
     }
 
-    // --- Preset brand kustom (§2.7: "tinggal isi token") -------------------
+    // --- Custom brand presets (§2.7: "just fill in the tokens") ------------
 
-    /// Theme dengan token warna diganti.
+    /// This theme with its color tokens replaced.
     pub fn with_colors(mut self, color: ColorTokens) -> Self {
         self.color = color;
         self
     }
 
-    /// Theme dengan setiap token warna dilewatkan sebuah fungsi.
+    /// This theme with every color token passed through a function.
     pub fn map_colors(mut self, f: impl FnMut(ColorToken, Color) -> Color) -> Self {
         self.color = self.color.map(f);
         self
     }
 
-    /// Theme dengan token radius diganti (termasuk bentuk sudutnya).
+    /// This theme with its radius tokens replaced (corner shape included).
     pub fn with_radius(mut self, radius: RadiusTokens) -> Self {
         self.radius = radius;
         self
     }
 
-    /// Theme dengan token bayangan diganti.
+    /// This theme with its shadow tokens replaced.
     pub fn with_shadows(mut self, shadow: ShadowTokens) -> Self {
         self.shadow = shadow;
         self
     }
 
-    /// Theme dengan skala spacing diganti.
+    /// This theme with its spacing scale replaced.
     pub fn with_spacing(mut self, spacing: SpacingTokens) -> Self {
         self.spacing = spacing;
         self
     }
 
-    /// Theme dengan skala tipografi diganti.
+    /// This theme with its type scale replaced.
     pub fn with_typography(mut self, typography: TypographyTokens) -> Self {
         self.typography = typography;
         self
@@ -307,9 +310,9 @@ mod tests {
 
     #[test]
     fn dark_mode_tidak_menyentuh_geometri_dan_skala() {
-        // Yang berubah saat OS ganti appearance hanyalah warna (dan pekatnya
-        // bayangan). Kalau radius/spacing/font ikut berubah, seluruh layout
-        // akan bergeser saat matahari terbenam.
+        // All that changes when the OS switches appearance is color (and how
+        // dense the shadows are). If radius/spacing/fonts moved too, the whole
+        // layout would shift at sunset.
         for preset in Preset::ALL {
             let terang = Theme::new(preset, Appearance::Light);
             let gelap = Theme::new(preset, Appearance::Dark);
@@ -489,8 +492,8 @@ mod tests {
 
     #[test]
     fn brand_kustom_cukup_mengisi_token() {
-        // Preset ketiga tanpa file baru: mulai dari preset yang ada, ganti
-        // tokennya. Widget tidak perlu tahu apa pun (§2.7).
+        // A third preset with no new file: start from an existing preset and
+        // swap its tokens. Widgets need to know nothing at all (§2.7).
         let ungu = Color::hex(0x7C3AED);
         let t = Theme::tailwind(Appearance::Dark)
             .map_colors(|token, warna| match token {
@@ -501,20 +504,20 @@ mod tests {
 
         assert_eq!(t.resolve(ColorToken::Accent), ungu);
         assert_eq!(t.resolve(SpaceToken::S2), 16.0);
-        // Token lain tidak ikut berubah.
+        // The other tokens are untouched.
         assert_eq!(
             t.resolve(ColorToken::Surface),
             Theme::tailwind(Appearance::Dark).color.surface
         );
-        // Garis rambut tetap 1pt walau unit skala berubah.
+        // The hairline stays 1pt even when the scale unit changes.
         assert_eq!(t.resolve(SpaceToken::Px), 1.0);
     }
 
     #[test]
     fn tiap_preset_menjawab_seluruh_kosakata_token() {
-        // Kalau sebuah token tidak punya jawaban di salah satu preset, widget
-        // yang memakainya akan "benar di satu tema saja" — persis kegagalan
-        // yang arsitektur ini hindari.
+        // If a token has no answer under one of the presets, any widget using
+        // it would be "correct in one theme only" — exactly the failure this
+        // architecture exists to prevent.
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);

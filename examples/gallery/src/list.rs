@@ -1,27 +1,27 @@
-//! Halaman demo: **list tervirtualisasi** (`KOMPONEN.md` Tier 1).
+//! Demo page: **virtualized list** (`KOMPONEN.md` Tier 1).
 //!
-//! Angka di halaman ini sengaja tidak masuk akal: **seratus ribu baris**. Itu
-//! bukan pamer, itu satu-satunya cara membuktikan hal yang paling mudah diklaim
-//! dan paling jarang benar — bahwa yang dibangun hanyalah baris yang terlihat.
-//! Daftar yang "cepat" pada 200 baris tidak membuktikan apa pun; daftar yang
-//! tetap 120 fps pada 100.000 baris membuktikan semuanya.
+//! The number on this page is deliberately absurd: **a hundred thousand rows**.
+//! That is not showing off, it is the only way to prove the thing that is
+//! easiest to claim and rarest to get right — that only the visible rows are
+//! ever built. A list that is "fast" at 200 rows proves nothing; a list that
+//! stays at 120 fps across 100,000 rows proves everything.
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Virtualisasi | Gulir sampai ke baris 90.000: tidak ada jeda, dan memori tidak bergerak |
-//! | Guliran = `scroll_view` | Rubber band, momentum OS, scrollbar auto-hide — semuanya ada tanpa daftar ini punya kode fisika sendiri |
-//! | Sticky header | Judul kolom **menempel** di tepi atas sementara barisnya lewat di bawahnya |
-//! | Seleksi ber-spring | Klik satu baris lalu tekan ↓ berkali-kali: sorotannya *meluncur*, tidak berkedip pindah |
-//! | Hover & tekan | Lewatkan kursor di atas baris; tahan tombol mouse |
-//! | Keyboard penuh | Tab ke daftar, lalu ↑ ↓ · Page Up/Down · Home/End · Enter |
-//! | Baris di luar layar tetap terjangkau | Home/End menggulirkan daftar sendiri ke baris terpilih |
-//! | Hit target ≥ 44pt | Setiap baris setinggi 44pt walau teksnya kecil |
-//! | Node AccessKit | VoiceOver menyebut "list", membacakan tiap baris, dan menyebut mana yang terpilih |
-//! | Kedua preset & dark mode | `--preset tailwind`, `--appearance dark` |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: sorotan langsung berada di tempatnya |
+//! | Virtualization | Scroll down to row 90,000: no stutter, and memory does not move |
+//! | Scrolling = `scroll_view` | Rubber banding, OS momentum, auto-hiding scrollbar — all present without this list carrying any physics code of its own |
+//! | Sticky header | The column headings **stick** to the top edge while rows slide past beneath them |
+//! | Spring-driven selection | Click a row then press ↓ repeatedly: the highlight *glides*, it does not blink from place to place |
+//! | Hover & press | Sweep the cursor over a row; hold the mouse button down |
+//! | Full keyboard support | Tab to the list, then ↑ ↓ · Page Up/Down · Home/End · Enter |
+//! | Off-screen rows stay reachable | Home/End scrolls the list itself to the selected row |
+//! | Hit target ≥ 44pt | Every row is 44pt tall even though its text is small |
+//! | AccessKit nodes | VoiceOver says "list", announces each row, and names which one is selected |
+//! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the highlight is immediately in place |
 //!
-//! Yang **tidak** ada di berkas ini: `Scene` yang disusun tangan, aritmetika
-//! tata letak, dan angka warna. Semuanya token (§2.6, §2.7).
+//! What is **absent** from this file: hand-assembled `Scene`s, layout
+//! arithmetic, and color numbers. Everything is a token (§2.6, §2.7).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -34,37 +34,39 @@ use silka_widgets::{
     button, button_variant, list, text, use_list_state, ButtonVariant, Fonts, ListState,
 };
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "List (tervirtualisasi)";
-/// Nama daftar bagi screen reader — sekaligus jangkar yang dicari uji.
+/// The list's name for screen readers — and the anchor the tests look for.
 pub const NAMA_DAFTAR: &str = "Transaksi";
-/// Banyak baris. Seratus ribu, dan itu memang inti demonya.
+/// How many rows. A hundred thousand, and that is exactly the point of the
+/// demo.
 pub const BARIS: usize = 100_000;
 
-/// Tombol lompat jauh.
+/// The jump-far button.
 pub const TOMBOL_TENGAH: &str = "Ke baris 50.000";
-/// Tombol kembali ke awal.
+/// The back-to-the-start button.
 pub const TOMBOL_AWAL: &str = "Ke awal";
 
-/// Tinggi satu baris — sekaligus hit target minimum HIG.
+/// One row's height — which is also the HIG's minimum hit target.
 const TINGGI_BARIS: f32 = 44.0;
-/// Tinggi baris judul kolom, dalam langkah skala spacing (§2.6).
+/// The column-heading row's height, in spacing-scale steps (§2.6).
 const TINGGI_HEADER_LANGKAH: f32 = 9.0;
-/// Tinggi jendela daftar, dalam langkah skala spacing.
+/// The list viewport's height, in spacing-scale steps.
 const TINGGI_LANGKAH: f32 = 92.0;
-/// Lebar maksimum daftar, dalam langkah skala spacing.
+/// The list's maximum width, in spacing-scale steps.
 const LEBAR_LANGKAH: f32 = 140.0;
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
-    // State daftar: posisi guliran + baris terpilih, bertahan lintas rebuild.
+    // The list state: scroll position + selected row, surviving rebuilds.
     let daftar_state = use_list_state();
-    // Baris terakhir yang **diaktifkan** (ketuk-ganda / Enter).
+    // The last row that was **activated** (double-tap / Enter).
     let dibuka = use_signal(|| None::<usize>);
 
     column([
@@ -101,10 +103,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Jendela daftar.
+/// The list viewport.
 ///
-/// Sumbu guliran **wajib** terbatas (aturan Flutter yang sama): pembatasnya di
-/// sini, bukan di dalam wadahnya.
+/// The scroll axis **must** be bounded (the same rule as Flutter's): the bound
+/// lives here, not inside the container.
 fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usize>>) -> View {
     let untuk_baris = fonts.clone();
     let untuk_header = fonts.clone();
@@ -132,10 +134,10 @@ fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usiz
     .into()
 }
 
-/// Satu baris: nomor, keterangan, dan nominal.
+/// One row: number, description, and amount.
 ///
-/// Dipanggil **hanya** untuk baris yang terlihat — itulah janji virtualisasi,
-/// dan itulah sebabnya `BARIS` boleh seratus ribu.
+/// Called **only** for visible rows — that is virtualization's promise, and
+/// that is why `BARIS` is allowed to be a hundred thousand.
 fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
     let nomor = text(fonts, format!("#{:06}", i + 1))
         .size(t.typography.footnote.size)
@@ -155,8 +157,8 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
     row([
         View::from(nomor),
         View::from(nama),
-        // Pendorong: kolom nominal selalu rata kanan, tanpa satu pun angka
-        // tata letak di halaman ini.
+        // A spacer: the amount column is always right-aligned, without a
+        // single layout number on this page.
         View::from(expanded(fixed(0.0, 0.0))),
         View::from(nominal),
     ])
@@ -166,7 +168,7 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
     .into()
 }
 
-/// Nama pihak yang berulang — data palsu yang tetap terlihat seperti data.
+/// Repeating counterparty names — fake data that still looks like data.
 fn nama_pihak(i: usize) -> &'static str {
     const NAMA: [&str; 6] = [
         "Warung Kopi",
@@ -179,7 +181,7 @@ fn nama_pihak(i: usize) -> &'static str {
     NAMA[i % NAMA.len()]
 }
 
-/// Judul kolom yang menempel di tepi atas daftar.
+/// The column headings that stick to the list's top edge.
 fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
     row([
         View::from(
@@ -196,8 +198,8 @@ fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
                 .color(t.color.secondary_label)
                 .single_line(),
         ),
-        // Pendorong: kolom nominal selalu rata kanan, tanpa satu pun angka
-        // tata letak di halaman ini.
+        // A spacer: the amount column is always right-aligned, without a
+        // single layout number on this page.
         View::from(expanded(fixed(0.0, 0.0))),
         View::from(
             text(fonts, "Nominal")
@@ -210,12 +212,12 @@ fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
     .spacing(t.space(3.0))
     .cross(CrossAlign::Center)
     .padding(Insets::symmetric(t.space(4.0), 0.0))
-    // Header buram: baris yang lewat di bawahnya tidak boleh tembus.
+    // An opaque header: rows sliding beneath it must not show through.
     .background(t.color.surface)
     .into()
 }
 
-/// Dua tombol lompat jauh — bukti bahwa `scroll_to` bekerja pada data raksasa.
+/// Two jump-far buttons — proof that `scroll_to` works on huge data sets.
 fn kendali(fonts: &Fonts, t: &Theme, state: ListState) -> View {
     row([
         View::from(
@@ -231,8 +233,8 @@ fn kendali(fonts: &Fonts, t: &Theme, state: ListState) -> View {
     .into()
 }
 
-/// Baris status — **satu-satunya tempat seleksi dibaca**, jadi memindahkan
-/// sorotan hanya membangun ulang teks ini (§2.5).
+/// The status row — **the only place the selection is read**, so moving the
+/// highlight rebuilds just this text (§2.5).
 fn status(fonts: &Fonts, state: ListState, dibuka: Signal<Option<usize>>) -> View {
     let fonts = fonts.clone();
     component("status", move |cx| {
@@ -273,15 +275,15 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app_with`**.
+    /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         headless_app(theme, move |cx| halaman(cx, &untuk_view))
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Jalankan frame sampai aplikasi benar-benar diam **dan** tidak ada spring
-    /// yang menunggu.
+    /// Pump frames until the app is genuinely at rest **and** no spring is
+    /// still pending.
     fn diam(ui: &mut AppRuntime) {
         for _ in 0..12 {
             ui.animate(|tree, _| {
@@ -301,7 +303,7 @@ mod tests {
         ui.tree().node_ref::<ListBody>(id).expect("ListBody")
     }
 
-    /// Berapa baris yang benar-benar menjadi node.
+    /// How many rows actually became nodes.
     fn baris_di_pohon(ui: &AppRuntime) -> usize {
         fn hitung(tree: &silka_core::tree::RenderTree, id: silka_core::tree::NodeId) -> usize {
             usize::from(tree.node_ref::<ListRowBox>(id).is_some())
@@ -389,9 +391,9 @@ mod tests {
             "tidak ada baris di pohon a11y:\n{}",
             pohon.dump()
         );
-        // Baris pertama benar-benar dibacakan isinya.
+        // The first row really does have its content announced.
         assert!(pohon.find_label("#000001").is_some());
-        // Dan judul kolom **bukan** salah satu baris.
+        // And the column heading is **not** one of the rows.
         assert!(pohon.find_label("Nominal").is_some());
     }
 
@@ -432,7 +434,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         diam(&mut ui);
 
-        // Tab sampai daftar yang memegang fokus (tombol lebih dulu di pohon).
+        // Tab until the list holds focus (the buttons come first in the tree).
         for _ in 0..6 {
             tombol(&mut ui, NamedKey::Tab);
             if daftar_node(&ui).is_focused() {
@@ -446,7 +448,7 @@ mod tests {
 
         tombol(&mut ui, NamedKey::End);
         assert_eq!(daftar_node(&ui).selected(), Some(BARIS - 1));
-        // Baris terakhir benar-benar dibacakan: daftar menggulirkan dirinya.
+        // The last row really is announced: the list scrolled itself there.
         assert!(
             ui.access_tree().find_label("#100000").is_some(),
             "baris terakhir tidak digulirkan ke layar"

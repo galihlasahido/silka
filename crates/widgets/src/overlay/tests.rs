@@ -1,10 +1,10 @@
-//! Uji infrastruktur overlay sebagai satu kesatuan.
+//! Tests for the overlay infrastructure as a whole.
 //!
-//! [`super::placement`] sudah menguji geometrinya sendiri habis-habisan tanpa
-//! pohon; yang diuji di sini adalah **sambungannya**: apakah geometri itu
-//! benar-benar sampai ke posisi node, apakah backdrop dan penghalang berlaku,
-//! apakah klik/Esc benar-benar menutup, dan apakah transisi spring
-//! menggerakkan panel alih-alih membuatnya melompat.
+//! [`super::placement`] already tests its own geometry to exhaustion without a
+//! tree; what is tested here is **the wiring**: whether that geometry actually
+//! reaches the node's position, whether the backdrop and the barrier take
+//! effect, whether clicks/Esc really dismiss, and whether the spring transition
+//! moves the panel instead of making it jump.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -44,7 +44,7 @@ fn panel_view() -> View {
     fixed(PANEL.width, PANEL.height).into()
 }
 
-/// Satu overlay modal terbuka di atas konten seukuran layar.
+/// A single open modal overlay above screen-sized content.
 fn modal(open: bool) -> LayerBuilder {
     overlay_layer(fixed(LAYAR.width, LAYAR.height)).overlay(
         overlay(panel_view())
@@ -76,7 +76,7 @@ fn esc() -> Event {
     ))
 }
 
-/// Jalankan transisi sampai selesai, seperti siklus frame sungguhan.
+/// Run the transitions to completion, like a real frame cycle.
 fn sampai_diam(tree: &mut RenderTree) -> u32 {
     let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
     let mut frame = 0;
@@ -101,8 +101,8 @@ fn layer_memenuhi_ruang_dan_menumpuk_overlay_di_atas_konten() {
 
     let anak = tree.children(layer);
     assert_eq!(anak.len(), 2, "konten + satu overlay");
-    // Keduanya memenuhi layer dan berbagi asal yang sama, jadi koordinat
-    // jangkar overlay = koordinat konten tanpa konversi apa pun.
+    // Both fill the layer and share the same origin, so overlay anchor
+    // coordinates are content coordinates, with no conversion at all.
     assert_eq!(tree.offset(anak[0]), Point::ZERO);
     assert_eq!(tree.offset(anak[1]), Point::ZERO);
     assert_eq!(tree.size(anak[1]), LAYAR);
@@ -136,7 +136,7 @@ fn urutan_anak_adalah_urutan_tumpuk() {
 }
 
 // ---------------------------------------------------------------------------
-// Konten inert
+// Inert content
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -150,7 +150,7 @@ fn modal_terbuka_mematikan_konten_di_belakangnya() {
     );
     let tree = pohon(view);
 
-    // 1. Tidak bisa di-Tab.
+    // 1. Cannot be tabbed to.
     assert!(
         tab_order(&tree, tree.root()).iter().all(|id| tree
             .render(*id)
@@ -158,7 +158,7 @@ fn modal_terbuka_mematikan_konten_di_belakangnya() {
             .is_some()),
         "hanya overlay yang boleh tersisa di urutan tab"
     );
-    // 2. Tidak dibacakan screen reader.
+    // 2. Not read out by screen readers.
     let a11y = tree.access_tree(None);
     assert!(
         a11y.find_label("Di belakang").is_none(),
@@ -174,7 +174,7 @@ fn popover_tidak_mematikan_konten_di_belakangnya() {
     let view = overlay_layer(konten).overlay(
         overlay(panel_view())
             .open(true)
-            // Light dismiss: klik luar menutup, tapi konten tetap hidup.
+            // Light dismiss: an outside click dismisses, but the content lives on.
             .barrier(Barrier::Light)
             .label("Popover"),
     );
@@ -211,7 +211,7 @@ fn konten_hidup_lagi_setelah_modal_ditutup() {
 }
 
 // ---------------------------------------------------------------------------
-// Penempatan lewat pohon sungguhan
+// Placement through a real tree
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -224,14 +224,14 @@ fn panel_dialog_mendarat_di_tengah_layer() {
     assert_eq!(panel.origin, Point::new(100.0, 100.0));
     assert_eq!(panel.size, PANEL);
 
-    // Node panelnya sungguhan berada di situ, bukan cuma angka di dalam entri.
+    // The panel node really is there, not just a number inside the entry.
     let anak = tree.children(id)[0];
     assert_eq!(tree.offset(anak), Point::new(100.0, 100.0));
 }
 
 #[test]
 fn popover_membalik_sendiri_di_tepi_bawah_layar() {
-    // Jangkar 20pt dari dasar layar: panel 100pt tidak muat di bawahnya.
+    // Anchor 20pt from the bottom: a 100pt panel does not fit below it.
     let jangkar = Rect::new(100.0, 264.0, 80.0, 24.0);
     let view = overlay_layer(fixed(LAYAR.width, LAYAR.height)).overlay(
         overlay(panel_view())
@@ -253,8 +253,8 @@ fn popover_membalik_sendiri_di_tepi_bawah_layar() {
 
 #[test]
 fn anchor_rect_menerjemahkan_node_pemicu_ke_koordinat_layer() {
-    // Pemicu diberi sarang berlapis supaya offset-nya bukan nol: itulah yang
-    // membuat terjemahan koordinatnya berarti.
+    // The trigger is nested several levels deep so its offset is non-zero:
+    // that is what makes the coordinate translation meaningful.
     let pemicu = pad(
         Insets::all(24.0),
         pad(
@@ -281,8 +281,8 @@ fn anchor_rect_menerjemahkan_node_pemicu_ke_koordinat_layer() {
         "24 + 8 padding pada kedua sumbu"
     );
 
-    // Node yang sudah tidak ada tidak menghasilkan koordinat sampah — tombol
-    // yang menghilang berarti popover-nya jatuh ke tengah layer.
+    // A node that is gone yields no garbage coordinates — a vanished button
+    // means its popover falls back to the center of the layer.
     tree.remove_subtree(tombol);
     assert_eq!(anchor_rect(&tree, tombol, layer), Anchor::None);
 }
@@ -308,7 +308,7 @@ fn backdrop_menutupi_seluruh_layer_dan_ikut_memudar() {
         .expect("backdrop harus tergambar");
     assert_eq!(peredup, Rect::from_origin_size(Point::ZERO, LAYAR));
 
-    // Setengah jalan menutup: alfanya ikut turun, tidak melompat ke nol.
+    // Halfway through dismissing: the alpha comes down too, it does not snap to zero.
     let id = entri(&tree);
     {
         let e = tree.node_mut_ref::<OverlayEntry>(id).unwrap();
@@ -388,8 +388,8 @@ fn klik_di_luar_panel_menutup_overlay() {
 
 #[test]
 fn esc_menggelembung_saat_overlay_tidak_punya_penerima() {
-    // Tanpa `on_dismiss`, overlay tidak boleh **menelan** Esc: di bawahnya
-    // mungkin ada dialog lain yang memang bisa ditutup.
+    // Without `on_dismiss`, an overlay must not **swallow** Esc: beneath it
+    // there may be another dialog that really can be dismissed.
     let view = overlay_layer(fixed(LAYAR.width, LAYAR.height))
         .overlay(overlay(panel_view()).open(true).barrier(Barrier::Modal));
     let mut tree = pohon(view);
@@ -417,9 +417,9 @@ fn drag_dari_dalam_panel_ke_luar_tidak_menutup() {
     let (mut tree, n) = dengan_penghitung(Barrier::Modal, Dismiss::ALL);
     let mut router = InputRouter::new();
 
-    // Aturan yang sama dengan tombol AppKit: tekan **dan** lepas harus
-    // sama-sama di luar. Seleksi teks yang tersapu keluar panel tidak boleh
-    // menutup dialognya.
+    // The same rule AppKit buttons follow: press **and** release must both be
+    // outside. A text selection dragged out of the panel must not dismiss the
+    // dialog.
     router.dispatch(&mut tree, &tekan(Point::new(150.0, 150.0), Duration::ZERO));
     router.dispatch(
         &mut tree,
@@ -441,7 +441,7 @@ fn klik_luar_tidak_menutup_saat_tidak_diizinkan() {
         0,
         "alert destruktif tidak boleh hilang tak sengaja"
     );
-    // …tapi penghalangnya tetap berlaku: klik itu tidak sampai ke konten.
+    // …but the barrier still holds: that click never reaches the content.
     assert!(dismiss_topmost(&mut tree, Dismiss::ESCAPE));
     assert_eq!(n.get(), 1);
 }
@@ -452,8 +452,8 @@ fn esc_menutup_overlay_paling_atas() {
     let id = entri(&tree);
     let mut router = InputRouter::new();
 
-    // Jalur normal: fokus ada di dalam perangkap fokus dialog, jadi Esc
-    // menggelembung lewat entri overlay.
+    // The normal path: focus sits inside the dialog's focus trap, so Esc
+    // bubbles up through the overlay entry.
     router.focus_node(&mut tree, Some(id));
     assert!(router.dispatch(&mut tree, &esc()).handled);
     assert_eq!(n.get(), 1);
@@ -464,10 +464,10 @@ fn esc_tanpa_fokus_ditangani_jaring_pengaman() {
     let (mut tree, n) = dengan_penghitung(Barrier::Modal, Dismiss::ALL);
     let mut router = InputRouter::new();
 
-    // Tanpa fokus, event tombol hanya sampai ke akar pohon…
+    // With nothing focused, the key event only reaches the root of the tree…
     assert!(!router.dispatch(&mut tree, &esc()).handled);
     assert_eq!(n.get(), 0);
-    // …dan di situlah `dismiss_topmost` ada.
+    // …and that is exactly what `dismiss_topmost` is there for.
     assert!(dismiss_topmost(&mut tree, Dismiss::ESCAPE));
     assert_eq!(n.get(), 1);
 }
@@ -503,7 +503,7 @@ fn tooltip_tidak_menangkap_penunjuk_sama_sekali() {
     sampai_diam(&mut tree);
 
     let mut router = InputRouter::new();
-    // Tepat di atas panel tooltip: kliknya harus tembus ke konten.
+    // Right on top of the tooltip panel: the click must pass through to the content.
     let di_panel = Point::new(150.0, 150.0);
     router.dispatch(&mut tree, &tekan(di_panel, Duration::ZERO));
     router.dispatch(&mut tree, &lepas(di_panel, Duration::from_millis(10)));
@@ -511,7 +511,7 @@ fn tooltip_tidak_menangkap_penunjuk_sama_sekali() {
 }
 
 // ---------------------------------------------------------------------------
-// Transisi spring
+// Spring transitions
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -567,7 +567,7 @@ fn menutup_di_tengah_animasi_buka_membawa_kecepatan() {
     let kemajuan = e.progress();
     assert!(kemajuan > 0.0 && kemajuan < 1.0);
 
-    // Retarget, bukan animasi baru: posisinya tidak melompat.
+    // A retarget, not a new animation: the position does not jump.
     e.set_open(false);
     assert_eq!(e.progress(), kemajuan);
     assert!(e.is_animating());
@@ -599,7 +599,7 @@ fn overlay_yang_menutup_tetap_di_pohon_sampai_transisinya_habis() {
         e.is_visible(),
         "menutup harus bisa dianimasikan, bukan menghilang seketika"
     );
-    // …tapi ia sudah tidak ada bagi screen reader maupun penunjuk.
+    // …but it is already gone for both screen readers and the pointer.
     assert!(tree
         .access_tree(None)
         .find_label("Simpan perubahan?")
@@ -623,8 +623,8 @@ fn reduced_motion_menghapus_gerakan_dekoratif() {
     let mut tree = pohon(view);
     let id = entri(&tree);
 
-    // Satu detak di bawah reduced-motion sudah cukup: gerakan dekoratif
-    // dihapus total, bukan diperlambat.
+    // One tick under reduced-motion is enough: decorative motion is removed
+    // entirely, not slowed down.
     let tick = Tick::manual(Duration::from_millis(16), Motion::Reduced);
     advance(&mut tree, &tick);
     let e = tree.node_ref::<OverlayEntry>(id).unwrap();
@@ -659,7 +659,7 @@ fn settle_menyelesaikan_semua_transisi_seketika() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -697,9 +697,9 @@ fn modal_adalah_perangkap_fokus_yang_punya_tempat_mendarat() {
     let tree = pohon(view);
     let id = entri(&tree);
 
-    // Dialog itu sendiri bisa difokuskan — dialog kosong pun punya tujuan Tab.
+    // The dialog itself is focusable — even an empty dialog is a Tab target.
     assert!(silka_core::input::is_focusable(&tree, id));
-    // Dan Tab di dalamnya tidak pernah keluar ke konten di belakang.
+    // And Tab inside it never escapes to the content behind.
     let anak = tree.children(id)[0];
     assert_eq!(silka_core::input::enclosing_scope(&tree, anak), id);
     assert_eq!(tab_order(&tree, id), vec![anak]);

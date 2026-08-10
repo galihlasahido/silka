@@ -1,11 +1,11 @@
-//! Pemilik siklus hidup: satu tempat yang memegang runtime signals, closure
-//! pembangun view akar, render tree, dan frame scheduler.
+//! The lifecycle owner: one place that holds the signals runtime, the root view
+//! builder closure, the render tree, and the frame scheduler.
 //!
-//! Modul ini adalah **jahitan** yang sebelumnya sengaja ditinggalkan kosong:
-//! [`crate::signals::Runtime::drain_dirty`] akhirnya punya pemanggil, dan
-//! kontraknya dipenuhi apa adanya — membangun ulang sebuah scope **memasuki
-//! kembali** setiap anak yang dipertahankan, karena [`super::component`]
-//! membangun anaknya secara eager di dalam [`crate::signals::scope`].
+//! This module is the **seam** that was deliberately left empty until now:
+//! [`crate::signals::Runtime::drain_dirty`] finally has a caller, and its
+//! contract is honored exactly — rebuilding a scope **re-enters** every
+//! retained child, because [`super::component`] builds its children eagerly
+//! inside [`crate::signals::scope`].
 
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
@@ -25,57 +25,58 @@ use crate::view::{reconcile_children, DiffStats, View};
 
 use super::component::ComponentBox;
 
-/// Closure pembangun satu komponen: dijalankan **di dalam** scope-nya sendiri.
+/// A component's builder closure: run **inside** its own scope.
 pub(super) type ComponentBuilder = Rc<dyn Fn(&BuildCtx) -> View>;
 
-/// Pemberitahu shell bahwa scheduler menerima permintaan frame.
+/// Tells the shell that the scheduler accepted a frame request.
 type WakeFn = Rc<dyn Fn(Wake)>;
 
 // ---------------------------------------------------------------------------
 // Env
 // ---------------------------------------------------------------------------
 
-/// Titipan tingkat aplikasi yang bisa dibaca setiap komponen saat dibangun.
+/// Application-level injected values that every component can read while it
+/// builds.
 ///
-/// Isinya biasanya **signal**, bukan nilai: shell menaruh `Signal<Theme>` di
-/// sini sekali, lalu memperbaruinya tiap kali dark mode OS berubah — dan hanya
-/// komponen yang benar-benar membaca theme yang ikut dibangun ulang (§2.7,
-/// §3.5). Menaruh nilai mentah juga sah, tapi ia tidak reaktif.
+/// The contents are usually a **signal** rather than a plain value: the shell
+/// puts a `Signal<Theme>` here once and updates it whenever OS dark mode
+/// changes — and only the components that actually read the theme are rebuilt
+/// (§2.7, §3.5). Injecting a raw value is legal too, it simply is not reactive.
 ///
-/// Dikunci per tipe: satu tipe = satu titipan. Itu cukup, dan menutup kelas bug
-/// "ambil yang mana" yang muncul kalau kuncinya string.
+/// Keyed by type: one type = one injected value. That is enough, and it closes
+/// the whole "which one do I get" class of bugs that string keys invite.
 #[derive(Default)]
 pub struct Env {
     map: HashMap<TypeId, Box<dyn Any>>,
 }
 
 impl Env {
-    /// Env kosong.
+    /// An empty env.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Titipkan sebuah nilai; yang bertipe sama sebelumnya digantikan.
+    /// Inject a value; any earlier value of the same type is replaced.
     pub fn insert<T: 'static>(&mut self, value: T) {
         self.map.insert(TypeId::of::<T>(), Box::new(value));
     }
 
-    /// Ambil rujukan ke titipan bertipe `T`.
+    /// Borrow the injected value of type `T`.
     pub fn get<T: 'static>(&self) -> Option<&T> {
         self.map.get(&TypeId::of::<T>())?.downcast_ref::<T>()
     }
 
-    /// Benar bila ada titipan bertipe `T`.
+    /// True when a value of type `T` has been injected.
     pub fn contains<T: 'static>(&self) -> bool {
         self.map.contains_key(&TypeId::of::<T>())
     }
 
-    /// Jumlah titipan.
+    /// How many values are injected.
     pub fn len(&self) -> usize {
         self.map.len()
     }
 
-    /// Benar bila tidak ada titipan sama sekali.
+    /// True when nothing at all has been injected.
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
     }
@@ -87,26 +88,26 @@ impl core::fmt::Debug for Env {
     }
 }
 
-/// Scale factor layar tempat aplikasi ini digambar (2.0 di Retina).
+/// The scale factor of the display this application draws on (2.0 on Retina).
 ///
-/// Titipan [`Env`] standar, dan bukan kemewahan: **teks harus dirasterisasi
-/// pada resolusi layar yang sebenarnya** (§3.3), jadi komponen yang mengukur
-/// atau menggambar teks perlu tahu angkanya. Shell menitipkannya sebagai
-/// `Signal<ScaleFactor>` dan memperbaruinya tiap frame, sehingga memindahkan
-/// window ke monitor lain hanya membangun ulang komponen yang benar-benar
-/// membacanya (§2.7, §3.5).
+/// A standard [`Env`] injected value, and no luxury: **text must be rasterized
+/// at the real screen resolution** (§3.3), so any component that measures or
+/// draws text needs the number. The shell injects it as a
+/// `Signal<ScaleFactor>` and refreshes it every frame, so moving the window to
+/// another monitor rebuilds only the components that actually read it (§2.7,
+/// §3.5).
 ///
-/// Ukuran logis tidak pernah ikut berubah karenanya — yang berubah hanya
-/// resolusi bitmap glyph.
+/// Logical sizes never change because of it — only the resolution of the glyph
+/// bitmaps does.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScaleFactor(pub f32);
 
 impl ScaleFactor {
-    /// Satu piksel fisik per poin logis — layar non-Retina, dan nilai bawaan
-    /// sebelum shell melapor.
+    /// One physical pixel per logical point — a non-Retina display, and the
+    /// default before the shell reports anything.
     pub const ONE: ScaleFactor = ScaleFactor(1.0);
 
-    /// Nilainya, selalu terhingga dan positif.
+    /// The value, always finite and positive.
     pub fn get(self) -> f32 {
         if self.0.is_finite() && self.0 > 0.0 {
             self.0
@@ -126,11 +127,11 @@ impl Default for ScaleFactor {
 // Registry
 // ---------------------------------------------------------------------------
 
-/// Peta scope → cara membangunnya kembali, dan di mana hasilnya menempel.
+/// Maps scope → how to rebuild it, and where the result attaches.
 ///
-/// Inilah yang membuat rebuild **per-komponen** mungkin: `drain_dirty()`
-/// memberi `ScopeId`, dan dua peta ini menerjemahkannya menjadi "closure mana
-/// yang dijalankan" dan "di bawah node render mana hasilnya di-diff".
+/// This is what makes **per-component** rebuilds possible: `drain_dirty()`
+/// hands back a `ScopeId`, and these two maps translate it into "which closure
+/// to run" and "under which render node the result is diffed".
 #[derive(Default)]
 struct Registry {
     builders: HashMap<ScopeId, ComponentBuilder>,
@@ -141,10 +142,11 @@ struct Registry {
 // HostShared
 // ---------------------------------------------------------------------------
 
-/// Bagian [`AppRuntime`] yang harus bisa disentuh dari dalam build.
+/// The part of [`AppRuntime`] that must be reachable from inside a build.
 ///
-/// [`super::component`] dipanggil di tengah-tengah closure pengguna, jauh dari
-/// `&mut AppRuntime`; ia menemukan host lewat tumpukan thread-local di bawah.
+/// [`super::component`] is called in the middle of the user's closure, far from
+/// any `&mut AppRuntime`; it finds the host through the thread-local stack
+/// below.
 pub(super) struct HostShared {
     runtime: Runtime,
     scheduler: RefCell<FrameScheduler>,
@@ -154,26 +156,26 @@ pub(super) struct HostShared {
 }
 
 impl HostShared {
-    /// Catat closure pembangun sebuah scope komponen.
+    /// Record the builder closure of a component scope.
     pub(super) fn register(&self, scope: ScopeId, builder: ComponentBuilder) {
         self.reg.borrow_mut().builders.insert(scope, builder);
     }
 }
 
 thread_local! {
-    /// Tumpukan host yang sedang membangun di thread ini.
+    /// The stack of hosts currently building on this thread.
     ///
-    /// Tumpukan (bukan satu slot) karena dua window = dua [`AppRuntime`], dan
-    /// keduanya hidup di UI thread yang sama.
+    /// A stack rather than a single slot, because two windows = two
+    /// [`AppRuntime`]s, and both live on the same UI thread.
     static HOSTS: RefCell<Vec<Rc<HostShared>>> = const { RefCell::new(Vec::new()) };
 }
 
-/// Host yang sedang membangun di thread ini, bila ada.
+/// The host currently building on this thread, if any.
 pub(super) fn current_host() -> Option<Rc<HostShared>> {
     HOSTS.with(|h| h.borrow().last().cloned())
 }
 
-/// Penjaga tumpukan host — tetap benar walau closure pengguna panik.
+/// Guards the host stack — stays correct even if the user closure panics.
 struct HostGuard;
 
 impl HostGuard {
@@ -195,12 +197,12 @@ impl Drop for HostGuard {
 // BuildCtx
 // ---------------------------------------------------------------------------
 
-/// Apa yang dilihat sebuah komponen saat dibangun.
+/// What a component sees while it builds.
 ///
-/// Sengaja tipis: state lokal datang dari [`crate::signals::use_signal`], anak
-/// datang dari [`super::component`], dan titipan tingkat aplikasi dari
-/// [`BuildCtx::env`]. Tidak ada `setState`, tidak ada pohon widget yang bisa
-/// diraba dari sini (§2.5).
+/// Deliberately thin: local state comes from [`crate::signals::use_signal`],
+/// children come from [`super::component`], and application-level injected
+/// values from [`BuildCtx::env`]. There is no `setState`, and no widget tree
+/// that can be poked at from here (§2.5).
 pub struct BuildCtx {
     host: Rc<HostShared>,
 }
@@ -210,29 +212,30 @@ impl BuildCtx {
         Self { host }
     }
 
-    /// Runtime signals aplikasi ini.
+    /// This application's signals runtime.
     pub fn runtime(&self) -> &Runtime {
         &self.host.runtime
     }
 
-    /// Scope komponen yang sedang dibangun.
+    /// The component scope currently building.
     ///
-    /// Panik bila dipanggil di luar build — sama seperti
+    /// Panics when called outside a build — just like
     /// [`crate::signals::use_signal`].
     pub fn scope(&self) -> ScopeId {
         current_scope().expect("BuildCtx::scope() hanya berlaku saat komponen dibangun")
     }
 
-    /// Salin titipan tingkat aplikasi bertipe `T` ([`Env`]).
+    /// Clone the application-level injected value of type `T` ([`Env`]).
     ///
-    /// Dibuat mengembalikan salinan, bukan rujukan: yang dititipkan hampir
-    /// selalu [`crate::signals::Signal`] yang `Copy`, dan mengembalikan
-    /// rujukan akan menahan pinjaman `Env` selama build berlangsung.
+    /// It returns a clone rather than a reference on purpose: what gets
+    /// injected is almost always a `Copy` [`crate::signals::Signal`], and
+    /// returning a reference would hold an `Env` borrow open for the whole
+    /// build.
     pub fn env<T: Clone + 'static>(&self) -> Option<T> {
         self.host.env.borrow().get::<T>().cloned()
     }
 
-    /// Seperti [`BuildCtx::env`], tapi panik bila titipannya tidak ada.
+    /// Like [`BuildCtx::env`], but panics when nothing was injected.
     pub fn expect_env<T: Clone + 'static>(&self) -> T {
         self.env::<T>().unwrap_or_else(|| {
             panic!(
@@ -255,31 +258,30 @@ impl core::fmt::Debug for BuildCtx {
 // FrameReport
 // ---------------------------------------------------------------------------
 
-/// Ringkasan satu putaran [`AppRuntime::frame`].
+/// A summary of one [`AppRuntime::frame`] turn.
 ///
-/// Bukan hiasan: inilah yang dipakai test untuk membuktikan bahwa **hanya**
-/// subtree terkait yang dibangun ulang, dan yang dipakai inspector untuk
-/// menjelaskan jank.
+/// Not decoration: this is what tests use to prove that **only** the relevant
+/// subtree was rebuilt, and what an inspector uses to explain jank.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameReport {
-    /// Nomor urut frame.
+    /// Frame sequence number.
     pub index: u64,
-    /// Alasan frame ini dijadwalkan (kosong = frame yang diminta OS).
+    /// Why this frame was scheduled (empty = a frame the OS asked for).
     pub reason: Dirty,
-    /// Berapa scope komponen yang benar-benar dibangun ulang.
+    /// How many component scopes really were rebuilt.
     pub rebuilt: usize,
-    /// Hasil diff seluruh rebuild pada frame ini, dijumlahkan.
+    /// The diff results of every rebuild this frame, summed.
     pub diff: DiffStats,
-    /// Berapa relayout boundary yang mengantre saat layout dimulai.
+    /// How many relayout boundaries were queued when layout started.
     pub relayouts: usize,
-    /// Ukuran akhir pohon setelah layout.
+    /// The tree's final size after layout.
     pub size: Size,
-    /// Pengukuran waktu frame.
+    /// Frame time measurements.
     pub timing: FrameTiming,
 }
 
 impl FrameReport {
-    /// Benar bila frame ini tidak mengubah struktur maupun props apa pun.
+    /// True when this frame changed neither structure nor any props.
     pub fn is_noop(&self) -> bool {
         self.rebuilt == 0 && self.diff.is_noop()
     }
@@ -289,25 +291,25 @@ impl FrameReport {
 // AppRuntime
 // ---------------------------------------------------------------------------
 
-/// Pemilik satu siklus hidup UI: **signals → view → layout → paint →
+/// The owner of one UI lifecycle: **signals → view → layout → paint →
 /// scheduler**.
 ///
-/// Satu instans per window. Ia memegang keempat bagian yang selama ini hidup
-/// terpisah dan menjahitnya menjadi satu putaran [`AppRuntime::frame`]:
+/// One instance per window. It holds the four parts that used to live apart and
+/// stitches them into a single [`AppRuntime::frame`] turn:
 ///
-/// 1. [`crate::signals::Runtime::drain_dirty`] → daftar scope yang harus
-///    dibangun ulang (sudah terurut akar→daun dan terpangkas).
-/// 2. Untuk tiap scope: jalankan ulang closure-nya **di dalam scope itu**, lalu
-///    diff hasilnya terhadap anak-anak node jangkar scope tersebut.
-/// 3. [`crate::tree::RenderTree::perform_layout`] — penuh bila constraints
-///    window berubah, selebihnya hanya boundary yang kotor.
+/// 1. [`crate::signals::Runtime::drain_dirty`] → the list of scopes that must
+///    be rebuilt (already ordered root→leaf and pruned).
+/// 2. For each scope: re-run its closure **inside that scope**, then diff the
+///    result against the children of that scope's anchor node.
+/// 3. [`crate::tree::RenderTree::perform_layout`] — full when the window
+///    constraints changed, otherwise only the dirty boundaries.
 /// 4. [`crate::tree::RenderTree::paint`] → [`Scene`].
 ///
-/// Sambungan ke scheduler dipasang sekali di [`AppRuntime::new`]:
-/// [`crate::signals::Runtime::on_wake`] langsung memanggil
-/// [`FrameScheduler::request`], sehingga janji §3.5 tetap utuh — signal yang
-/// tidak dibaca komponen mana pun tidak menjadwalkan apa pun, dan tanpa
-/// perubahan signal [`AppRuntime::is_idle`] tetap benar.
+/// The wiring into the scheduler is installed once in [`AppRuntime::new`]:
+/// [`crate::signals::Runtime::on_wake`] calls [`FrameScheduler::request`]
+/// directly, so the §3.5 promise stays intact — a signal no component reads
+/// schedules nothing, and without a signal change [`AppRuntime::is_idle`]
+/// remains true.
 ///
 /// ```
 /// use silka_core::app::{app, component};
@@ -327,7 +329,7 @@ impl FrameReport {
 /// let laporan = ui.frame();
 /// assert_eq!(laporan.rebuilt, 1);
 /// assert_eq!(ui.scene().len(), 1);
-/// // Tanpa perubahan signal, tidak ada frame berikutnya.
+/// // Without a signal change there is no next frame.
 /// assert!(ui.is_idle());
 /// ```
 pub struct AppRuntime {
@@ -338,22 +340,22 @@ pub struct AppRuntime {
     root: ScopeId,
     constraints: BoxConstraints,
     mounted: bool,
-    /// Jam animasi + preferensi reduced-motion (§3.5). Dipakai
-    /// [`AppRuntime::animate`], satu-satunya pintu tempat spring dimajukan.
+    /// The animation clock + reduced-motion preference (§3.5). Used by
+    /// [`AppRuntime::animate`], the only door through which springs advance.
     anim: AnimationDriver,
 }
 
-/// Buat aplikasi dari closure pembangun view akar — konstruktor gaya Dart
-/// (§2.5).
+/// Create an application from a root view builder closure — the Dart-style
+/// constructor (§2.5).
 ///
-/// Closure-nya dijalankan di dalam scope akar runtime signals, jadi
-/// [`crate::signals::use_signal`] boleh dipakai langsung di dalamnya.
+/// The closure runs inside the signals runtime's root scope, so
+/// [`crate::signals::use_signal`] may be used directly within it.
 pub fn app(build: impl Fn(&BuildCtx) -> View + 'static) -> AppRuntime {
     AppRuntime::new(build)
 }
 
 impl AppRuntime {
-    /// Bentuk panjang dari [`app`].
+    /// The long form of [`app`].
     pub fn new(build: impl Fn(&BuildCtx) -> View + 'static) -> Self {
         let runtime = Runtime::new();
         let root = runtime.root();
@@ -365,14 +367,14 @@ impl AppRuntime {
             reg: RefCell::new(Registry::default()),
         });
 
-        // **Sambungan signals → scheduler** (§3.5). `Weak` supaya runtime yang
-        // memegang closure ini tidak menahan host-nya hidup selamanya.
+        // **The signals → scheduler wiring** (§3.5). `Weak` so that the runtime
+        // holding this closure does not keep its host alive forever.
         let lemah: Weak<HostShared> = Rc::downgrade(&host);
         runtime.on_wake(move |dirty| {
             let Some(host) = lemah.upgrade() else { return };
             let wake = host.scheduler.borrow_mut().request(dirty);
-            // Pinjaman dilepas sebelum callback platform berjalan: ia boleh
-            // memanggil balik ke sini (mis. menyalakan display link).
+            // The borrow is released before the platform callback runs: it is
+            // allowed to call back into here (e.g. to start the display link).
             let cb = host.wake.borrow().clone();
             if let Some(cb) = cb {
                 cb(wake);
@@ -383,8 +385,8 @@ impl AppRuntime {
         {
             let mut reg = host.reg.borrow_mut();
             reg.builders.insert(root, Rc::new(build));
-            // Jangkar scope akar adalah akar render tree — dengan begitu satu
-            // jalur rebuild yang sama melayani akar dan komponen mana pun.
+            // The root scope's anchor is the render tree root — that way a
+            // single rebuild path serves both the root and any component.
             reg.anchors.insert(root, tree.root());
         }
 
@@ -399,35 +401,36 @@ impl AppRuntime {
             mounted: false,
             anim: AnimationDriver::new(),
         };
-        // Frame pertama adalah satu-satunya frame yang tidak dipicu perubahan.
+        // The first frame is the only frame not triggered by a change.
         app.request(Dirty::LAYOUT | Dirty::PAINT);
         app
     }
 
-    // -- konfigurasi (method chaining, §2.5) --------------------------------
+    // -- configuration (method chaining, §2.5) ------------------------------
 
-    /// Ukuran area gambar dalam poin logis.
+    /// The size of the drawing area in logical points.
     pub fn sized(mut self, width: f32, height: f32) -> Self {
         self.resize(Size::new(width, height));
         self
     }
 
-    /// Warna latar frame — selalu token `background`, tidak pernah literal.
+    /// The frame's background color — always the `background` token, never a
+    /// literal.
     pub fn clear_color(mut self, color: Color) -> Self {
         self.set_clear_color(color);
         self
     }
 
-    /// Arah baca dokumen (§9.8).
+    /// The document's reading direction (§9.8).
     pub fn direction(mut self, direction: TextDirection) -> Self {
         self.set_direction(direction);
         self
     }
 
-    /// Titipkan nilai tingkat aplikasi ke [`Env`].
+    /// Inject an application-level value into [`Env`].
     ///
-    /// Closure-nya menerima runtime supaya titipan yang lazim — sebuah
-    /// [`crate::signals::Signal`] — bisa dibuat di tempat:
+    /// The closure receives the runtime so that the common case — a
+    /// [`crate::signals::Signal`] — can be created on the spot:
     ///
     /// ```
     /// # use silka_core::app::app;
@@ -444,70 +447,70 @@ impl AppRuntime {
         self
     }
 
-    /// Pasang pemberitahu "frame dijadwalkan" untuk shell.
+    /// Install the shell's "a frame was scheduled" notifier.
     ///
-    /// Dipanggil setiap kali scheduler menerima permintaan — [`Wake::Schedule`]
-    /// berarti sumber vsync harus dibangunkan, sisanya berarti tidak ada yang
-    /// perlu dilakukan.
+    /// Called every time the scheduler accepts a request — [`Wake::Schedule`]
+    /// means the vsync source must be woken, anything else means there is
+    /// nothing to do.
     pub fn on_wake(&self, f: impl Fn(Wake) + 'static) {
         *self.host.wake.borrow_mut() = Some(Rc::new(f));
     }
 
-    // -- akses ---------------------------------------------------------------
+    // -- accessors -----------------------------------------------------------
 
-    /// Runtime signals aplikasi ini.
+    /// This application's signals runtime.
     pub fn runtime(&self) -> &Runtime {
         &self.host.runtime
     }
 
-    /// Render tree hasil frame terakhir.
+    /// The render tree the last frame produced.
     pub fn tree(&self) -> &RenderTree {
         &self.tree
     }
 
-    /// Router input aplikasi ini.
+    /// This application's input router.
     pub fn router(&self) -> &InputRouter {
         &self.router
     }
 
-    /// Scene hasil frame terakhir.
+    /// The scene the last frame produced.
     pub fn scene(&self) -> &Scene {
         &self.scene
     }
 
-    /// Scope akar (komponen terluar).
+    /// The root scope (the outermost component).
     pub fn root_scope(&self) -> ScopeId {
         self.root
     }
 
-    /// Node render jangkar sebuah scope komponen, bila masih hidup.
+    /// The anchor render node of a component scope, while it is still alive.
     pub fn anchor(&self, scope: ScopeId) -> Option<NodeId> {
         self.host.reg.borrow().anchors.get(&scope).copied()
     }
 
-    /// Constraints window yang berlaku.
+    /// The window constraints in effect.
     pub fn constraints(&self) -> BoxConstraints {
         self.constraints
     }
 
-    /// Salin titipan [`Env`] bertipe `T` dari luar build.
+    /// Clone the injected [`Env`] value of type `T` from outside a build.
     ///
-    /// Inilah cara shell menyentuh kembali signal yang ia titipkan sendiri
-    /// (mis. `Signal<Theme>` saat dark mode OS berubah).
+    /// This is how the shell reaches back to a signal it injected itself (e.g.
+    /// `Signal<Theme>` when OS dark mode changes).
     pub fn env<T: Clone + 'static>(&self) -> Option<T> {
         self.host.env.borrow().get::<T>().cloned()
     }
 
-    /// Pohon aksesibilitas dari geometri frame terakhir (§3.8).
+    /// The accessibility tree built from the last frame's geometry (§3.8).
     ///
-    /// Fokusnya diambil dari [`InputRouter`], bukan disimpan dua kali.
+    /// Focus is read from the [`InputRouter`] rather than stored twice.
     pub fn access_tree(&self) -> AccessTree {
         self.tree.access_tree(self.router.focus().focused())
     }
 
     // -- scheduler ------------------------------------------------------------
 
-    /// Minta satu frame karena `dirty`.
+    /// Request one frame because of `dirty`.
     pub fn request(&self, dirty: Dirty) -> Wake {
         let wake = self.host.scheduler.borrow_mut().request(dirty);
         let cb = self.host.wake.borrow().clone();
@@ -517,44 +520,44 @@ impl AppRuntime {
         wake
     }
 
-    /// Alasan-alasan yang belum dilayani.
+    /// The reasons not yet served.
     pub fn pending(&self) -> Dirty {
         self.host.scheduler.borrow().pending()
     }
 
-    /// Benar bila tidak ada apa pun yang perlu digambar — **idle = nol kerja**.
+    /// True when nothing at all needs drawing — **idle = zero work**.
     pub fn is_idle(&self) -> bool {
         self.host.scheduler.borrow().is_idle()
     }
 
-    /// Nomor frame berikutnya.
+    /// The number of the next frame.
     pub fn frame_index(&self) -> u64 {
         self.host.scheduler.borrow().frame_index()
     }
 
-    /// Laporkan detak layar dari platform.
+    /// Report the display tick from the platform.
     pub fn set_vsync(&self, vsync: crate::scheduler::Vsync) {
         self.host.scheduler.borrow_mut().set_vsync(vsync);
     }
 
-    /// Ringkasan waktu frame (salinan, karena scheduler-nya dibagi).
+    /// Frame time summary (a clone, since the scheduler is shared).
     pub fn frame_stats(&self) -> crate::scheduler::FrameStats {
         self.host.scheduler.borrow().stats().clone()
     }
 
-    // -- animasi ---------------------------------------------------------------
+    // -- animation -------------------------------------------------------------
 
-    /// Preferensi gerakan yang berlaku (reduced-motion OS).
+    /// The motion preference in effect (OS reduced-motion).
     pub fn motion(&self) -> Motion {
         self.anim.motion()
     }
 
-    /// Laporkan setting reduced-motion dari OS.
+    /// Report the OS reduced-motion setting.
     ///
-    /// Shell yang membacanya (`INTEGRASI-NATIVE` §6); di sini ia hanya
-    /// dititipkan ke [`AnimationDriver`] dan, bila berubah, meminta satu frame
-    /// supaya gerakan dekoratif yang sedang berjalan bisa menyelesaikan dirinya
-    /// alih-alih membeku di tengah jalan.
+    /// The shell is what reads it (`INTEGRASI-NATIVE` §6); here it is merely
+    /// handed to the [`AnimationDriver`] and, when it changed, one frame is
+    /// requested so that decorative motion already in flight can finish itself
+    /// instead of freezing halfway.
     pub fn set_motion(&mut self, motion: Motion) -> Dirty {
         let dirty = self.anim.set_motion(motion);
         if !dirty.is_empty() {
@@ -563,18 +566,19 @@ impl AppRuntime {
         dirty
     }
 
-    /// **Majukan animasi satu frame** — jahitan antara spring dan siklus frame.
+    /// **Advance animation by one frame** — the seam between springs and the
+    /// frame cycle.
     ///
-    /// Ini pintu tunggal yang sebelumnya sengaja ditinggalkan kosong: sistem
-    /// animasi (§3.5) sudah lengkap, tapi tidak ada yang memanggilnya per frame.
-    /// `f` menerima render tree dan [`Tick`] frame ini, lalu mengembalikan
-    /// alasan dirty-nya — bentuk yang persis dipenuhi
-    /// `silka_widgets::advance`. Dirty-nya digabung dengan permintaan
-    /// scheduler, jadi selama masih ada spring yang bergerak frame berikutnya
-    /// dijadwalkan sendiri, dan begitu semuanya settle renderer kembali tidur.
+    /// This is the single door that used to be deliberately left empty: the
+    /// animation system (§3.5) was complete, but nothing called it per frame.
+    /// `f` receives the render tree and this frame's [`Tick`], and returns its
+    /// dirty reasons — exactly the shape `silka_widgets::advance` satisfies.
+    /// Those reasons are merged into the scheduler's requests, so as long as a
+    /// spring is still moving the next frame schedules itself, and once
+    /// everything settles the renderer goes back to sleep.
     ///
-    /// Dipanggil **sebelum** [`AppRuntime::frame`] supaya nilai yang bergerak
-    /// sudah menjadi nilai frame ini, bukan frame berikutnya.
+    /// Call it **before** [`AppRuntime::frame`] so that a moving value is
+    /// already this frame's value rather than the next frame's.
     ///
     /// ```
     /// use silka_core::app::app;
@@ -582,7 +586,7 @@ impl AppRuntime {
     /// use silka_core::view::fixed;
     ///
     /// let mut ui = app(|_cx| fixed(80.0, 24.0).into()).sized(200.0, 100.0);
-    /// // Tanpa satu pun animasi, majunya frame tidak melahirkan pekerjaan.
+    /// // With no animation at all, advancing a frame creates no work.
     /// assert_eq!(ui.animate(|_tree, _tick| Dirty::NONE), Dirty::NONE);
     /// ui.frame();
     /// assert!(ui.is_idle());
@@ -591,11 +595,10 @@ impl AppRuntime {
         self.animate_at(Instant::now(), f)
     }
 
-    /// [`AppRuntime::animate`] dengan waktu frame yang ditentukan pemanggil.
+    /// [`AppRuntime::animate`] with a caller-supplied frame time.
     ///
-    /// Untuk uji yang harus deterministik (§9.5) dan untuk shell yang sudah
-    /// memegang timestamp vsync-nya sendiri — jangan pernah mengarang 16,6 ms
-    /// (§3.5).
+    /// For tests that must be deterministic (§9.5) and for shells that already
+    /// hold their own vsync timestamp — never invent 16.6 ms (§3.5).
     pub fn animate_at(
         &mut self,
         now: Instant,
@@ -604,8 +607,8 @@ impl AppRuntime {
         let tick = self.anim.begin_frame(now);
         let mut dirty = f(&mut self.tree, &tick);
         dirty |= self.anim.end_frame(tick);
-        // Tanda dirty yang lahir dari node yang baru saja bergerak ikut terbawa,
-        // sama seperti di `dispatch`.
+        // Dirty flags raised by nodes that just moved are carried along too,
+        // exactly as in `dispatch`.
         dirty |= self.tree.take_dirty();
         if !dirty.is_empty() {
             self.request(dirty);
@@ -613,14 +616,14 @@ impl AppRuntime {
         dirty
     }
 
-    /// Benar bila frame animasi sebelumnya masih menyisakan yang bergerak.
+    /// True when the previous animation frame left something still moving.
     pub fn is_animating(&self) -> bool {
         self.anim.is_animating()
     }
 
-    // -- perubahan dari luar ---------------------------------------------------
+    // -- changes from the outside ----------------------------------------------
 
-    /// Ganti ukuran area gambar; benar bila memang berubah.
+    /// Resize the drawing area; true when it really changed.
     pub fn resize(&mut self, size: Size) -> bool {
         let baru = BoxConstraints::tight(size);
         if self.constraints == baru {
@@ -631,7 +634,7 @@ impl AppRuntime {
         true
     }
 
-    /// Ganti warna latar frame; benar bila memang berubah.
+    /// Change the frame's background color; true when it really changed.
     pub fn set_clear_color(&mut self, color: Color) -> bool {
         if self.tree.clear_color() == color {
             return false;
@@ -641,7 +644,7 @@ impl AppRuntime {
         true
     }
 
-    /// Ganti arah baca dokumen; benar bila memang berubah.
+    /// Change the document's reading direction; true when it really changed.
     pub fn set_direction(&mut self, direction: TextDirection) -> bool {
         if self.tree.direction() == direction {
             return false;
@@ -651,11 +654,11 @@ impl AppRuntime {
         true
     }
 
-    /// Salurkan satu event input ke pohon.
+    /// Route one input event into the tree.
     ///
-    /// Yang dikembalikan sudah memperhitungkan **tulisan signal** yang terjadi
-    /// di dalam handler: `dirty`-nya digabung dengan apa yang menunggu di
-    /// scheduler, sehingga shell tidak perlu tahu bedanya.
+    /// The returned value already accounts for **signal writes** that happened
+    /// inside the handler: its `dirty` is merged with whatever is pending in
+    /// the scheduler, so the shell never has to tell the difference.
     pub fn dispatch(&mut self, event: &Event) -> Response {
         let mut hasil = self.router.dispatch(&mut self.tree, event);
         hasil.dirty |= self.tree.take_dirty();
@@ -666,21 +669,20 @@ impl AppRuntime {
         hasil
     }
 
-    // -- satu frame -----------------------------------------------------------
+    // -- one frame ------------------------------------------------------------
 
-    /// Jalankan satu putaran penuh dan kembalikan ringkasannya.
+    /// Run one full turn and return its summary.
     ///
-    /// Urutannya tetap dan tidak boleh ditukar: rebuild → diff → layout →
-    /// paint. Scene-nya bisa dibaca lewat [`AppRuntime::scene`].
+    /// The order is fixed and must not be swapped: rebuild → diff → layout →
+    /// paint. The scene can be read through [`AppRuntime::scene`].
     pub fn frame(&mut self) -> FrameReport {
         let mut start = self.host.scheduler.borrow_mut().begin_frame(Instant::now());
 
-        // 1. Siapa yang harus dibangun ulang.
+        // 1. Who has to be rebuilt.
         //
-        // Frame pertama membangun akar; selebihnya daftar datang dari signals
-        // — sudah terurut akar→daun dan **terpangkas** (keturunan dari scope
-        // yang juga kotor dibuang), jadi tidak ada subtree yang dikerjakan dua
-        // kali.
+        // The first frame builds the root; after that the list comes from
+        // signals — already ordered root→leaf and **pruned** (descendants of a
+        // scope that is also dirty are dropped), so no subtree is worked twice.
         let antrean: Vec<ScopeId> = if self.mounted {
             self.host.runtime.drain_dirty()
         } else {
@@ -688,7 +690,7 @@ impl AppRuntime {
             vec![self.root]
         };
 
-        // 2. Rebuild + diff per scope.
+        // 2. Rebuild + diff, scope by scope.
         let mut diff = DiffStats::default();
         let mut rebuilt = 0usize;
         for scope in antrean {
@@ -701,24 +703,24 @@ impl AppRuntime {
             self.kumpulkan_sampah();
         }
 
-        // 3. Layout: penuh bila constraints berubah atau akar kotor, selebihnya
-        //    hanya boundary yang kotor.
+        // 3. Layout: full when the constraints changed or the root is dirty,
+        //    otherwise only the dirty boundaries.
         let relayouts = self.tree.pending_boundaries();
         let size = self.tree.perform_layout(self.constraints);
 
-        // 4. Paint ke buffer yang dipakai ulang antar frame.
+        // 4. Paint into a buffer that is reused across frames.
         self.tree.paint_into(&mut self.scene);
 
-        // Tanda dirty pohon sudah dilayani frame ini juga — kalau ia dibiarkan
-        // menumpuk, frame berikutnya akan dijadwalkan tanpa sebab dan "idle =
-        // nol" berhenti berlaku.
+        // The tree's dirty flags were served by this frame too — if they were
+        // allowed to pile up, the next frame would be scheduled for no reason
+        // and "idle = zero" would stop holding.
         //
-        // Satu-satunya yang **tidak** selesai di frame ini adalah
-        // [`Dirty::ANIMATION`]: sebuah spring yang baru diarahkan oleh
-        // view-diff (props `open` sebuah dialog berubah, tombol masuk keadaan
-        // loading) belum bergerak sama sekali — ia baru akan bergerak di
-        // `animate` frame berikutnya. Membuangnya di sini berarti animasinya
-        // membeku sampai ada event input berikutnya, dan itu pernah terjadi.
+        // The one thing **not** finished by this frame is
+        // [`Dirty::ANIMATION`]: a spring that the view-diff has just retargeted
+        // (a dialog's `open` prop changed, a button entered its loading state)
+        // has not moved at all yet — it will only move in the next frame's
+        // `animate`. Dropping it here freezes the animation until the next
+        // input event arrives, and that has happened before.
         let sisa = self.tree.take_dirty();
         if sisa.contains(Dirty::ANIMATION) || self.anim.is_animating() {
             self.request(Dirty::ANIMATION);
@@ -742,10 +744,10 @@ impl AppRuntime {
         }
     }
 
-    /// Bangun ulang satu scope dan diff hasilnya ke jangkarnya.
+    /// Rebuild one scope and diff the result into its anchor.
     ///
-    /// `None` bila scope-nya sudah mati atau jangkarnya sudah tidak ada —
-    /// keduanya normal terjadi saat sebuah daftar menyusut pada frame yang sama.
+    /// `None` when the scope is already dead or its anchor is gone — both
+    /// happen normally when a list shrinks during the same frame.
     fn rebuild_scope(&mut self, scope: ScopeId) -> Option<DiffStats> {
         let (builder, anchor) = {
             let reg = self.host.reg.borrow();
@@ -760,8 +762,9 @@ impl AppRuntime {
 
         let cx = BuildCtx::new(self.host.clone());
         let view = {
-            // Host dipasang selama build supaya `component()` — yang dipanggil
-            // di tengah closure pengguna — bisa menemukannya.
+            // The host is installed for the duration of the build so that
+            // `component()` — called in the middle of the user's closure — can
+            // find it.
             let _g = HostGuard::push(self.host.clone());
             if scope == self.root {
                 Some(self.host.runtime.build_root(|| builder(&cx)))
@@ -771,13 +774,13 @@ impl AppRuntime {
         }?;
 
         let stats = reconcile_children(&mut self.tree, anchor, std::slice::from_ref(&view));
-        // Node jangkar komponen di dalam subtree ini bisa saja baru dibuat atau
-        // diganti; petanya diperbarui dari pohon yang sebenarnya, bukan ditebak.
+        // Component anchor nodes inside this subtree may have just been created
+        // or replaced; the map is refreshed from the real tree, never guessed.
         self.segarkan_jangkar(anchor);
         Some(stats)
     }
 
-    /// Catat ulang `scope → NodeId` untuk setiap komponen di dalam subtree.
+    /// Re-record `scope → NodeId` for every component inside the subtree.
     fn segarkan_jangkar(&self, from: NodeId) {
         let mut tumpukan = vec![from];
         let mut reg = self.host.reg.borrow_mut();
@@ -791,10 +794,10 @@ impl AppRuntime {
         }
     }
 
-    /// Buang entri milik scope yang sudah mati.
+    /// Drop the entries belonging to scopes that have died.
     ///
-    /// Hanya dijalankan pada frame yang benar-benar membuang node, jadi daftar
-    /// yang stabil tidak membayar apa pun.
+    /// Only run on frames that actually removed nodes, so a stable list pays
+    /// nothing.
     fn kumpulkan_sampah(&self) {
         let rt = &self.host.runtime;
         let mut reg = self.host.reg.borrow_mut();

@@ -1,46 +1,46 @@
-//! Halaman demo: **grid kartu squircle vs arc**.
+//! Demo page: **squircle vs arc card grid**.
 //!
-//! Satu halaman untuk memeriksa dengan mata apa yang sudah dijaga unit test
-//! secara angka (REKOMENDASI §9.9: gallery adalah alat uji visual, bukan
-//! contoh sampingan):
+//! One page for checking by eye what the unit tests already guard numerically
+//! (REKOMENDASI §9.9: the gallery is a visual test tool, not a side example):
 //!
-//! - kolom kiri memakai **squircle** (superellipse, continuous corner ala
-//!   Apple), kolom kanan memakai **arc** (busur lingkaran ala web) dengan
-//!   radius nominal yang persis sama — perbedaannya harus terlihat sebagai
-//!   lengkung yang "mulai lebih awal" dan transisi yang lebih halus ke sisi
-//!   lurus, bukan sebagai kotak yang lebih bulat;
-//! - setiap baris menaikkan radius (token `sm`→`xl`) dan elevasi, sehingga
-//!   **bayangan ganda ambient + key** ikut teruji: bayangan harus mengikuti
-//!   bentuk sudut kartunya;
-//! - setiap kartu punya border hairline, untuk memastikan stroke berada tepat
-//!   di dalam tepi bentuk yang sama.
+//! - the left column uses **squircles** (superellipse, Apple-style continuous
+//!   corners), the right column uses **arcs** (web-style circular arcs) with
+//!   exactly the same nominal radius — the difference should read as a curve
+//!   that "starts earlier" and a smoother transition into the straight edge,
+//!   not as a rounder box;
+//! - each row raises the radius (tokens `sm`→`xl`) and the elevation, so the
+//!   **layered ambient + key shadows** get exercised too: the shadow must
+//!   follow the card's corner shape;
+//! - each card has a hairline border, to confirm the stroke sits exactly
+//!   inside the edge of that same shape.
 //!
-//! Halaman ini adalah **satu-satunya tempat** yang boleh memilih bentuk sudut
-//! sendiri, karena tugasnya justru membandingkan keduanya. Semua nilai
-//! lainnya — warna, radius, spacing, resep bayangan — tetap datang dari token
-//! theme aktif (§2.6).
+//! This page is the **only place** allowed to pick a corner shape of its own,
+//! because comparing the two is precisely its job. Every other value — colors,
+//! radii, spacing, shadow recipes — still comes from the active theme tokens
+//! (§2.6).
 
 use silka_paint::{CornerStyle, Corners, Quad, Rect, Scene, ShadowPair, Size};
 use silka_theme::Theme;
 
-/// Berapa kartu per kolom (satu baris = satu radius + satu elevasi).
+/// How many cards per column (one row = one radius + one elevation).
 const BARIS: usize = 4;
 
-/// Satu kartu demo, sudah jadi geometri murni.
+/// A single demo card, reduced to pure geometry.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Kartu {
-    /// Kotak kartu dalam poin logis.
+    /// The card's rectangle in logical points.
     pub rect: Rect,
-    /// Geometri sudut yang sedang dipamerkan.
+    /// The corner geometry being shown off.
     pub corners: Corners,
-    /// Resep bayangan ganda dari token theme.
+    /// The layered shadow recipe from the theme tokens.
     pub shadow: ShadowPair,
 }
 
-/// Susun scene satu frame untuk halaman ini.
+/// Assemble a single frame's scene for this page.
 pub fn scene(theme: &Theme, size: Size) -> Scene {
     let mut scene = Scene::new(theme.color.background);
-    // Hairline mengikuti skala spacing (0.25 langkah = 1pt), bukan angka lepas.
+    // The hairline follows the spacing scale (0.25 steps = 1pt), not a loose
+    // magic number.
     let border = theme.space(0.25);
     for kartu in kartu_kartu(theme, size) {
         scene.push_shadowed(
@@ -54,11 +54,11 @@ pub fn scene(theme: &Theme, size: Size) -> Scene {
     scene
 }
 
-/// Tata letak grid — logika murni, diuji tanpa GPU.
+/// Grid layout — pure logic, tested without a GPU.
 ///
-/// Dua kolom (squircle di kiri, arc di kanan) × [`BARIS`] baris. Bila window
-/// terlalu sempit untuk menampung padding dan gap, grid mengecil sampai nol
-/// dan tidak pernah menghasilkan kartu berukuran negatif.
+/// Two columns (squircle on the left, arc on the right) × [`BARIS`] rows. If
+/// the window is too narrow to fit the padding and gaps, the grid shrinks to
+/// zero and never produces a card with a negative size.
 pub fn kartu_kartu(theme: &Theme, size: Size) -> Vec<Kartu> {
     let padding = theme.space(6.0);
     let gap = theme.space(4.0);
@@ -67,8 +67,8 @@ pub fn kartu_kartu(theme: &Theme, size: Size) -> Vec<Kartu> {
     let tinggi_baris =
         ((size.height - padding * 2.0 - gap * (BARIS as f32 - 1.0)) / BARIS as f32).max(0.0);
 
-    // Radius naik per baris; elevasi ikut naik supaya bayangan ganda terlihat
-    // berkembang bersama bentuknya.
+    // The radius grows per row; the elevation grows with it so the layered
+    // shadows are seen developing alongside the shape.
     let baris = [
         (theme.radius.sm, theme.shadow.sm),
         (theme.radius.md, theme.shadow.sm),
@@ -85,8 +85,8 @@ pub fn kartu_kartu(theme: &Theme, size: Size) -> Vec<Kartu> {
             let rect = Rect::new(x, y, lebar_kolom, tinggi_baris);
             out.push(Kartu {
                 rect,
-                // Radius nominal identik di kedua kolom: yang dibandingkan
-                // adalah bentuknya, bukan besarnya.
+                // The nominal radius is identical in both columns: what is
+                // being compared is the shape, not the size.
                 corners: Corners::uniform(radius, style).clamp_to(rect.size),
                 shadow,
             });
@@ -117,8 +117,8 @@ mod tests {
         for pasangan in kartu_kartu(&tema(), VIEWPORT).chunks(2) {
             assert_eq!(pasangan[0].corners.style, CornerStyle::squircle());
             assert_eq!(pasangan[1].corners.style, CornerStyle::Arc);
-            // Radius nominalnya harus sama persis — kalau tidak, perbandingan
-            // visualnya tidak berarti apa-apa.
+            // The nominal radii must match exactly — otherwise the visual
+            // comparison means nothing.
             assert_eq!(pasangan[0].corners.radii, pasangan[1].corners.radii);
             assert!(pasangan[0].rect.min_x() < pasangan[1].rect.min_x());
         }
@@ -126,13 +126,14 @@ mod tests {
 
     #[test]
     fn perbandingan_tetap_berlaku_di_preset_tailwind() {
-        // Halaman ini sengaja mengabaikan `theme.radius.style` — di preset
-        // mana pun ia harus tetap memamerkan kedua bentuk.
+        // This page deliberately ignores `theme.radius.style` — in any preset
+        // it must still show off both shapes.
         let t = Theme::tailwind(Appearance::Light);
         let k = kartu_kartu(&t, VIEWPORT);
         assert_eq!(k[0].corners.style, CornerStyle::squircle());
         assert_eq!(k[1].corners.style, CornerStyle::Arc);
-        // …tapi angkanya tetap dari token preset itu (Tailwind sm = 4pt).
+        // …but the numbers still come from that preset's tokens
+        // (Tailwind sm = 4pt).
         assert_eq!(k[0].corners.radii.max(), t.radius.sm);
     }
 
@@ -193,7 +194,7 @@ mod tests {
 
     #[test]
     fn radius_dibatasi_terhadap_kartu_yang_gepeng() {
-        // Window pendek: token `xl` tidak boleh melebihi separuh tinggi kartu.
+        // Short window: the `xl` token must not exceed half the card height.
         let sempit = Size::new(400.0, 200.0);
         for kartu in kartu_kartu(&tema(), sempit) {
             let batas = kartu.rect.size.min_side() * 0.5;

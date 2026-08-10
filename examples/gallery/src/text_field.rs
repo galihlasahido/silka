@@ -1,26 +1,26 @@
-//! Halaman demo: **text_field** (`KOMPONEN.md` Tier 2, "komponen tersulit di
-//! seluruh katalog").
+//! Demo page: **text_field** (`KOMPONEN.md` Tier 2, "the hardest component in
+//! the whole catalog").
 //!
-//! Yang dipamerkan halaman ini adalah Definition of Done komponennya dalam
-//! bentuk yang bisa **dicoba tangan** — bukan diklaim di komentar:
+//! What this page shows off is the component's Definition of Done in a form you
+//! can **try by hand** — not one claimed in a comment:
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Benar di kedua preset | `--preset cupertino` vs `--preset tailwind` |
-//! | Dark mode | `--appearance dark` / `light`, atau ikut OS |
-//! | Caret per grapheme | Ketik "café" lalu tekan ← : caret melewati é sekali, bukan dua kali |
-//! | Seleksi per kata | Klik ganda di sebuah kata; klik tripel menyeleksi seluruh isi |
-//! | Drag-select | Tekan lalu seret: sorotan mengikuti, dan seretan boleh keluar kolom |
-//! | Keyboard penuh | ←/→, ⌥←/⌥→ per kata, ⌘←/⌘→ ke ujung, Shift memperluas, ⌘A, ⌘Z/⇧⌘Z |
-//! | Focus ring lewat spring | Tab masuk-keluar dengan cepat: cincinnya **tumbuh**, tidak menyala mendadak |
-//! | IME preedit inline | Nyalakan input CJK, mulai mengetik: teks komposisi muncul bergaris bawah di dalam kolom, dan baris "Halo" di bawah **belum** ikut berubah |
-//! | Hit target ≥ 44pt | Kolomnya setinggi 44pt walau barisnya jauh lebih pendek |
-//! | Node AccessKit | VoiceOver membacakan nama kolom **dan** isinya |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: cincin fokus tetap berpindah, tanpa pantulan |
+//! | Correct in both presets | `--preset cupertino` vs `--preset tailwind` |
+//! | Dark mode | `--appearance dark` / `light`, or follow the OS |
+//! | Per-grapheme caret | Type "café" then press ← : the caret steps over é once, not twice |
+//! | Per-word selection | Double-click a word; triple-click selects the entire content |
+//! | Drag-select | Press and drag: the highlight follows, and the drag may leave the field |
+//! | Full keyboard support | ←/→, ⌥←/⌥→ by word, ⌘←/⌘→ to the ends, Shift extends, ⌘A, ⌘Z/⇧⌘Z |
+//! | Focus ring on a spring | Tab in and out quickly: the ring **grows**, it does not snap on |
+//! | Inline IME preedit | Turn on a CJK input, start typing: the composition text appears underlined inside the field, and the "Halo" line below has **not** changed yet |
+//! | Hit target ≥ 44pt | The field is 44pt tall even though its line is far shorter |
+//! | AccessKit nodes | VoiceOver announces the field's name **and** its content |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the focus ring still moves, without bouncing |
 //!
-//! Yang **tidak** ada di berkas ini, dan itulah intinya: tidak ada `Scene` yang
-//! disusun tangan, tidak ada aritmetika tata letak, tidak ada satu pun angka
-//! warna, dan tidak ada satu pun nama tipe wgpu/cosmic-text.
+//! What is **absent** from this file is the whole point: no hand-assembled
+//! `Scene`, no layout arithmetic, not a single color number, and not a single
+//! wgpu/cosmic-text type name.
 
 use silka_core::access::AccessRole;
 use silka_core::app::{component, BuildCtx, ScaleFactor};
@@ -32,26 +32,27 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{text, text_field, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Text Field";
-/// Nama a11y kolom utama.
+/// The main field's a11y name.
 pub const KOLOM_NAMA: &str = "Nama";
-/// Nama a11y kolom kedua.
+/// The second field's a11y name.
 pub const KOLOM_SUREL: &str = "Surel";
-/// Nama a11y kolom yang hanya bisa dibaca.
+/// The read-only field's a11y name.
 pub const KOLOM_KUNCI: &str = "Kunci lisensi";
-/// Nama a11y kolom yang dimatikan.
+/// The disabled field's a11y name.
 pub const KOLOM_MATI: &str = "Nomor pelanggan";
-/// Isi tetap kolom read-only.
+/// The read-only field's fixed content.
 pub const KUNCI: &str = "SILKA-2026-XYZ7";
 
-/// Lebar kolom dalam langkah skala spacing (4pt) — 80 langkah = 320pt.
+/// The field width in spacing-scale steps (4pt) — 80 steps = 320pt.
 const LEBAR: f32 = 80.0;
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
@@ -90,8 +91,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Satu baris formulir: label di kiri, kolom di kanan — tata letak ala
-/// Settings macOS (`KOMPONEN.md` Tier 2 `label` + `form`).
+/// One form row: label on the left, field on the right — the macOS Settings
+/// layout (`KOMPONEN.md` Tier 2 `label` + `form`).
 fn baris(fonts: &Fonts, t: &Theme, label: &str, kolom: View) -> View {
     row([
         View::from(constrained(
@@ -100,9 +101,9 @@ fn baris(fonts: &Fonts, t: &Theme, label: &str, kolom: View) -> View {
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
-                // Nama kolom dibacakan **sekali**, dari kolomnya sendiri:
-                // label yang terlihat mata adalah pasangan visualnya, bukan
-                // node kedua yang ikut diumumkan (§3.8).
+                // The field's name is announced **once**, from the field
+                // itself: the label the eye sees is its visual counterpart, not
+                // a second node that gets announced too (§3.8).
                 .role(AccessRole::Container),
         )),
         View::from(constrained(
@@ -115,12 +116,12 @@ fn baris(fonts: &Fonts, t: &Theme, label: &str, kolom: View) -> View {
     .into()
 }
 
-/// Empat kolom: dua yang hidup, satu read-only, satu mati.
+/// Four fields: two live ones, one read-only, one disabled.
 ///
-/// Kolom hidup di scope akar dan **tidak** membaca signal apa pun selain
-/// nilainya sendiri; `on_change` hanya menulis. Karena itu node kolomnya
-/// bertahan apa adanya lintas ketikan — yang sedang diketik pengguna tidak
-/// pernah dibangun ulang di tengah interaksi (§2.5).
+/// The fields live in the root scope and read **no** signal beyond their own
+/// value; `on_change` only writes. That is why the field nodes survive
+/// unchanged across keystrokes — whatever the user is typing into is never
+/// rebuilt mid-interaction (§2.5).
 fn formulir(
     fonts: &Fonts,
     t: &Theme,
@@ -130,8 +131,8 @@ fn formulir(
 ) -> View {
     let fonts_isi = fonts.clone();
     let theme = *t;
-    // Kolom dibungkus komponennya sendiri supaya menulis `nama` hanya
-    // membangun ulang formulir ini, bukan seluruh halaman.
+    // The fields are wrapped in their own component so that writing `nama`
+    // rebuilds only this form, not the whole page.
     component("formulir", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let f = &fonts_isi;
@@ -188,11 +189,11 @@ fn formulir(
     })
 }
 
-/// Baris gema sebagai **komponen tersendiri**.
+/// The echo row as **its own component**.
 ///
-/// Inilah satu-satunya tempat isi kolom dibaca untuk ditampilkan, dan karena
-/// itu bukti hidup bahwa preedit IME **belum** sampai ke aplikasi: selama
-/// komposisi berjalan, baris ini tidak bergerak.
+/// This is the only place the field contents are read for display, which makes
+/// it living proof that IME preedit has **not** yet reached the application:
+/// while composition is in progress, this row does not move.
 fn gema(fonts: &Fonts, nama: Signal<String>, surel: Signal<String>, terkirim: Signal<u32>) -> View {
     let fonts = fonts.clone();
     component("gema", move |cx| {
@@ -240,22 +241,22 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app_with`**.
+    /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         headless_app(theme, move |cx| halaman(cx, &untuk_view))
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Satu frame lengkap termasuk detak animasi — urutan yang sama dengan
+    /// One complete frame, animation tick included — the same order as the
     /// shell (`silka_platform::run_app_with`).
     fn frame(ui: &mut AppRuntime, waktu: Instant) {
         ui.animate_at(waktu, silka_widgets::advance);
         ui.frame();
     }
 
-    /// Kotak sebuah node **menurut pohon aksesibilitas** — dengan begitu test
-    /// mengklik persis di tempat yang dibacakan screen reader (§3.8).
+    /// A node's rectangle **according to the accessibility tree** — that way
+    /// the tests click exactly where a screen reader announces (§3.8).
     fn kotak(ui: &AppRuntime, label: &str) -> Rect {
         let pohon = ui.access_tree();
         pohon
@@ -264,7 +265,8 @@ mod tests {
             .bounds
     }
 
-    /// Isi sebuah kolom menurut pohon a11y (yang dibacakan = yang tersimpan).
+    /// A field's content according to the a11y tree (what is announced = what
+    /// is stored).
     fn nilai(ui: &AppRuntime, label: &str) -> String {
         let pohon = ui.access_tree();
         pohon
@@ -273,7 +275,7 @@ mod tests {
             .unwrap_or_else(|| panic!("kolom {label:?} tanpa nilai:\n{}", pohon.dump()))
     }
 
-    /// Baris gema di bawah formulir.
+    /// The echo row below the form.
     fn gema_terbaca(ui: &AppRuntime) -> String {
         let pohon = ui.access_tree();
         pohon
@@ -344,7 +346,7 @@ mod tests {
 
         assert_eq!(nilai(&ui, KOLOM_NAMA), "Ayu");
         assert_eq!(gema_terbaca(&ui), "Halo, Ayu.");
-        // Kolom lain tidak ikut terisi: fokus benar-benar milik satu kolom.
+        // The other fields stay empty: focus really belongs to one field.
         assert_eq!(nilai(&ui, KOLOM_SUREL), "");
     }
 
@@ -356,8 +358,9 @@ mod tests {
         let titik = kotak(&ui, KOLOM_NAMA).center();
         klik(&mut ui, titik);
 
-        // Setiap huruf memicu on_change → signal → rebuild formulir. Kalau
-        // nilai props menimpa isi kolom, hasilnya akan teracak.
+        // Every letter triggers on_change → signal → form rebuild. If the
+        // prop value overwrote the field's content, the result would be
+        // scrambled.
         for (i, c) in "Nyoman".chars().enumerate() {
             ui.dispatch(&Event::Key(KeyEvent::pressed(
                 KeyCode::Character(c),
@@ -374,8 +377,8 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
         ui.frame();
 
-        // Tab masuk ke kolom pertama, lalu Tab lagi ke kolom kedua — kolom
-        // yang mati dilewati sepenuhnya.
+        // Tab enters the first field, then Tab again into the second — the
+        // disabled field is skipped entirely.
         ui.dispatch(&Event::Key(KeyEvent::pressed(
             KeyCode::Named(NamedKey::Tab),
             Duration::ZERO,
@@ -391,7 +394,7 @@ mod tests {
         assert_eq!(nilai(&ui, KOLOM_NAMA), "Ayu");
         assert_eq!(nilai(&ui, KOLOM_SUREL), "ayu");
 
-        // Enter di kolom terfokus memanggil `on_submit`.
+        // Enter in the focused field calls `on_submit`.
         ui.dispatch(&Event::Key(KeyEvent::pressed(
             KeyCode::Named(NamedKey::Enter),
             Duration::from_millis(400),
@@ -480,7 +483,7 @@ mod tests {
         klik(&mut ui, titik);
         assert!(!ui.is_idle(), "fokus harus menjadwalkan frame");
 
-        // Spring berhenti sendiri; kalau tidak, GPU tidak pernah tidur (§3.5).
+        // The spring stops on its own; otherwise the GPU never sleeps (§3.5).
         for _ in 0..600 {
             jam += Duration::from_millis(8);
             frame(&mut ui, jam);

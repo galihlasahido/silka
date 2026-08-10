@@ -1,6 +1,6 @@
-//! [`Callback`] — aksi yang dititipkan aplikasi ke sebuah node interaktif.
+//! [`Callback`] — an action the application hands to an interactive node.
 //!
-//! Inilah bentuk `on_press` yang dijanjikan REKOMENDASI §2.5:
+//! This is the shape of `on_press` promised in REKOMENDASI §2.5:
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -13,41 +13,39 @@
 //! assert_eq!(count.get(), 1);
 //! ```
 //!
-//! Tiga sifat yang membuatnya cocok dipegang node render:
+//! Three properties make it suitable for a render node to hold:
 //!
-//! 1. **`Clone` murah** ([`std::rc::Rc`]) — node boleh menyalinnya keluar
-//!    sebelum memanggilnya, sehingga handler tidak berjalan sambil node-nya
-//!    dipinjam `&mut`. Itu penting: handler biasanya menulis signal, dan
-//!    tulisan signal menjadwalkan frame lewat jalur yang sama.
-//! 2. **`PartialEq` berdasarkan identitas** — dua closure yang dibangun ulang
-//!    setiap rebuild memang **tidak** sama, dan itu benar: props terbaru selalu
-//!    menggantikan yang lama, tanpa membandingkan isi yang tidak bisa
-//!    dibandingkan.
-//! 3. **Tidak pernah menyentuh pohon.** Yang boleh dilakukan sebuah callback
-//!    adalah menulis signal; perubahan struktur adalah wewenang view-diff
-//!    (§2.5).
+//! 1. **Cheap to `Clone`** ([`std::rc::Rc`]) — a node may copy it out before
+//!    invoking it, so the handler never runs while the node itself is borrowed
+//!    `&mut`. That matters: handlers usually write to signals, and a signal
+//!    write schedules a frame through that very same path.
+//! 2. **Identity-based `PartialEq`** — two closures rebuilt on every rebuild are
+//!    genuinely **not** equal, and that is correct: the newest props always
+//!    replace the old ones, without comparing contents that cannot be compared.
+//! 3. **Never touches the tree.** All a callback may do is write to a signal;
+//!    structural change is the view-diff's business (§2.5).
 
 use std::fmt;
 use std::rc::Rc;
 
-/// Aksi tanpa argumen yang dititipkan aplikasi ke sebuah node.
+/// A zero-argument action the application hands to a node.
 #[derive(Clone)]
 pub struct Callback(Rc<dyn Fn()>);
 
 impl Callback {
-    /// Bungkus sebuah closure.
+    /// Wrap a closure.
     pub fn new(f: impl Fn() + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Jalankan aksinya.
+    /// Run the action.
     pub fn call(&self) {
         (self.0)()
     }
 }
 
 impl PartialEq for Callback {
-    /// Identitas, bukan isi: dua `Rc` yang sama = callback yang sama.
+    /// Identity, not contents: the same `Rc` means the same callback.
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }

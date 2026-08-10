@@ -1,20 +1,20 @@
-//! `scroll_view()` — Tier 1 `KOMPONEN.md`: **momentum + rubber-band ala macOS,
-//! scrollbar overlay auto-hide, scroll-to**.
+//! `scroll_view()` — Tier 1 `KOMPONEN.md`: **macOS-style momentum +
+//! rubber-band, auto-hiding overlay scrollbar, scroll-to**.
 //!
-//! `KOMPONEN.md` menyebutnya pembeda paling awal yang benar-benar terasa
-//! pengguna ("scroll_view dengan physics yang enak adalah pembeda rasa native
-//! paling awal"). Karena itu ia bukan `viewport` dengan cat baru: yang
-//! ditambahkan justru semua yang membuat guliran terasa hidup, dan tiap
-//! bagiannya menempel pada satu keputusan dokumen.
+//! `KOMPONEN.md` calls this the earliest differentiator a user actually feels
+//! ("a scroll_view with good physics is the earliest differentiator of native
+//! feel"). So it is not `viewport` with a fresh coat of paint: what it adds is
+//! precisely everything that makes scrolling feel alive, and every part of it
+//! traces back to one documented decision.
 //!
-//! | Bagian | Keputusan yang ditaati |
+//! | Part | Decision it honors |
 //! |---|---|
-//! | Rubber band + pantulan | Spring `(posisi, velocity)` yang bisa di-retarget (§3.5) — bukan kurva ease |
-//! | Momentum | **Milik OS**, bukan simulasi kita (INTEGRASI-NATIVE §3, [`ScrollPhase`]) |
-//! | Scrollbar | Warna, tebal, dan sudut dari token; squircle/arc ikut preset (§2.7) |
-//! | Auto-hide | Spring peredup + hitung mundur di [`advance`]; tidak ada timer yang berdetak (§3.5) |
-//! | Keyboard | Panah/Page/Home/End + focus ring — DoD `KOMPONEN.md`, bukan susulan |
-//! | AccessKit | Peran [`AccessRole::ScrollView`] + aksi [`AccessActions::SCROLL`] yang **benar-benar jalan** ([`handle_access_action`]) |
+//! | Rubber band + bounce-back | A retargetable `(position, velocity)` spring (§3.5) — not an ease curve |
+//! | Momentum | **Owned by the OS**, not simulated by us (INTEGRASI-NATIVE §3, [`ScrollPhase`]) |
+//! | Scrollbar | Color, thickness, and corners from tokens; squircle/arc follow the preset (§2.7) |
+//! | Auto-hide | A fade spring + countdown in [`advance`]; no ticking timer (§3.5) |
+//! | Keyboard | Arrows/Page/Home/End + focus ring — `KOMPONEN.md` DoD, not an afterthought |
+//! | AccessKit | Role [`AccessRole::ScrollView`] + a [`AccessActions::SCROLL`] action that **actually works** ([`handle_access_action`]) |
 //!
 //! ```
 //! # use silka_theme::{Appearance, Theme};
@@ -26,23 +26,23 @@
 //!     .label("Daftar transaksi");
 //! ```
 //!
-//! ## Momentum tidak ditiru — itu keputusan, bukan kekurangan
+//! ## Momentum is not reimplemented — that is a decision, not a gap
 //!
-//! macOS mengirim ekor inersianya sendiri setelah jari diangkat
-//! ([`ScrollPhase::Momentum`]). Menyimulasikan fling sendiri di atasnya
-//! menghasilkan guliran ganda yang terasa "licin" dan salah. Jadi yang kita
-//! kerjakan hanyalah bagian yang **tidak** dikirim OS: rubber band saat isi
-//! melewati tepi, dan pantulan kembali dengan kecepatan yang diwarisi dari ekor
-//! inersia itu ([`physics::velocity_from`] → [`SpringValue::set_velocity`]).
-//! Roda mouse — yang diskret dan tanpa inersia — digulir lewat spring supaya
-//! satu detik tidak berubah jadi lompatan.
+//! macOS sends its own inertial tail after the fingers lift
+//! ([`ScrollPhase::Momentum`]). Simulating our own fling on top of it produces
+//! a double scroll that feels "slippery" and wrong. So all we do is the part
+//! the OS does **not** send: the rubber band when content passes the edge, and
+//! the bounce back with a velocity inherited from that inertial tail
+//! ([`physics::velocity_from`] → [`SpringValue::set_velocity`]). The mouse
+//! wheel — discrete and inertia-free — is scrolled through a spring so that one
+//! detent does not turn into a jump.
 //!
-//! ## Menjalankan animasinya
+//! ## Driving the animation
 //!
-//! Sama seperti [`crate::overlay`]: seluruh spring dimajukan di **satu** tempat,
-//! [`advance`], yang dipanggil siklus frame aplikasi sebelum layout. Yang
-//! dikembalikannya adalah alasan dirty — dan begitu tidak ada lagi yang
-//! bergerak, ia kosong dan GPU benar-benar tidur (§3.5).
+//! Just like [`crate::overlay`]: every spring is advanced in **one** place,
+//! [`advance`], called by the app's frame cycle before layout. What it returns
+//! is the reason for the dirty flags — and once nothing is moving anymore it
+//! comes back empty and the GPU truly sleeps (§3.5).
 //!
 //! ```
 //! # use silka_core::animation::{Motion, Tick};
@@ -66,14 +66,14 @@
 //! assert!(advance(&mut tree, &tick).contains(Dirty::ANIMATION));
 //! ```
 //!
-//! ## Batas yang diketahui
+//! ## Known limits
 //!
-//! Hit-test menelusuri anak lebih dulu (Flutter, [`silka_core::input::hit`]),
-//! jadi tombol yang kebetulan berada **persis di bawah** scrollbar overlay
-//! menerima klik lebih dulu daripada thumb-nya. Menukar prioritas itu adalah
-//! perubahan di lapisan hit-test, bukan di widget ini; sampai saat itu jalur
-//! aman yang sudah tersedia adalah memberi isi padding sebesar
-//! [`ScrollbarStyle::hit_width`] pada sisi scrollbar.
+//! Hit-testing walks children first (Flutter, [`silka_core::input::hit`]), so a
+//! button that happens to sit **directly underneath** the overlay scrollbar
+//! receives the click before the thumb does. Swapping that priority is a change
+//! in the hit-test layer, not in this widget; until then the safe route already
+//! available is to pad the content by [`ScrollbarStyle::hit_width`] on the
+//! scrollbar side.
 
 pub mod physics;
 #[cfg(test)]
@@ -102,56 +102,56 @@ use crate::button::MIN_HIT_TARGET;
 
 pub use physics::{Thumb, RUBBER_BAND};
 
-/// Lama diam sebelum scrollbar overlay memudar (kebiasaan macOS).
+/// How long to stay idle before the overlay scrollbar fades out (macOS habit).
 pub const AUTO_HIDE: Duration = Duration::from_millis(900);
 
 // ---------------------------------------------------------------------------
-// Kebijakan scrollbar
+// Scrollbar policy
 // ---------------------------------------------------------------------------
 
-/// Kapan scrollbar terlihat.
+/// When the scrollbar is visible.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Scrollbar {
-    /// Overlay yang muncul saat digulir/di-hover lalu memudar sendiri — bawaan
-    /// macOS sejak Lion, dan bawaan kita.
+    /// An overlay that appears on scroll/hover and fades away on its own — the
+    /// macOS default since Lion, and ours.
     #[default]
     Auto,
-    /// Selalu terlihat (daftar padat, tabel, preferensi "always" di macOS).
+    /// Always visible (dense lists, tables, the macOS "always" preference).
     Always,
-    /// Tidak pernah digambar. Guliran tetap jalan — ini soal tampilan, bukan
-    /// soal kemampuan.
+    /// Never drawn. Scrolling still works — this is about appearance, not about
+    /// capability.
     Hidden,
 }
 
 impl Scrollbar {
-    /// Benar bila kebijakan ini pernah menggambar scrollbar sama sekali.
+    /// True if this policy ever draws a scrollbar at all.
     pub fn is_visible(self) -> bool {
         !matches!(self, Scrollbar::Hidden)
     }
 }
 
-/// Rupa scrollbar — seluruh nilainya **sudah diresolusi dari token** satu
-/// tingkat di atas (§2.6, §2.7), jadi node tidak punya pendapat soal warna.
+/// The scrollbar's look — every value here is **already resolved from tokens**
+/// one level up (§2.6, §2.7), so the node holds no opinion about color.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScrollbarStyle {
-    /// Tebal thumb saat diam, poin logis.
+    /// Thumb thickness at rest, logical points.
     pub thickness: f32,
-    /// Tebal thumb saat penunjuk berada di jalurnya (macOS melebarkannya).
+    /// Thumb thickness while the pointer is over its track (macOS widens it).
     pub thickness_hover: f32,
-    /// Jarak thumb dari tepi wadah.
+    /// Distance from the thumb to the container edge.
     pub margin: f32,
-    /// Warna thumb saat diam.
+    /// Thumb color at rest.
     pub thumb: Color,
-    /// Warna thumb saat di-hover/diseret.
+    /// Thumb color while hovered/dragged.
     pub thumb_active: Color,
-    /// Latar jalur, hanya terlihat saat scrollbar melebar.
+    /// Track background, only visible while the scrollbar is widened.
     pub track: Color,
-    /// Bentuk sudut thumb — squircle di Cupertino, arc di Tailwind.
+    /// Thumb corner shape — squircle in Cupertino, arc in Tailwind.
     pub corners: Corners,
 }
 
 impl ScrollbarStyle {
-    /// Rupa bawaan dari token theme.
+    /// The default look, from theme tokens.
     pub fn from_theme(theme: &Theme) -> Self {
         let thickness = theme.space(1.75);
         Self {
@@ -165,99 +165,103 @@ impl ScrollbarStyle {
         }
     }
 
-    /// Lebar area **sentuh** scrollbar — ≥ 44pt walau visualnya beberapa poin
-    /// saja (HIG; aturan yang sama dengan `icon_button`).
+    /// Width of the scrollbar's **hit** area — ≥ 44pt even though it only looks
+    /// a few points wide (HIG; the same rule as `icon_button`).
     pub fn hit_width(&self) -> f32 {
         MIN_HIT_TARGET.max(self.thickness_hover + self.margin * 2.0)
     }
 
-    /// Tebal thumb pada kemajuan pelebaran `t` (0 = diam, 1 = melebar penuh).
+    /// Thumb thickness at widening progress `t` (0 = at rest, 1 = fully wide).
     fn thickness_at(&self, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
         self.thickness + (self.thickness_hover - self.thickness) * t
     }
 }
 
-/// Nama lain [`ScrollbarStyle`], dipertahankan supaya kedua ejaan yang wajar
-/// sama-sama benar di kode pemakai.
+/// Another name for [`ScrollbarStyle`], kept so that both reasonable spellings
+/// are equally correct in user code.
 pub type ScrollBar = ScrollbarStyle;
 
 // ---------------------------------------------------------------------------
 // Node
 // ---------------------------------------------------------------------------
 
-/// Apa yang berubah pada satu detak [`ScrollView::advance`].
+/// What changed during one [`ScrollView::advance`] tick.
 ///
-/// Dua bendera terpisah karena akibatnya berbeda: isi yang **pindah** memaksa
-/// layout subtree diulang, sedangkan scrollbar yang memudar atau melebar hanya
-/// piksel. Menyamakan keduanya berarti setiap scrollbar yang memudar akan
-/// menghitung ulang seluruh isi daftar.
+/// Two separate flags because the consequences differ: content that **moves**
+/// forces the subtree to be laid out again, whereas a scrollbar fading or
+/// widening is only pixels. Conflating the two means every fading scrollbar
+/// re-measures the entire list content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Advanced {
-    /// Posisi guliran berubah frame ini.
+    /// The scroll position changed this frame.
     pub moved: bool,
-    /// Ada piksel scrollbar yang berubah frame ini.
+    /// Some scrollbar pixels changed this frame.
     pub repainted: bool,
 }
 
 impl Advanced {
-    /// Benar bila tidak ada apa pun yang berubah.
+    /// True if nothing changed at all.
     pub fn is_none(self) -> bool {
         !self.moved && !self.repainted
     }
 }
 
-/// Node render `scroll_view`.
+/// The `scroll_view` render node.
 ///
-/// Ia **relayout boundary permanen** dan memotong isinya, dua sifat yang
-/// diwarisi dari [`silka_core::tree::Viewport`] dan sama pentingnya: isi
-/// setinggi apa pun tidak pernah membuat window di-layout ulang, dan baris yang
-/// sudah tergulir keluar tidak bisa diklik.
+/// It is a **permanent relayout boundary** and clips its content, two traits
+/// inherited from [`silka_core::tree::Viewport`] and equally important: content
+/// of any height never causes the window to be laid out again, and a row that
+/// has scrolled out of sight cannot be clicked.
 pub struct ScrollView {
-    /// Sumbu guliran.
+    /// Scroll axis.
     pub axis: Axis,
-    /// Tinggi satu baris roda mouse, poin logis (token tipografi).
+    /// Height of one mouse-wheel line, logical points (typography token).
     pub line_height: f32,
-    /// Kapan scrollbar terlihat.
+    /// When the scrollbar is visible.
     pub scrollbar: Scrollbar,
-    /// Rupa scrollbar.
+    /// The scrollbar's look.
     pub bar: ScrollbarStyle,
-    /// Isi boleh melar melewati tepi (rubber band).
+    /// Content may stretch past the edge (rubber band).
     pub rubber_band: bool,
-    /// Ikut navigasi keyboard (Tab) selama isinya memang bisa digulir.
+    /// Joins keyboard navigation (Tab) as long as the content really can
+    /// scroll.
     pub focusable: bool,
-    /// Latar area gulir — token `surface_sunken` bila diisi.
+    /// Background of the scroll area — the `surface_sunken` token when set.
     pub decoration: Decoration,
-    /// Bentuk sudut area, dipakai hit-test **dan** cincin fokus (§3.6).
+    /// Corner shape of the area, used for hit-testing **and** the focus ring
+    /// (§3.6).
     pub corners: Corners,
-    /// Cincin fokus keyboard.
+    /// Keyboard focus ring.
     pub focus_ring: Option<FocusRing>,
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub label: Option<String>,
 
-    /// Posisi guliran: satu-satunya nilai yang benar-benar dianimasikan.
+    /// Scroll position: the only value that is genuinely animated.
     offset: SpringValue<f32>,
-    /// Peredup scrollbar overlay (0 = tersembunyi).
+    /// Fade of the overlay scrollbar (0 = hidden).
     fade: SpringValue<f32>,
-    /// Pelebaran scrollbar saat di-hover/diseret.
+    /// Scrollbar widening while hovered/dragged.
     expand: SpringValue<f32>,
-    /// Ukuran wadah dari layout terakhir.
+    /// Container size from the last layout.
     viewport: Size,
-    /// Ukuran isi pada sumbu guliran dari layout terakhir.
+    /// Content size along the scroll axis from the last layout.
     content: f32,
-    /// Lama tidak ada interaksi guliran (untuk auto-hide).
+    /// How long there has been no scroll interaction (for auto-hide).
     idle: Duration,
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     focused: bool,
-    /// Penunjuk berada di jalur scrollbar.
+    /// The pointer is over the scrollbar track.
     over_bar: bool,
-    /// Sedang menyeret thumb; nilainya jarak genggam dari awal thumb.
+    /// Currently dragging the thumb; the value is the grab distance from the
+    /// thumb's start.
     drag: Option<f32>,
-    /// Gesture trackpad sedang berlangsung (jari masih menempel).
+    /// A trackpad gesture is in progress (fingers still down).
     gesture: bool,
-    /// Waktu event guliran terakhir — dasar perkiraan kecepatan momentum.
+    /// Time of the last scroll event — the basis for estimating momentum
+    /// velocity.
     last_scroll: Option<Duration>,
-    /// Posisi terakhir yang **diminta aplikasi** lewat props (controlled).
+    /// The last position **the app asked for** through props (controlled).
     controlled: Option<f32>,
 }
 
@@ -302,49 +306,49 @@ impl Default for ScrollView {
     }
 }
 
-/// Spring posisi guliran.
+/// The scroll-position spring.
 ///
-/// **Dekoratif** dengan sengaja ([`MotionRole::Decorative`]): yang membawa
-/// informasi adalah *di mana isi berhenti*, bukan perjalanannya. Karena itu di
-/// bawah reduced-motion guliran tetap sampai ke tempat yang benar — hanya
-/// meluncurnya yang hilang (§3.5, DoD `KOMPONEN.md`).
+/// **Decorative** on purpose ([`MotionRole::Decorative`]): what carries
+/// information is *where the content stops*, not the journey there. So under
+/// reduced-motion the scroll still arrives at the right place — only the glide
+/// is gone (§3.5, `KOMPONEN.md` DoD).
 fn default_offset_spring(spring: Spring) -> SpringValue<f32> {
     SpringValue::new(0.0).with_spring(spring).decorative()
 }
 
 impl ScrollView {
-    /// Posisi guliran saat ini, poin logis. Bisa di luar `0..=max` selama isi
-    /// sedang melar (rubber band).
+    /// The current scroll position, logical points. May fall outside `0..=max`
+    /// while the content is stretched (rubber band).
     pub fn offset(&self) -> f32 {
         self.offset.position()
     }
 
-    /// Posisi yang sedang dituju.
+    /// The position currently being animated toward.
     pub fn target(&self) -> f32 {
         self.offset.target()
     }
 
-    /// Ukuran isi pada sumbu guliran (hasil layout terakhir).
+    /// Content size along the scroll axis (from the last layout).
     pub fn content(&self) -> f32 {
         self.content
     }
 
-    /// Ukuran wadah pada sumbu guliran (hasil layout terakhir).
+    /// Container size along the scroll axis (from the last layout).
     pub fn extent(&self) -> f32 {
         self.axis.main_of(self.viewport)
     }
 
-    /// Guliran maksimum; nol berarti isi muat seluruhnya.
+    /// Maximum scroll; zero means the content fits entirely.
     pub fn max_scroll(&self) -> f32 {
         physics::max_scroll(self.extent(), self.content)
     }
 
-    /// Benar bila ada yang bisa digulir sama sekali.
+    /// True if there is anything to scroll at all.
     pub fn can_scroll(&self) -> bool {
         self.max_scroll() > 0.0
     }
 
-    /// Kemajuan guliran 0..1 (0 bila tidak bisa digulir).
+    /// Scroll progress 0..1 (0 when nothing can scroll).
     pub fn progress(&self) -> f32 {
         let max = self.max_scroll();
         if max <= 0.0 {
@@ -354,7 +358,7 @@ impl ScrollView {
         }
     }
 
-    /// Peredup scrollbar saat ini (0 = tak terlihat).
+    /// The scrollbar's current opacity (0 = invisible).
     pub fn bar_opacity(&self) -> f32 {
         match self.scrollbar {
             Scrollbar::Hidden => 0.0,
@@ -363,45 +367,45 @@ impl ScrollView {
         }
     }
 
-    /// Geometri thumb saat ini, bila memang ada yang bisa digulir.
+    /// The thumb's current geometry, if there is anything to scroll.
     pub fn thumb(&self) -> Option<Thumb> {
         physics::thumb(self.extent(), self.content, self.offset(), MIN_HIT_TARGET)
     }
 
-    /// Benar bila spring guliran/scrollbar masih bergerak.
+    /// True if the scroll/scrollbar springs are still moving.
     pub fn is_animating(&self) -> bool {
         self.offset.is_animating() || self.fade.is_animating() || self.expand.is_animating()
     }
 
-    /// Benar bila node ini masih membutuhkan frame berikutnya.
+    /// True if this node still needs another frame.
     ///
-    /// Lebih luas dari [`ScrollView::is_animating`] karena **hitung mundur
-    /// auto-hide** juga butuh frame walau tidak ada satu piksel pun yang
-    /// bergerak. Itu tetap bukan timer: begitu scrollbar memudar, nilainya
-    /// kembali salah dan tidak ada lagi yang diminta (§3.5).
+    /// Broader than [`ScrollView::is_animating`] because the **auto-hide
+    /// countdown** also needs frames even when not a single pixel is moving.
+    /// It is still not a timer: once the scrollbar has faded out the value goes
+    /// back to false and nothing more is requested (§3.5).
     pub fn wants_frame(&self) -> bool {
         self.is_animating() || (self.scrollbar == Scrollbar::Auto && self.fade.target() > 0.0)
     }
 
-    /// Benar bila isi sedang melar melewati tepi.
+    /// True if the content is currently stretched past an edge.
     pub fn is_overscrolled(&self) -> bool {
         physics::overshoot(self.offset(), self.max_scroll()) != 0.0
     }
 
-    /// Spring yang menjalankan guliran.
+    /// The spring that drives scrolling.
     pub fn spring(&self) -> Spring {
         self.offset.spring()
     }
 
-    /// Ganti spring tanpa mengganggu gerakan yang sedang berjalan.
+    /// Swap the spring without disturbing motion already in flight.
     pub fn set_spring(&mut self, spring: Spring) {
         self.offset.set_spring(spring);
     }
 
-    /// **Scroll-to**: arahkan guliran ke `offset` dengan spring.
+    /// **Scroll-to**: aim the scroll at `offset` with a spring.
     ///
-    /// Retarget, bukan animasi baru: memanggilnya di tengah guliran membelokkan
-    /// gerakan sambil membawa kecepatannya (§3.5). Benar bila tujuannya berubah.
+    /// A retarget, not a new animation: calling it mid-scroll bends the motion
+    /// while carrying its velocity along (§3.5). True if the target changed.
     pub fn scroll_to(&mut self, offset: f32) -> bool {
         let tujuan = physics::clamp_scroll(offset, self.max_scroll());
         if self.offset.target() == tujuan && !self.is_overscrolled() {
@@ -412,7 +416,7 @@ impl ScrollView {
         true
     }
 
-    /// Lompat ke `offset` seketika (memuat state, pindah halaman).
+    /// Jump to `offset` instantly (restoring state, switching pages).
     pub fn jump_to(&mut self, offset: f32) -> bool {
         let tujuan = physics::clamp_scroll(offset, self.max_scroll());
         if self.offset.position() == tujuan && !self.offset.is_animating() {
@@ -422,20 +426,20 @@ impl ScrollView {
         true
     }
 
-    /// Geser guliran sejauh `delta` (positif = isi naik) dengan spring.
+    /// Shift the scroll by `delta` (positive = content moves up) with a spring.
     pub fn scroll_by(&mut self, delta: f32) -> bool {
         self.scroll_to(self.offset.target() + delta)
     }
 
-    /// Gulirkan sampai rentang `[start, start + extent]` **pada koordinat isi**
-    /// terlihat penuh.
+    /// Scroll until the range `[start, start + extent]` **in content
+    /// coordinates** is fully visible.
     pub fn reveal(&mut self, start: f32, extent: f32, padding: f32) -> bool {
         let tujuan =
             physics::scroll_to_reveal(self.offset.target(), self.extent(), start, extent, padding);
         self.scroll_to(tujuan)
     }
 
-    /// Tampilkan scrollbar dan setel ulang hitung mundur auto-hide.
+    /// Show the scrollbar and restart the auto-hide countdown.
     fn show_bar(&mut self) {
         self.idle = Duration::ZERO;
         if self.scrollbar == Scrollbar::Auto && self.can_scroll() {
@@ -443,18 +447,18 @@ impl ScrollView {
         }
     }
 
-    /// Benar bila pengguna sedang menyentuh guliran ini (jari, thumb, hover).
+    /// True while the user is touching this scroll view (fingers, thumb,
+    /// hover).
     fn interacting(&self) -> bool {
         self.gesture || self.drag.is_some() || self.over_bar
     }
 
-    /// Majukan seluruh spring satu frame; yang kembali adalah **apa** yang
-    /// berubah.
+    /// Advance every spring by one frame; what comes back is **what** changed.
     ///
-    /// Di sinilah auto-hide hidup: selama hitung mundur berjalan node meminta
-    /// frame berikutnya lewat [`Tick::keep_awake`], dan begitu scrollbar
-    /// memudar habis tidak ada lagi yang meminta apa pun — tidak ada timer yang
-    /// berdetak di latar (§3.5).
+    /// This is where auto-hide lives: while the countdown runs the node asks
+    /// for the next frame through [`Tick::keep_awake`], and once the scrollbar
+    /// has faded out nothing asks for anything anymore — no timer ticking in
+    /// the background (§3.5).
     pub fn advance(&mut self, tick: &Tick) -> Advanced {
         let sebelum = (
             self.offset.position(),
@@ -474,7 +478,7 @@ impl ScrollView {
             if self.idle >= AUTO_HIDE {
                 self.fade.set_target(0.0);
             } else {
-                // Hitung mundur belum selesai: satu frame lagi, bukan timer.
+                // The countdown is not done: one more frame, not a timer.
                 tick.keep_awake();
             }
         } else if self.interacting() || self.offset.is_animating() {
@@ -487,16 +491,16 @@ impl ScrollView {
         }
     }
 
-    /// Selesaikan seluruh gerakan seketika (uji, snapshot, `jump_to` internal).
+    /// Settle every motion instantly (tests, snapshots, internal `jump_to`).
     pub fn settle(&mut self) {
         self.offset.settle();
         self.fade.settle();
         self.expand.settle();
     }
 
-    // -- geometri scrollbar ------------------------------------------------
+    // -- scrollbar geometry ------------------------------------------------
 
-    /// Kotak **sentuh** scrollbar dalam koordinat lokal.
+    /// The scrollbar's **hit** rect in local coordinates.
     fn bar_region(&self) -> Rect {
         let s = self.viewport;
         let tebal = self.bar.hit_width();
@@ -512,7 +516,7 @@ impl ScrollView {
         }
     }
 
-    /// Kotak jalur scrollbar, yang hanya digambar saat scrollbar melebar.
+    /// The scrollbar track rect, drawn only while the scrollbar is widened.
     fn bar_track_rect(&self) -> Rect {
         let s = self.viewport;
         let tebal = self.bar.thickness_at(self.expand.position()) + self.bar.margin * 2.0;
@@ -522,7 +526,7 @@ impl ScrollView {
         }
     }
 
-    /// Kotak **gambar** thumb dalam koordinat lokal.
+    /// The thumb's **paint** rect in local coordinates.
     fn thumb_rect(&self, t: Thumb) -> Rect {
         let s = self.viewport;
         let tebal = self.bar.thickness_at(self.expand.position());
@@ -542,7 +546,7 @@ impl ScrollView {
         }
     }
 
-    /// Komponen sumbu guliran dari sebuah titik lokal.
+    /// The scroll-axis component of a local point.
     fn main_of_point(&self, p: Point) -> f32 {
         match self.axis {
             Axis::Vertical => p.y,
@@ -550,13 +554,13 @@ impl ScrollView {
         }
     }
 
-    // -- guliran -----------------------------------------------------------
+    // -- scrolling ---------------------------------------------------------
 
-    /// Selisih guliran pada sumbu wadah ini, poin logis.
+    /// The scroll delta along this container's axis, logical points.
     ///
-    /// Positif = isi bergerak naik/kiri (posisi guliran bertambah). Wadah
-    /// mendatar juga menerima roda vertikal: itu satu-satunya cara menggulir
-    /// daftar mendatar dengan mouse biasa.
+    /// Positive = content moves up/left (the scroll position grows). A
+    /// horizontal container also accepts vertical wheel input: it is the only
+    /// way to scroll a horizontal list with an ordinary mouse.
     fn main_delta(&self, delta: Point) -> f32 {
         match self.axis {
             Axis::Vertical => -delta.y,
@@ -576,8 +580,8 @@ impl ScrollView {
         let dt = e.time.saturating_sub(self.last_scroll.unwrap_or(e.time));
         self.last_scroll = Some(e.time);
 
-        // Tidak ada yang bisa digulir: **jangan** ditelan — wadah di atasnya
-        // yang mengambil alih (scroll chaining).
+        // Nothing to scroll: **do not** swallow the event — the container above
+        // takes over (scroll chaining).
         if !self.can_scroll() {
             return;
         }
@@ -594,8 +598,8 @@ impl ScrollView {
                 if baru == posisi {
                     return;
                 }
-                // Jari yang menempel = manipulasi langsung, bukan animasi:
-                // isinya harus persis di bawah jari.
+                // Fingers still down = direct manipulation, not animation: the
+                // content must sit exactly under the fingers.
                 self.offset.jump_to(baru);
                 self.show_bar();
                 ctx.request_layout();
@@ -605,8 +609,8 @@ impl ScrollView {
                 let posisi = self.offset.position();
                 let simpangan = physics::overshoot(posisi, max);
                 if simpangan != 0.0 {
-                    // Ekor inersia OS sudah membentur tepi: mulai pantulan
-                    // dengan kecepatan yang diwarisi darinya (§3.5 handoff).
+                    // The OS inertial tail has hit the edge: start the bounce
+                    // back with the velocity inherited from it (§3.5 handoff).
                     self.offset.set_target(physics::nearest_bound(posisi, max));
                     self.offset.set_velocity(physics::velocity_from(gerak, dt));
                     self.show_bar();
@@ -640,11 +644,11 @@ impl ScrollView {
                 self.show_bar();
                 ctx.handled();
             }
-            // `ScrollPhase` non-exhaustive: tahap baru dari platform
-            // diperlakukan seperti roda — diskret, dijalankan lewat spring.
+            // `ScrollPhase` is non-exhaustive: a new phase from the platform is
+            // treated like the wheel — discrete, driven through a spring.
             _ => {
-                // Roda mouse itu diskret dan tanpa inersia: yang membuatnya
-                // terasa halus adalah spring, bukan lompatan per klik.
+                // The mouse wheel is discrete and inertia-free: what makes it
+                // feel smooth is the spring, not a jump per detent.
                 let tujuan = physics::clamp_scroll(self.offset.target() + gerak, max);
                 if tujuan == self.offset.target() && !self.offset.is_animating() {
                     return;
@@ -712,8 +716,8 @@ impl ScrollView {
                             ctx.request_animation();
                             ctx.request_paint();
                         } else {
-                            // Klik di jalur = satu halaman ke arah klik, aturan
-                            // AppKit dengan "jump to spot" dimatikan.
+                            // A click on the track = one page toward the click,
+                            // the AppKit rule with "jump to spot" turned off.
                             let arah = if utama < t.offset { -1.0 } else { 1.0 };
                             self.scroll_by(
                                 arah * physics::page_step(self.extent(), self.line_height),
@@ -724,8 +728,8 @@ impl ScrollView {
                         ctx.handled();
                     }
                 }
-                // Klik di dalam area gulir memindahkan fokus keyboard ke sini —
-                // itulah yang membuat panah langsung bekerja tanpa Tab dulu.
+                // A click inside the scroll area moves keyboard focus here —
+                // that is what makes the arrow keys work without Tabbing first.
                 if self.focusable && self.can_scroll() && !ctx.is_handled() {
                     ctx.request_focus();
                 }
@@ -769,8 +773,8 @@ impl ScrollView {
             KeyCode::Named(NamedKey::ArrowLeft) if mendatar && polos => Some(sekarang - baris),
             KeyCode::Named(NamedKey::PageDown) if polos => Some(sekarang + halaman),
             KeyCode::Named(NamedKey::PageUp) if polos => Some(sekarang - halaman),
-            // Spasi menggulir satu halaman (AppKit, dan setiap browser);
-            // Shift+Spasi kembali ke atas.
+            // Space scrolls one page (AppKit, and every browser);
+            // Shift+Space goes back up.
             KeyCode::Named(NamedKey::Space) if polos => Some(sekarang + halaman),
             KeyCode::Named(NamedKey::Space) if e.modifiers.is_exactly(Modifiers::SHIFT) => {
                 Some(sekarang - halaman)
@@ -797,8 +801,8 @@ impl RenderNode for ScrollView {
     }
 
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
-        // Aturan Flutter yang sama: sumbu guliran WAJIB terbatas. Bug layout
-        // harus berisik, bukan diam-diam setinggi nol.
+        // The same Flutter rule: the scroll axis MUST be bounded. A layout bug
+        // should be loud, not silently zero-height.
         debug_assert!(
             match self.axis {
                 Axis::Vertical => constraints.has_bounded_height(),
@@ -834,33 +838,33 @@ impl RenderNode for ScrollView {
                 BoxConstraints::new(0.0, f32::INFINITY, ukuran.height, ukuran.height)
             }
         };
-        // **`layout_child`, bukan `layout_child_boundary`** — dan itu bukan
-        // kelalaian. Ukuran kita memang tidak bergantung pada isi (wadah ini
-        // sendiri sudah `is_relayout_boundary`, jadi window di atasnya tetap
-        // aman), tapi **guliran maksimum bergantung penuh** padanya. Kalau isi
-        // dijadikan boundary sendiri, daftar yang menyusut tidak akan pernah
-        // memberi tahu kita, dan pengguna tertinggal menatap ruang kosong yang
-        // tidak bisa digulir pulang.
+        // **`layout_child`, not `layout_child_boundary`** — and that is not an
+        // oversight. Our size genuinely does not depend on the content (this
+        // container is already `is_relayout_boundary`, so the window above stays
+        // safe), but **the maximum scroll depends on it entirely**. If the
+        // content were made its own boundary, a list that shrinks would never
+        // tell us, and the user would be left staring at empty space they
+        // cannot scroll back out of.
         let ukuran_anak = ctx.layout_child(child, batas_anak);
         self.content = self.axis.main_of(ukuran_anak);
 
-        // Isi yang menyusut (atau window yang membesar) tidak boleh menyisakan
-        // ruang kosong di bawah. Yang dijepit adalah **tujuan**, bukan posisi,
-        // supaya guliran yang sedang berjalan tetap mulus.
+        // Content that shrinks (or a window that grows) must not leave empty
+        // space at the bottom. What gets clamped is the **target**, not the
+        // position, so a scroll already in flight stays smooth.
         let max = self.max_scroll();
         if !self.gesture && self.drag.is_none() {
             let tujuan = self.offset.target();
             let jepit = physics::clamp_scroll(tujuan, max);
             if jepit != tujuan {
-                // **Tujuan** yang di luar rentang berarti isinya yang berubah
-                // (atau window yang membesar), bukan rubber band — dan ruang
-                // kosong di bawah daftar bukan sesuatu yang perlu dianimasikan.
+                // A **target** out of range means the content changed (or the
+                // window grew), not a rubber band — and empty space below the
+                // list is not something worth animating away.
                 self.offset.jump_to(jepit);
             } else if !self.offset.is_animating()
                 && physics::overshoot(self.offset.position(), max) != 0.0
             {
-                // Simpangan yang tertinggal tanpa spring yang menariknya
-                // pulang: jaring pengaman, bukan jalur normal.
+                // Leftover overshoot with no spring pulling it home: a safety
+                // net, not the normal path.
                 self.offset.jump_to(jepit);
             }
         }
@@ -878,8 +882,8 @@ impl RenderNode for ScrollView {
         ctx.decorate(&self.decoration);
         ctx.paint_children();
 
-        // Scrollbar digambar **di atas** isi dan **di luar** clip anak: ia
-        // melayang, bukan ikut tergulir.
+        // The scrollbar is drawn **above** the content and **outside** the
+        // child clip: it floats, it does not scroll along.
         if let Some(t) = self.thumb() {
             let alpha = self.bar_opacity();
             if alpha > 0.0 {
@@ -929,9 +933,9 @@ impl RenderNode for ScrollView {
             if self.focusable {
                 node.actions |= AccessActions::FOCUS;
             }
-            // Posisi dibacakan sebagai persen: satu-satunya bentuk yang berarti
-            // bagi pengguna screen reader, dan datang dari hasil layout yang
-            // sama dengan yang digambar (§3.8).
+            // The position is announced as a percentage: the only form that
+            // means anything to a screen-reader user, and it comes from the
+            // same layout result that was painted (§3.8).
             node.value = Some(format!("{}%", (self.progress() * 100.0).round() as i32));
         }
     }
@@ -944,15 +948,15 @@ impl RenderNode for ScrollView {
         }
     }
 
-    /// Permukaan yang bisa digulir itu padat: guliran di atas area kosongnya
-    /// tetap miliknya, dan klik tidak menembus ke apa pun di belakangnya.
+    /// A scrollable surface is solid: a scroll over its empty areas still
+    /// belongs to it, and clicks do not fall through to whatever is behind.
     fn hit_behavior(&self) -> HitBehavior {
         HitBehavior::Opaque
     }
 
     fn focus_policy(&self) -> FocusPolicy {
-        // Wadah yang isinya muat bukan tempat berhenti Tab: tidak ada yang bisa
-        // dilakukan keyboard di sana.
+        // A container whose content fits is not a Tab stop: there is nothing
+        // the keyboard could do there.
         if self.focusable && self.can_scroll() {
             FocusPolicy::FOCUSABLE
         } else {
@@ -995,7 +999,7 @@ impl core::fmt::Debug for ScrollView {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props `scroll_view` — bentuk view dari [`ScrollView`].
+/// `scroll_view` props — the view form of [`ScrollView`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScrollProps {
     axis: Axis,
@@ -1096,10 +1100,11 @@ impl ViewNode for ScrollProps {
             n.offset.set_spring(self.spring);
         }
 
-        // **Controlled hanya saat aplikasi benar-benar mengubah angkanya.**
-        // Membandingkannya dengan posisi node akan melempar pengguna kembali ke
-        // atas setiap kali ada signal lain berubah — bug klasik "controlled
-        // component" yang justru muncul karena roda mouse memiliki posisinya.
+        // **Controlled only when the app actually changes the number.**
+        // Comparing it against the node's position would throw the user back to
+        // the top every time some other signal changes — the classic
+        // "controlled component" bug, which shows up precisely because the
+        // mouse wheel owns the position too.
         if self.scroll != n.controlled {
             n.controlled = self.scroll;
             if let Some(v) = self.scroll {
@@ -1112,18 +1117,19 @@ impl ViewNode for ScrollProps {
     }
 }
 
-/// Wadah bergulir berisi `child` — konstruktor gaya Dart (§2.5).
+/// A scrolling container holding `child` — a Dart-style constructor (§2.5).
 ///
-/// Seluruh nilainya datang dari `theme`: warna scrollbar, tebal, sudut (squircle
-/// di Cupertino, arc di Tailwind), tinggi baris roda, dan cincin fokus.
+/// Every value comes from `theme`: scrollbar color, thickness, corners
+/// (squircle in Cupertino, arc in Tailwind), wheel line height, and the focus
+/// ring.
 pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
     ScrollBuilder {
         key: None,
         props: ScrollProps {
             axis: Axis::Vertical,
             scroll: None,
-            // Satu "baris" roda mouse = satu baris teks badan, bukan konstanta
-            // desktop yang ditebak (INTEGRASI-NATIVE §3).
+            // One mouse-wheel "line" = one line of body text, not a guessed
+            // desktop constant (INTEGRASI-NATIVE §3).
             line_height: theme.typography.body_size * theme.typography.body_line_height,
             scrollbar: Scrollbar::default(),
             bar: ScrollbarStyle::from_theme(theme),
@@ -1140,12 +1146,12 @@ pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
     }
 }
 
-/// Builder `scroll_view` bergaya Dart (§2.5).
+/// The Dart-style `scroll_view` builder (§2.5).
 ///
-/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena aturan orphan
-/// Rust: method chain sebuah widget hanya boleh hidup di crate yang memiliki
-/// tipenya. Bentuk penulisannya tetap sama persis dengan primitif inti —
-/// itulah yang penting bagi pemakai (`KOMPONEN.md`).
+/// Its own type rather than [`silka_core::view::Builder`], because of Rust's
+/// orphan rule: a widget's method chain may only live in the crate that owns
+/// its type. The way it reads at the call site stays exactly the same as the
+/// core primitives — and that is what matters to the caller (`KOMPONEN.md`).
 #[derive(Debug)]
 pub struct ScrollBuilder {
     key: Option<silka_core::signals::Key>,
@@ -1169,21 +1175,22 @@ impl ScrollBuilder {
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5).
+    /// Identity key among its siblings (§2.5).
     pub fn key(mut self, key: impl Into<silka_core::signals::Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    // -- utility styling (§2.6): nilainya selalu token, tidak pernah literal --
+    // -- utility styling (§2.6): always tokens, never literals ---------------
 
-    /// Warna latar area gulir — token `surface_sunken` biasanya.
+    /// Background color of the scroll area — usually the `surface_sunken`
+    /// token.
     pub fn background(self, color: Color) -> Self {
         self.map(move |p| p.decoration.background = color)
     }
 
-    /// Geometri sudut area: squircle di Cupertino, arc di Tailwind — dan
-    /// bentuk yang sama dipakai hit-testing (§3.6).
+    /// Corner geometry of the area: squircle in Cupertino, arc in Tailwind —
+    /// and the same shape is used for hit-testing (§3.6).
     pub fn corners(self, corners: Corners) -> Self {
         self.map(move |p| {
             p.corners = corners;
@@ -1191,7 +1198,7 @@ impl ScrollBuilder {
         })
     }
 
-    /// Border setebal `width` berwarna `color` (token `separator`/`border`).
+    /// A border `width` thick in `color` (the `separator`/`border` token).
     pub fn border(self, width: f32, color: Color) -> Self {
         self.map(move |p| {
             p.decoration.border_width = width.max(0.0);
@@ -1199,104 +1206,106 @@ impl ScrollBuilder {
         })
     }
 
-    /// Bayangan ganda ala HIG untuk satu tingkat elevasi.
+    /// The HIG-style paired shadow for one elevation level.
     pub fn shadow(self, shadows: silka_paint::ShadowPair) -> Self {
         self.map(move |p| p.decoration.shadows = shadows)
     }
 
-    /// Sumbu guliran.
+    /// Scroll axis.
     pub fn axis(self, axis: Axis) -> Self {
         self.map(move |p| p.axis = axis)
     }
 
-    /// Gulir mendatar.
+    /// Scroll horizontally.
     pub fn horizontal(self) -> Self {
         self.axis(Axis::Horizontal)
     }
 
-    /// Gulir menegak (bawaan).
+    /// Scroll vertically (the default).
     pub fn vertical(self) -> Self {
         self.axis(Axis::Vertical)
     }
 
-    /// Kendalikan posisi guliran dari aplikasi (mis. tombol "ke atas").
+    /// Control the scroll position from the app (e.g. a "back to top" button).
     ///
-    /// Diterapkan **hanya saat angkanya berubah**, dan diterapkan sebagai
-    /// animasi spring — bukan lompatan.
+    /// Applied **only when the number changes**, and applied as a spring
+    /// animation — not a jump.
     pub fn scroll(self, offset: f32) -> Self {
         self.map(move |p| p.scroll = Some(offset))
     }
 
-    /// Tinggi satu baris roda mouse, poin logis.
+    /// Height of one mouse-wheel line, logical points.
     pub fn line_height(self, line_height: f32) -> Self {
         self.map(move |p| p.line_height = line_height.max(1.0))
     }
 
-    /// Kapan scrollbar terlihat.
+    /// When the scrollbar is visible.
     pub fn scrollbar(self, scrollbar: Scrollbar) -> Self {
         self.map(move |p| p.scrollbar = scrollbar)
     }
 
-    /// Tanpa scrollbar (guliran tetap jalan).
+    /// No scrollbar (scrolling still works).
     pub fn no_scrollbar(self) -> Self {
         self.scrollbar(Scrollbar::Hidden)
     }
 
-    /// Rupa scrollbar — tetap harus diisi dari token.
+    /// The scrollbar's look — still has to be filled in from tokens.
     pub fn bar_style(self, bar: ScrollbarStyle) -> Self {
         self.map(move |p| p.bar = bar)
     }
 
-    /// Nama lain [`ScrollBuilder::bar_style`].
+    /// Another name for [`ScrollBuilder::bar_style`].
     pub fn bar(self, bar: ScrollbarStyle) -> Self {
         self.bar_style(bar)
     }
 
-    /// Matikan rubber band (daftar yang harus terasa "kaku", mis. tabel data).
+    /// Turn off the rubber band (lists that must feel "rigid", e.g. data
+    /// tables).
     pub fn no_rubber_band(self) -> Self {
         self.map(|p| p.rubber_band = false)
     }
 
-    /// Ikut/tidak ikut navigasi Tab.
+    /// Join, or skip, Tab navigation.
     pub fn focusable(self, focusable: bool) -> Self {
         self.map(move |p| p.focusable = focusable)
     }
 
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub fn label(self, label: impl Into<String>) -> Self {
         let label = label.into();
         self.map(move |p| p.label = Some(label))
     }
 
-    /// Cincin fokus keyboard (token `focus_ring`).
+    /// Keyboard focus ring (the `focus_ring` token).
     pub fn focus_ring(self, width: f32, color: Color) -> Self {
         self.map(move |p| p.focus_ring = Some(FocusRing::new(width, color)))
     }
 
-    /// Tanpa cincin fokus.
+    /// No focus ring.
     pub fn no_focus_ring(self) -> Self {
         self.map(|p| p.focus_ring = None)
     }
 
-    /// Spring yang menjalankan guliran (`smooth`/`snappy`/`bouncy`).
+    /// The spring that drives scrolling (`smooth`/`snappy`/`bouncy`).
     pub fn spring(self, spring: Spring) -> Self {
         self.map(move |p| p.spring = spring)
     }
 
-    /// Perlakukan gerakan guliran sebagai **esensial**: reduced-motion hanya
-    /// membuang pantulannya, bukan meluncurnya.
+    /// Treat scroll motion as **essential**: reduced-motion then only drops the
+    /// bounce, not the glide.
     ///
-    /// Bawaannya dekoratif, dan itu yang benar untuk hampir semua daftar.
+    /// The default is decorative, and that is the right call for nearly every
+    /// list.
     pub fn essential_motion(self) -> Self {
         self.map(|p| p.motion = MotionRole::Essential)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Operasi tingkat pohon
+// Tree-level operations
 // ---------------------------------------------------------------------------
 
-/// Semua [`ScrollView`] di `tree`, urut sesuai pohon (terluar dulu).
+/// Every [`ScrollView`] in `tree`, in tree order (outermost first).
 pub fn nodes(tree: &RenderTree) -> Vec<NodeId> {
     let mut out = Vec::new();
     kumpulkan(tree, tree.root(), &mut out);
@@ -1312,16 +1321,15 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
     }
 }
 
-/// Majukan seluruh guliran satu frame — satu tempat untuk semuanya.
+/// Advance every scroll view by one frame — one place for all of them.
 ///
-/// Artinya tepat sama dengan [`crate::overlay::advance`]:
+/// The meaning is exactly that of [`crate::overlay::advance`]:
 ///
-/// - [`Dirty::LAYOUT`] `|` [`Dirty::PAINT`] — ada isi yang **berpindah** frame
-///   ini.
-/// - [`Dirty::ANIMATION`] — masih ada yang bergerak (atau hitung mundur
-///   auto-hide masih berjalan), jadi frame berikutnya harus dijadwalkan.
-/// - [`Dirty::NONE`] — tidak ada pekerjaan yang lahir dari modul ini, dan GPU
-///   boleh tidur.
+/// - [`Dirty::LAYOUT`] `|` [`Dirty::PAINT`] — some content **moved** this
+///   frame.
+/// - [`Dirty::ANIMATION`] — something is still moving (or an auto-hide
+///   countdown is still running), so the next frame must be scheduled.
+/// - [`Dirty::NONE`] — no work was born in this module, and the GPU may sleep.
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     let mut dirty = Dirty::NONE;
     for id in nodes(tree) {
@@ -1330,12 +1338,12 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             None => continue,
         };
         if hasil.moved {
-            // Guliran memindahkan anak; scroll_view adalah relayout boundary,
-            // jadi pekerjaannya berhenti di subtree ini.
+            // Scrolling moves the child; scroll_view is a relayout boundary, so
+            // the work stops inside this subtree.
             tree.mark_needs_layout(id);
             dirty |= Dirty::LAYOUT | Dirty::PAINT;
         } else if hasil.repainted {
-            // Scrollbar yang memudar/melebar tidak memindahkan apa pun.
+            // A scrollbar fading/widening does not move anything.
             tree.mark_needs_paint(id);
             dirty |= Dirty::PAINT;
         }
@@ -1346,7 +1354,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     dirty
 }
 
-/// Benar bila masih ada guliran yang bergerak.
+/// True if any scroll view is still moving.
 pub fn is_animating(tree: &RenderTree) -> bool {
     nodes(tree).into_iter().any(|id| {
         tree.node_ref::<ScrollView>(id)
@@ -1354,7 +1362,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
     })
 }
 
-/// Selesaikan seluruh gerakan guliran seketika (uji dan snapshot).
+/// Settle every scroll motion instantly (tests and snapshots).
 pub fn settle(tree: &mut RenderTree) {
     for id in nodes(tree) {
         if let Some(s) = tree.node_mut_ref::<ScrollView>(id) {
@@ -1364,7 +1372,7 @@ pub fn settle(tree: &mut RenderTree) {
     }
 }
 
-/// **Scroll-to** sebuah wadah: animasikan guliran `id` ke `offset`.
+/// **Scroll-to** for one container: animate the scroll of `id` to `offset`.
 pub fn scroll_to(tree: &mut RenderTree, id: NodeId, offset: f32) -> bool {
     let berubah = tree
         .node_mut_ref::<ScrollView>(id)
@@ -1375,7 +1383,7 @@ pub fn scroll_to(tree: &mut RenderTree, id: NodeId, offset: f32) -> bool {
     berubah
 }
 
-/// Wadah bergulir terdekat yang membungkus `node`.
+/// The nearest scrolling container that wraps `node`.
 pub fn enclosing(tree: &RenderTree, node: NodeId) -> Option<NodeId> {
     let mut cur = tree.parent(node);
     while let Some(id) = cur {
@@ -1387,12 +1395,12 @@ pub fn enclosing(tree: &RenderTree, node: NodeId) -> Option<NodeId> {
     None
 }
 
-/// Gulirkan wadah terdekat agar `target` terlihat penuh.
+/// Scroll the nearest container so that `target` is fully visible.
 ///
-/// Inilah bentuk `ScrollIntoView` yang dipakai dua jalur sekaligus: fokus
-/// keyboard yang berpindah ke baris di luar layar, dan permintaan
-/// [`AccessAction::ScrollIntoView`] dari teknologi bantu (§3.8). Keduanya harus
-/// memakai perhitungan yang sama, jadi perhitungannya cuma ada satu.
+/// This is the `ScrollIntoView` used by two paths at once: keyboard focus
+/// moving to an off-screen row, and an [`AccessAction::ScrollIntoView`] request
+/// from assistive technology (§3.8). Both must use the same math, so there is
+/// only one copy of it.
 pub fn scroll_into_view(tree: &mut RenderTree, target: NodeId, padding: f32) -> bool {
     let Some(sv) = enclosing(tree, target) else {
         return false;
@@ -1403,7 +1411,7 @@ pub fn scroll_into_view(tree: &mut RenderTree, target: NodeId, padding: f32) -> 
     let Some(s) = tree.node_ref::<ScrollView>(sv) else {
         return false;
     };
-    // Koordinat isi = posisi yang terlihat + guliran yang sudah dilakukan.
+    // Content coordinates = the visible position + the scroll already applied.
     let (relatif, panjang) = match s.axis {
         Axis::Vertical => (anak.y - asal.y, ukuran.height),
         Axis::Horizontal => (anak.x - asal.x, ukuran.width),
@@ -1418,13 +1426,12 @@ pub fn scroll_into_view(tree: &mut RenderTree, target: NodeId, padding: f32) -> 
     berubah
 }
 
-/// Layani permintaan guliran dari teknologi bantu.
+/// Serve a scroll request coming from assistive technology.
 ///
-/// Tanpa fungsi ini, [`AccessActions::SCROLL`] yang diumumkan node hanyalah
-/// janji kosong: VoiceOver akan menawarkan "scroll down" dan tidak terjadi
-/// apa-apa. Shell memanggilnya dari
-/// `WindowConfig::on_access_action`; benar bila permintaannya benar-benar
-/// dilayani.
+/// Without this function the [`AccessActions::SCROLL`] the node advertises is
+/// an empty promise: VoiceOver would offer "scroll down" and nothing would
+/// happen. The shell calls it from `WindowConfig::on_access_action`; true if
+/// the request was actually served.
 pub fn handle_access_action(tree: &mut RenderTree, request: &AccessActionRequest) -> bool {
     let target = request.target;
     match request.action {
@@ -1442,7 +1449,8 @@ pub fn handle_access_action(tree: &mut RenderTree, request: &AccessActionRequest
                 | (AccessAction::ScrollLeft, Axis::Horizontal) => -1.0,
                 (AccessAction::ScrollDown, Axis::Vertical)
                 | (AccessAction::ScrollRight, Axis::Horizontal) => 1.0,
-                // Arah yang tidak sesuai sumbu ditolak, bukan ditebak.
+                // A direction that does not match the axis is refused, not
+                // guessed.
                 _ => return false,
             };
             let berubah = tree

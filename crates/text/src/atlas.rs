@@ -1,30 +1,30 @@
-//! Glyph atlas: satu tekstur besar berisi banyak bitmap glyph.
+//! Glyph atlas: one big texture holding many glyph bitmaps.
 //!
-//! Kenapa atlas: UI itu 95% rounded rect + glyph (REKOMENDASI §3.2). Menggambar
-//! ribuan glyph per frame hanya murah kalau semuanya berasal dari satu tekstur
-//! sehingga bisa dibatch dalam satu draw call.
+//! Why an atlas: UI is 95% rounded rects + glyphs (REKOMENDASI §3.2). Drawing
+//! thousands of glyphs per frame is only cheap when they all come from a single
+//! texture, so they can be batched into one draw call.
 //!
-//! Crate ini **tidak** tahu apa itu tekstur GPU. Yang disediakan di sini adalah
-//! sisi CPU-nya: pengalokasi ruang (shelf packing), buffer piksel, dan
-//! **dirty region** supaya backend cukup mengunggah bagian yang berubah.
-//! Backend wgpu hari ini — atau GL/CPU nanti — membaca [`GlyphAtlas::data`]
-//! apa adanya.
+//! This crate does **not** know what a GPU texture is. What it provides is the
+//! CPU side: a space allocator (shelf packing), a pixel buffer, and a **dirty
+//! region** so the backend only has to upload the part that changed. Today's
+//! wgpu backend — or a GL/CPU one later — reads [`GlyphAtlas::data`] as is.
 
-/// Format piksel atlas.
+/// The atlas pixel format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AtlasFormat {
-    /// 1 byte per piksel: cakupan alpha. Ini jalur normal semua teks.
+    /// 1 byte per pixel: alpha coverage. This is the normal path for all text.
     ///
-    /// Sengaja bukan subpixel-AA: LCD subpixel antialiasing sudah ditinggalkan
-    /// (macOS pun sudah membuangnya). Yang kita kejar adalah subpixel
-    /// *positioning* (§3.3), dan itu urusan cache varian, bukan format piksel.
+    /// Deliberately not subpixel AA: LCD subpixel antialiasing has been left
+    /// behind (macOS dropped it too). What we are after is subpixel
+    /// *positioning* (§3.3), and that is a matter of cache variants, not of
+    /// pixel format.
     Mask,
-    /// 4 byte per piksel RGBA: emoji warna dan bitmap COLR/CBDT.
+    /// 4 bytes per pixel RGBA: color emoji and COLR/CBDT bitmaps.
     Color,
 }
 
 impl AtlasFormat {
-    /// Jumlah byte per piksel.
+    /// The number of bytes per pixel.
     pub const fn bytes_per_pixel(self) -> usize {
         match self {
             AtlasFormat::Mask => 1,
@@ -33,21 +33,21 @@ impl AtlasFormat {
     }
 }
 
-/// Kotak piksel di dalam atlas.
+/// A pixel rect inside the atlas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtlasRect {
-    /// Tepi kiri, piksel.
+    /// Left edge, in pixels.
     pub x: u32,
-    /// Tepi atas, piksel.
+    /// Top edge, in pixels.
     pub y: u32,
-    /// Lebar, piksel.
+    /// Width, in pixels.
     pub width: u32,
-    /// Tinggi, piksel.
+    /// Height, in pixels.
     pub height: u32,
 }
 
 impl AtlasRect {
-    /// Kotak baru.
+    /// A new rect.
     pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
         Self {
             x,
@@ -57,22 +57,22 @@ impl AtlasRect {
         }
     }
 
-    /// Tepi kanan (eksklusif).
+    /// The right edge (exclusive).
     pub const fn max_x(self) -> u32 {
         self.x + self.width
     }
 
-    /// Tepi bawah (eksklusif).
+    /// The bottom edge (exclusive).
     pub const fn max_y(self) -> u32 {
         self.y + self.height
     }
 
-    /// Luas dalam piksel.
+    /// The area in pixels.
     pub const fn area(self) -> u64 {
         self.width as u64 * self.height as u64
     }
 
-    /// Benar bila dua kotak bertumpang tindih.
+    /// True when two rects overlap.
     pub fn intersects(self, other: AtlasRect) -> bool {
         self.x < other.max_x()
             && other.x < self.max_x()
@@ -80,7 +80,7 @@ impl AtlasRect {
             && other.y < self.max_y()
     }
 
-    /// Kotak terkecil yang memuat keduanya.
+    /// The smallest rect containing both.
     pub fn union(self, other: AtlasRect) -> AtlasRect {
         let x = self.x.min(other.x);
         let y = self.y.min(other.y);
@@ -89,8 +89,8 @@ impl AtlasRect {
         AtlasRect::new(x, y, max_x - x, max_y - y)
     }
 
-    /// Koordinat tekstur ternormalisasi `(u0, v0, u1, v1)` untuk atlas
-    /// berukuran `size` — bentuk yang langsung dipakai backend.
+    /// Normalized texture coordinates `(u0, v0, u1, v1)` for an atlas of side
+    /// `size` — the form the backend uses directly.
     pub fn uv(self, size: u32) -> [f32; 4] {
         let s = size.max(1) as f32;
         [
@@ -102,7 +102,7 @@ impl AtlasRect {
     }
 }
 
-/// Satu rak horizontal dalam shelf packing.
+/// One horizontal shelf in the shelf packer.
 #[derive(Debug, Clone, Copy)]
 struct Shelf {
     y: u32,
@@ -110,10 +110,11 @@ struct Shelf {
     cursor_x: u32,
 }
 
-/// Jarak antar entri (piksel) agar sampling bilinear tidak "mencuri" tetangga.
+/// Gap between entries (pixels) so bilinear sampling cannot "steal" from a
+/// neighbour.
 const PADDING: u32 = 1;
 
-/// Atlas glyph sisi-CPU dengan pengalokasi shelf dan pelacak dirty region.
+/// A CPU-side glyph atlas with a shelf allocator and dirty-region tracking.
 #[derive(Debug, Clone)]
 pub struct GlyphAtlas {
     format: AtlasFormat,
@@ -126,7 +127,7 @@ pub struct GlyphAtlas {
 }
 
 impl GlyphAtlas {
-    /// Atlas kosong berukuran `size × size` piksel.
+    /// An empty atlas of `size × size` pixels.
     pub fn new(format: AtlasFormat, size: u32) -> Self {
         let size = size.max(1);
         Self {
@@ -140,45 +141,45 @@ impl GlyphAtlas {
         }
     }
 
-    /// Format piksel.
+    /// The pixel format.
     pub fn format(&self) -> AtlasFormat {
         self.format
     }
 
-    /// Sisi atlas dalam piksel (selalu persegi).
+    /// The atlas side in pixels (always square).
     pub fn size(&self) -> u32 {
         self.size
     }
 
-    /// Buffer piksel mentah, baris demi baris.
+    /// The raw pixel buffer, row by row.
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
-    /// Bagian yang berubah sejak [`GlyphAtlas::clear_dirty`] terakhir.
+    /// The part that changed since the last [`GlyphAtlas::clear_dirty`].
     pub fn dirty_region(&self) -> Option<AtlasRect> {
         self.dirty
     }
 
-    /// Tandai bahwa backend sudah mengunggah perubahan.
+    /// Mark that the backend has uploaded the changes.
     pub fn clear_dirty(&mut self) {
         self.dirty = None;
     }
 
-    /// Ambil dirty region sekaligus menandainya bersih.
+    /// Take the dirty region and mark it clean in one step.
     pub fn take_dirty(&mut self) -> Option<AtlasRect> {
         self.dirty.take()
     }
 
-    /// Rasio luas yang sudah terpakai (0..1) — dasar keputusan tumbuh.
+    /// The fraction of area in use (0..1) — the basis for growth decisions.
     pub fn utilization(&self) -> f32 {
         self.used_area as f32 / (self.size as f32 * self.size as f32)
     }
 
-    /// Alokasikan ruang `width × height`; `None` bila atlas penuh.
+    /// Allocate `width × height` of space; `None` when the atlas is full.
     ///
-    /// Ukuran nol sah dan menghasilkan kotak nol tanpa memakan ruang (glyph
-    /// spasi tidak punya piksel).
+    /// A zero size is valid and yields a zero rect without consuming space (a
+    /// space glyph has no pixels).
     pub fn allocate(&mut self, width: u32, height: u32) -> Option<AtlasRect> {
         if width == 0 || height == 0 {
             return Some(AtlasRect::new(0, 0, 0, 0));
@@ -187,8 +188,8 @@ impl GlyphAtlas {
             return None;
         }
 
-        // Rak yang tingginya pas (tidak lebih dari 25% terlalu tinggi) supaya
-        // rak tinggi tidak habis untuk glyph pendek.
+        // Pick a shelf whose height fits well (no more than 25% too tall), so
+        // tall shelves are not used up by short glyphs.
         let mut terpilih = None;
         let mut sisa_terbaik = u32::MAX;
         for (i, shelf) in self.shelves.iter().enumerate() {
@@ -216,7 +217,7 @@ impl GlyphAtlas {
             return Some(rect);
         }
 
-        // Rak baru.
+        // A new shelf.
         if self.next_shelf_y + height > self.size {
             return None;
         }
@@ -232,10 +233,10 @@ impl GlyphAtlas {
         Some(rect)
     }
 
-    /// Tulis piksel ke kotak yang sudah dialokasikan.
+    /// Write pixels into a previously allocated rect.
     ///
-    /// `src` harus berisi tepat `width * height * bytes_per_pixel` byte, rapat
-    /// tanpa padding baris. Panggilan ini memperluas dirty region.
+    /// `src` must hold exactly `width * height * bytes_per_pixel` bytes, packed
+    /// with no row padding. This call widens the dirty region.
     pub fn write(&mut self, rect: AtlasRect, src: &[u8]) {
         let bpp = self.format.bytes_per_pixel();
         if rect.width == 0 || rect.height == 0 {
@@ -262,10 +263,10 @@ impl GlyphAtlas {
         });
     }
 
-    /// Kosongkan atlas dan (opsional) ubah ukurannya.
+    /// Empty the atlas and (optionally) change its size.
     ///
-    /// Semua entri lama menjadi tidak berlaku — pemanggil wajib membuang
-    /// pemetaan id-nya. Dipakai saat atlas penuh dan perlu tumbuh.
+    /// Every old entry becomes invalid — the caller must drop its id mappings.
+    /// Used when the atlas is full and needs to grow.
     pub fn reset(&mut self, size: u32) {
         let size = size.max(1);
         self.size = size;
@@ -278,7 +279,7 @@ impl GlyphAtlas {
         self.shelves.clear();
         self.next_shelf_y = 0;
         self.used_area = 0;
-        // Seluruh tekstur harus diunggah ulang.
+        // The whole texture has to be re-uploaded.
         self.dirty = Some(AtlasRect::new(0, 0, size, size));
     }
 }
@@ -326,7 +327,7 @@ mod tests {
             n += 1;
             assert!(n < 100, "alokasi tidak pernah berhenti");
         }
-        // 3 rak × 3 kolom pada atlas 32² dengan padding 1 px.
+        // 3 shelves × 3 columns in a 32² atlas with 1 px padding.
         assert_eq!(n, 9);
     }
 
@@ -348,7 +349,7 @@ mod tests {
         assert_eq!(d[2 * 4 + 2], 2);
         assert_eq!(d[3 * 4 + 1], 3);
         assert_eq!(d[3 * 4 + 2], 4);
-        // Di luar kotak tetap nol.
+        // Outside the rect everything stays zero.
         assert_eq!(d[0], 0);
     }
 

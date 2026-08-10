@@ -1,33 +1,35 @@
 //! # silka-paint
 //!
-//! Abstraksi perintah gambar tipis untuk seluruh framework (REKOMENDASI §3.2).
+//! A thin draw-command abstraction for the whole framework (REKOMENDASI §3.2).
 //!
-//! Crate ini mendefinisikan *vocabulary* menggambar UI — bukan cara
-//! mengeksekusinya di GPU:
+//! This crate defines the *vocabulary* for drawing UI — not how to execute it
+//! on the GPU:
 //!
-//! - **Rounded rect / squircle** — geometri sudut (continuous corner ala Apple)
-//!   adalah *parameter* perintah gambar yang diteruskan ke shader, bukan
-//!   konstanta (REKOMENDASI §2.7, §3.6). Preset Cupertino mengirim squircle,
-//!   preset Tailwind mengirim arc biasa. Lihat [`CornerStyle`].
-//! - **Glyph** — dirujuk lewat id atlas milik `silka-text`.
-//! - **Shadow ganda** (ambient + key ala HIG) dan **blur** (dual-Kawase untuk
-//!   materials) — butuh dukungan layer/offscreen texture di render graph.
+//! - **Rounded rect / squircle** — corner geometry (Apple-style continuous
+//!   corners) is a *parameter* of the draw command that is passed through to
+//!   the shader, not a constant (REKOMENDASI §2.7, §3.6). The Cupertino preset
+//!   sends squircles, the Tailwind preset sends plain arcs. See
+//!   [`CornerStyle`].
+//! - **Glyphs** — referenced through atlas ids owned by `silka-text`.
+//! - **Double shadows** (HIG-style ambient + key) and **blur** (dual-Kawase for
+//!   materials) — these need layer/offscreen-texture support in the render
+//!   graph.
 //!
-//! ## Kontrak yang MENGIKAT
+//! ## BINDING contract
 //!
-//! API publik crate ini **tidak boleh memuat tipe wgpu** (atau API grafis
-//! lain). Kode widget hanya berbicara dalam perintah gambar crate ini;
-//! `silka-renderer` (wgpu) adalah salah satu implementasi. Dengan begitu
-//! backend baru (GL/CPU/BSD) bisa ditambah nanti di satu tempat tanpa
-//! menulis ulang framework (REKOMENDASI §5 failure mode #7).
+//! The public API of this crate **must not expose wgpu types** (or any other
+//! graphics API). Widget code speaks only in this crate's draw commands;
+//! `silka-renderer` (wgpu) is just one implementation. That way a new backend
+//! (GL/CPU/BSD) can be added later in a single place without rewriting the
+//! framework (REKOMENDASI §5 failure mode #7).
 //!
 //! ## Status
 //!
-//! Kosakata yang sudah ada: warna (dengan konversi ruang sRGB→linear yang
-//! benar), geometri poin-logis, geometri sudut sebagai parameter, dan
-//! [`Scene`] berisi daftar [`Command`]. Rasterisasi `Command` sendiri masuk
-//! milestone shader SDF; backend hari ini baru mengeksekusi warna latar
-//! [`Scene::clear_color`].
+//! The vocabulary that exists today: color (with a correct sRGB→linear color
+//! space conversion), logical-point geometry, corner geometry as a parameter,
+//! and a [`Scene`] holding a list of [`Command`]s. Rasterizing `Command`s
+//! themselves belongs to the SDF shader milestone; today's backend only
+//! executes the [`Scene::clear_color`] background color.
 //!
 //! ```
 //! use silka_paint::{Color, Corners, CornerStyle, Quad, Rect, Scene};
@@ -36,7 +38,7 @@
 //! scene.push(
 //!     Quad::new(Rect::new(24.0, 24.0, 180.0, 96.0))
 //!         .background(Color::hex(0x2C2C2E))
-//!         // Bentuk sudut datang dari token theme, bukan dari literal di sini.
+//!         // The corner shape comes from a theme token, not from a literal here.
 //!         .corners(Corners::uniform(14.0, CornerStyle::squircle()))
 //!         .normalized(),
 //! );

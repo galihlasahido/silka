@@ -1,33 +1,34 @@
-//! Token bayangan per tingkat elevasi.
+//! Shadow tokens, one per elevation level.
 //!
-//! Setiap tingkat adalah **pasangan ambient + key** (REKOMENDASI §3.6):
-//! preset Cupertino memakainya sebagai resep HIG, preset Tailwind memakainya
-//! untuk meniru `shadow`/`shadow-md`/`shadow-lg` yang di web memang juga dua
-//! `box-shadow` bertumpuk. Satu kosakata, dua tampilan.
+//! Every level is an **ambient + key pair** (REKOMENDASI §3.6): the Cupertino
+//! preset uses it as the HIG recipe, the Tailwind preset uses it to reproduce
+//! `shadow`/`shadow-md`/`shadow-lg`, which on the web are themselves two
+//! stacked `box-shadow`s. One vocabulary, two appearances.
 //!
-//! Bayangan **tidak** ikut menyimpan geometri sudut: ia mewarisi [`Corners`]
-//! milik kotak yang dibayangi, jadi bayangan kotak squircle otomatis squircle
-//! juga (§2.7 — bentuk sudut adalah parameter, bukan konstanta).
+//! A shadow does **not** carry corner geometry of its own: it inherits the
+//! [`Corners`] of the box it falls from, so the shadow of a squircle box is
+//! automatically a squircle too (§2.7 — corner shape is a parameter, not a
+//! constant).
 //!
 //! [`Corners`]: silka_paint::Corners
 
 use silka_paint::ShadowPair;
 
-/// Token bayangan per tingkat elevasi.
+/// Shadow tokens, one per elevation level.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowTokens {
-    /// Elevasi rendah (kontrol, kartu menempel).
+    /// Low elevation (controls, flush cards).
     pub sm: ShadowPair,
-    /// Elevasi sedang (kartu terangkat, popover).
+    /// Medium elevation (raised cards, popovers).
     pub md: ShadowPair,
-    /// Elevasi tinggi (sheet, dialog).
+    /// High elevation (sheets, dialogs).
     pub lg: ShadowPair,
-    /// Elevasi tertinggi (drag preview, window melayang).
+    /// Highest elevation (drag previews, floating windows).
     pub xl: ShadowPair,
 }
 
 impl ShadowTokens {
-    /// Resep bayangan satu token.
+    /// The shadow recipe for one token.
     pub fn get(&self, token: ShadowToken) -> ShadowPair {
         match token {
             ShadowToken::None => ShadowPair::NONE,
@@ -39,10 +40,10 @@ impl ShadowTokens {
     }
 }
 
-/// Nama token bayangan — bentuk yang dipakai utility (`shadow_md`).
+/// The name of a shadow token — the form utilities take (`shadow_md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShadowToken {
-    /// Menempel di permukaan: tanpa bayangan sama sekali.
+    /// Flush with the surface: no shadow at all.
     None,
     /// [`ShadowTokens::sm`].
     Sm,
@@ -55,7 +56,7 @@ pub enum ShadowToken {
 }
 
 impl ShadowToken {
-    /// Semua token bayangan, dari datar ke paling tinggi.
+    /// Every shadow token, from flat to highest.
     pub const ALL: [ShadowToken; 5] = [
         ShadowToken::None,
         ShadowToken::Sm,
@@ -64,7 +65,7 @@ impl ShadowToken {
         ShadowToken::Xl,
     ];
 
-    /// Nama token untuk gallery/debug.
+    /// Token name for gallery/debug output.
     pub const fn name(self) -> &'static str {
         match self {
             ShadowToken::None => "none",

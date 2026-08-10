@@ -1,13 +1,14 @@
-//! Preset **Cupertino** — kiblat Apple HIG/macOS, default framework.
+//! The **Cupertino** preset — modeled on Apple HIG/macOS, the framework
+//! default.
 //!
-//! Ciri yang membedakannya dari preset lain (§2.7):
+//! What sets it apart from the other preset (§2.7):
 //!
-//! - **Sudut squircle** (superellipse G2-continuous), bukan busur lingkaran.
-//! - **Palet semantik HIG**: label berlapis alpha, separator tembus pandang,
-//!   systemBlue/systemRed dengan pasangan light/dark resmi.
-//! - **Shadow ganda** ambient + key.
-//! - **Inter dengan optical size**: sumbu `opsz` diikat ke ukuran font, dan
-//!   tracking mengikuti tabel SF (longgar di kecil, rapat di besar).
+//! - **Squircle corners** (a G2-continuous superellipse), not circular arcs.
+//! - **The HIG semantic palette**: alpha-layered labels, translucent
+//!   separators, systemBlue/systemRed with Apple's official light/dark pairs.
+//! - **Paired shadows**, ambient + key.
+//! - **Inter with optical sizing**: the `opsz` axis is tied to the font size,
+//!   and tracking follows the SF table (loose when small, tight when large).
 
 use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
@@ -15,14 +16,14 @@ use crate::palette::hig;
 use crate::typography::{optical_tracking, weight, TypeStyle, TypographyTokens};
 use crate::{Appearance, ColorTokens, Preset, RadiusTokens, ShadowTokens, SpacingTokens, Theme};
 
-/// Bangun theme preset Cupertino untuk appearance tertentu.
+/// Build the Cupertino preset's theme for a given appearance.
 pub fn theme(appearance: Appearance) -> Theme {
     Theme {
         preset: Preset::Cupertino,
         appearance,
         color: colors(appearance),
         radius: RadiusTokens {
-            // Sudut Apple bukan busur lingkaran (§3.6).
+            // Apple's corners are not circular arcs (§3.6).
             style: CornerStyle::squircle(),
             sm: 6.0,
             md: 10.0,
@@ -36,7 +37,7 @@ pub fn theme(appearance: Appearance) -> Theme {
     }
 }
 
-/// Palet semantik HIG untuk satu appearance.
+/// The HIG semantic palette for one appearance.
 pub fn colors(appearance: Appearance) -> ColorTokens {
     match appearance {
         Appearance::Light => ColorTokens {
@@ -44,9 +45,9 @@ pub fn colors(appearance: Appearance) -> ColorTokens {
             surface: Color::hex(hig::SURFACE_LIGHT),
             surface_elevated: Color::hex(hig::SURFACE_LIGHT),
             surface_sunken: Color::hex(hig::SURFACE_SUNKEN_LIGHT),
-            // systemFill: hover di HIG adalah lapisan tembus pandang di atas
-            // permukaan, bukan warna baru — itu sebabnya ia tetap benar di atas
-            // kartu putih maupun di atas material.
+            // systemFill: in HIG, hover is a translucent layer over the
+            // surface rather than a new color — which is why it stays correct
+            // over a white card and over material alike.
             surface_hover: Color::hex(hig::FILL_LIGHT).with_alpha(hig::FILL_HOVER_ALPHA),
             surface_pressed: Color::hex(hig::FILL_LIGHT).with_alpha(hig::FILL_PRESSED_ALPHA),
             separator: Color::hex(hig::SEPARATOR_LIGHT).with_alpha(hig::SEPARATOR_ALPHA_LIGHT),
@@ -103,11 +104,11 @@ pub fn colors(appearance: Appearance) -> ColorTokens {
     }
 }
 
-/// Bayangan HIG: **ambient** lebar dan nyaris tanpa arah, ditumpuk **key**
-/// yang lebih rapat dan digeser ke bawah.
+/// HIG shadows: a wide, almost directionless **ambient** layer with a tighter,
+/// downward-offset **key** layer stacked on top.
 ///
-/// Di dark mode bayangan harus lebih pekat: latar gelap menyerap sebaran
-/// gelap, jadi alpha yang sama akan hilang sama sekali.
+/// In dark mode shadows have to be denser: a dark background swallows a dark
+/// spread, so the same alpha would vanish entirely.
 pub fn shadows(appearance: Appearance) -> ShadowTokens {
     let k = match appearance {
         Appearance::Light => 1.0,
@@ -134,12 +135,12 @@ pub fn shadows(appearance: Appearance) -> ShadowTokens {
     }
 }
 
-/// Skala teks HIG dengan optical sizing Inter.
+/// The HIG text scale with Inter's optical sizing.
 ///
-/// Pasangan ukuran/tinggi-baris diambil dari tabel text style macOS
-/// (Caption 10/13 … Large Title 26/32). Tracking **tidak** ditulis manual per
-/// baris: ia turunan ukuran lewat [`optical_tracking`], sehingga preset brand
-/// yang mengubah ukuran otomatis ikut benar.
+/// The size/line-height pairs come from the macOS text style table
+/// (Caption 10/13 … Large Title 26/32). Tracking is **not** written out by
+/// hand per line: it is derived from the size via [`optical_tracking`], so a
+/// brand preset that changes the sizes stays automatically correct.
 pub fn typography() -> TypographyTokens {
     let gaya = |size: f32, line: f32, w: u16| {
         TypeStyle::new(size, line)
@@ -197,7 +198,7 @@ mod tests {
 
     #[test]
     fn separator_dan_hover_tembus_pandang() {
-        // Kalau keduanya opak, mereka salah di atas material/vibrancy.
+        // If either were opaque, it would be wrong over material/vibrancy.
         for appearance in [Appearance::Light, Appearance::Dark] {
             let c = colors(appearance);
             assert!(c.separator.a < 1.0, "{appearance:?}");

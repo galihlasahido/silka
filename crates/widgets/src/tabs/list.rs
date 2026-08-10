@@ -1,21 +1,22 @@
-//! Deretan tab: penempatan, indikator ber-spring, keyboard, dan a11y.
+//! The tab row: placement, spring-driven indicator, keyboard, and a11y.
 //!
-//! Node ini yang **memiliki** semua keputusan yang tidak bisa diambil satu tab
-//! sendirian:
+//! This node **owns** every decision a single tab cannot make on its own:
 //!
-//! - **Penempatan.** Tab diletakkan berurutan mengikuti arah baca (§9.8), dan
-//!   varian [`Segmented`](super::TabsVariant::Segmented) menyamakan lebarnya seperti
-//!   `NSSegmentedControl`. Semua tab menerima tinggi yang sama, minimal
+//! - **Placement.** Tabs are laid out in order following the reading direction
+//!   (§9.8), and the [`Segmented`](super::TabsVariant::Segmented) variant
+//!   equalizes their widths the way `NSSegmentedControl` does. Every tab gets
+//!   the same height, at least
 //!   [`MIN_HIT_TARGET`](crate::MIN_HIT_TARGET) (HIG).
-//! - **Indikator.** Satu [`SpringValue<Rect>`] berisi kotak tab yang sedang
-//!   dipilih; bentuk yang digambar diturunkan darinya lewat
-//!   [`TabsStyle::indicator_rect`]. Karena yang di-spring adalah **kotaknya**,
-//!   thumb segmented dan garis underline memakai gerakan yang sama persis, dan
-//!   pilihan yang berubah di tengah animasi **membawa kecepatannya** (§3.5).
-//! - **Keyboard.** Satu deretan = satu perhentian Tab; di dalamnya panah
-//!   kiri/kanan memindahkan pilihan (dicerminkan di RTL), Home/End melompat ke
-//!   ujung, dan tab yang dimatikan dilewati. Cincin fokus digambar mengelilingi
-//!   tab aktif, jadi ia ikut meluncur bersama indikator.
+//! - **Indicator.** A single [`SpringValue<Rect>`] holding the rect of the
+//!   selected tab; the painted shape is derived from it via
+//!   [`TabsStyle::indicator_rect`]. Because it is the **rect** that is sprung,
+//!   the segmented thumb and the underline bar share exactly the same motion,
+//!   and a selection that changes mid-animation **carries its velocity** over
+//!   (§3.5).
+//! - **Keyboard.** One row = one Tab stop; inside it, left/right arrows move
+//!   the selection (mirrored in RTL), Home/End jump to the ends, and disabled
+//!   tabs are skipped. The focus ring is drawn around the active tab, so it
+//!   glides along with the indicator.
 
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
 use silka_core::animation::{Spring, SpringValue, Tick};
@@ -33,22 +34,22 @@ use super::style::TabsStyle;
 // OnSelect
 // ---------------------------------------------------------------------------
 
-/// Aksi "tab ke-`index` dipilih" yang dititipkan aplikasi.
+/// The "tab `index` was selected" action the app entrusts to the row.
 ///
-/// Sepupu [`silka_core::Callback`] yang membawa satu argumen; sifatnya sama
-/// persis: `Clone` murah, `PartialEq` berdasarkan identitas, dan yang boleh
-/// dilakukannya hanyalah **menulis signal** — struktur pohon adalah wewenang
-/// view-diff (§2.5).
+/// A cousin of [`silka_core::Callback`] that carries one argument; its
+/// properties are identical: cheap to `Clone`, `PartialEq` by identity, and the
+/// only thing it may do is **write a signal** — tree structure is the
+/// view-diff's authority (§2.5).
 #[derive(Clone)]
 pub struct OnSelect(std::rc::Rc<dyn Fn(usize)>);
 
 impl OnSelect {
-    /// Bungkus sebuah closure.
+    /// Wrap a closure.
     pub fn new(f: impl Fn(usize) + 'static) -> Self {
         Self(std::rc::Rc::new(f))
     }
 
-    /// Jalankan aksinya untuk tab ke-`index`.
+    /// Run the action for tab `index`.
     pub fn call(&self, index: usize) {
         (self.0)(index)
     }
@@ -70,83 +71,86 @@ impl core::fmt::Debug for OnSelect {
 // Node
 // ---------------------------------------------------------------------------
 
-/// Node render satu deretan tab.
+/// Render node for a tab row.
 pub struct TabListBox {
-    /// Nilai visual yang sudah diresolusi dari token.
+    /// Visual values already resolved from the tokens.
     pub style: TabsStyle,
-    /// Indeks tab yang sedang aktif.
+    /// Index of the currently active tab.
     pub selected: usize,
-    /// Nama deretan bagi screen reader ("Bagian pengaturan").
+    /// The row's name for screen readers ("Settings section").
     pub label: Option<String>,
-    /// Apa yang dijalankan saat pengguna memilih tab lain.
+    /// What runs when the user picks a different tab.
     pub on_select: Option<OnSelect>,
-    /// Tab mana yang masih bisa dipilih — panjangnya = jumlah tab.
+    /// Which tabs can still be selected — length = number of tabs.
     pub enabled: Vec<bool>,
 
-    /// Kotak tab aktif; bentuk indikator diturunkan darinya saat menggambar.
+    /// Rect of the active tab; the indicator shape is derived from it at paint
+    /// time.
     indicator: SpringValue<Rect>,
-    /// Kotak setiap tab dari layout terakhir (koordinat lokal).
+    /// Rect of every tab from the last layout (local coordinates).
     placed: Vec<Rect>,
-    /// Sudah pernah ada layout yang mengisi [`TabListBox::placed`].
+    /// A layout pass has already filled [`TabListBox::placed`].
     ready: bool,
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     focused: bool,
-    /// Arah baca dari layout terakhir — panah kiri/kanan dicerminkan (§9.8).
+    /// Reading direction from the last layout — left/right arrows are mirrored
+    /// (§9.8).
     rtl: bool,
-    /// Benar begitu ada yang pernah memanggil [`TabListBox::advance`].
+    /// True as soon as anything has called [`TabListBox::advance`].
     driven: bool,
 }
 
 impl TabListBox {
-    /// Kotak indikator yang digambar frame ini (koordinat lokal).
+    /// The indicator rect painted this frame (local coordinates).
     pub fn indicator_rect(&self) -> Rect {
         self.style.indicator_rect(self.indicator.position())
     }
 
-    /// Kotak tab aktif yang sedang dianimasikan.
+    /// The active tab's rect as it is currently being animated.
     pub fn active_rect(&self) -> Rect {
         self.indicator.position()
     }
 
-    /// Kotak setiap tab dari layout terakhir.
+    /// Rect of every tab from the last layout.
     pub fn tab_rects(&self) -> &[Rect] {
         &self.placed
     }
 
-    /// Benar bila indikatornya masih bergerak.
+    /// True while the indicator is still moving.
     pub fn is_animating(&self) -> bool {
         self.indicator.is_animating()
     }
 
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// Spring yang menjalankan indikator.
+    /// The spring driving the indicator.
     pub fn spring(&self) -> Spring {
         self.indicator.spring()
     }
 
-    /// Jumlah tab.
+    /// Number of tabs.
     pub fn len(&self) -> usize {
         self.enabled.len()
     }
 
-    /// Benar bila tidak ada tab sama sekali.
+    /// True when there are no tabs at all.
     pub fn is_empty(&self) -> bool {
         self.enabled.is_empty()
     }
 
-    /// Benar bila tab ke-`index` masih bisa dipilih.
+    /// True when tab `index` can still be selected.
     pub fn is_enabled(&self, index: usize) -> bool {
         self.enabled.get(index).copied().unwrap_or(false)
     }
 
-    /// Arahkan indikator ke `kotak`.
+    /// Aim the indicator at `kotak`.
     ///
-    /// Tanpa penggerak frame (lihat [`super`]) transisi menjadi lompatan: lebih
-    /// baik indikator langsung benar daripada membeku di posisi lama selamanya.
+    /// Without a frame driver (see [`super`]) the transition becomes a jump:
+    /// better an immediately correct indicator than one frozen forever at its
+    /// old position.
     fn arahkan(&mut self, kotak: Rect) {
         if self.driven {
             self.indicator.set_target(kotak);
@@ -155,7 +159,7 @@ impl TabListBox {
         }
     }
 
-    /// Pindahkan pilihan ke `index` — **retarget**, bukan animasi baru.
+    /// Move the selection to `index` — a **retarget**, not a fresh animation.
     pub fn set_selected(&mut self, index: usize) {
         if self.selected == index {
             return;
@@ -166,7 +170,7 @@ impl TabListBox {
         }
     }
 
-    /// Majukan indikator satu frame; benar bila kotaknya berubah.
+    /// Advance the indicator by one frame; true if its rect changed.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         self.driven = true;
         if !self.indicator.is_animating() {
@@ -177,16 +181,16 @@ impl TabListBox {
         self.indicator.position() != sebelum
     }
 
-    /// Selesaikan transisi seketika (uji dan snapshot).
+    /// Finish the transition instantly (tests and snapshots).
     pub fn settle(&mut self) {
         self.indicator.settle();
     }
 
-    /// Tab enabled berikutnya dari `dari` ke arah `langkah`, tanpa melingkar.
+    /// The next enabled tab from `dari` in the direction of `langkah`, no wrap.
     ///
-    /// Tidak melingkar karena itulah kebiasaan `NSSegmentedControl`: panah
-    /// kanan di tab terakhir **tidak** melompat kembali ke tab pertama, jadi
-    /// pengguna keyboard tidak pernah kehilangan jejak posisinya.
+    /// It does not wrap because that is the `NSSegmentedControl` habit: a right
+    /// arrow on the last tab does **not** jump back to the first, so keyboard
+    /// users never lose track of where they are.
     pub fn tetangga(&self, dari: usize, langkah: i32) -> Option<usize> {
         let n = self.enabled.len();
         if n == 0 {
@@ -204,7 +208,7 @@ impl TabListBox {
         }
     }
 
-    /// Tab enabled pertama (`langkah` positif) atau terakhir (negatif).
+    /// The first enabled tab (positive `langkah`) or the last one (negative).
     pub fn ujung(&self, langkah: i32) -> Option<usize> {
         let n = self.enabled.len();
         if n == 0 {
@@ -217,12 +221,12 @@ impl TabListBox {
         }
     }
 
-    /// Minta pilihan berpindah ke `index`; benar bila ada yang dijalankan.
+    /// Request that the selection move to `index`; true if anything ran.
     ///
-    /// Node **tidak** memindahkan pilihannya sendiri: `selected` datang dari
-    /// aplikasi lewat props (komponen terkendali), persis seperti `open` pada
-    /// [`crate::overlay::OverlayEntry`]. Yang dilakukan di sini hanya memanggil
-    /// callback; frame berikutnya membawa pilihan barunya kembali ke sini.
+    /// The node does **not** move its own selection: `selected` arrives from
+    /// the app through props (a controlled component), exactly like `open` on
+    /// [`crate::overlay::OverlayEntry`]. All that happens here is the callback
+    /// being invoked; the next frame brings the new selection back in.
     pub fn request_select(&mut self, index: usize) -> bool {
         if index == self.selected || !self.is_enabled(index) {
             return false;
@@ -251,8 +255,9 @@ impl RenderNode for TabListBox {
         let pad = self.style.padding;
         let dalam = constraints.deflate(pad).loosen();
 
-        // Pass 1 — "kamu maunya sebesar apa?". Tinggi minimum sudah dipaksa di
-        // sini supaya hit target HIG tidak bergantung pada isi label.
+        // Pass 1 — "how big would you like to be?". The minimum height is
+        // already forced here so the HIG hit target does not depend on what the
+        // labels happen to contain.
         let ukur = BoxConstraints::new(
             0.0,
             dalam.max_width,
@@ -280,15 +285,16 @@ impl RenderNode for TabListBox {
         ));
         let tinggi_isi = (size.height - pad.vertical()).max(0.0);
 
-        // Pass 2 — setiap tab menerima kotaknya. Constraints tight di sini
-        // **berasal dari hasil mengukur anak itu sendiri**, jadi ia tidak boleh
-        // menjadi relayout boundary (alasan yang sama seperti `TaffyBox`).
+        // Pass 2 — every tab receives its rect. The tight constraints here
+        // **come from measuring that very child**, so this must not become a
+        // relayout boundary (the same reasoning as `TaffyBox`).
         self.placed.clear();
         let mut x = pad.left;
         for (i, w) in lebar.iter().copied().enumerate() {
             let anak = ctx.child(i);
             ctx.layout_child_measured(anak, BoxConstraints::tight(Size::new(w, tinggi_isi)));
-            // Mengikuti arah baca: di RTL tab pertama berada di kanan (§9.8).
+            // Following the reading direction: in RTL the first tab sits on the
+            // right (§9.8).
             let kiri = if self.rtl { size.width - x - w } else { x };
             let kotak = Rect::new(kiri, pad.top, w, tinggi_isi);
             ctx.place_child(anak, kotak.origin);
@@ -296,19 +302,19 @@ impl RenderNode for TabListBox {
             x += w + self.style.spacing;
         }
 
-        // Indikator disinkronkan ke geometri terbaru. Kalau ia sedang bergerak,
-        // yang berubah cuma tujuannya — pilihan yang berganti di tengah animasi
-        // membawa kecepatannya (§3.5). Kalau ia diam (mis. window di-resize),
-        // ia ikut pindah tanpa animasi: bukan pilihan yang berubah, hanya
-        // kotaknya.
+        // The indicator is synced to the latest geometry. If it is moving, only
+        // its target changes — a selection that switches mid-animation carries
+        // its velocity (§3.5). If it is at rest (e.g. the window was resized),
+        // it moves along without animating: the selection did not change, only
+        // its rect did.
         let aktif = self
             .placed
             .get(self.selected.min(self.placed.len().saturating_sub(1)))
             .copied();
         if let Some(kotak) = aktif {
             if !self.ready {
-                // Deretan yang baru lahir tidak "meluncur masuk" dari sudut
-                // kiri-atas: tab aktif memang sudah di sana.
+                // A freshly built row does not "glide in" from the top-left
+                // corner: the active tab is already right where it belongs.
                 self.indicator.jump_to(kotak);
                 self.ready = true;
             } else if self.indicator.is_animating() {
@@ -323,8 +329,8 @@ impl RenderNode for TabListBox {
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.decorate(&self.style.track);
 
-        // Garis rambut selebar deretan (underline & enclosed) — digambar
-        // sebelum indikator supaya tab enclosed yang aktif menutupinya.
+        // Hairline across the full row (underline & enclosed) — painted before
+        // the indicator so the active enclosed tab covers it.
         if let Some(warna) = self.style.rail.filter(|c| c.a > 0.0) {
             let t = self.style.rail_thickness.max(0.0);
             if t > 0.0 {
@@ -350,9 +356,9 @@ impl RenderNode for TabListBox {
 
         ctx.paint_children();
 
-        // Cincin fokus mengelilingi **tab aktif**, bukan seluruh deretan: ia
-        // ikut meluncur bersama indikator, jadi keyboard selalu menunjuk ke
-        // tempat yang sama dengan mata.
+        // The focus ring surrounds the **active tab**, not the whole row: it
+        // glides along with the indicator, so the keyboard always points where
+        // the eye is already looking.
         if self.focused && self.ready && !self.placed.is_empty() {
             let ring = self.style.focus_ring;
             if ring.width > 0.0 && ring.color.a > 0.0 {
@@ -378,7 +384,7 @@ impl RenderNode for TabListBox {
         }
     }
 
-    /// Satu deretan = **satu** perhentian Tab; di dalamnya panah yang bekerja.
+    /// One row = **one** Tab stop; inside it, the arrow keys do the work.
     fn focus_policy(&self) -> FocusPolicy {
         if self.ujung(1).is_some() {
             FocusPolicy::FOCUSABLE
@@ -389,10 +395,11 @@ impl RenderNode for TabListBox {
 
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         match event {
-            // Klik pada salah satu tab menggelembung sampai ke sini (tab
-            // sengaja tidak menandainya handled): fokus milik deretan, jadi
-            // di sinilah ia diminta — persis seperti `NSSegmentedControl`,
-            // yang setelah diklik langsung bisa dipakai dengan panah.
+            // A click on one of the tabs bubbles all the way up here (the tab
+            // deliberately does not mark it handled): focus belongs to the row,
+            // so this is where it is requested — exactly like
+            // `NSSegmentedControl`, which is arrow-key usable right after a
+            // click.
             Event::Pointer(p)
                 if p.phase == PointerPhase::Down
                     && p.button == Some(PointerButton::Primary)
@@ -406,21 +413,21 @@ impl RenderNode for TabListBox {
                 ctx.request_paint();
             }
             Event::Key(k) if k.is_pressed() && k.modifiers.is_empty() => {
-                // Arah baca ikut menentukan arti panah: di RTL, "kanan" berarti
-                // tab sebelumnya (§9.8).
+                // The reading direction decides what the arrows mean: in RTL,
+                // "right" means the previous tab (§9.8).
                 let maju = if self.rtl { -1 } else { 1 };
                 let tujuan = match k.code {
                     KeyCode::Named(NamedKey::ArrowRight) => self.tetangga(self.selected, maju),
                     KeyCode::Named(NamedKey::ArrowLeft) => self.tetangga(self.selected, -maju),
-                    // Panah atas/bawah sengaja tidak dipakai: deretan ini
-                    // horizontal, dan menelan panah vertikal akan merampas
-                    // guliran halaman di belakangnya.
+                    // Up/down arrows are deliberately unused: this row is
+                    // horizontal, and swallowing vertical arrows would steal
+                    // scrolling from the page behind it.
                     KeyCode::Named(NamedKey::Home) => self.ujung(1),
                     KeyCode::Named(NamedKey::End) => self.ujung(-1),
                     _ => return,
                 };
-                // Panah di ujung tetap "handled": tanpa itu, Home di tab
-                // pertama akan menggelembung dan menggulir halaman.
+                // Arrows at the ends stay "handled": without that, Home on the
+                // first tab would bubble up and scroll the page.
                 ctx.handled();
                 ctx.request_paint();
                 if let Some(i) = tujuan {
@@ -448,7 +455,7 @@ impl core::fmt::Debug for TabListBox {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props deretan tab — bentuk view dari [`TabListBox`].
+/// Props for a tab row — the view form of [`TabListBox`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabListProps {
     pub(super) style: TabsStyle,
@@ -492,8 +499,8 @@ impl ViewNode for TabListProps {
         }
         if n.selected != self.selected {
             n.set_selected(self.selected);
-            // Indikator bergeser: butuh gambar ulang **dan** frame berikutnya
-            // selama springnya belum settle.
+            // The indicator shifts: it needs a repaint **and** a next frame for
+            // as long as its spring has not settled.
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
         if n.label != self.label {
@@ -503,7 +510,8 @@ impl ViewNode for TabListProps {
         if n.indicator.spring() != self.spring {
             n.indicator.set_spring(self.spring);
         }
-        // Callback selalu diganti tanpa dibandingkan (lihat `InteractiveProps`).
+        // The callback is always replaced without comparison (see
+        // `InteractiveProps`).
         n.on_select.clone_from(&self.on_select);
         dirty
     }

@@ -1,34 +1,32 @@
-//! Halaman demo: **slider** (`KOMPONEN.md` Tier 2).
+//! Demo page: **slider** (`KOMPONEN.md` Tier 2).
 //!
-//! Yang bisa diperiksa dengan mata di halaman ini, satu per satu butir
-//! Definition of Done:
+//! What the eye can check on this page, one Definition of Done item at a time:
 //!
-//! - **Drag, klik, dan keyboard.** Tarik thumb-nya, klik di tengah track
-//!   (thumb-nya *melompat ke sana lewat spring*, bukan teleportasi), lalu
-//!   Tab ke slider dan tekan panah/Home/End/PageUp — angkanya berubah di
-//!   tempat yang sama.
-//! - **Snap ke step.** Slider "Ukuran teks" berundak 1pt dan "Rentang harga"
-//!   berundak 50; jari boleh berhenti di mana saja, nilainya tetap mendarat di
-//!   undakan.
-//! - **Focus ring + hit target.** Cincin fokus muncul mengelilingi thumb yang
-//!   sedang aktif, dan pita 44pt di sekeliling track yang setipis 4pt bisa
-//!   ditekan walau tidak terlihat (HIG).
-//! - **Dua preset + dark mode.** Jalankan dengan `--preset tailwind` dan
-//!   `--appearance light|dark`: yang berubah hanya token, tidak ada satu pun
-//!   angka warna di berkas ini.
-//! - **Reduced-motion.** Dengan "Reduce motion" menyala di OS, pembesaran
-//!   thumb hilang sementara perpindahan nilainya tetap terbaca (gerakan yang
-//!   menjelaskan tidak pernah dimatikan).
+//! - **Drag, click, and keyboard.** Drag the thumb, click in the middle of the
+//!   track (the thumb *travels there on a spring*, it does not teleport), then
+//!   Tab to the slider and press arrows/Home/End/PageUp — the number changes in
+//!   the same place.
+//! - **Snapping to steps.** The "Ukuran teks" slider steps by 1pt and "Rentang
+//!   harga" by 50; your finger may stop anywhere, the value still lands on a
+//!   step.
+//! - **Focus ring + hit target.** The focus ring appears around whichever thumb
+//!   is active, and the 44pt band around a track only 4pt thick is pressable
+//!   even though it is invisible (HIG).
+//! - **Two presets + dark mode.** Run with `--preset tailwind` and
+//!   `--appearance light|dark`: only tokens change, there is not a single color
+//!   number in this file.
+//! - **Reduced motion.** With "Reduce motion" on in the OS, the thumb's
+//!   magnification goes away while the value's movement stays legible (motion
+//!   that explains is never switched off).
 //!
 //! ```text
 //! cargo run -p silka-gallery -- --page slider
 //! cargo run -p silka-gallery -- --page slider --preset tailwind --appearance light
 //! ```
 //!
-//! Setiap baris adalah **komponennya sendiri**: menggeser satu slider hanya
-//! membangun ulang baris itu, bukan halaman (§2.5). Itu sekaligus alasan
-//! angkanya boleh ditampilkan sebagai teks tanpa membuat seluruh halaman
-//! dihitung ulang enam puluh kali per detik.
+//! Each row is **its own component**: dragging one slider rebuilds only that
+//! row, not the page (§2.5). That is also why the number may be shown as text
+//! without making the whole page recompute sixty times a second.
 
 use silka_core::access::AccessRole;
 use silka_core::app::{component, BuildCtx, ScaleFactor};
@@ -40,29 +38,31 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{range_slider, slider, text, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Slider";
-/// Nama slider volume — dipakai juga uji untuk mencarinya di pohon a11y.
+/// The volume slider's name — also used by the tests to find it in the a11y
+/// tree.
 pub const VOLUME: &str = "Volume";
-/// Nama slider ukuran teks (berundak).
+/// The text-size slider's name (stepped).
 pub const UKURAN: &str = "Ukuran teks";
-/// Nama slider rentang harga (dua thumb).
+/// The price-range slider's name (two thumbs).
 pub const HARGA: &str = "Rentang harga";
-/// Nama slider yang sengaja dimatikan.
+/// The name of the deliberately disabled slider.
 pub const MATI: &str = "Sedang dikunci";
 
-/// Lebar maksimum kolom kendali, dalam langkah spacing (§2.6).
+/// The control column's maximum width, in spacing steps (§2.6).
 const LEBAR_LANGKAH: f32 = 120.0;
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
-    // Signal dibuat di scope akar tapi **dibaca di komponen barisnya** — itulah
-    // yang membuat drag hanya membangun ulang satu baris.
+    // The signals are created in the root scope but **read in each row's
+    // component** — that is what makes a drag rebuild only one row.
     let volume = use_signal(|| 40.0f32);
     let ukuran = use_signal(|| 15.0f32);
     let harga_min = use_signal(|| 200.0f32);
@@ -96,8 +96,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .cross(CrossAlign::Stretch)
     .padding(Insets::all(t.space(8.0)));
 
-    // Kolom kendali tidak pernah selebar window: form yang terlalu lebar
-    // membuat slider mustahil dipakai dengan presisi.
+    // The control column is never as wide as the window: an over-wide form
+    // makes a slider impossible to use precisely.
     constrained(
         BoxConstraints::new(0.0, t.space(LEBAR_LANGKAH), 0.0, f32::INFINITY),
         isi,
@@ -105,11 +105,11 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Judul satu baris: nama di kiri, nilai di kanan.
+/// One row's heading: name on the left, value on the right.
 ///
-/// Kedua teks berperan [`AccessRole::Container`] supaya screen reader tidak
-/// membacakan "Volume, Volume, 40": namanya sudah menempel di slider-nya, dan
-/// nilainya ikut node yang sama (§3.8).
+/// Both texts take the [`AccessRole::Container`] role so a screen reader does
+/// not announce "Volume, Volume, 40": the name is already attached to the
+/// slider, and the value rides on that same node (§3.8).
 fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<LayoutProps> {
     row([
         View::from(
@@ -132,7 +132,7 @@ fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<Layout
     .cross(CrossAlign::Center)
 }
 
-/// Slider kontinu 0–100.
+/// A continuous 0–100 slider.
 fn baris_volume(fonts: &Fonts, volume: Signal<f32>) -> View {
     let fonts = fonts.clone();
     component("volume", move |cx| {
@@ -153,7 +153,7 @@ fn baris_volume(fonts: &Fonts, volume: Signal<f32>) -> View {
     })
 }
 
-/// Slider berundak — snap ke step yang diminta `KOMPONEN.md`.
+/// A stepped slider — the snapping to steps `KOMPONEN.md` asks for.
 fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
     let fonts = fonts.clone();
     component("ukuran", move |cx| {
@@ -168,7 +168,8 @@ fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
                     .label(UKURAN)
                     .on_change(move |x| ukuran.set(x)),
             ),
-            // Contoh hidup: teksnya benar-benar seukuran nilai slider.
+            // A live example: the text really is the size of the slider's
+            // value.
             View::from(
                 text(&fonts, "Ukuran teks mengikuti nilai di atas.")
                     .size(v)
@@ -183,7 +184,7 @@ fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
     })
 }
 
-/// Varian range: dua thumb yang tidak boleh saling melewati.
+/// The range variant: two thumbs that must not cross each other.
 fn baris_harga(fonts: &Fonts, min: Signal<f32>, max: Signal<f32>) -> View {
     let fonts = fonts.clone();
     component("harga", move |cx| {
@@ -208,7 +209,7 @@ fn baris_harga(fonts: &Fonts, min: Signal<f32>, max: Signal<f32>) -> View {
     })
 }
 
-/// Slider yang dimatikan: tetap dibacakan screen reader sebagai dimmed.
+/// The disabled slider: a screen reader still announces it as dimmed.
 fn baris_mati(fonts: &Fonts, t: &Theme) -> View {
     column([
         View::from(kepala(fonts, t, MATI, "60".to_string())),
@@ -252,7 +253,7 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Node a11y sebuah slider berdasarkan namanya.
+    /// A slider's a11y node, looked up by name.
     fn slider_a11y(ui: &AppRuntime, nama: &str) -> (Rect, Option<String>, bool) {
         let pohon = ui.access_tree();
         let e = pohon
@@ -271,7 +272,7 @@ mod tests {
             .expect("nilai slider satu thumb selalu satu angka")
     }
 
-    /// Satu klik penuh (gerak, tekan, lepas) di titik `p`.
+    /// One full click (move, press, release) at point `p`.
     fn klik(ui: &mut AppRuntime, p: Point) {
         for (fase, ms) in [
             (PointerPhase::Move, 0),
@@ -293,7 +294,7 @@ mod tests {
         )));
     }
 
-    /// Jalankan frame sampai seluruh spring berhenti (maksimal `batas` frame).
+    /// Pump frames until every spring stops (at most `batas` frames).
     fn sampai_diam(ui: &mut AppRuntime, batas: usize) -> usize {
         let mut now = Instant::now();
         let mut n = 0;
@@ -340,7 +341,7 @@ mod tests {
         ui.frame();
 
         let kotak = slider_a11y(&ui, VOLUME).0;
-        // Tiga perempat track: nilainya harus mendekati 75.
+        // Three quarters along the track: the value should be close to 75.
         klik(
             &mut ui,
             Point::new(kotak.min_x() + kotak.size.width * 0.75, kotak.center().y),
@@ -352,7 +353,7 @@ mod tests {
             laporan.rebuilt, 1,
             "hanya baris volume yang membaca signalnya"
         );
-        // Baris lain tidak ikut bergerak.
+        // The other rows do not move along with it.
         assert_eq!(nilai(&ui, UKURAN), 15.0);
     }
 
@@ -362,7 +363,7 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Dark), &f);
         ui.frame();
 
-        // Tab sampai slider "Ukuran teks" yang memegang fokus.
+        // Tab until the "Ukuran teks" slider holds focus.
         for _ in 0..2 {
             tombol(&mut ui, NamedKey::Tab);
         }
@@ -377,7 +378,7 @@ mod tests {
         tombol(&mut ui, NamedKey::Home);
         ui.frame();
         assert_eq!(nilai(&ui, UKURAN), 9.0);
-        // Slider lain tidak ikut terbawa fokus.
+        // The other sliders are not dragged along by the focus.
         assert_eq!(nilai(&ui, VOLUME), 40.0);
     }
 
@@ -404,7 +405,7 @@ mod tests {
     fn thumb_menyusul_nilainya_lewat_spring_lalu_gpu_kembali_tidur() {
         let f = fonts();
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
-        // Frame pertama memasang pompa animasi.
+        // The first frame primes the animation pump.
         ui.animate_at(Instant::now(), silka_widgets::advance);
         ui.frame();
 
@@ -415,7 +416,7 @@ mod tests {
         tombol(&mut ui, NamedKey::End);
         ui.frame();
 
-        // Nilainya sudah di ujung, tapi thumb-nya masih di jalan.
+        // The value is already at the end, but the thumb is still on its way.
         assert_eq!(nilai(&ui, UKURAN), 32.0);
         assert!(silka_widgets::is_animating(ui.tree()));
 
@@ -438,8 +439,8 @@ mod tests {
         tombol(&mut ui, NamedKey::End);
         ui.frame();
 
-        // Preferensi OS "kurangi gerakan" masuk lewat runtime, bukan lewat
-        // widget: satu tempat, berlaku untuk seluruh pohon.
+        // The OS "reduce motion" preference enters through the runtime, not
+        // through the widget: one place, applying to the whole tree.
         ui.set_motion(Motion::Reduced);
         let n = sampai_diam(&mut ui, 600);
         assert!(n < 600, "gerakan yang menjelaskan ikut dimatikan");
@@ -476,7 +477,8 @@ mod tests {
                         "warna lepas dari token: {w:?} ({preset:?} {appearance:?})"
                     );
                 }
-                // Empat track, empat isian, lima thumb (dua di slider range).
+                // Four tracks, four fills, five thumbs (two on the range
+                // slider).
                 assert!(
                     latar
                         .iter()

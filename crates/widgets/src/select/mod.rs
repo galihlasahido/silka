@@ -1,5 +1,5 @@
-//! `select()` — komponen Tier 2 (`KOMPONEN.md`): pop-up button macOS / Select
-//! shadcn.
+//! `select()` — Tier 2 component (`KOMPONEN.md`): the macOS pop-up button /
+//! shadcn Select.
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -15,50 +15,51 @@
 //!     .label("Mata uang")
 //!     .bind(state);
 //!
-//! // Pemicunya berdiri di dalam konten, popupnya di layer overlay.
+//! // The trigger stands inside the content; the popup lives in the overlay layer.
 //! let _ = overlay_layer(column([mata_uang.trigger()]))
 //!     .overlay(mata_uang.popup());
 //! ```
 //!
-//! ## Kenapa dua bagian, bukan satu view
+//! ## Why two pieces instead of one view
 //!
-//! Popup **tidak boleh** hidup di tempat pemicunya berdiri: ia harus menimpa
-//! konten lain dan boleh melampaui kotak induknya. Infrastruktur untuk itu
-//! sudah ada dan dibangun sekali untuk sepuluh komponen ([`crate::overlay`],
-//! `KOMPONEN.md` aturan #3), dan bentuknya adalah layer di akar halaman. Karena
-//! belum ada mekanisme "portal" yang bisa menitipkan panel dari kedalaman pohon
-//! ke layer itu, select menyerahkan dua potong yang dipasang di dua tempat:
-//! [`Select::trigger`] di dalam konten dan [`Select::popup`] di layer. Begitu
-//! portal ada, satu-satunya yang berubah adalah berkas ini — bukan aplikasi
-//! yang memakainya, karena keduanya lahir dari builder yang sama.
+//! The popup **must not** live where its trigger stands: it has to paint over
+//! other content and be free to spill past its parent's box. The infrastructure
+//! for that already exists, built once for ten components ([`crate::overlay`],
+//! `KOMPONEN.md` rule #3), and it takes the shape of a layer at the root of the
+//! page. Since there is no "portal" mechanism yet that could hand a panel from
+//! deep in the tree up to that layer, select hands back two pieces mounted in
+//! two places: [`Select::trigger`] inside the content and [`Select::popup`] in
+//! the layer. Once a portal exists, the only thing that changes is this file —
+//! not the apps using it, because both pieces are born from the same builder.
 //!
-//! ## Siapa memegang keadaan
+//! ## Who owns the state
 //!
-//! Seluruh keadaan ada di [`SelectState`] milik aplikasi, dan node render hanya
-//! **melapor niat** ([`SelectIntent`]). [`Select::bind`] menyambungkan keduanya
-//! ke satu [`Signal`] sehingga pemakaian normal cukup satu baris; aplikasi yang
-//! ingin mengendalikan sendiri (validasi, undo, sinkron ke server) memakai
-//! [`Select::state`] + [`Select::on_intent`] dan tidak kehilangan apa pun.
+//! All of the state lives in the application's [`SelectState`], and the render
+//! nodes only **report intent** ([`SelectIntent`]). [`Select::bind`] wires the
+//! two together through a single [`Signal`], so the ordinary case is one line;
+//! an app that wants to drive things itself (validation, undo, syncing to a
+//! server) reaches for [`Select::state`] + [`Select::on_intent`] and loses
+//! nothing.
 //!
 //! ## Definition of Done (`KOMPONEN.md`)
 //!
-//! | Syarat | Di mana |
+//! | Requirement | Where |
 //! |---|---|
-//! | Benar di kedua preset | Seluruh nilai lewat [`SelectTriggerStyle`]/[`SelectOptionStyle`] yang diisi token |
-//! | State interaktif lewat spring | Latar, cincin fokus, dan segitiga penunjuk ([`trigger`]); latar baris ([`option`]) |
-//! | Keyboard penuh + focus ring | Space/Enter/panah/Home/End/Esc + typeahead, semuanya di pemicu yang memegang fokus |
-//! | Node AccessKit | Pemicu = `Button` + nilai + `Expand`/`Collapse`; baris = `MenuItem` + `toggled` |
-//! | Dark mode | Token; tidak ada satu pun angka warna di berkas ini |
-//! | Hit target ≥ 44pt | `min_height` pemicu **dan** setiap baris |
-//! | Reduced-motion | Semua spring lewat [`Tick`](silka_core::animation::Tick) yang membawa [`Motion`](silka_core::animation::Motion) |
+//! | Correct in both presets | Every value flows through [`SelectTriggerStyle`]/[`SelectOptionStyle`], filled from tokens |
+//! | Interactive states via springs | Background, focus ring, and disclosure triangle ([`trigger`]); row background ([`option`]) |
+//! | Full keyboard + focus ring | Space/Enter/arrows/Home/End/Esc + typeahead, all on the trigger that holds focus |
+//! | AccessKit nodes | Trigger = `Button` + value + `Expand`/`Collapse`; row = `MenuItem` + `toggled` |
+//! | Dark mode | Tokens; not a single color literal in this file |
+//! | Hit target ≥ 44pt | `min_height` on the trigger **and** on every row |
+//! | Reduced-motion | Every spring runs through [`Tick`](silka_core::animation::Tick), which carries [`Motion`](silka_core::animation::Motion) |
 //!
-//! ## Yang sengaja belum ada
+//! ## Deliberately not here yet
 //!
-//! - **Kotak pencarian di dalam popup** (`KOMPONEN.md`: "search/filter
-//!   opsional") menunggu `text_field`. Yang sudah ada dan menutup kebutuhan
-//!   yang sama untuk daftar sedang: **typeahead** — mengetik huruf melompat ke
-//!   pilihan yang cocok, persis menu native.
-//! - **Pilihan bertingkat/grup** dan pilihan yang dimatikan satu-satu.
+//! - **A search box inside the popup** (`KOMPONEN.md`: "search/filter
+//!   opsional") is waiting on `text_field`. What does exist, and covers the
+//!   same need for medium-sized lists, is **typeahead** — typing letters jumps
+//!   to the matching option, exactly like a native menu.
+//! - **Nested/grouped options**, and disabling options one at a time.
 
 mod option;
 mod state;
@@ -91,28 +92,28 @@ pub use trigger::{bar_width, cari_awalan, SelectTrigger, SelectTriggerProps, Sel
 // Handler
 // ---------------------------------------------------------------------------
 
-/// Ke mana sebuah [`SelectIntent`] dikirim.
+/// Where a [`SelectIntent`] is sent.
 ///
-/// Bentuknya sama dengan [`Callback`](silka_core::Callback) — `Clone` murah,
-/// kesamaan berdasarkan identitas — hanya saja ia membawa satu argumen, yang
-/// belum ada padanannya di inti.
+/// Shaped exactly like [`Callback`](silka_core::Callback) — cheap `Clone`,
+/// equality by identity — except that it carries one argument, which the core
+/// has no equivalent for yet.
 #[derive(Clone)]
 pub struct SelectHandler(Rc<dyn Fn(SelectIntent)>);
 
 impl SelectHandler {
-    /// Bungkus sebuah closure.
+    /// Wrap a closure.
     pub fn new(f: impl Fn(SelectIntent) + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Kirim satu niat.
+    /// Send one intent.
     pub fn emit(&self, intent: SelectIntent) {
         (self.0)(intent)
     }
 }
 
 impl PartialEq for SelectHandler {
-    /// Identitas, bukan isi: dua `Rc` yang sama = handler yang sama.
+    /// Identity, not contents: the same `Rc` means the same handler.
     fn eq(&self, other: &Self) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
@@ -128,12 +129,12 @@ impl core::fmt::Debug for SelectHandler {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Builder select bergaya Dart (§2.5).
+/// Dart-style select builder (§2.5).
 ///
-/// Menyimpan bahan mentahnya dan baru **meresolusi token** saat menjadi view,
-/// sehingga method yang dipanggil belakangan tetap mengubah seluruh hasilnya.
-/// `Clone` murah: [`Select::trigger`] dan [`Select::popup`] memakai builder yang
-/// sama, jadi keduanya mustahil melenceng satu sama lain.
+/// It keeps the raw ingredients and only **resolves tokens** when it becomes a
+/// view, so a method called late still changes the whole result. `Clone` is
+/// cheap: [`Select::trigger`] and [`Select::popup`] use the same builder, so
+/// there is no way for the two to drift apart.
 #[derive(Clone)]
 pub struct Select {
     fonts: Fonts,
@@ -153,9 +154,9 @@ pub struct Select {
     key: Option<Key>,
 }
 
-/// Pilihan tunggal dari sebuah daftar — komponen `select` (`KOMPONEN.md`).
+/// A single choice out of a list — the `select` component (`KOMPONEN.md`).
 ///
-/// `fonts` adalah mesin teks aplikasi, `theme` sumber seluruh nilainya.
+/// `fonts` is the app's text engine, `theme` the source of every value.
 pub fn select<S: Into<String>>(
     fonts: &Fonts,
     theme: &Theme,
@@ -171,8 +172,8 @@ pub fn select<S: Into<String>>(
         disabled: false,
         width: None,
         max_visible: 8,
-        // `snappy` adalah rasa kontrol macOS: cepat sampai, nyaris tanpa
-        // pantulan (WWDC23).
+        // `snappy` is how a macOS control feels: quick to arrive, almost no
+        // bounce (WWDC23).
         spring: Spring::snappy(),
         focus: FocusPolicy::FOCUSABLE,
         bound: None,
@@ -183,130 +184,130 @@ pub fn select<S: Into<String>>(
 }
 
 impl Select {
-    /// Nama yang dibacakan screen reader (dan judul popup).
+    /// The name a screen reader announces (and the popup's title).
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Teks saat belum ada pilihan.
+    /// Text shown while nothing is selected.
     pub fn placeholder(mut self, placeholder: impl Into<String>) -> Self {
         self.placeholder = placeholder.into();
         self
     }
 
-    /// Keadaan yang berlaku, dikendalikan aplikasi sepenuhnya.
+    /// The state in effect, fully controlled by the application.
     pub fn state(mut self, state: SelectState) -> Self {
         self.state = state;
         self
     }
 
-    /// Sambungkan ke satu signal: membacanya **dan** menulisinya.
+    /// Wire it to a single signal: reading it **and** writing to it.
     ///
-    /// Inilah bentuk yang dipakai 95% aplikasi — satu titipan state, dan seluruh
-    /// aturan (sorotan yang dijepit, gulir yang mengikuti, popup yang menutup
-    /// setelah memilih) sudah benar karena semuanya lewat
+    /// This is the shape 95% of apps use — one piece of state to keep, and
+    /// every rule (highlight clamped, scroll following along, popup closing
+    /// after a choice) is already right because it all goes through
     /// [`SelectState::apply`].
     pub fn bind(mut self, state: Signal<SelectState>) -> Self {
-        // Dibaca **saat build**, jadi komponen yang memanggilnya berlangganan:
-        // memilih sesuatu membangun ulang persis komponen itu (§2.5).
+        // Read **during build**, so the component calling it subscribes:
+        // choosing something rebuilds exactly that component (§2.5).
         self.state = state.get();
         self.bound = Some(state);
         self
     }
 
-    /// Indeks yang terpilih.
+    /// The selected index.
     pub fn selected(mut self, selected: Option<usize>) -> Self {
         self.state.selected = selected;
         self
     }
 
-    /// Popup terbuka atau tidak.
+    /// Whether the popup is open.
     pub fn open(mut self, open: bool) -> Self {
         self.state.open = open;
         self
     }
 
-    /// Jangkar popup pada koordinat lokal layer overlay.
+    /// The popup's anchor, in the overlay layer's local coordinates.
     ///
-    /// Biasanya tidak perlu diisi tangan: [`SelectIntent::Open`] membawa kotak
-    /// pemicunya dan [`SelectState::apply`] yang menyimpannya.
+    /// Rarely set by hand: [`SelectIntent::Open`] carries the trigger's rect
+    /// and [`SelectState::apply`] is what stores it.
     pub fn anchor(mut self, anchor: Anchor) -> Self {
         self.state.anchor = anchor;
         self
     }
 
-    /// Matikan kontrol (tetap dibacakan screen reader sebagai dimmed).
+    /// Disable the control (still announced by screen readers, as dimmed).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Lebar kotak, poin logis. Tanpa ini lebarnya diukur dari pilihan
-    /// terpanjang — kebiasaan NSPopUpButton, dan yang mencegah kontrol berubah
-    /// lebar setiap kali pilihannya berganti.
+    /// Box width, in logical points. Without it the width is measured from the
+    /// longest option — the NSPopUpButton habit, and what keeps the control
+    /// from resizing every time the selection changes.
     pub fn width(mut self, width: f32) -> Self {
         self.width = Some(width.max(0.0));
         self
     }
 
-    /// Berapa baris yang terlihat sebelum popup mulai bisa digulir.
+    /// How many rows are visible before the popup starts to scroll.
     pub fn max_visible(mut self, rows: usize) -> Self {
         self.max_visible = rows.max(1);
         self
     }
 
-    /// Spring yang menjalankan transisi state (`smooth`/`snappy`/`bouncy`).
+    /// The spring that drives state transitions (`smooth`/`snappy`/`bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Bisa menerima fokus keyboard atau tidak.
+    /// Whether it can take keyboard focus.
     pub fn focusable(mut self, focusable: bool) -> Self {
         self.focus.focusable = focusable;
         self
     }
 
-    /// Urutan tab eksplisit (mendahului urutan pohon).
+    /// Explicit tab order (takes precedence over tree order).
     pub fn tab_order(mut self, order: i32) -> Self {
         self.focus.focusable = true;
         self.focus.order = Some(order);
         self
     }
 
-    /// Terima setiap niat pengguna mentah-mentah — jalur untuk aplikasi yang
-    /// mengurus keadaannya sendiri.
+    /// Receive every user intent raw — the path for apps that manage their own
+    /// state.
     pub fn on_intent(mut self, f: impl Fn(SelectIntent) + 'static) -> Self {
         self.on_intent = Some(SelectHandler::new(f));
         self
     }
 
-    /// Dipanggil setiap kali pengguna memilih sebuah baris.
+    /// Called every time the user picks a row.
     pub fn on_select(mut self, f: impl Fn(usize) + 'static) -> Self {
         self.on_select = Some(Rc::new(f));
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5).
+    /// Identity key among its siblings (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    // -- pembacaan (dipakai gallery, uji, dan kode di bawah) -----------------
+    // -- readers (used by the gallery, the tests, and the code below) --------
 
-    /// Daftar pilihan.
+    /// The list of options.
     pub fn options(&self) -> &[String] {
         &self.options
     }
 
-    /// Keadaan yang sedang berlaku.
+    /// The state currently in effect.
     pub fn state_value(&self) -> SelectState {
         self.state
     }
 
-    /// Teks pilihan sekarang, bila ada.
+    /// The current option's text, if there is one.
     pub fn selected_label(&self) -> Option<&str> {
         self.state
             .selected
@@ -314,55 +315,56 @@ impl Select {
             .map(String::as_str)
     }
 
-    /// Teks yang tampil di pemicu: pilihan sekarang, atau placeholder.
+    /// The text shown on the trigger: the current option, or the placeholder.
     pub fn display_text(&self) -> &str {
         self.selected_label().unwrap_or(&self.placeholder)
     }
 
-    /// Tinggi satu baris popup — sekaligus hit target minimum (HIG).
+    /// Height of one popup row — which is also the minimum hit target (HIG).
     pub fn row_height(&self) -> f32 {
         MIN_HIT_TARGET
     }
 
-    /// Berapa baris yang benar-benar terlihat di popup.
+    /// How many rows are actually visible in the popup.
     pub fn visible_rows(&self) -> usize {
         self.options.len().clamp(1, self.max_visible.max(1))
     }
 
-    /// Benar bila daftarnya lebih panjang dari jendelanya.
+    /// True when the list is longer than its window.
     pub fn is_scrollable(&self) -> bool {
         self.options.len() > self.max_visible
     }
 
-    /// Lebar kotak yang berlaku, poin logis.
+    /// The effective box width, in logical points.
     ///
-    /// Sengaja **tidak** lewat [`Select::trigger_style`]: gaya itu sendiri
-    /// memuat `min_width`, dan menanyakannya dari sini akan menjadi lingkaran.
+    /// Deliberately **not** routed through [`Select::trigger_style`]: that
+    /// style carries `min_width` itself, so asking it from here would be
+    /// circular.
     pub fn width_value(&self) -> f32 {
         self.width.unwrap_or_else(|| {
             self.content_width() + self.padding().horizontal() + self.gap() + self.indicator()
         })
     }
 
-    /// Jarak isi ke tepi kotak.
+    /// Distance from the content to the edges of the box.
     fn padding(&self) -> Insets {
         Insets::symmetric(self.theme.space(3.0), self.theme.space(1.5))
     }
 
-    /// Jarak antara label dan segitiga penunjuk.
+    /// Gap between the label and the disclosure triangle.
     fn gap(&self) -> f32 {
         self.theme.space(2.0)
     }
 
-    /// Lebar segitiga penunjuk.
+    /// Width of the disclosure triangle.
     fn indicator(&self) -> f32 {
         self.theme.space(2.0)
     }
 
-    /// Lebar teks terpanjang (placeholder ikut dihitung), poin logis.
+    /// Width of the longest text (the placeholder counts), in logical points.
     ///
-    /// Diukur lewat mesin teks yang sama yang nanti menggambarnya, jadi tidak
-    /// ada tebakan lebar huruf di mana pun (§3.3, §3.4).
+    /// Measured with the same text engine that will later draw it, so nowhere
+    /// is a glyph width ever guessed (§3.3, §3.4).
     pub fn content_width(&self) -> f32 {
         let gaya = self.text_style();
         self.fonts.with(|m| {
@@ -388,15 +390,15 @@ impl Select {
             .single_line()
     }
 
-    /// Nilai gambar pemicu — dipakai gallery dan uji token.
+    /// Paint values for the trigger — used by the gallery and the token tests.
     pub fn trigger_style(&self) -> SelectTriggerStyle {
         let t = &self.theme;
         SelectTriggerStyle {
             rest: t.color.surface,
             hover: t.color.surface_hover,
             pressed: t.color.surface_pressed,
-            // Kontrol yang mati **meredup ke arah latar halaman** — aturan yang
-            // sama yang dipakai macOS, dan nilainya tetap turunan token.
+            // A disabled control **fades toward the page background** — the
+            // same rule macOS uses, and the value stays derived from tokens.
             disabled: t.color.surface.lerp(t.color.background, 0.6),
             corners: t.corners(t.radius.md),
             border_width: t.space(0.25),
@@ -418,12 +420,12 @@ impl Select {
         }
     }
 
-    /// Nilai gambar satu baris popup.
+    /// Paint values for a single popup row.
     pub fn option_style(&self) -> SelectOptionStyle {
         let t = &self.theme;
         SelectOptionStyle {
-            // Baris yang diam tidak menggambar apa pun: yang terlihat adalah
-            // permukaan panel di belakangnya.
+            // A resting row draws nothing: what you see is the panel surface
+            // behind it.
             rest: t.color.surface_hover.with_alpha(0.0),
             highlight: t.color.surface_hover,
             selected: t.color.accent_muted,
@@ -435,7 +437,7 @@ impl Select {
         }
     }
 
-    /// Handler yang menerjemahkan niat menjadi keadaan baru.
+    /// The handler that turns intent into new state.
     fn handler(&self) -> SelectHandler {
         let count = self.options.len();
         let visible = self.visible_rows();
@@ -444,8 +446,8 @@ impl Select {
         let dipilih = self.on_select.clone();
         SelectHandler::new(move |intent| {
             if let Some(sig) = bound {
-                // `peek`, bukan `get`: handler berjalan di luar build, dan
-                // berlangganan dari dalam event handler tidak pernah benar.
+                // `peek`, not `get`: the handler runs outside of build, and
+                // subscribing from inside an event handler is never right.
                 let mut baru = sig.peek();
                 if baru.apply(intent, count, visible) {
                     sig.set(baru);
@@ -464,9 +466,9 @@ impl Select {
         })
     }
 
-    // -- dua potong yang dipasang di dua tempat ------------------------------
+    // -- the two pieces mounted in two places --------------------------------
 
-    /// Kotak pemicu — dipasang di dalam konten halaman.
+    /// The trigger box — mounted inside the page content.
     pub fn trigger(&self) -> View {
         let t = &self.theme;
         let warna = if self.disabled {
@@ -474,7 +476,7 @@ impl Select {
         } else if self.state.selected.is_some() {
             t.color.label
         } else {
-            // Placeholder lebih redup dari isi sungguhan.
+            // The placeholder is dimmer than real content.
             t.color.tertiary_label
         };
         let isi = text(&self.fonts, self.display_text())
@@ -482,7 +484,7 @@ impl Select {
             .weight(FontWeight::MEDIUM)
             .color(warna)
             .single_line()
-            // Nama kontrol dibacakan sekali, dari node select — bukan dua kali.
+            // The control's name is announced once, from the select node — not twice.
             .role(AccessRole::Container);
 
         let mut b = Builder::new(SelectTriggerProps {
@@ -504,19 +506,19 @@ impl Select {
         b.into()
     }
 
-    /// Panel pilihan — dipasang di [`crate::overlay::overlay_layer`].
+    /// The options panel — mounted in [`crate::overlay::overlay_layer`].
     ///
-    /// Penempatannya diserahkan sepenuhnya ke sistem overlay: menempel di bawah
-    /// pemicu, rata awal baris, dan **membalik ke atas sendiri** saat mepet tepi
-    /// bawah layar. Tidak ada satu pun koordinat yang dihitung di berkas ini
-    /// (`KOMPONEN.md` aturan #3).
+    /// Placement is left entirely to the overlay system: it sits below the
+    /// trigger, aligned to the start of the line, and **flips upward on its
+    /// own** when it runs into the bottom of the screen. Not a single
+    /// coordinate is computed in this file (`KOMPONEN.md` rule #3).
     ///
-    /// Satu batas yang disadari: pada daftar yang bisa digulir, posisi gulir
-    /// **dikendalikan** oleh [`SelectState::first_visible`] supaya sorotan
-    /// keyboard selalu terlihat. Guliran roda mouse tetap jalan, tapi rebuild
-    /// berikutnya mengembalikannya ke jendela milik sorotan. Menyatukan
-    /// keduanya butuh guliran yang bisa dibaca balik dari node — kait yang
-    /// belum ada di [`silka_core::tree::Viewport`].
+    /// One known limit: on a scrollable list the scroll position is
+    /// **controlled** by [`SelectState::first_visible`] so the keyboard
+    /// highlight is always visible. Mouse-wheel scrolling still works, but the
+    /// next rebuild snaps it back to the highlight's window. Reconciling the
+    /// two needs a scroll position that can be read back from the node — a hook
+    /// [`silka_core::tree::Viewport`] does not have yet.
     pub fn popup(&self) -> OverlayBuilder {
         let t = &self.theme;
         let handler = self.handler();
@@ -538,7 +540,7 @@ impl Select {
                         t.color.label
                     })
                     .single_line()
-                    // Nama baris dibacakan dari node barisnya, bukan dua kali.
+                    // The row's name is announced from the row node, not twice.
                     .role(AccessRole::Container);
                 Builder::new(SelectOptionProps {
                     style: gaya_baris,
@@ -549,7 +551,7 @@ impl Select {
                     spring: self.spring,
                     on_intent: Some(handler.clone()),
                 })
-                // Disiplin kunci di daftar dinamis (§2.5).
+                // Key discipline in a dynamic list (§2.5).
                 .key(i)
                 .child(isi)
                 .into()
@@ -560,9 +562,10 @@ impl Select {
         let tinggi_baris = self.row_height();
         let isi: View = if self.is_scrollable() {
             let tinggi = tinggi_baris * self.visible_rows() as f32;
-            // Gulirnya **turunan sorotan** ([`SelectState::first_visible`]):
-            // panah bawah yang melewati baris terakhir yang terlihat menggeser
-            // jendelanya satu baris, bukan melompat ke tengah.
+            // Scroll is **derived from the highlight**
+            // ([`SelectState::first_visible`]): arrow-down past the last
+            // visible row shifts the window by one row instead of jumping to
+            // the middle.
             constrained(
                 BoxConstraints::new(0.0, f32::INFINITY, tinggi, tinggi),
                 viewport(daftar)
@@ -579,8 +582,8 @@ impl Select {
             .corners(t.corners(t.radius.lg))
             .border(t.space(0.25), t.color.separator)
             .shadow(t.shadow.lg);
-        // Lebar panel dikunci ke lebar pemicu: daftar yang "melompat lebar" saat
-        // terbuka adalah hal pertama yang membuat sebuah select terasa murah.
+        // The panel's width is locked to the trigger's: a list that "jumps
+        // wider" as it opens is the first thing that makes a select feel cheap.
         let lebar = self.width_value();
         let panel = constrained(BoxConstraints::new(lebar, lebar, 0.0, f32::INFINITY), panel);
 
@@ -593,8 +596,8 @@ impl Select {
                     .align(Align::Start)
                     .gap(t.space(1.0)),
             )
-            // Popup, bukan dialog: konten di belakang tetap hidup bagi keyboard
-            // dan screen reader, tapi klik di luar menutupnya.
+            // A popup, not a dialog: the content behind stays alive for the
+            // keyboard and screen readers, but a click outside dismisses it.
             .barrier(Barrier::Light)
             .dismiss(Dismiss::ALL)
             .no_backdrop()

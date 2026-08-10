@@ -1,42 +1,42 @@
-//! Geometri sudut sebagai **parameter**, bukan konstanta.
+//! Corner geometry as a **parameter**, not a constant.
 //!
-//! Kontrak REKOMENDASI §2.7 + §3.6: `rounded_lg` di preset Cupertino
-//! menghasilkan **squircle** (superellipse G2-continuous ala Apple), di preset
-//! Tailwind menghasilkan **arc** lingkaran biasa. Karena itu bentuk sudut ikut
-//! mengalir sebagai parameter perintah gambar sampai ke shader SDF — tidak
-//! boleh di-hardcode di renderer, dan tidak boleh dipilih oleh kode widget.
+//! The REKOMENDASI §2.7 + §3.6 contract: `rounded_lg` produces a **squircle**
+//! (an Apple-style G2-continuous superellipse) in the Cupertino preset, and a
+//! plain circular **arc** in the Tailwind preset. That is why the corner shape
+//! flows through as a draw-command parameter all the way to the SDF shader — it
+//! must not be hardcoded in the renderer, and must not be chosen by widget code.
 
 use crate::geometry::{Point, Rect, Size};
 
-/// Bentuk lengkung sudut.
+/// The curve shape of a corner.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum CornerStyle {
-    /// Busur lingkaran biasa (`border-radius` ala web / preset Tailwind).
+    /// A plain circular arc (web-style `border-radius` / the Tailwind preset).
     #[default]
     Arc,
-    /// Continuous corner ala Apple: blend superellipse G2-continuous.
+    /// Apple-style continuous corner: a G2-continuous superellipse blend.
     ///
-    /// `smoothing` 0.0 = identik dengan [`CornerStyle::Arc`], 1.0 = paling
-    /// "melebar". Nilai yang dipakai Apple ±0.6, yang membuat lengkungan
-    /// mulai kira-kira 1.528× radius nominal dari titik sudut.
+    /// `smoothing` 0.0 = identical to [`CornerStyle::Arc`], 1.0 = the most
+    /// "spread out". Apple uses roughly 0.6, which makes the curve start about
+    /// 1.528× the nominal radius away from the corner point.
     Squircle {
-        /// Faktor pelembutan 0.0–1.0.
+        /// Smoothing factor, 0.0–1.0.
         smoothing: f32,
     },
 }
 
 impl CornerStyle {
-    /// Faktor pelembutan yang dipakai preset Cupertino (mendekati nilai Apple).
+    /// The smoothing factor used by the Cupertino preset (close to Apple's value).
     pub const APPLE_SMOOTHING: f32 = 0.6;
 
-    /// Squircle dengan pelembutan ala Apple.
+    /// A squircle with Apple-style smoothing.
     pub const fn squircle() -> Self {
         CornerStyle::Squircle {
             smoothing: Self::APPLE_SMOOTHING,
         }
     }
 
-    /// Faktor pelembutan efektif (0.0 untuk arc).
+    /// The effective smoothing factor (0.0 for an arc).
     pub fn smoothing(self) -> f32 {
         match self {
             CornerStyle::Arc => 0.0,
@@ -44,48 +44,48 @@ impl CornerStyle {
         }
     }
 
-    /// Seberapa jauh lengkungan mulai dari titik sudut, sebagai kelipatan
-    /// radius nominal. Arc = 1.0; squircle Apple ≈ 1.528.
+    /// How far from the corner point the curve begins, as a multiple of the
+    /// nominal radius. Arc = 1.0; an Apple squircle ≈ 1.528.
     ///
-    /// Angka ini dipakai baik oleh shader maupun oleh hit-testing, karena itu
-    /// ia hidup di `silka-paint` — bukan di dalam renderer.
+    /// This number is used by both the shader and hit-testing, which is why it
+    /// lives in `silka-paint` — not inside the renderer.
     pub fn extent_factor(self) -> f32 {
         1.0 + self.smoothing() * 0.88
     }
 
-    /// Eksponen superellipse `n` pada `|x|^n + |y|^n = r^n` — **parameter
-    /// kedua** yang diteruskan ke shader SDF di samping radius.
+    /// The superellipse exponent `n` in `|x|^n + |y|^n = r^n` — the **second
+    /// parameter** passed to the SDF shader alongside the radius.
     ///
-    /// - [`CornerStyle::Arc`] → `2.0`, yaitu lingkaran: rounded rect biasa.
-    /// - Squircle ala Apple (`smoothing` 0.6) → `4.0`, superellipse yang
-    ///   dipakai HIG.
+    /// - [`CornerStyle::Arc`] → `2.0`, i.e. a circle: an ordinary rounded rect.
+    /// - An Apple squircle (`smoothing` 0.6) → `4.0`, the superellipse the HIG
+    ///   uses.
     ///
-    /// Angka ini hidup di `silka-paint` bersama [`CornerStyle::extent_factor`]
-    /// karena hit-testing harus memakai bentuk yang persis sama dengan yang
-    /// digambar — bukan aproksimasi (REKOMENDASI §3.6).
+    /// This number lives in `silka-paint` alongside
+    /// [`CornerStyle::extent_factor`] because hit-testing has to use exactly
+    /// the same shape that gets drawn — not an approximation (REKOMENDASI §3.6).
     pub fn superellipse_exponent(self) -> f32 {
         2.0 + self.smoothing() * (10.0 / 3.0)
     }
 }
 
-/// Radius per sudut, poin logis.
+/// Per-corner radii, in logical points.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct CornerRadii {
-    /// Radius sudut kiri-atas.
+    /// Top-left corner radius.
     pub top_left: f32,
-    /// Radius sudut kanan-atas.
+    /// Top-right corner radius.
     pub top_right: f32,
-    /// Radius sudut kanan-bawah.
+    /// Bottom-right corner radius.
     pub bottom_right: f32,
-    /// Radius sudut kiri-bawah.
+    /// Bottom-left corner radius.
     pub bottom_left: f32,
 }
 
 impl CornerRadii {
-    /// Semua sudut tajam.
+    /// All corners sharp.
     pub const ZERO: CornerRadii = CornerRadii::all(0.0);
 
-    /// Radius sama di keempat sudut.
+    /// The same radius on all four corners.
     pub const fn all(r: f32) -> Self {
         Self {
             top_left: r,
@@ -95,7 +95,7 @@ impl CornerRadii {
         }
     }
 
-    /// Radius terbesar di antara keempat sudut.
+    /// The largest of the four corner radii.
     pub fn max(self) -> f32 {
         self.top_left
             .max(self.top_right)
@@ -103,9 +103,9 @@ impl CornerRadii {
             .max(self.bottom_left)
     }
 
-    /// Batasi setiap radius agar tidak melebihi separuh sisi terpendek.
+    /// Clamps every radius so it never exceeds half of the shorter side.
     ///
-    /// Tanpa ini token `radius_full` (9999) akan meledakkan SDF.
+    /// Without this, a `radius_full` token (9999) would blow up the SDF.
     pub fn clamp_to(self, size: Size) -> Self {
         let limit = (size.min_side() * 0.5).max(0.0);
         Self {
@@ -116,37 +116,37 @@ impl CornerRadii {
         }
     }
 
-    /// Benar bila semua sudut tajam.
+    /// True when every corner is sharp.
     pub fn is_sharp(self) -> bool {
         self.max() <= 0.0
     }
 }
 
-/// Radius + bentuk lengkung: paket lengkap yang diteruskan ke shader.
+/// Radii + curve shape: the complete package passed on to the shader.
 ///
-/// Widget tidak pernah menyusun ini sendiri — ia datang dari token theme
-/// (`silka-theme`), sehingga preset aktif yang menentukan arc vs squircle.
+/// Widgets never assemble this themselves — it comes from theme tokens
+/// (`silka-theme`), so the active preset is what decides arc vs. squircle.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Corners {
-    /// Radius per sudut.
+    /// Per-corner radii.
     pub radii: CornerRadii,
-    /// Bentuk lengkung sudut.
+    /// The corner curve shape.
     pub style: CornerStyle,
 }
 
 impl Corners {
-    /// Sudut tajam (tanpa lengkung).
+    /// Sharp corners (no curve).
     pub const SHARP: Corners = Corners {
         radii: CornerRadii::ZERO,
         style: CornerStyle::Arc,
     };
 
-    /// Paket sudut baru.
+    /// A new corner package.
     pub const fn new(radii: CornerRadii, style: CornerStyle) -> Self {
         Self { radii, style }
     }
 
-    /// Radius seragam dengan bentuk tertentu.
+    /// A uniform radius with a given shape.
     pub const fn uniform(radius: f32, style: CornerStyle) -> Self {
         Self {
             radii: CornerRadii::all(radius),
@@ -154,7 +154,7 @@ impl Corners {
         }
     }
 
-    /// Versi yang radiusnya sudah dibatasi terhadap ukuran kotak.
+    /// A copy whose radii have been clamped against the box size.
     pub fn clamp_to(self, size: Size) -> Self {
         Self {
             radii: self.radii.clamp_to(size),
@@ -162,27 +162,27 @@ impl Corners {
         }
     }
 
-    /// Benar bila `point` — relatif terhadap sudut kiri-atas kotak berukuran
-    /// `size` — berada **di dalam** bentuk kotak beserta sudutnya.
+    /// True when `point` — relative to the top-left corner of a box of size
+    /// `size` — lies **inside** the box shape including its corners.
     ///
-    /// Inilah separuh "hit-testing sadar geometri squircle" (REKOMENDASI §3.6):
-    /// bentuk yang diuji di sini adalah superellipse yang **sama persis**
-    /// dengan yang dikirim ke shader SDF — `|x|^n + |y|^n = r^n` dengan `n` dari
-    /// [`CornerStyle::superellipse_exponent`]. Preset Cupertino (`n ≈ 4`)
-    /// karena itu menerima sentuhan lebih dekat ke pojok daripada preset
-    /// Tailwind (`n = 2`, busur lingkaran) — persis seperti yang terlihat mata.
+    /// This is half of "squircle-aware hit-testing" (REKOMENDASI §3.6): the
+    /// shape tested here is **exactly the same** superellipse that is sent to
+    /// the SDF shader — `|x|^n + |y|^n = r^n` with `n` from
+    /// [`CornerStyle::superellipse_exponent`]. The Cupertino preset (`n ≈ 4`)
+    /// therefore accepts touches closer to the corner than the Tailwind preset
+    /// (`n = 2`, a circular arc) — exactly as the eye sees it.
     ///
-    /// Semantiknya setengah terbuka seperti [`Rect::contains`]: tepi kiri/atas
-    /// masuk, tepi kanan/bawah tidak.
+    /// The semantics are half-open like [`Rect::contains`]: the left/top edges
+    /// are inside, the right/bottom edges are not.
     ///
     /// ```
     /// use silka_paint::{CornerStyle, Corners, Point, Size};
     ///
     /// let size = Size::new(100.0, 100.0);
     /// let titik = Point::new(2.0, 2.0);
-    /// // Titik yang jatuh di luar busur lingkaran…
+    /// // A point that falls outside the circular arc…
     /// assert!(!Corners::uniform(10.0, CornerStyle::Arc).contains(size, titik));
-    /// // …masih di dalam squircle, karena sudutnya memang lebih "penuh".
+    /// // …is still inside the squircle, because its corner is genuinely fuller.
     /// assert!(Corners::uniform(10.0, CornerStyle::squircle()).contains(size, titik));
     /// ```
     pub fn contains(self, size: Size, point: Point) -> bool {
@@ -196,8 +196,8 @@ impl Corners {
         let n = self.style.superellipse_exponent();
         let w = size.width;
         let h = size.height;
-        // Radius sudah dibatasi ke separuh sisi terpendek, jadi paling banyak
-        // satu sudut yang benar-benar mengurung sebuah titik.
+        // Radii are already clamped to half the shorter side, so at most one
+        // corner can actually enclose any given point.
         di_dalam_sudut(
             radii.top_left,
             radii.top_left - point.x,
@@ -221,8 +221,9 @@ impl Corners {
         )
     }
 
-    /// Versi [`Corners::contains`] dengan titik dalam koordinat yang sama
-    /// dengan `rect` — dipakai hit-testing setelah offset global diketahui.
+    /// A version of [`Corners::contains`] taking a point in the same
+    /// coordinates as `rect` — used by hit-testing once the global offset is
+    /// known.
     pub fn contains_rect(self, rect: Rect, point: Point) -> bool {
         self.contains(
             rect.size,
@@ -231,9 +232,9 @@ impl Corners {
     }
 }
 
-/// Uji satu sudut: `dx`/`dy` adalah jarak titik **masuk** ke dalam kuadran
-/// lengkung, diukur dari pusat lengkung. Keduanya harus positif agar titik itu
-/// benar-benar berada di kuadran yang bisa terpotong.
+/// Tests a single corner: `dx`/`dy` are how far the point reaches **into** the
+/// curved quadrant, measured from the center of the curve. Both must be
+/// positive for the point to actually sit in the quadrant that can be cut away.
 fn di_dalam_sudut(radius: f32, dx: f32, dy: f32, exponent: f32) -> bool {
     if radius <= 0.0 || dx <= 0.0 || dy <= 0.0 {
         return true;
@@ -261,7 +262,7 @@ mod tests {
 
     #[test]
     fn arc_adalah_lingkaran_squircle_apple_pangkat_empat() {
-        // Eksponen 2 = lingkaran (rounded rect ala web); 4 = superellipse HIG.
+        // Exponent 2 = a circle (web-style rounded rect); 4 = the HIG superellipse.
         assert_eq!(CornerStyle::Arc.superellipse_exponent(), 2.0);
         let n = CornerStyle::squircle().superellipse_exponent();
         assert!((n - 4.0).abs() < 1e-5, "eksponen = {n}");
@@ -304,7 +305,7 @@ mod tests {
         let s = Size::new(10.0, 10.0);
         assert!(c.contains(s, Point::new(0.0, 0.0)));
         assert!(c.contains(s, Point::new(9.99, 9.99)));
-        // Setengah terbuka, sama seperti `Rect::contains`.
+        // Half-open, just like `Rect::contains`.
         assert!(!c.contains(s, Point::new(10.0, 5.0)));
         assert!(!c.contains(s, Point::new(-0.01, 5.0)));
     }
@@ -313,19 +314,19 @@ mod tests {
     fn pojok_terpotong_oleh_radius() {
         let c = Corners::uniform(10.0, CornerStyle::Arc);
         let s = Size::new(100.0, 40.0);
-        // Tepat di titik sudut: selalu di luar begitu ada radius.
+        // Exactly on the corner point: always outside once there is a radius.
         assert!(!c.contains(s, Point::new(0.0, 0.0)));
         assert!(!c.contains(s, Point::new(99.0, 0.5)));
         assert!(!c.contains(s, Point::new(0.5, 39.0)));
-        // Tengah-tengah: selalu di dalam.
+        // Dead center: always inside.
         assert!(c.contains(s, Point::new(50.0, 20.0)));
     }
 
     #[test]
     fn squircle_memuat_titik_yang_ditolak_arc() {
         let s = Size::new(100.0, 100.0);
-        // Jarak dari pusat lengkung (10,10) = 11,3 → di luar lingkaran r=10,
-        // tapi masih di dalam superellipse pangkat 4.
+        // Distance from the curve center (10,10) = 11.3 → outside the r=10
+        // circle, but still inside the fourth-power superellipse.
         let p = Point::new(2.0, 2.0);
         assert!(!Corners::uniform(10.0, CornerStyle::Arc).contains(s, p));
         assert!(Corners::uniform(10.0, CornerStyle::squircle()).contains(s, p));
@@ -350,8 +351,8 @@ mod tests {
 
     #[test]
     fn radius_penuh_menjadi_lingkaran() {
-        // radius_full pada kotak bujur sangkar = lingkaran; sudut-sudutnya
-        // harus kosong dan pusatnya terisi.
+        // radius_full on a square box = a circle; its corners must be empty
+        // and its center filled.
         let c = Corners::uniform(9999.0, CornerStyle::Arc);
         let s = Size::new(40.0, 40.0);
         assert!(!c.contains(s, Point::new(2.0, 2.0)));

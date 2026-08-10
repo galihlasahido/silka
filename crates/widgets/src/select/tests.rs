@@ -1,9 +1,9 @@
-//! Uji `select` — seluruhnya tanpa GPU dan tanpa font sistem (§9.5).
+//! `select` tests — entirely without a GPU and without system fonts (§9.5).
 //!
-//! Dua lapis, sengaja dipisah: aturan keadaan ([`SelectState`]) diuji sebagai
-//! fungsi murni, dan sisanya lewat pohon render yang sesungguhnya — layout,
-//! input, pohon a11y, dan perintah gambar — supaya tidak ada satu pun klaim
-//! yang hanya benar di atas kertas.
+//! Two layers, deliberately kept apart: the state rules ([`SelectState`]) are
+//! tested as pure functions, and everything else goes through a real render
+//! tree — layout, input, the a11y tree, and the draw commands — so that not a
+//! single claim holds only on paper.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -38,7 +38,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
     tree
 }
 
-/// Node pertama bertipe `T` di dalam pohon.
+/// The first node of type `T` in the tree.
 fn cari<T: silka_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
     if tree.node_ref::<T>(id).is_some() {
         return Some(id);
@@ -66,17 +66,17 @@ fn baris(tree: &RenderTree) -> Vec<NodeId> {
     out
 }
 
-/// Bungkus sebuah view dalam wadah flex.
+/// Wrap a view in a flex container.
 ///
-/// Bukan hiasan: layer overlay memberi constraints **tight** kepada kontennya,
-/// dan sebuah kontrol yang menerima constraints tight memang wajib memenuhinya
-/// (box constraints ala Flutter). Kolom di antaranya yang mengembalikan ukuran
-/// kontrol ke ukuran alaminya — persis yang terjadi di halaman sungguhan.
+/// Not decoration: the overlay layer hands its content **tight** constraints,
+/// and a control handed tight constraints is obliged to fill them (Flutter-style
+/// box constraints). It is the column in between that returns the control to its
+/// natural size — exactly what happens on a real page.
 fn sendiri(view: impl Into<View>) -> View {
     column([view.into()]).into()
 }
 
-/// Halaman lengkap: pemicu di dalam konten, popup di layer overlay.
+/// The full page: the trigger inside the content, the popup in the overlay layer.
 fn halaman(s: &Select) -> View {
     overlay_layer(sendiri(s.trigger()))
         .overlay(s.popup())
@@ -113,7 +113,7 @@ fn tekan(router: &mut InputRouter, tree: &mut RenderTree, code: KeyCode) {
 }
 
 // ---------------------------------------------------------------------------
-// Aturan keadaan — fungsi murni
+// State rules — pure functions
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -136,7 +136,7 @@ fn sorotan_dijepit_ke_rentang_yang_sah() {
     s.apply(SelectIntent::Highlight(0), 4, 4);
     assert_eq!(s.highlight, 0);
 
-    // Daftar kosong tidak boleh menghasilkan indeks apa pun.
+    // An empty list must not produce any index at all.
     let mut kosong = SelectState::new();
     kosong.apply(SelectIntent::Highlight(5), 0, 4);
     assert_eq!(kosong.highlight, 0);
@@ -150,7 +150,7 @@ fn memilih_menutup_dan_menyimpan_pilihan() {
     assert!(s.apply(SelectIntent::Commit(3), 4, 4));
     assert_eq!(s.selected, Some(3));
     assert!(!s.open, "memilih selalu menutup popup");
-    // Commit di luar rentang dijepit, bukan menghasilkan indeks hantu.
+    // An out-of-range commit is clamped, not turned into a phantom index.
     s.apply(SelectIntent::Commit(9), 4, 4);
     assert_eq!(s.selected, Some(3));
 }
@@ -164,17 +164,17 @@ fn niat_yang_tidak_mengubah_apa_pun_melapor_tidak_berubah() {
 
 #[test]
 fn jendela_gulir_mengikuti_sorotan_seminimal_mungkin() {
-    // 10 pilihan, 4 baris terlihat.
+    // 10 options, 4 visible rows.
     let mut s = SelectState::new();
     s.apply(SelectIntent::Open(Rect::default()), 10, 4);
     assert_eq!(s.first_visible, 0);
 
-    // Turun sampai baris terakhir yang terlihat: jendela belum bergerak.
+    // Down to the last visible row: the window has not moved yet.
     for i in 1..=3 {
         s.apply(SelectIntent::Highlight(i), 10, 4);
         assert_eq!(s.first_visible, 0, "sorotan {i} masih terlihat");
     }
-    // Melewatinya menggeser jendela **satu** baris, bukan melompat.
+    // Going past it shifts the window by **one** row, never a jump.
     s.apply(SelectIntent::Highlight(4), 10, 4);
     assert_eq!(s.first_visible, 1);
     s.apply(SelectIntent::Highlight(9), 10, 4);
@@ -182,7 +182,7 @@ fn jendela_gulir_mengikuti_sorotan_seminimal_mungkin() {
         s.first_visible, 6,
         "baris terakhir menempel di dasar jendela"
     );
-    // Naik lagi ke atas.
+    // Back up to the top.
     s.apply(SelectIntent::Highlight(0), 10, 4);
     assert_eq!(s.first_visible, 0);
     assert_eq!(s.scroll_offset(44.0), 0.0);
@@ -201,11 +201,11 @@ fn typeahead_mencari_tanpa_peduli_besar_kecil() {
 
 #[test]
 fn segitiga_membalik_arah_saat_terbuka() {
-    // Tertutup: bilah teratas paling lebar (menunjuk ke bawah).
+    // Closed: the topmost bar is the widest (pointing down).
     assert!(bar_width(8.0, 0, 0.0) > bar_width(8.0, 4, 0.0));
-    // Terbuka: kebalikannya.
+    // Open: the other way round.
     assert!(bar_width(8.0, 0, 1.0) < bar_width(8.0, 4, 1.0));
-    // Di tengah animasi semuanya sama lebar — tidak ada bilah yang meledak.
+    // Mid-animation they are all the same width — no bar blows up.
     assert!((bar_width(8.0, 0, 0.5) - bar_width(8.0, 4, 0.5)).abs() < 1e-5);
     for i in 0..5 {
         for p in [0.0, 0.25, 0.5, 1.0] {
@@ -216,7 +216,7 @@ fn segitiga_membalik_arah_saat_terbuka() {
 }
 
 // ---------------------------------------------------------------------------
-// Bentuk & token
+// Shape & tokens
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -259,7 +259,7 @@ fn lebar_diukur_dari_pilihan_terpanjang() {
         pendek.width_value()
     );
 
-    // Lebar eksplisit menang, dan pemicu benar-benar selebar itu.
+    // An explicit width wins, and the trigger really is that wide.
     let dipaksa = select(&f, &t, OPSI).width(320.0);
     assert_eq!(dipaksa.width_value(), 320.0);
     let tree = pohon(sendiri(dipaksa.trigger()));
@@ -334,7 +334,8 @@ fn seluruh_warna_datang_dari_token_di_kedua_preset() {
                             "{preset:?}/{appearance:?}: border lepas token {:?}",
                             q.border_color
                         );
-                        // Bentuk sudut selalu milik preset (squircle vs arc).
+                        // The corner style always belongs to the preset
+                        // (squircle vs arc).
                         assert_eq!(q.corners.style, t.radius.style);
                     }
                     Command::GlyphRun(r) => assert!(
@@ -350,7 +351,7 @@ fn seluruh_warna_datang_dari_token_di_kedua_preset() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -372,7 +373,7 @@ fn pemicu_dibacakan_sebagai_tombol_bernilai_dengan_aksi_buka() {
         a11y.dump()
     );
 
-    // Nama kontrol dibacakan sekali, bukan dua kali (label + teks di dalamnya).
+    // The control's name is announced once, not twice (label + inner text).
     let jumlah = a11y
         .entries()
         .iter()
@@ -380,7 +381,7 @@ fn pemicu_dibacakan_sebagai_tombol_bernilai_dengan_aksi_buka() {
         .count();
     assert_eq!(jumlah, 1, "{}", a11y.dump());
 
-    // Popup tertutup tidak ada sama sekali bagi teknologi bantu.
+    // A closed popup does not exist at all for assistive technology.
     assert!(a11y.find_role(AccessRole::MenuItem).is_none());
 }
 
@@ -424,13 +425,13 @@ fn popup_terbuka_menjadi_menu_dengan_item_bertanda() {
 }
 
 // ---------------------------------------------------------------------------
-// Interaksi
+// Interaction
 // ---------------------------------------------------------------------------
 
-/// Rakit halaman select yang keadaannya hidup di sebuah signal, lalu jalankan
-/// `f` dengan pohon yang selalu dibangun ulang dari keadaan terbaru.
+/// Assemble a select page whose state lives in a signal, then run `f` against a
+/// tree that is always rebuilt from the latest state.
 struct Uji {
-    /// Runtime signals harus tetap hidup selama uji: signal mati bersamanya.
+    /// The signal runtime must outlive the test: the signals die with it.
     _rt: Runtime,
     fonts: Fonts,
     theme: Theme,
@@ -466,7 +467,7 @@ impl Uji {
             .on_select(move |i| catat.borrow_mut().push(i))
     }
 
-    /// Satu "frame": bangun ulang view dari keadaan terbaru lalu layout.
+    /// One "frame": rebuild the view from the latest state, then lay it out.
     fn bangun(&mut self) {
         let s = self.select();
         let view = overlay_layer(sendiri(s.trigger())).overlay(s.popup());
@@ -496,8 +497,8 @@ impl Uji {
         self.bangun();
     }
 
-    /// Tekan sebuah tombol pada waktu tertentu — jeda antar ketikan itulah yang
-    /// menentukan apakah typeahead menumpuk awalan atau memulai yang baru.
+    /// Press a key at a specific time — the gap between keystrokes is exactly
+    /// what decides whether typeahead extends the prefix or starts a new one.
     fn tekan_pada(&mut self, code: KeyCode, ms: u64) {
         self.router.dispatch(
             &mut self.tree,
@@ -522,7 +523,7 @@ fn klik_membuka_lalu_memilih_baris_menutup_dan_mengubah_nilai() {
     let kotak = u.kotak_pemicu();
     u.klik(kotak.center());
     assert!(u.keadaan().open, "klik membuka popup");
-    // Jangkarnya adalah kotak pemicu yang sesungguhnya, bukan tebakan.
+    // The anchor is the trigger's actual rect, not a guess.
     assert_eq!(u.keadaan().anchor, Anchor::Rect(kotak));
 
     let baris = baris(&u.tree);
@@ -541,7 +542,7 @@ fn klik_di_luar_panel_menutup_tanpa_mengubah_pilihan() {
     u.klik(kotak.center());
     assert!(u.keadaan().open);
 
-    // Pojok kanan-bawah layer: jauh dari panel mana pun.
+    // Bottom-right corner of the layer: far from any panel.
     u.klik(Point::new(RUANG.width - 4.0, RUANG.height - 4.0));
     assert!(!u.keadaan().open, "klik di luar menutup popup");
     assert_eq!(u.keadaan().selected, Some(1), "pilihan tidak berubah");
@@ -553,7 +554,7 @@ fn keyboard_membuka_menyusuri_dan_memilih_tanpa_mouse() {
     let mut u = Uji::baru(SelectState::new());
     u.fokus_ke_pemicu();
 
-    // Space membuka; sorotan mulai dari pilihan aktif (belum ada = 0).
+    // Space opens; the highlight starts at the active option (none yet = 0).
     u.tekan(KeyCode::Named(NamedKey::Space));
     assert!(u.keadaan().open);
     assert_eq!(u.keadaan().highlight, 0);
@@ -568,7 +569,7 @@ fn keyboard_membuka_menyusuri_dan_memilih_tanpa_mouse() {
     u.tekan(KeyCode::Named(NamedKey::Home));
     assert_eq!(u.keadaan().highlight, 0);
 
-    // Panah di ujung tidak berputar — ia berhenti (kebiasaan menu native).
+    // An arrow at the end does not wrap — it stops (the native menu habit).
     u.tekan(KeyCode::Named(NamedKey::ArrowUp));
     assert_eq!(u.keadaan().highlight, 0);
 
@@ -581,8 +582,8 @@ fn keyboard_membuka_menyusuri_dan_memilih_tanpa_mouse() {
 
 #[test]
 fn dua_panah_beruntun_sebelum_frame_berikutnya_tetap_dua_langkah() {
-    // Keystroke yang datang lebih cepat dari frame tidak boleh hilang: node
-    // menyimpan sorotannya sendiri, bukan menunggu props kembali.
+    // Keystrokes arriving faster than frames must not be lost: the node keeps
+    // its own highlight instead of waiting for props to come back.
     let mut u = Uji::baru(SelectState::new());
     u.fokus_ke_pemicu();
     u.tekan(KeyCode::Named(NamedKey::Space));
@@ -619,26 +620,26 @@ fn typeahead_melompat_ke_pilihan_yang_cocok() {
     let mut u = Uji::baru(SelectState::new());
     u.fokus_ke_pemicu();
 
-    // Tertutup: mengetik langsung memilih (pop-up button macOS).
+    // Closed: typing selects outright (macOS pop-up button).
     u.tekan_pada(KeyCode::Character('y'), 100);
     assert_eq!(u.keadaan().selected, Some(3));
     assert!(!u.keadaan().open);
 
-    // Terbuka: mengetik hanya memindahkan sorotan. Jedanya panjang, jadi
-    // awalan sebelumnya sudah dilupakan dan "E" berdiri sendiri.
+    // Open: typing only moves the highlight. The gap is long, so the earlier
+    // prefix has been forgotten and "E" stands on its own.
     u.tekan(KeyCode::Named(NamedKey::Space));
     u.tekan_pada(KeyCode::Character('E'), 3_000);
     assert_eq!(u.keadaan().highlight, 2, "huruf besar pun cocok");
     assert_eq!(u.keadaan().selected, Some(3), "sorotan bukan pilihan");
 
-    // Huruf yang datang cepat menumpuk menjadi satu awalan: "d" lalu "o"
-    // mencari "do", bukan "o".
+    // Letters arriving in quick succession pile up into one prefix: "d" then
+    // "o" searches for "do", not "o".
     u.tekan_pada(KeyCode::Character('d'), 4_000);
     assert_eq!(u.keadaan().highlight, 1, "\"d\" → Dolar AS");
     u.tekan_pada(KeyCode::Character('o'), 4_100);
     assert_eq!(u.keadaan().highlight, 1, "\"do\" tetap Dolar AS");
 
-    // Awalan yang tidak cocok jatuh kembali ke huruf terakhir, bukan diam.
+    // A prefix that matches nothing falls back to the last letter, not silence.
     u.tekan_pada(KeyCode::Character('r'), 4_200);
     assert_eq!(u.keadaan().highlight, 0, "\"dor\" gagal → \"r\" → Rupiah");
 }
@@ -690,7 +691,7 @@ fn select_mati_tidak_bisa_dibuka_dan_tidak_bisa_di_tab() {
 }
 
 // ---------------------------------------------------------------------------
-// Animasi
+// Animation
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -721,14 +722,14 @@ fn hover_menuju_warna_baru_lewat_spring_bukan_lompat() {
         assert!(n.is_animating());
     }
 
-    // Satu detak: warnanya bergerak ke arah target tanpa melompat ke sana.
+    // One tick: the color moves toward the target without jumping to it.
     let tick = Tick::manual(Duration::from_millis(8), Motion::Full);
     assert!(crate::motion::advance(&mut tree, &tick).contains(silka_core::scheduler::Dirty::PAINT));
     let n = tree.node_ref::<SelectTrigger>(id).unwrap();
     assert_ne!(n.background(), diam, "spring harus bergerak");
     assert_ne!(n.background(), t.color.surface_hover, "belum sampai");
 
-    // Sampai settle, lalu benar-benar diam.
+    // Run to settle, then it truly comes to rest.
     for _ in 0..200 {
         crate::motion::advance(&mut tree, &tick);
     }
@@ -826,7 +827,7 @@ fn baris_yang_disorot_menuju_latar_sorot() {
 }
 
 // ---------------------------------------------------------------------------
-// Popup panjang
+// Long popup
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -862,8 +863,8 @@ fn daftar_panjang_dibatasi_tingginya_dan_bisa_digulir() {
         s.visible_rows()
     );
 
-    // Sorotan di baris terakhir menggeser jendela sehingga ia benar-benar
-    // berada di dalam panel yang terlihat.
+    // A highlight on the last row shifts the window so that the row really
+    // does land inside the visible panel.
     let baris = baris(&tree);
     let terakhir = tree.bounds(baris[19]);
     assert!(

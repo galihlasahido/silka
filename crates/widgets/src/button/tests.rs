@@ -1,6 +1,7 @@
-//! Uji `button` — seluruh Definition of Done `KOMPONEN.md` yang bisa dibuktikan
-//! **tanpa GPU**: dua preset, spring di setiap state, keyboard + focus ring,
-//! node AccessKit, dark mode, hit target 44pt, dan reduced-motion.
+//! `button` tests — every `KOMPONEN.md` Definition of Done item that can be
+//! proven **without a GPU**: both presets, a spring on every state, keyboard
+//! + focus ring, the AccessKit node, dark mode, the 44pt hit target, and
+//! reduced-motion.
 
 use super::*;
 
@@ -18,8 +19,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 const RUANG: Size = Size::new(400.0, 200.0);
-/// Satu frame 120 Hz — angkanya datang dari display link di aplikasi nyata,
-/// tidak pernah dari konstanta (§3.5); di uji ia hanya harus deterministik.
+/// One 120 Hz frame — in a real application the number comes from the display
+/// link, never from a constant (§3.5); in tests it only has to be deterministic.
 const FRAME: Duration = Duration::from_micros(8_333);
 
 fn tema() -> Theme {
@@ -33,7 +34,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
     tree
 }
 
-/// Node tombol di dalam pohon (dicari lewat tipenya, bukan lewat indeks).
+/// The button node inside the tree (found by type, not by index).
 fn id_tombol(tree: &RenderTree) -> NodeId {
     fn cari(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
         if tree.node_ref::<ButtonBox>(id).is_some() {
@@ -76,14 +77,14 @@ fn warna_teks(scene: &Scene) -> Vec<Color> {
         .collect()
 }
 
-/// Majukan animasi satu frame; benar bila masih ada yang bergerak.
+/// Advance the animation by one frame; true while something is still moving.
 fn maju(tree: &mut RenderTree, motion: Motion) -> bool {
     let tick = Tick::manual(FRAME, motion);
     let dirty = crate::motion::advance(tree, &tick);
     dirty.contains(Dirty::ANIMATION)
 }
 
-/// Majukan sampai semuanya settle; mengembalikan jumlah frame yang terpakai.
+/// Advance until everything settles; returns how many frames that took.
 fn maju_sampai_diam(tree: &mut RenderTree, motion: Motion) -> usize {
     for n in 0..2_000 {
         if !maju(tree, motion) {
@@ -99,7 +100,7 @@ fn titik_tengah(tree: &RenderTree) -> Point {
     Point::new(s.width / 2.0, s.height / 2.0)
 }
 
-/// Satu klik penuh lewat lapisan input: gerak, tekan, lepas.
+/// One full click through the input layer: move, press, release.
 fn klik(router: &mut InputRouter, tree: &mut RenderTree, p: Point) {
     for e in [
         PointerEvent::new(PointerPhase::Move, p, Duration::ZERO),
@@ -113,7 +114,7 @@ fn klik(router: &mut InputRouter, tree: &mut RenderTree, p: Point) {
 }
 
 // ---------------------------------------------------------------------------
-// Bentuk, token, dan dua preset
+// Shape, tokens, and the two presets
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -168,7 +169,7 @@ fn setiap_varian_memakai_perannya_sendiri_di_kedua_preset() {
                     assert!(gaya.border_width > 0.0, "sekunder punya batas kontrol");
                     assert_eq!(gaya.border_for(), t.color.border);
                 }
-                // Ghost dan link tidak menggambar apa pun sampai disentuh.
+                // Ghost and link draw nothing at all until they are touched.
                 ButtonVariant::Ghost | ButtonVariant::Link => {
                     assert_eq!(gaya.rest.a, 0.0, "{varian:?} tidak boleh punya latar diam");
                     assert!(gaya.hover.a > 0.0, "{varian:?} harus terlihat saat hover");
@@ -176,7 +177,7 @@ fn setiap_varian_memakai_perannya_sendiri_di_kedua_preset() {
                 }
                 ButtonVariant::Destructive => assert_eq!(gaya.rest, t.color.destructive),
             }
-            // Bentuk sudut selalu milik preset, tidak pernah angka di widget.
+            // Corner shape always belongs to the preset, never to the widget.
             assert_eq!(gaya.corners.style, t.radius.style);
         }
     }
@@ -192,7 +193,7 @@ fn varian_link_dibacakan_sebagai_tautan() {
         .find_label("Selengkapnya")
         .unwrap_or_else(|| panic!("{}", a11y.dump()));
     assert_eq!(e.node.role, AccessRole::Link);
-    // Teksnya tetap memakai token aksen, bukan warna baru.
+    // The text still uses the accent token, not some new color.
     let mut tree = tree;
     assert_eq!(warna_teks(&scene(&mut tree)), vec![t.color.accent]);
 }
@@ -209,7 +210,7 @@ fn ghost_diam_tidak_menghasilkan_perintah_gambar_sama_sekali() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -253,7 +254,7 @@ fn tombol_mati_tetap_dibacakan_tapi_tanpa_aksi() {
 }
 
 // ---------------------------------------------------------------------------
-// Aktivasi: penunjuk & keyboard
+// Activation: pointer & keyboard
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -319,8 +320,8 @@ fn keyboard_mengaktifkan_dan_menumbuhkan_cincin_fokus() {
     router.focus_node(&mut tree, Some(id));
     assert!(tombol(&tree).is_focused());
 
-    // Cincin fokus **tumbuh**, bukan muncul: sebelum ada frame animasi ia masih
-    // nol, sesudahnya ia penuh.
+    // The focus ring **grows**, it does not appear: before any animation
+    // frame it is still zero, afterwards it is full.
     assert_eq!(tombol(&tree).focus_progress(), 0.0);
     maju_sampai_diam(&mut tree, Motion::Full);
     assert_eq!(tombol(&tree).focus_progress(), 1.0);
@@ -330,7 +331,7 @@ fn keyboard_mengaktifkan_dan_menumbuhkan_cincin_fokus() {
         .find(|q| q.border_color == t.color.focus_ring)
         .expect("cincin fokus harus digambar");
     assert!(cincin.border_width > 0.0);
-    // Digambar di luar kotak node supaya label tetap terbaca penuh.
+    // Drawn outside the node's box so the label stays fully readable.
     assert!(cincin.rect.size.width > tree.size(id).width);
 
     for tombol_tekan in [NamedKey::Space, NamedKey::Enter] {
@@ -388,7 +389,7 @@ fn tombol_yang_sedang_memuat_menolak_aktivasi() {
 }
 
 // ---------------------------------------------------------------------------
-// Spring: setiap state bertransisi, tidak melompat
+// Springs: every state transitions, nothing jumps
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -417,7 +418,7 @@ fn hover_menggeser_latar_lewat_spring_bukan_lompat() {
         "warna belum boleh berpindah"
     );
 
-    // Satu frame: sudah bergerak, tapi belum sampai.
+    // One frame: already moving, but not there yet.
     maju(&mut tree, Motion::Full);
     maju(&mut tree, Motion::Full);
     let tengah = tombol(&tree).background();
@@ -461,8 +462,8 @@ fn tekanan_mengempiskan_latar_dan_kembali_saat_dilepas() {
         ditekan.rect.size.width < penuh.width && ditekan.rect.size.height < penuh.height,
         "scale-on-press harus terlihat: {ditekan:?} vs {penuh:?}"
     );
-    // Area sentuh **tidak** ikut mengecil: jari tidak boleh kehilangan tombol
-    // di tengah tekanan.
+    // The hit area does **not** shrink with it: a finger must not lose the
+    // button in the middle of a press.
     assert_eq!(tree.size(id), penuh);
 
     router.dispatch(
@@ -486,8 +487,8 @@ fn retarget_di_tengah_gerakan_tidak_pernah_melompat() {
     let p = titik_tengah(&tree);
     let mut router = InputRouter::new();
 
-    // Hover mulai, lalu dibatalkan sebelum sampai: nilainya harus melanjutkan
-    // dari tempatnya berada sekarang (§3.5).
+    // Hover starts, then is cancelled before it arrives: the value has to
+    // carry on from wherever it currently is (§3.5).
     router.dispatch(
         &mut tree,
         &Event::Pointer(PointerEvent::new(PointerPhase::Move, p, Duration::ZERO)),
@@ -557,14 +558,14 @@ fn rebuild_tidak_menyapu_keadaan_yang_sedang_disentuh_pengguna() {
     );
     assert!(tombol(&tree).is_pressed() && tombol(&tree).is_hovered());
 
-    // Rebuild karena signal lain berubah — jari pengguna masih di tombol.
+    // A rebuild triggered by another signal — the user's finger is still down.
     reconcile(&mut tree, button(&f, &t, "Tambah"));
     assert!(
         tombol(&tree).is_pressed() && tombol(&tree).is_hovered(),
         "diff tidak boleh menghapus keadaan runtime"
     );
 
-    // Tapi mematikannya memang harus membersihkannya.
+    // But disabling it really does have to clear them.
     reconcile(&mut tree, button(&f, &t, "Tambah").disabled(true));
     assert!(!tombol(&tree).is_pressed() && !tombol(&tree).is_hovered());
 }
@@ -606,14 +607,14 @@ fn denyut_titik_menahan_frame_tetap_datang_dan_diam_saat_reduced_motion() {
     let t = tema();
     let mut tree = pohon(button(&f, &t, "Kirim").loading(true));
 
-    // Indikator tak tentu: selalu ada frame berikutnya…
+    // Indeterminate indicator: there is always a next frame…
     for _ in 0..50 {
         assert!(
             maju(&mut tree, Motion::Full),
             "indikator memuat harus tetap meminta frame"
         );
     }
-    // …dan opasitasnya benar-benar berubah dari frame ke frame.
+    // …and its opacity really does change from frame to frame.
     let mut contoh = Vec::new();
     for _ in 0..40 {
         contoh.push(kotak_gambar(&scene(&mut tree))[1].background.a);
@@ -625,8 +626,8 @@ fn denyut_titik_menahan_frame_tetap_datang_dan_diam_saat_reduced_motion() {
         "titiknya tidak berdenyut sama sekali: {contoh:?}"
     );
 
-    // …kecuali kalau pengguna meminta gerakan dikurangi: titiknya tetap ada,
-    // hanya diam, dan GPU boleh tidur.
+    // …unless the user asked for reduced motion: the dots are still there,
+    // simply motionless, and the GPU may sleep.
     let mut diam = pohon(button(&f, &t, "Kirim").loading(true));
     assert!(!maju(&mut diam, Motion::Reduced));
     let sebelum = kotak_gambar(&scene(&mut diam))[1].background.a;
@@ -644,7 +645,7 @@ fn opasitas_titik_berdenyut_tapi_tidak_pernah_hilang() {
             assert!((0.35..=1.0).contains(&a), "opasitas di luar jangkauan: {a}");
         }
     }
-    // Titik-titiknya berbeda fase — kalau tidak, ia bukan denyut berjalan.
+    // The dots are out of phase — otherwise this is not a travelling pulse.
     assert_ne!(dot_opacity(0.0, 0), dot_opacity(0.0, 1));
 }
 
@@ -672,16 +673,16 @@ fn reduced_motion_mematikan_hiasan_tapi_menjaga_yang_menjelaskan() {
     );
 
     maju_sampai_diam(&mut tree, Motion::Reduced);
-    // Kempis saat ditekan adalah hiasan: hilang sepenuhnya.
+    // Shrink-on-press is decoration: gone entirely.
     assert_eq!(tombol(&tree).press_progress(), 0.0);
-    // Warna keadaan menjelaskan sesuatu: tetap sampai ke tujuannya.
+    // State color explains something: it still reaches its destination.
     assert_eq!(tombol(&tree).background(), t.color.accent_pressed);
     let kotak = kotak_gambar(&scene(&mut tree));
     assert_eq!(kotak[0].rect.size, tree.size(id_tombol(&tree)));
 }
 
 // ---------------------------------------------------------------------------
-// Detak bersama
+// Shared tick
 // ---------------------------------------------------------------------------
 
 #[test]

@@ -1,37 +1,39 @@
-//! Uji rasterisasi **teks** headless: apakah glyph benar-benar sampai ke GPU.
+//! Headless **text** rasterization tests: do glyphs really reach the GPU?
 //!
-//! Ini tambalan untuk lubang paling mahal di jalur render: sebelumnya
-//! `Command::GlyphRun` dibuang diam-diam oleh backend, dan tidak ada satu pun
-//! test yang bisa memergokinya — semua uji teks berhenti di sisi CPU (atlas
-//! terisi, `GlyphRun` terbentuk) dan semua uji GPU hanya menggambar kotak.
-//! Karena itu yang dibuktikan di sini adalah **pikselnya**:
+//! This patches the most expensive hole in the render path: `Command::GlyphRun`
+//! used to be silently dropped by the backend, and not a single test could
+//! catch it — every text test stopped on the CPU side (atlas filled, `GlyphRun`
+//! built) and every GPU test only drew boxes. So what is proven here is the
+//! **pixels**:
 //!
-//! 1. scene berisi teks menghasilkan piksel teks di dalam kotak teks;
-//! 2. scene yang sama **tanpa** `GlyphRun` menghasilkan **nol** piksel di
-//!    kotak itu (kontrol negatif — tanpa ini, angka apa pun bisa datang dari
-//!    latar atau panel);
-//! 3. scene berisi teks yang dirender **tanpa sumber atlas** juga nol —
-//!    membuktikan piksel itu memang datang dari atlas, bukan dari kebetulan;
-//! 4. teks digambar **di atas** kotak yang mendahuluinya, tidak tertimpa;
-//! 5. warnanya datang dari perintah gambar (token theme), bukan dari atlas;
-//! 6. di layar 2× glyph benar-benar dirasterisasi pada resolusi layar.
+//! 1. a scene containing text produces text pixels inside the text box;
+//! 2. the same scene **without** the `GlyphRun` produces **zero** pixels in
+//!    that box (a negative control — without it, any number could be coming
+//!    from the background or a panel);
+//! 3. a scene containing text rendered **without an atlas source** is zero too
+//!    — proving those pixels really do come from the atlas and not by accident;
+//! 4. text is drawn **above** the box preceding it, not painted over;
+//! 5. its color comes from the draw command (a theme token), not from the
+//!    atlas;
+//! 6. on a 2× display glyphs really are rasterized at screen resolution.
 //!
-//! Semuanya memakai font **bundel** (`TextEngine::bundled_only`) supaya hasil
-//! di CI tidak tergantung font yang kebetulan terpasang (REKOMENDASI §9.5).
+//! Everything uses the **bundled** font (`TextEngine::bundled_only`) so results
+//! in CI do not depend on whichever fonts happen to be installed
+//! (REKOMENDASI §9.5).
 //!
-//! Tanpa adapter GPU, test dilewati dengan pesan — kegagalan palsu di CI jauh
-//! lebih mahal daripada satu test yang absen.
+//! Without a GPU adapter the tests are skipped with a message — a false failure
+//! in CI costs far more than one absent test.
 
 use silka_paint::{Color, Point, Quad, Rect, Scene, Size};
 use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
 use silka_text::{TextConstraints, TextEngine, TextStyle};
 
-/// Kanvas 320×120 poin — muat satu baris teks besar dengan margin lega.
+/// A 320×120 point canvas — it fits one line of large text with a roomy margin.
 const LEBAR: f32 = 320.0;
 const TINGGI: f32 = 120.0;
-/// Sudut kiri-atas blok teks.
+/// The top-left corner of the text block.
 const ORIGIN: Point = Point::new(16.0, 24.0);
-/// Ukuran font uji: cukup besar agar jumlah piksel jauh di atas derau.
+/// The test font size: large enough that the pixel count is well above noise.
 const UKURAN: f32 = 32.0;
 const CONTOH: &str = "Halo dunia";
 
@@ -60,7 +62,7 @@ fn gaya() -> TextStyle {
     TextStyle::new().size(UKURAN).single_line()
 }
 
-/// Scene berisi satu baris teks, beserta kotak logis yang ditempatinya.
+/// A scene holding one line of text, together with the logical box it occupies.
 fn scene_teks(mesin: &mut TextEngine, warna: Color) -> (Scene, Rect) {
     let mut scene = Scene::new(Color::BLACK);
     let layout = mesin.layout(CONTOH, &gaya(), TextConstraints::UNBOUNDED);
@@ -70,10 +72,11 @@ fn scene_teks(mesin: &mut TextEngine, warna: Color) -> (Scene, Rect) {
     (scene, kotak)
 }
 
-/// Piksel dalam kotak logis yang bukan latar (latar = hitam pekat).
+/// Pixels within the logical box that are not background (background = solid
+/// black).
 ///
-/// Ambang 24 memberi ruang untuk tepi anti-alias yang sangat samar, tapi jauh
-/// di bawah cakupan glyph yang sesungguhnya.
+/// The threshold of 24 leaves room for very faint anti-aliased edges, but sits
+/// far below actual glyph coverage.
 fn piksel_teks(img: &Rgba8Image, kotak: Rect, scale: f64) -> usize {
     let mut n = 0;
     let (x0, y0, x1, y1) = batas_fisik(kotak, scale, img);
@@ -115,12 +118,12 @@ fn teks_benar_benar_menghasilkan_piksel_di_gpu() {
         terisi > 200,
         "teks nyaris tidak menghasilkan piksel: {terisi} dari luas {luas}"
     );
-    // Teks bukan blok pejal: sebagian besar kotaknya tetap latar.
+    // Text is not a solid block: most of its box stays background.
     assert!(
         terisi < luas * 3 / 4,
         "kotak teks malah tergambar penuh ({terisi} dari {luas}) — bukan glyph"
     );
-    // Di luar kotak teks tidak boleh ada apa pun.
+    // Outside the text box there must be nothing at all.
     assert_eq!(img.pixel(1, 1), [0, 0, 0, 255], "latar ikut ternoda");
 }
 
@@ -130,8 +133,9 @@ fn scene_tanpa_glyph_run_menghasilkan_nol_piksel_teks() {
     let mut mesin = mesin(1.0);
     let mut target = kanvas(&gpu, 1.0);
 
-    // Kotak diambil dari scene yang BERISI teks, lalu diukur pada scene yang
-    // tidak berisi apa-apa — persis area yang sama, hasilnya harus nol.
+    // The box is taken from a scene that DOES contain text, then measured on a
+    // scene containing nothing — the exact same area, and the result must be
+    // zero.
     let (_, kotak) = scene_teks(&mut mesin, Color::WHITE);
     let kosong = Scene::new(Color::BLACK);
     let img = target
@@ -148,7 +152,8 @@ fn tanpa_sumber_atlas_teks_tidak_pernah_muncul() {
     let mut target = kanvas(&gpu, 1.0);
 
     let (scene, kotak) = scene_teks(&mut mesin, Color::WHITE);
-    // `render` tanpa sumber atlas: perintah glyph ada, bitmapnya tidak.
+    // `render` without an atlas source: the glyph commands exist, the bitmaps
+    // do not.
     let img = target.render(&gpu, &scene).expect("render gagal");
     assert_eq!(
         piksel_teks(&img, kotak, 1.0),
@@ -163,8 +168,8 @@ fn teks_digambar_di_atas_kotak_yang_mendahuluinya() {
     let mut mesin = mesin(1.0);
     let mut target = kanvas(&gpu, 1.0);
 
-    // Panel putih pejal dulu, teks gelap sesudahnya — kalau urutan gambar
-    // rusak, teks akan tertimpa dan kotak ini akan putih rata.
+    // A solid white panel first, dark text after — if the draw order breaks,
+    // the text is painted over and this box comes out uniformly white.
     let layout = mesin.layout(CONTOH, &gaya(), TextConstraints::UNBOUNDED);
     let run = mesin.rasterize(&layout, ORIGIN, Color::BLACK);
     let kotak = run.bounds().expect("teks harus punya glyph");
@@ -190,7 +195,7 @@ fn teks_digambar_di_atas_kotak_yang_mendahuluinya() {
         gelap > 200,
         "teks tertimpa panel: hanya {gelap} piksel gelap"
     );
-    // Di luar kotak teks panel tetap putih bersih.
+    // Outside the text box the panel stays cleanly white.
     assert_eq!(img.pixel(1, 1), [255, 255, 255, 255]);
 }
 
@@ -200,7 +205,7 @@ fn warna_teks_datang_dari_token_bukan_dari_atlas() {
     let mut mesin = mesin(1.0);
     let mut target = kanvas(&gpu, 1.0);
 
-    // Dua warna, satu atlas: bitmap yang sama harus melayani keduanya.
+    // Two colors, one atlas: the very same bitmap must serve both.
     let merah = Color::hex(0xFF3B30);
     let (scene_merah, kotak) = scene_teks(&mut mesin, merah);
     let img_merah = target
@@ -260,7 +265,7 @@ fn layar_2x_merasterisasi_teks_pada_resolusi_layar() {
         .expect("render 2x gagal");
 
     assert_eq!(img_2x.width(), img_1x.width() * 2);
-    // Kotak logisnya nyaris sama — yang berlipat ganda adalah pikselnya.
+    // The logical box is nearly identical — what doubles is the pixels.
     assert!((kotak_2x.size.width - kotak.size.width).abs() < 2.0);
 
     let n1 = piksel_teks(&img_1x, kotak, 1.0);
@@ -270,7 +275,7 @@ fn layar_2x_merasterisasi_teks_pada_resolusi_layar() {
         "teks 2x tidak lebih rinci: {n1} px pada 1x, {n2} px pada 2x"
     );
 
-    // Tajam, bukan lembek: glyph pada 2x tetap punya inti yang pekat penuh.
+    // Crisp, not soft: glyphs at 2x still have a fully solid core.
     let (x0, y0, x1, y1) = batas_fisik(kotak_2x, 2.0, &img_2x);
     let mut pekat = 0;
     for y in y0..y1 {
@@ -297,8 +302,8 @@ fn frame_kedua_memakai_atlas_yang_sudah_terunggah() {
         .render_with_glyphs(&gpu, &scene, &mut mesin)
         .expect("frame 1 gagal");
 
-    // Setelah frame pertama tidak ada lagi yang kotor: kalau frame kedua tetap
-    // benar, berarti tekstur memang bertahan dan tidak diunggah ulang.
+    // After the first frame nothing is dirty any more: if the second frame is
+    // still correct, the texture really did persist and was not re-uploaded.
     assert!(
         silka_paint::GlyphSource::take_dirty(&mut mesin, silka_paint::GlyphFormat::Mask).is_none(),
         "atlas masih menandai dirty setelah diunggah — akan diunggah ulang tiap frame"
@@ -317,15 +322,16 @@ fn glyph_baru_di_frame_berikutnya_ikut_terunggah() {
     let mut mesin = mesin(1.0);
     let mut target = kanvas(&gpu, 1.0);
 
-    // Frame pertama mengisi atlas dengan satu himpunan glyph…
+    // The first frame fills the atlas with one set of glyphs…
     let (scene_a, kotak_a) = scene_teks(&mut mesin, Color::WHITE);
     let img_a = target
         .render_with_glyphs(&gpu, &scene_a, &mut mesin)
         .expect("frame A gagal");
     assert!(piksel_teks(&img_a, kotak_a, 1.0) > 200);
 
-    // …frame kedua memakai huruf yang belum pernah ada. Kalau unggahan
-    // inkremental salah kotak, teks baru ini akan kosong.
+    // …the second frame uses characters that have never appeared before. If
+    // the incremental upload picks the wrong rect, this new text comes out
+    // blank.
     let mut scene_b = Scene::new(Color::BLACK);
     let layout = mesin.layout("XYZ&#%", &gaya(), TextConstraints::UNBOUNDED);
     let run = mesin.rasterize(&layout, ORIGIN, Color::WHITE);
@@ -341,10 +347,10 @@ fn glyph_baru_di_frame_berikutnya_ikut_terunggah() {
     );
 }
 
-/// Atlas buatan yang bisa dipaksa berganti ukuran — jalur "atlas penuh lalu
-/// dibangun ulang" terlalu jarang terjadi dengan font sungguhan untuk
-/// diandalkan sebagai uji, padahal justru di situ tekstur GPU harus dibuat
-/// ulang **dan** bind group dirakit ulang.
+/// A synthetic atlas that can be forced to change size — the "atlas fills up
+/// and gets rebuilt" path happens too rarely with real fonts to rely on as a
+/// test, even though it is exactly where the GPU texture must be recreated
+/// **and** the bind group rebuilt.
 struct AtlasBuatan {
     size: u32,
     piksel: Vec<u8>,
@@ -412,15 +418,15 @@ fn tekstur_dibuat_ulang_saat_atlas_berganti_ukuran() {
     run.push(Glyph::new(GlyphImageId::from_raw(1), kotak));
     scene.push(run);
 
-    // Atlas kecil dulu…
+    // A small atlas first…
     let mut atlas = AtlasBuatan::baru(16, AtlasRegion::new(0, 0, 8, 8));
     let kecil = target
         .render_with_glyphs(&gpu, &scene, &mut atlas)
         .expect("render atlas kecil gagal");
     assert_eq!(kecil.pixel(12, 12), [255, 255, 255, 255]);
 
-    // …lalu atlas dibangun ulang lebih besar, dengan glyph di tempat lain.
-    // Kalau tekstur/bind group tidak ikut diperbarui, kotak ini jadi hitam.
+    // …then the atlas is rebuilt larger, with the glyph somewhere else. If the
+    // texture/bind group are not updated too, this box comes out black.
     let mut atlas = AtlasBuatan::baru(64, AtlasRegion::new(32, 40, 8, 8));
     let besar = target
         .render_with_glyphs(&gpu, &scene, &mut atlas)
@@ -435,9 +441,10 @@ fn atlas_yang_tumbuh_tidak_membuat_teks_hilang() {
     let mut mesin = mesin(1.0);
     let mut target = kanvas(&gpu, 1.0);
 
-    // Banyak ukuran font berbeda = banyak bitmap = atlas dipaksa tumbuh.
-    // Yang diuji: setelah tekstur dibuat ulang, bind group ikut dirakit ulang
-    // dan isinya diunggah penuh — kalau tidak, teks lenyap tanpa error.
+    // Many different font sizes = many bitmaps = the atlas is forced to grow.
+    // What is being tested: after the texture is recreated, the bind group is
+    // rebuilt too and the contents are uploaded in full — otherwise text
+    // vanishes without an error.
     let ukuran_awal = mesin.glyphs().mask_atlas().size();
     for i in 0..48 {
         let gaya = TextStyle::new().size(8.0 + i as f32 * 1.5).single_line();

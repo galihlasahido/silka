@@ -1,45 +1,45 @@
-//! **Siklus hidup aplikasi**: signals → view → layout → paint → scheduler
+//! **Application lifecycle**: signals → view → layout → paint → scheduler
 //! (REKOMENDASI §2, §2.5, §3.5).
 //!
-//! Empat lapisan sebelumnya masing-masing sudah lengkap dan masing-masing
-//! sudah bisa diuji sendiri — tapi tidak ada yang menjahitnya:
-//! [`crate::signals::Runtime::drain_dirty`] tidak pernah dipanggil dari luar
-//! modulnya, dan catatan milestone `arena-tree` menyebut jahitan ini apa
-//! adanya ("yang memanggil `reconcile_children` untuk subtree itu belum ada").
-//! Modul ini adalah jahitan itu.
+//! The four layers before this one were each complete and each testable on
+//! their own — but nothing stitched them together:
+//! [`crate::signals::Runtime::drain_dirty`] was never called from outside its
+//! own module, and the `arena-tree` milestone notes named this seam for what it
+//! was ("whatever calls `reconcile_children` for that subtree does not exist
+//! yet"). This module is that seam.
 //!
-//! ## Satu frame
+//! ## One frame
 //!
 //! ```text
-//! signal.set(…)                    ← dari event handler / async / a11y
+//! signal.set(…)                    ← from an event handler / async / a11y
 //!    └─ Runtime::on_wake ──────────→ FrameScheduler::request(LAYOUT|PAINT)
-//!                                        └─ shell membangunkan vsync
+//!                                        └─ the shell wakes vsync
 //!
 //! AppRuntime::frame()
-//!    1. drain_dirty()   → [ScopeId] terurut akar→daun, sudah terpangkas
-//!    2. per scope       → jalankan ulang closure-nya DI DALAM scope itu
-//!                       → reconcile_children(tree, jangkar, [view baru])
-//!    3. perform_layout(constraints window)
+//!    1. drain_dirty()   → [ScopeId] ordered root→leaf, already pruned
+//!    2. per scope       → re-run its closure INSIDE that scope
+//!                       → reconcile_children(tree, anchor, [new view])
+//!    3. perform_layout(window constraints)
 //!    4. paint_into(scene)
 //! ```
 //!
-//! ## Tiga aturan yang membuatnya benar
+//! ## The three rules that make it correct
 //!
-//! 1. **Rebuild memasuki kembali setiap anak yang dipertahankan.**
-//!    [`component`] membangun isinya secara *eager* di dalam
-//!    [`crate::signals::scope`], jadi memanggil ulang closure sebuah scope
-//!    otomatis menyentuh seluruh keturunannya. Inilah syarat yang membuat
-//!    pemangkasan keturunan di [`crate::signals::Runtime::drain_dirty`] sah.
-//! 2. **Setiap komponen punya node jangkar.** Tanpa itu, satu-satunya cara
-//!    menerapkan hasil rebuild adalah mendiff dari akar — dan "rebuild
-//!    per-komponen" tinggal nama. Node jangkarnya transparan bagi layout dan
-//!    disaring keluar dari pohon a11y.
-//! 3. **Idle benar-benar nol.** Frame hanya dijadwalkan oleh sesuatu yang
-//!    menandai dirty. Setelah [`AppRuntime::frame`] selesai dan tidak ada
-//!    signal yang berubah, [`AppRuntime::is_idle`] benar dan tidak ada satu
-//!    pun pekerjaan yang berjalan — tidak ada timer, tidak ada polling.
+//! 1. **A rebuild re-enters every retained child.** [`component`] builds its
+//!    body *eagerly* inside [`crate::signals::scope`], so re-running a scope's
+//!    closure automatically touches all of its descendants. That is the
+//!    precondition that makes pruning descendants in
+//!    [`crate::signals::Runtime::drain_dirty`] sound.
+//! 2. **Every component has an anchor node.** Without one, the only way to
+//!    apply a rebuild's result is to diff from the root — and "per-component
+//!    rebuild" becomes a name and nothing more. The anchor node is transparent
+//!    to layout and filtered out of the a11y tree.
+//! 3. **Idle really is zero.** A frame is scheduled only by something that
+//!    marks dirty. Once [`AppRuntime::frame`] returns and no signal has
+//!    changed, [`AppRuntime::is_idle`] is true and not a single piece of work
+//!    is running — no timers, no polling.
 //!
-//! ## Contoh utuh (headless, tanpa GPU)
+//! ## A complete example (headless, no GPU)
 //!
 //! ```
 //! use silka_core::app::{app, component};
@@ -49,8 +49,8 @@
 //! use std::cell::Cell;
 //! use std::rc::Rc;
 //!
-//! // Contoh menyimpan signal-nya keluar hanya supaya bisa ditulis dari sini;
-//! // aplikasi sungguhan menulisnya dari `on_press` sebuah tombol.
+//! // The example stashes the signal outside only so it can be written from
+//! // here; a real application writes it from a button's `on_press`.
 //! let pegangan: Rc<Cell<Option<Signal<i32>>>> = Rc::default();
 //! let simpan = pegangan.clone();
 //!

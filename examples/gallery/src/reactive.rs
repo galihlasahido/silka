@@ -1,20 +1,20 @@
-//! Halaman demo: **grid kartu yang digambar lewat siklus hidup reaktif**.
+//! Demo page: **the card grid drawn through the reactive lifecycle**.
 //!
-//! Isi visualnya sengaja sama dengan halaman [`crate::kartu`] — squircle di
-//! kiri, arc di kanan, radius dan elevasi naik tiap baris — tapi jalannya
-//! berbeda dan itulah gunanya halaman ini: di sini **tidak ada satu pun
-//! `Scene` yang disusun tangan**. Yang ditulis hanyalah pohon view; scene-nya
-//! lahir dari `signals → view-diff → layout → paint` di dalam
-//! [`silka_core::app::AppRuntime`] (REKOMENDASI §2, §3.5).
+//! Its visual content is deliberately identical to the [`crate::cards`] page —
+//! squircles on the left, arcs on the right, radius and elevation growing per
+//! row — but the route there differs, and that is the point of this page:
+//! **not a single `Scene` is assembled by hand here**. All that is written is
+//! the view tree; the scene is born from `signals → view-diff → layout → paint`
+//! inside [`silka_core::app::AppRuntime`] (REKOMENDASI §2, §3.5).
 //!
-//! Dua hal yang ikut terbukti dengan menjalankan halaman ini:
+//! Running this page also proves two things:
 //!
-//! 1. **Layout dihitung mesin**, bukan aritmetika di kode halaman. Tidak ada
-//!    `padding * 2.0 - gap` di berkas ini; posisinya datang dari `column`/`row`
-//!    dan `expanded()` (§3.4).
-//! 2. **Theme adalah signal.** Dark mode OS yang berubah menulis
-//!    `Signal<Theme>`, dan yang dibangun ulang hanyalah komponen yang
-//!    benar-benar membacanya (§2.7).
+//! 1. **Layout is computed by the engine**, not by arithmetic in the page code.
+//!    There is no `padding * 2.0 - gap` in this file; positions come from
+//!    `column`/`row` and `expanded()` (§3.4).
+//! 2. **The theme is a signal.** A change in OS dark mode writes to
+//!    `Signal<Theme>`, and only the components that actually read it are
+//!    rebuilt (§2.7).
 
 use silka_core::app::{component, BuildCtx};
 use silka_core::signals::{Key, Signal};
@@ -23,13 +23,13 @@ use silka_core::view::{column, expanded, fixed, row, View};
 use silka_paint::{CornerStyle, Corners, Insets, ShadowPair};
 use silka_theme::Theme;
 
-/// Berapa baris kartu (satu baris = satu radius + satu elevasi).
+/// How many card rows (one row = one radius + one elevation).
 pub const BARIS: usize = 4;
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app`.
+/// The view tree for the whole page — this is what gets handed to `run_app`.
 ///
-/// Dibaca di scope akar: theme yang berganti membangun ulang halaman ini
-/// seluruhnya, dan itu memang yang diinginkan karena setiap warnanya token.
+/// Read in the root scope: a theme change rebuilds this page in its entirety,
+/// which is exactly what we want since every color here is a token.
 pub fn halaman(cx: &BuildCtx) -> View {
     let theme: Signal<Theme> = cx.expect_env();
     let t = theme.get();
@@ -41,37 +41,40 @@ pub fn halaman(cx: &BuildCtx) -> View {
                 View::from(expanded(
                     row([expanded(kartu(baris, 0)), expanded(kartu(baris, 1))])
                         .spacing(gap)
-                        // Kartu setinggi barisnya, bukan setinggi isinya.
+                        // Cards are as tall as their row, not as tall as
+                        // their content.
                         .cross(CrossAlign::Stretch),
                 ))
             })
             .collect::<Vec<View>>(),
     )
     .spacing(gap)
-    // Tiap baris selebar halaman; tanpa ini `expanded()` di dalamnya tidak
-    // punya ruang untuk dibagi.
+    // Each row spans the page width; without this the `expanded()` inside it
+    // has no space to divide up.
     .cross(CrossAlign::Stretch)
     .padding(Insets::all(t.space(6.0)))
     .into()
 }
 
-/// Satu kartu sebagai komponen tersendiri.
+/// A single card as its own component.
 ///
-/// Tiap kartu punya scope-nya sendiri, jadi kelak ketika satu kartu punya state
-/// (hover, pressed) hanya kartu itu yang dibangun ulang — bukan seluruh grid.
+/// Each card gets its own scope, so once a card gains state (hover, pressed)
+/// only that card is rebuilt — not the whole grid.
 fn kartu(baris: usize, kolom: usize) -> View {
     component(Key::num((baris * 2 + kolom) as i64), move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let (radius, shadow) = gaya_baris(&t, baris);
-        // Kolom kiri squircle, kolom kanan arc — halaman ini satu-satunya yang
-        // boleh memilih bentuk sudut sendiri, karena tugasnya membandingkan.
+        // Squircle on the left, arc on the right — this page is the only one
+        // allowed to pick its own corner shape, since comparing them is its
+        // job.
         let style = if kolom == 0 {
             CornerStyle::squircle()
         } else {
             CornerStyle::Arc
         };
-        // Ukuran nol: `expanded()` di atasnya memberi constraints tight, jadi
-        // kartu mengisi selnya. Angka tata letaknya milik mesin layout.
+        // Zero size: the `expanded()` above hands down tight constraints, so
+        // the card fills its cell. The layout numbers belong to the layout
+        // engine.
         fixed(0.0, 0.0)
             .background(t.color.surface)
             .corners(Corners::uniform(radius, style))
@@ -81,7 +84,7 @@ fn kartu(baris: usize, kolom: usize) -> View {
     })
 }
 
-/// Radius + elevasi untuk sebuah baris — keduanya token, bukan angka lepas.
+/// Radius + elevation for a row — both tokens, not loose magic numbers.
 fn gaya_baris(t: &Theme, baris: usize) -> (f32, ShadowPair) {
     match baris {
         0 => (t.radius.sm, t.shadow.sm),
@@ -100,7 +103,7 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1024.0, 720.0);
 
-    /// Aplikasi headless dengan titipan theme yang sama seperti `run_app`.
+    /// A headless app with the same theme injection `run_app` performs.
     fn ui(theme: Theme) -> AppRuntime {
         app(halaman)
             .with_env(move |rt| rt.signal(theme))
@@ -124,7 +127,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         assert_eq!(kotak(&ui).len(), BARIS * 2);
-        // Dua bayangan + satu kotak per kartu, sama seperti halaman `kartu`.
+        // Two shadows + one quad per card, just like the `kartu` page.
         assert_eq!(ui.scene().len(), BARIS * 2 * 3);
     }
 
@@ -134,7 +137,7 @@ mod tests {
         ui.frame();
         let k = kotak(&ui);
         for baris in k.chunks(2) {
-            // Kiri dan kanan sama lebar, sejajar, dan tidak saling menimpa.
+            // Left and right are equally wide, aligned, and never overlap.
             assert_eq!(baris[0].rect.size, baris[1].rect.size);
             assert_eq!(baris[0].rect.min_y(), baris[1].rect.min_y());
             assert!(baris[0].rect.max_x() <= baris[1].rect.min_x() + 1e-3);
@@ -142,7 +145,7 @@ mod tests {
         for dua in k.chunks(2).collect::<Vec<_>>().windows(2) {
             assert!(dua[0][0].rect.max_y() <= dua[1][0].rect.min_y() + 1e-3);
         }
-        // Semuanya di dalam viewport, dan tidak ada yang berukuran nol.
+        // Everything is inside the viewport, and nothing has zero size.
         for q in &k {
             assert!(q.rect.min_x() >= 0.0 && q.rect.min_y() >= 0.0, "{q:?}");
             assert!(q.rect.max_x() <= VIEWPORT.width + 1e-3, "{q:?}");

@@ -1,23 +1,23 @@
-//! Uji rasterisasi headless: apa yang benar-benar keluar dari shader SDF.
+//! Headless rasterization tests: what actually comes out of the SDF shader.
 //!
-//! Unit test di dalam crate menjaga *data* yang dikirim ke GPU; berkas ini
-//! menjaga *hasilnya* — bahwa squircle memang berbeda dari arc, bahwa border
-//! berada di dalam tepi, dan bahwa shadow ganda benar-benar menggelapkan latar
-//! (REKOMENDASI §9.5: rendering headless untuk CI).
+//! The unit tests inside the crate guard the *data* sent to the GPU; this file
+//! guards the *result* — that a squircle really does differ from an arc, that
+//! the border sits inside the edge, and that a double shadow really does darken
+//! the background (REKOMENDASI §9.5: headless rendering for CI).
 //!
-//! Kalau mesin yang menjalankan test tidak punya adapter GPU sama sekali
-//! (container CI tanpa driver), test **dilewati dengan pesan**, bukan gagal:
-//! kegagalan palsu di CI jauh lebih mahal daripada satu test yang absen.
+//! If the machine running the tests has no GPU adapter at all (a CI container
+//! without drivers), the tests are **skipped with a message** rather than
+//! failing: a false failure in CI costs far more than one absent test.
 
 use silka_paint::{Color, CornerStyle, Corners, Quad, Rect, Scene, Shadow, ShadowPair, Size};
 use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
 
-/// Kanvas 256×256 poin logis (scale 1.0) — cukup besar agar beda geometri
-/// sudut terukur dalam piksel utuh.
+/// A 256×256 logical-point canvas (scale 1.0) — large enough that the corner
+/// geometry difference is measurable in whole pixels.
 const SISI: u32 = 256;
-/// Kartu 224×224 di tengah kanvas, menyisakan 16 poin margin untuk bayangan.
+/// A 224×224 card centered on the canvas, leaving 16 points of shadow margin.
 const MARGIN: f32 = 16.0;
-/// Radius nominal yang dipakai seluruh uji bentuk.
+/// The nominal radius used by every shape test.
 const RADIUS: f32 = 48.0;
 
 fn gpu() -> Option<Gpu> {
@@ -52,7 +52,7 @@ fn scene_kartu(style: CornerStyle) -> Scene {
     s
 }
 
-/// Jumlah piksel yang benar-benar terisi kartu (putih pekat).
+/// The number of pixels genuinely filled by the card (solid white).
 fn piksel_terisi(img: &Rgba8Image) -> usize {
     img.pixels()
         .chunks(4)
@@ -74,9 +74,9 @@ fn kotak_digambar_dan_latar_tetap_latar() {
 
     assert_eq!(img.width(), SISI);
     assert_eq!(img.height(), SISI);
-    // Tengah kartu = warna isi.
+    // The card's center = the fill color.
     assert_eq!(img.pixel(SISI / 2, SISI / 2), [255, 255, 255, 255]);
-    // Pojok kanvas jauh di luar kartu = warna latar.
+    // A canvas corner far outside the card = the background color.
     assert_eq!(terang(img.pixel(1, 1)), 0);
 }
 
@@ -93,9 +93,9 @@ fn squircle_dan_arc_menghasilkan_bentuk_yang_berbeda() {
 
     assert_ne!(squircle.pixels(), arc.pixels(), "kedua mode harus berbeda");
 
-    // Superellipse memotong lebih sedikit luas di sudut daripada busur
-    // lingkaran (0,073·R² vs 0,215·R²), meski lengkungnya mulai lebih awal —
-    // itulah "sudut Apple": lebih penuh di ujung, lebih halus transisinya.
+    // A superellipse cuts less area off the corner than a circular arc
+    // (0.073·R² vs 0.215·R²), even though it starts curving earlier — that is
+    // the "Apple corner": fuller at the tip, smoother in transition.
     let luas_squircle = piksel_terisi(&squircle);
     let luas_arc = piksel_terisi(&arc);
     assert!(
@@ -103,7 +103,7 @@ fn squircle_dan_arc_menghasilkan_bentuk_yang_berbeda() {
         "squircle {luas_squircle} px, arc {luas_arc} px",
     );
 
-    // Keduanya tetap kotak membulat, bukan persegi penuh.
+    // Both are still rounded boxes, not full rectangles.
     let luas_penuh = (SISI as f32 - MARGIN * 2.0).powi(2) as usize;
     assert!(luas_squircle < luas_penuh, "sudut squircle tidak terpotong");
 }
@@ -119,10 +119,11 @@ fn ujung_diagonal_sudut_squircle_lebih_penuh_daripada_arc() {
         .render(&gpu, &scene_kartu(CornerStyle::Arc))
         .expect("render arc gagal");
 
-    // Titik uji di diagonal sudut kiri-atas. Secara analitik batas bentuknya:
-    //   arc      → 14,06 poin dari titik sudut (r·(1 − 1/√2), r = 48)
-    //   squircle → 11,68 poin (R = 48·1,528; R − R·2^(−1/4))
-    // Piksel (28,28) — 12,5 poin dari sudut — jatuh di antaranya.
+    // A probe point on the top-left corner's diagonal. Analytically the shape
+    // boundary sits at:
+    //   arc      → 14.06 points from the corner point (r·(1 − 1/√2), r = 48)
+    //   squircle → 11.68 points (R = 48·1.528; R − R·2^(−1/4))
+    // Pixel (28,28) — 12.5 points from the corner — falls between the two.
     let x = MARGIN as u32 + 12;
     assert_eq!(
         squircle.pixel(x, x),
@@ -145,21 +146,21 @@ fn border_berada_di_dalam_tepi_dan_tidak_menutupi_isi() {
     scene.push(
         Quad::new(Rect::new(64.0, 64.0, 128.0, 128.0))
             .background(Color::WHITE)
-            // Border merah setebal 8 poin: cukup tebal untuk diambil sampel.
+            // An 8-point red border: thick enough to sample.
             .border(8.0, Color::hex(0xFF0000))
             .corners(Corners::uniform(16.0, CornerStyle::squircle())),
     );
     let img = target.render(&gpu, &scene).expect("render gagal");
 
-    // Tepat di dalam tepi kiri = border.
+    // Just inside the left edge = border.
     let tepi = img.pixel(68, 128);
     assert!(
         tepi[0] > 200 && tepi[1] < 60 && tepi[2] < 60,
         "tepi = {tepi:?}"
     );
-    // Beberapa poin lebih ke dalam = isi.
+    // A few points further in = fill.
     assert_eq!(img.pixel(80, 128), [255, 255, 255, 255]);
-    // Di luar kotak = latar.
+    // Outside the box = background.
     assert_eq!(terang(img.pixel(60, 128)), 0);
 }
 
@@ -186,7 +187,8 @@ fn shadow_ganda_menggelapkan_latar_di_bawah_kartu() {
     );
     let berbayang = target.render(&gpu, &dengan).expect("render gagal");
 
-    // Tepat di bawah kartu (tepi bawah kartu = y 176): bayangan harus jelas.
+    // Just below the card (its bottom edge is at y 176): the shadow must be
+    // clearly visible.
     let bawah = (128, 180);
     assert!(
         terang(berbayang.pixel(bawah.0, bawah.1)) + 45 < terang(polos.pixel(bawah.0, bawah.1)),
@@ -195,8 +197,8 @@ fn shadow_ganda_menggelapkan_latar_di_bawah_kartu() {
         polos.pixel(bawah.0, bawah.1),
     );
 
-    // Bayangan meluruh mulus: makin jauh makin terang, tanpa satu pun langkah
-    // yang membalik arah (pita/banding akan terlihat sebagai pembalikan).
+    // The shadow decays smoothly: brighter the further out, with never a step
+    // that reverses direction (banding would show up as a reversal).
     let profil: Vec<u32> = (0..8)
         .map(|i| terang(berbayang.pixel(128, 180 + i * 5)))
         .collect();
@@ -211,7 +213,7 @@ fn shadow_ganda_menggelapkan_latar_di_bawah_kartu() {
         "latar jauh dari kartu tidak boleh ikut gelap",
     );
 
-    // Kartu sendiri tetap opak: bayangan digambar di belakangnya.
+    // The card itself stays opaque: the shadow is drawn behind it.
     assert_eq!(berbayang.pixel(128, 112), [255, 255, 255, 255]);
 }
 
@@ -222,7 +224,7 @@ fn scene_kosong_hanya_menghasilkan_warna_latar() {
     let img = target
         .render(&gpu, &Scene::new(Color::hex(0x1C1C1E)))
         .expect("render gagal");
-    // Konversi sRGB↔linear bolak-balik harus mengembalikan byte yang sama.
+    // A sRGB↔linear round trip must return the very same bytes.
     for (x, y) in [(0, 0), (SISI / 2, SISI / 2), (SISI - 1, SISI - 1)] {
         assert_eq!(img.pixel(x, y), [0x1C, 0x1C, 0x1E, 255], "di ({x},{y})");
     }
@@ -231,8 +233,8 @@ fn scene_kosong_hanya_menghasilkan_warna_latar() {
 #[test]
 fn ukuran_logis_ikut_scale_factor() {
     let Some(gpu) = gpu() else { return };
-    // 512 piksel fisik @2× = 256 poin logis: kartu yang sama harus menutupi
-    // proporsi kanvas yang sama, hanya dengan piksel dua kali lebih banyak.
+    // 512 physical pixels @2× = 256 logical points: the same card must cover
+    // the same proportion of the canvas, just with twice as many pixels.
     let mut retina = OffscreenTarget::new(&gpu, SurfaceGeometry::new(SISI * 2, SISI * 2, 2.0))
         .expect("target retina gagal dibuat");
     assert_eq!(retina.logical_size(), Size::new(SISI as f32, SISI as f32));
@@ -242,7 +244,7 @@ fn ukuran_logis_ikut_scale_factor() {
         .expect("render gagal");
     assert_eq!(img.width(), SISI * 2);
     assert_eq!(img.pixel(SISI, SISI), [255, 255, 255, 255]);
-    // Margin 16 poin = 32 piksel fisik: piksel (8,8) masih latar.
+    // A 16-point margin = 32 physical pixels: pixel (8,8) is still background.
     assert_eq!(terang(img.pixel(8, 8)), 0);
 
     let mut satu_x = kanvas(&gpu);

@@ -1,25 +1,25 @@
-//! Halaman demo: **switch / toggle** (`KOMPONEN.md` Tier 2).
+//! Demo page: **switch / toggle** (`KOMPONEN.md` Tier 2).
 //!
-//! Yang dipamerkan halaman ini adalah Definition of Done komponennya, satu per
-//! satu, dalam bentuk yang bisa **dilihat dan dicoba tangan** — bukan diklaim
-//! di komentar:
+//! What this page shows off is the component's Definition of Done, item by
+//! item, in a form you can **see and try by hand** — not one claimed in a
+//! comment:
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Benar di kedua preset | `--preset cupertino` (lintasan 52×32, sudut squircle) vs `--preset tailwind` (44×24, arc) |
-//! | Dark mode | `--appearance dark` / `light`, atau ikut OS |
-//! | **Spring drag** (catatan khusus komponen ini) | Tekan thumb-nya lalu **seret**: ia mengikuti jari 1:1, dan warna lintasan berganti tepat saat melewati tengah |
-//! | Handoff kecepatan → spring | Lempar thumb dari sepertiga jalan: arah lemparan menang atas posisi, dan pegasnya melanjutkan kecepatan jari — tidak mulai dari nol |
-//! | Spring yang bisa di-retarget | Klik dua kali cepat: thumb berbalik arah dari posisinya sekarang, tidak melompat |
-//! | Hover / tekan | Thumb sedikit melar saat ditahan (rasa iOS) dan warna lintasan bergeser lewat token hover/pressed |
-//! | Keyboard + focus ring | Tab berkeliling; **Space** membalik, panah kiri/kanan (dan Home/End) menyetel nilai eksplisit; cincin fokus **tumbuh** |
-//! | Hit target ≥ 44pt | Lintasannya setinggi 32pt/24pt, tapi seluruh barisnya — termasuk labelnya — bisa diklik |
-//! | Node AccessKit | VoiceOver membacakan "sakelar, nyala/mati" dari node yang sama dengan yang digambar |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: pantulan hilang, thumb tetap **bergeser** (gerakan yang menjelaskan tidak boleh dihapus) |
+//! | Correct in both presets | `--preset cupertino` (52×32 track, squircle corners) vs `--preset tailwind` (44×24, arc) |
+//! | Dark mode | `--appearance dark` / `light`, or follow the OS |
+//! | **Spring drag** (this component's special note) | Press the thumb and **drag**: it tracks your finger 1:1, and the track color flips exactly as it crosses the midpoint |
+//! | Velocity handoff → spring | Fling the thumb from a third of the way across: the fling direction beats the position, and the spring continues your finger's velocity — it does not restart from zero |
+//! | Retargetable spring | Click twice quickly: the thumb reverses from where it currently is, it does not jump |
+//! | Hover / press | The thumb stretches slightly while held (the iOS feel) and the track color shifts via the hover/pressed tokens |
+//! | Keyboard + focus ring | Tab around; **Space** flips it, left/right arrows (and Home/End) set an explicit value; the focus ring **grows** |
+//! | Hit target ≥ 44pt | The track is 32pt/24pt tall, but the whole row — label included — is clickable |
+//! | AccessKit nodes | VoiceOver announces "switch, on/off" from the same node that is drawn |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the bounce goes away, the thumb still **slides** (motion that explains must not be removed) |
 //!
-//! Yang **tidak** ada di berkas ini, dan itulah intinya: tidak ada `Scene` yang
-//! disusun tangan, tidak ada aritmetika tata letak, dan tidak ada satu pun
-//! angka warna — semuanya token (§2.6, §2.7).
+//! What is **absent** from this file is the whole point: no hand-assembled
+//! `Scene`, no layout arithmetic, and not a single color number — everything is
+//! a token (§2.6, §2.7).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -30,32 +30,34 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{switch, switch_only, text, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Switch";
-/// Nama sakelar induk: mematikannya mematikan semua yang di bawahnya.
+/// The parent switch's name: turning it on turns everything below it off.
 pub const MODE_PESAWAT: &str = "Mode pesawat";
-/// Nama tiap sakelar radio.
+/// The name of each radio switch.
 pub const RADIO: [&str; 3] = ["Wi-Fi", "Bluetooth", "Data seluler"];
-/// Nama sakelar yang sengaja dimatikan dalam keadaan mati.
+/// The name of the switch deliberately disabled in the off state.
 pub const MATI: &str = "Tidak tersedia di paket ini";
-/// Nama sakelar yang sengaja dimatikan dalam keadaan nyala.
+/// The name of the switch deliberately disabled in the on state.
 pub const TERKUNCI: &str = "Wajib menyala";
-/// Nama sakelar tanpa label terlihat (nama a11y-nya tetap ada).
+/// The name of the switch with no visible label (its a11y name still
+/// exists).
 pub const TANPA_LABEL: &str = "Sinkronkan baris pertama";
 
-/// Berapa radio yang menyala — dipakai baris ringkasan **dan** oleh test.
+/// How many radios are on — used by the summary row **and** by the tests.
 pub fn menyala(radio: &[bool]) -> usize {
     radio.iter().filter(|v| **v).count()
 }
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 ///
-/// Judul dan penjelasan dibaca di scope akar; **nilai sakelarnya tidak**,
-/// sehingga satu ketukan hanya membangun ulang satu komponen, bukan halaman
-/// (§2.5).
+/// The title and the description are read in the root scope; **the switch
+/// values are not**, so a single tap rebuilds one component rather than the
+/// page (§2.5).
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
@@ -66,7 +68,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             text(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
-                // Tracking negatif pada ukuran besar — kebiasaan SF (§3.6).
+                // Negative tracking at large sizes — an SF habit (§3.6).
                 .tracking(t.typography.title2.tracking)
                 .color(t.color.label)
                 .single_line(),
@@ -93,17 +95,17 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Kelompok "mode pesawat" + tiga radio, sebagai **komponen tersendiri**.
+/// The "airplane mode" + three radios group, as **its own component**.
 ///
-/// Inilah satu-satunya tempat nilainya dibaca, dan karena itu satu-satunya
-/// scope yang ditandai dirty saat sebuah sakelar digeser.
+/// This is the only place the values are read, and therefore the only scope
+/// marked dirty when a switch is flipped.
 fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
     let fonts = fonts.clone();
     component("sakelar", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let nilai = radio.get();
-        // Mode pesawat adalah **turunan** dari data, seperti checkbox induk:
-        // menyala berarti semua radio mati.
+        // Airplane mode is **derived** from the data, like a parent checkbox:
+        // on means every radio is off.
         let pesawat = menyala(&nilai) == 0;
 
         let mut anak: Vec<View> = Vec::with_capacity(RADIO.len() + 2);
@@ -111,7 +113,8 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
             switch(&fonts, &t, MODE_PESAWAT)
                 .key("pesawat")
                 .on(pesawat)
-                // Dinyalakan = semua radio mati; dimatikan = semuanya kembali.
+                // Turned on = every radio off; turned off = they all come
+                // back.
                 .on_change(move |nyala| radio.set([!nyala; RADIO.len()]))
                 .into(),
         );
@@ -141,8 +144,9 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
     })
 }
 
-/// Kalimat ringkasan yang ikut berubah — bukti bahwa nilainya benar-benar
-/// dimiliki aplikasi, bukan disimpan diam-diam di dalam kontrolnya.
+/// The summary sentence that changes along with it — proof that the values
+/// really are owned by the application, not squirreled away inside the
+/// control.
 pub fn ringkasan(radio: &[bool]) -> String {
     match menyala(radio) {
         0 => "Semua radio mati.".to_string(),
@@ -150,10 +154,10 @@ pub fn ringkasan(radio: &[bool]) -> String {
     }
 }
 
-/// Baris sakelar yang tidak bisa dipakai, plus satu tanpa label terlihat.
+/// The row of unusable switches, plus one with no visible label.
 ///
-/// Ketiganya tetap ada di pohon aksesibilitas: kontrol yang mati **dibacakan**
-/// sebagai dimmed, bukan disembunyikan (§3.8).
+/// All three remain in the accessibility tree: a disabled control is
+/// **announced** as dimmed, not hidden (§3.8).
 fn mati(fonts: &Fonts, t: &Theme) -> View {
     row([
         View::from(switch(fonts, t, MATI).disabled(true)),
@@ -191,8 +195,8 @@ mod tests {
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Kotak sebuah node **menurut pohon aksesibilitas** — test menyentuh persis
-    /// di tempat yang dibacakan screen reader.
+    /// A node's rectangle **according to the accessibility tree** — the tests
+    /// touch exactly where a screen reader announces.
     fn kotak(ui: &AppRuntime, label: &str) -> Rect {
         let pohon = ui.access_tree();
         pohon
@@ -211,7 +215,7 @@ mod tests {
             .unwrap_or_else(|| panic!("{label} tidak menyebut keadaannya"))
     }
 
-    /// Jalankan frame sampai seluruh spring berhenti (maks. 2 detik simulasi).
+    /// Pump frames until every spring stops (at most 2 simulated seconds).
     fn sampai_diam(ui: &mut AppRuntime) {
         let mut jam = Instant::now();
         for _ in 0..600 {
@@ -224,7 +228,7 @@ mod tests {
         panic!("halaman tidak pernah berhenti bergerak");
     }
 
-    /// Satu ketukan penuh di titik `p`.
+    /// One full tap at point `p`.
     fn ketuk(ui: &mut AppRuntime, p: Point) {
         for e in [
             PointerEvent::new(PointerPhase::Move, p, Duration::ZERO),
@@ -269,7 +273,7 @@ mod tests {
             );
         }
 
-        // Yang dimatikan tetap dibacakan, tapi tidak menjanjikan aksi apa pun.
+        // Disabled ones are still announced, but promise no actions at all.
         let dimmed = pohon.find_label(MATI).unwrap();
         assert!(dimmed.node.disabled);
         assert!(dimmed.node.actions.is_empty());
@@ -292,8 +296,8 @@ mod tests {
         sampai_diam(&mut ui);
         assert_eq!(keadaan(&ui, RADIO[1]), AccessToggled::On);
 
-        // Ringkasan dibangun dari data yang sama — kalau ia ikut, berarti nilai
-        // benar-benar dimiliki aplikasi.
+        // The summary is built from the same data — if it follows, the values
+        // really are owned by the application.
         let pohon = ui.access_tree();
         assert!(
             pohon.find_label(&ringkasan(&[true, true, true])).is_some(),
@@ -364,7 +368,7 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
         sampai_diam(&mut ui);
 
-        // Tab mendarat di sakelar pertama; Space membalikkannya.
+        // Tab lands on the first switch; Space flips it.
         ui.dispatch(&Event::Key(KeyEvent::pressed(
             KeyCode::Named(NamedKey::Tab),
             Duration::ZERO,
@@ -376,7 +380,7 @@ mod tests {
         sampai_diam(&mut ui);
         assert_eq!(keadaan(&ui, MODE_PESAWAT), AccessToggled::On);
 
-        // Panah kiri **menyetel** mati, dua kali pun hasilnya sama.
+        // The left arrow **sets** it off; pressing twice yields the same.
         for _ in 0..2 {
             ui.dispatch(&Event::Key(KeyEvent::pressed(
                 KeyCode::Named(NamedKey::ArrowLeft),
@@ -397,7 +401,8 @@ mod tests {
         ketuk(&mut ui, p);
         ui.frame();
 
-        // Thumb tidak melompat: butuh beberapa frame animasi untuk sampai.
+        // The thumb does not jump: it takes several animation frames to
+        // arrive.
         let mut jam = Instant::now();
         let mut frame = 0;
         while frame < 600 {
@@ -432,9 +437,8 @@ mod tests {
                         _ => None,
                     })
                     .collect();
-                // Lintasan yang menyala memakai `accent`, yang mati `separator`,
-                // thumb-nya `on_accent` — tidak ada warna lain yang lahir di
-                // lapisan halaman.
+                // An on track uses `accent`, an off one `separator`, the thumb
+                // `on_accent` — no other color is born at the page layer.
                 assert!(
                     latar.contains(&t.color.accent),
                     "{preset:?} {appearance:?}: tidak ada lintasan menyala"

@@ -1,77 +1,81 @@
-//! Kosakata glyph: bagaimana teks menyeberang ke backend **tanpa membawa font**.
+//! The glyph vocabulary: how text crosses over to the backend **without
+//! carrying a font along**.
 //!
-//! Kontrak (REKOMENDASI §3.2, §3.3): `silka-paint` tidak tahu apa itu font,
-//! shaping, atau atlas. Yang diketahuinya hanyalah:
+//! The contract (REKOMENDASI §3.2, §3.3): `silka-paint` does not know what a
+//! font, shaping, or an atlas is. All it knows is:
 //!
-//! 1. sebuah **id opaque** ([`GlyphImageId`]) yang menunjuk satu bitmap glyph
-//!    di atlas milik `silka-text`, dan
-//! 2. **kotak tujuan** dalam poin logis tempat bitmap itu digambar.
+//! 1. an **opaque id** ([`GlyphImageId`]) pointing at one glyph bitmap in an
+//!    atlas owned by `silka-text`, and
+//! 2. the **destination rect**, in logical points, where that bitmap is drawn.
 //!
-//! Backend menukar id itu dengan koordinat tekstur lewat atlas yang sama.
-//! Dengan begitu backend baru (GL/CPU) cukup membaca atlas yang sudah ada,
-//! dan kode widget tidak pernah menyentuh cosmic-text maupun wgpu.
+//! The backend exchanges that id for texture coordinates through the same
+//! atlas. That way a new backend (GL/CPU) only has to read the atlas that
+//! already exists, and widget code never touches cosmic-text or wgpu.
 //!
-//! Subpixel *positioning* sudah terkandung di dalam id: dua varian subpixel
-//! dari glyph yang sama adalah dua entri atlas berbeda dengan id berbeda
-//! (§3.3). Karena itu perintah gambar ini tidak perlu tahu apa-apa soal DPI.
+//! Subpixel *positioning* is already baked into the id: two subpixel variants
+//! of the same glyph are two different atlas entries with different ids (§3.3).
+//! That is why this draw command needs to know nothing about DPI.
 
 use crate::color::Color;
 use crate::geometry::{Point, Rect, Size};
 
-/// Id opaque satu bitmap glyph di atlas `silka-text`.
+/// An opaque id for one glyph bitmap in the `silka-text` atlas.
 ///
-/// Nilainya **tidak** stabil antar sesi dan tidak boleh disimpan ke disk: ia
-/// hanya berlaku selama atlas yang menerbitkannya masih hidup. Id tidak pernah
-/// dipakai ulang, jadi id lama yang sudah dibuang aman untuk di-*resolve*
-/// (hasilnya "tidak ada", bukan glyph yang salah).
+/// The value is **not** stable across sessions and must not be persisted to
+/// disk: it is only valid as long as the atlas that issued it is still alive.
+/// Ids are never reused, so resolving a stale id is safe (the result is
+/// "nothing", not the wrong glyph).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct GlyphImageId(u32);
 
 impl GlyphImageId {
-    /// Bungkus nilai mentah — hanya dipakai penerbit id (atlas `silka-text`).
+    /// Wraps a raw value — only for the issuer of the ids (the `silka-text`
+    /// atlas).
     pub const fn from_raw(raw: u32) -> Self {
         Self(raw)
     }
 
-    /// Nilai mentah, untuk dipakai penerbit id saat mencari entri atlas.
+    /// The raw value, for the issuer to use when looking up an atlas entry.
     pub const fn raw(self) -> u32 {
         self.0
     }
 }
 
-/// Satu glyph siap gambar: bitmap dari atlas, ditempatkan pada kotak logis.
+/// One glyph ready to draw: a bitmap from the atlas, placed on a logical rect.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Glyph {
-    /// Bitmap di atlas.
+    /// The bitmap in the atlas.
     pub image: GlyphImageId,
-    /// Kotak tujuan dalam poin logis (sudah termasuk offset bitmap terhadap
-    /// origin glyph, sehingga backend tinggal menggambar apa adanya).
+    /// The destination rect in logical points (the bitmap's offset relative to
+    /// the glyph origin is already folded in, so the backend can draw it
+    /// as-is).
     pub bounds: Rect,
 }
 
 impl Glyph {
-    /// Glyph baru.
+    /// A new glyph.
     pub const fn new(image: GlyphImageId, bounds: Rect) -> Self {
         Self { image, bounds }
     }
 }
 
-/// Sekumpulan glyph sewarna yang digambar dalam satu perintah.
+/// A set of same-colored glyphs drawn in a single command.
 ///
-/// Satu run = satu warna. Rich text dengan banyak warna menghasilkan beberapa
-/// run; itu sengaja, karena batch per warna adalah yang paling murah di GPU.
+/// One run = one color. Rich text with several colors produces several runs;
+/// that is deliberate, because batching per color is the cheapest thing to do
+/// on the GPU.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlyphRun {
-    /// Glyph-glyph yang membentuk run ini, urut dari kiri ke kanan secara visual.
+    /// The glyphs making up this run, in visual left-to-right order.
     pub glyphs: Vec<Glyph>,
-    /// Warna teks — selalu datang dari token theme (`label`, `secondary_label`, …).
+    /// Text color — always from a theme token (`label`, `secondary_label`, …).
     pub color: Color,
-    /// Kotak potong opsional: dipakai truncation/ellipsis dan scroll view.
+    /// Optional clip rect: used for truncation/ellipsis and scroll views.
     pub clip: Option<Rect>,
 }
 
 impl GlyphRun {
-    /// Run kosong dengan warna tertentu.
+    /// An empty run with a given color.
     pub fn new(color: Color) -> Self {
         Self {
             glyphs: Vec::new(),
@@ -80,7 +84,8 @@ impl GlyphRun {
         }
     }
 
-    /// Run dengan kapasitas awal — dipakai lapisan teks agar tidak realokasi.
+    /// A run with an initial capacity — used by the text layer to avoid
+    /// reallocating.
     pub fn with_capacity(color: Color, capacity: usize) -> Self {
         Self {
             glyphs: Vec::with_capacity(capacity),
@@ -89,32 +94,32 @@ impl GlyphRun {
         }
     }
 
-    /// Tambah satu glyph.
+    /// Appends one glyph.
     pub fn push(&mut self, glyph: Glyph) -> &mut Self {
         self.glyphs.push(glyph);
         self
     }
 
-    /// Batasi run ke sebuah kotak (truncation, scroll).
+    /// Clips the run to a rect (truncation, scrolling).
     pub fn clip(mut self, rect: Rect) -> Self {
         self.clip = Some(rect);
         self
     }
 
-    /// Jumlah glyph.
+    /// The number of glyphs.
     pub fn len(&self) -> usize {
         self.glyphs.len()
     }
 
-    /// Benar bila tidak ada glyph sama sekali (mis. teks kosong atau spasi saja).
+    /// True when there are no glyphs at all (e.g. empty text or only spaces).
     pub fn is_empty(&self) -> bool {
         self.glyphs.is_empty()
     }
 
-    /// Kotak gabungan seluruh glyph, dalam poin logis.
+    /// The union rect of every glyph, in logical points.
     ///
-    /// Berguna untuk dirty-region tracking dan hit-testing kasar. `None` bila
-    /// run kosong.
+    /// Useful for dirty-region tracking and coarse hit-testing. `None` when the
+    /// run is empty.
     pub fn bounds(&self) -> Option<Rect> {
         let mut iter = self.glyphs.iter();
         let first = iter.next()?.bounds;

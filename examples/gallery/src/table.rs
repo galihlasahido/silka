@@ -1,30 +1,30 @@
-//! Halaman demo: **tabel tervirtualisasi** (`KOMPONEN.md` Tier 5).
+//! Demo page: **virtualized table** (`KOMPONEN.md` Tier 5).
 //!
-//! Angkanya sama tidak masuk akalnya dengan halaman `daftar`: **seratus ribu
-//! baris**, empat kolom. Dan itu memang inti demonya — tabel yang "cepat" pada
-//! dua ratus baris tidak membuktikan apa pun, sementara tabel yang tetap mulus
-//! pada seratus ribu baris **sambil** kolomnya diseret, dilebarkan, dan
-//! diurutkan membuktikan bahwa virtualisasinya tidak bocor di satu pun jalur.
+//! The number is as absurd as on the `daftar` page: **a hundred thousand
+//! rows**, four columns. And that is exactly the point of the demo — a table
+//! that is "fast" at two hundred rows proves nothing, while a table that stays
+//! smooth across a hundred thousand rows **while** its columns are dragged,
+//! resized, and sorted proves the virtualization does not leak on any path.
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Virtualisasi | Gulir sampai baris 90.000: tidak ada jeda, memori tidak bergerak |
-//! | Tidak ada sistem virtualisasi kedua | Guliran, rubber band, dan scrollbar-nya milik `scroll_view`; jendela barisnya milik `ListMetrics` — sama persis dengan halaman `daftar` |
-//! | Sort per kolom | Klik judul kolom; klik lagi membalik arah. Seratus ribu baris diurutkan **sekali**, lalu di-cache |
-//! | Resize kolom | Seret batas antar judul kolom; kursor berubah saat mendekatinya |
-//! | Reorder kolom | Seret judul kolom ke kiri/kanan; penunjuk tujuan meluncur mengikuti |
-//! | Seleksi jamak | Klik, ⇧-klik untuk merentang, ⌘-klik untuk memungut satu per satu, ⌘A untuk semuanya |
-//! | Sticky header | Judul kolom menempel di tepi atas sementara barisnya lewat |
-//! | Lebar auto vs tetap | "Pihak" melar mengikuti window; "No.", "Status", dan "Nominal" tidak |
-//! | Sel kustom | Kolom "Status" berisi badge berwarna, bukan teks — sel menerima widget apa pun |
-//! | Keyboard antar sel | Tab ke tabel, lalu ↑ ↓ (⇧ merentang) · ← → berpindah **sel** · Page · Home/End · Esc · Enter |
-//! | Empty state | Tombol "Kosongkan" — tabel kosong tetap menampilkan judul kolomnya |
-//! | Node AccessKit | VoiceOver menyebut "table", membacakan tiap baris dan selnya |
-//! | Kedua preset & dark mode | `--preset tailwind`, `--appearance dark` |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: sorotan langsung berada di tempatnya |
+//! | Virtualization | Scroll to row 90,000: no stutter, memory does not move |
+//! | No second virtualization system | Scrolling, rubber banding, and the scrollbar belong to `scroll_view`; the row window belongs to `ListMetrics` — exactly as on the `daftar` page |
+//! | Per-column sorting | Click a column heading; click again to reverse it. A hundred thousand rows are sorted **once**, then cached |
+//! | Column resizing | Drag the boundary between headings; the cursor changes as you approach it |
+//! | Column reordering | Drag a heading left/right; the drop indicator glides along |
+//! | Multi-selection | Click, ⇧-click to extend a range, ⌘-click to pick individually, ⌘A for everything |
+//! | Sticky header | The headings stick to the top edge while rows slide past |
+//! | Auto vs fixed widths | "Pihak" stretches with the window; "No.", "Status", and "Nominal" do not |
+//! | Custom cells | The "Status" column holds a colored badge, not text — a cell accepts any widget |
+//! | Cell-wise keyboard navigation | Tab to the table, then ↑ ↓ (⇧ extends) · ← → move by **cell** · Page · Home/End · Esc · Enter |
+//! | Empty state | The "Kosongkan" button — an empty table still shows its column headings |
+//! | AccessKit nodes | VoiceOver says "table", announcing each row and its cells |
+//! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the highlight is immediately in place |
 //!
-//! Yang **tidak** ada di berkas ini: `Scene` yang disusun tangan, aritmetika
-//! tata letak, dan angka warna. Semuanya token (§2.6, §2.7).
+//! What is **absent** from this file: hand-assembled `Scene`s, layout
+//! arithmetic, and color numbers. Everything is a token (§2.6, §2.7).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -41,36 +41,37 @@ use silka_widgets::{
     SortBy, SortDirection, TableState,
 };
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Table (tervirtualisasi)";
-/// Nama tabel bagi screen reader — sekaligus jangkar yang dicari uji.
+/// The table's name for screen readers — and the anchor the tests look for.
 pub const NAMA_TABEL: &str = "Transaksi";
-/// Banyak baris. Seratus ribu, dan itu memang inti demonya.
+/// How many rows. A hundred thousand, and that is exactly the point of the
+/// demo.
 pub const BARIS: usize = 100_000;
 
-/// Tombol lompat jauh.
+/// The jump-far button.
 pub const TOMBOL_TENGAH: &str = "Ke baris 50.000";
-/// Tombol yang mengosongkan tabel (memamerkan empty state).
+/// The button that empties the table (showing off the empty state).
 pub const TOMBOL_KOSONG: &str = "Kosongkan";
-/// Tombol yang mengembalikan isinya.
+/// The button that puts the content back.
 pub const TOMBOL_ISI: &str = "Isi lagi";
-/// Tombol yang mengembalikan lebar & urutan kolom ke asalnya.
+/// The button that restores the original column widths & order.
 pub const TOMBOL_RESET: &str = "Reset kolom";
 
-/// Teks empty state.
+/// The empty-state text.
 pub const KOSONG: &str = "Belum ada transaksi";
 
-/// Tinggi satu baris — sekaligus hit target minimum HIG.
+/// One row's height — which is also the HIG's minimum hit target.
 const TINGGI_BARIS: f32 = 44.0;
-/// Tinggi baris judul kolom, dalam langkah skala spacing (§2.6).
+/// The column-heading row's height, in spacing-scale steps (§2.6).
 const TINGGI_HEADER_LANGKAH: f32 = 9.0;
-/// Tinggi jendela tabel, dalam langkah skala spacing.
+/// The table viewport's height, in spacing-scale steps.
 const TINGGI_LANGKAH: f32 = 92.0;
-/// Lebar maksimum tabel, dalam langkah skala spacing.
+/// The table's maximum width, in spacing-scale steps.
 const LEBAR_LANGKAH: f32 = 200.0;
 
 // ---------------------------------------------------------------------------
-// Data palsu yang tetap terlihat seperti data
+// Fake data that still looks like data
 // ---------------------------------------------------------------------------
 
 const NAMA: [&str; 6] = [
@@ -84,22 +85,22 @@ const NAMA: [&str; 6] = [
 
 const STATUS: [&str; 3] = ["Lunas", "Tertunda", "Batal"];
 
-/// Nama pihak baris ke-`i`.
+/// The counterparty name for row `i`.
 fn nama_pihak(i: usize) -> &'static str {
     NAMA[(i * 7 + i / 6) % NAMA.len()]
 }
 
-/// Status baris ke-`i`.
+/// The status of row `i`.
 fn status(i: usize) -> &'static str {
     STATUS[(i * 3 + i / 5) % STATUS.len()]
 }
 
-/// Nominal baris ke-`i`, rupiah.
+/// The amount for row `i`, in rupiah.
 fn nominal(i: usize) -> u64 {
     ((i * 8_191) % 900 + 100) as u64 * 125_000
 }
 
-/// Nominal dengan pemisah ribuan — angka tanpa pemisah tidak bisa dibaca mata.
+/// An amount with thousands separators — an unseparated number is unreadable.
 fn rupiah(n: u64) -> String {
     let angka = n.to_string();
     let mut out = String::with_capacity(angka.len() + angka.len() / 3);
@@ -113,16 +114,17 @@ fn rupiah(n: u64) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Pengurutan: dihitung sekali, lalu di-cache
+// Sorting: computed once, then cached
 // ---------------------------------------------------------------------------
 
-/// Permutasi baris hasil pengurutan, beserta kunci yang melahirkannya.
+/// The row permutation produced by sorting, along with the key that produced
+/// it.
 ///
-/// Ini bukan kemewahan: mengurutkan seratus ribu baris pada **setiap** rebuild
-/// berarti setiap satu piksel guliran membayar O(n log n), dan janji
-/// "virtualisasi" batal di tempat yang tidak dilihat siapa pun. Cache-nya
-/// disimpan di balik [`RefCell`] alih-alih sebuah signal justru supaya
-/// mengisinya **tidak** menjadwalkan frame — ia hasil turunan, bukan keadaan.
+/// This is not a luxury: sorting a hundred thousand rows on **every** rebuild
+/// means every single pixel of scrolling pays O(n log n), and the
+/// "virtualization" promise is broken somewhere nobody is looking. The cache
+/// lives behind a [`RefCell`] rather than a signal precisely so that filling it
+/// does **not** schedule a frame — it is derived data, not state.
 #[derive(Default)]
 struct Urutan {
     kunci: Option<Option<SortBy>>,
@@ -130,7 +132,7 @@ struct Urutan {
 }
 
 impl Urutan {
-    /// Permutasi untuk `sort`, dihitung hanya bila kuncinya berubah.
+    /// The permutation for `sort`, recomputed only when its key changes.
     fn untuk(&mut self, sort: Option<SortBy>, count: usize) -> Rc<Vec<u32>> {
         if self.kunci == Some(sort) && self.baris.len() == count {
             return self.baris.clone();
@@ -160,10 +162,11 @@ impl Urutan {
 }
 
 // ---------------------------------------------------------------------------
-// Halaman
+// The page
 // ---------------------------------------------------------------------------
 
-/// Definisi kolom — satu-satunya tempat lebar, perataan, dan judul ditulis.
+/// The column definitions — the only place widths, alignment, and headings are
+/// written.
 pub fn kolom(t: &Theme) -> Vec<Column> {
     vec![
         col("No.").fixed(t.space(24.0)).min_width(t.space(16.0)),
@@ -173,17 +176,18 @@ pub fn kolom(t: &Theme) -> Vec<Column> {
     ]
 }
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
     let tabel_state = use_table_state();
     let dibuka = use_signal(|| None::<usize>);
     let terisi = use_signal(|| true);
-    // Cache permutasi pengurutan; lihat [`Urutan`].
+    // The sort permutation cache; see [`Urutan`].
     let urutan = use_signal(|| Rc::new(RefCell::new(Urutan::default())));
 
     column([
@@ -221,10 +225,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Jendela tabel.
+/// The table viewport.
 ///
-/// Sumbu guliran **wajib** terbatas (aturan Flutter yang sama): pembatasnya di
-/// sini, bukan di dalam wadahnya.
+/// The scroll axis **must** be bounded (the same rule as Flutter's): the bound
+/// lives here, not inside the container.
 fn tabel(
     fonts: &Fonts,
     t: &Theme,
@@ -234,8 +238,8 @@ fn tabel(
     urutan: Signal<Rc<RefCell<Urutan>>>,
 ) -> View {
     let count = if terisi.get() { BARIS } else { 0 };
-    // Membaca `sort()` di sini yang membuat tabel dibangun ulang setiap kali
-    // judul kolom diklik — tidak ada callback yang perlu dipasang (§2.5).
+    // Reading `sort()` here is what makes the table rebuild every time a
+    // column heading is clicked — no callback needs wiring up (§2.5).
     let permutasi = urutan.peek().borrow_mut().untuk(state.sort(), count);
 
     let untuk_sel = fonts.clone();
@@ -267,11 +271,11 @@ fn tabel(
     .into()
 }
 
-/// Satu sel: kolomnya menentukan bentuknya.
+/// One cell: its column decides its shape.
 ///
-/// Kolom "Status" mengembalikan **badge**, bukan teks — itulah yang dimaksud
-/// "sel kustom" di `KOMPONEN.md`: sel menerima view apa pun, tidak ada tipe
-/// sel khusus yang harus dipelajari.
+/// The "Status" column returns a **badge**, not text — that is what "custom
+/// cells" means in `KOMPONEN.md`: a cell accepts any view, there is no special
+/// cell type to learn.
 fn sel(fonts: &Fonts, t: &Theme, i: usize, kolom: usize) -> View {
     match kolom {
         0 => text(fonts, format!("#{:06}", i + 1))
@@ -295,8 +299,8 @@ fn sel(fonts: &Fonts, t: &Theme, i: usize, kolom: usize) -> View {
     }
 }
 
-/// Badge status — satu-satunya "grafik" di halaman ini, dan seluruh warnanya
-/// tetap token.
+/// The status badge — the only "graphic" on this page, and all of its colors
+/// are still tokens.
 fn badge(fonts: &Fonts, t: &Theme, status: &str) -> View {
     let (latar, tulisan): (Color, Color) = match status {
         "Lunas" => (t.color.success, t.color.on_accent),
@@ -316,7 +320,7 @@ fn badge(fonts: &Fonts, t: &Theme, status: &str) -> View {
     .into()
 }
 
-/// Apa yang tampil saat tabelnya kosong.
+/// What shows up when the table is empty.
 fn kosong(fonts: &Fonts, t: &Theme) -> View {
     column([View::from(
         text(fonts, KOSONG)
@@ -329,7 +333,7 @@ fn kosong(fonts: &Fonts, t: &Theme) -> View {
     .into()
 }
 
-/// Tombol-tombol yang membuktikan `scroll_to`, empty state, dan reset kolom.
+/// The buttons that prove `scroll_to`, the empty state, and the column reset.
 fn kendali(fonts: &Fonts, t: &Theme, state: TableState, terisi: Signal<bool>) -> View {
     let isi = terisi.get();
     let label_isi = if isi { TOMBOL_KOSONG } else { TOMBOL_ISI };
@@ -356,8 +360,8 @@ fn kendali(fonts: &Fonts, t: &Theme, state: TableState, terisi: Signal<bool>) ->
     .into()
 }
 
-/// Baris status — **satu-satunya tempat seleksi dibaca**, jadi memindahkan
-/// sorotan hanya membangun ulang teks ini (§2.5).
+/// The status row — **the only place the selection is read**, so moving the
+/// highlight rebuilds just this text (§2.5).
 fn status_bar(fonts: &Fonts, state: TableState, dibuka: Signal<Option<usize>>) -> View {
     let fonts = fonts.clone();
     component("status-tabel", move |cx| {
@@ -412,7 +416,7 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app_with`**.
+    /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         headless_app(theme, move |cx| halaman(cx, &untuk_view))
@@ -438,7 +442,7 @@ mod tests {
         ui.tree().node_ref::<TableBody>(id).expect("TableBody")
     }
 
-    /// Berapa sel yang benar-benar menjadi node.
+    /// How many cells actually became nodes.
     fn sel_di_pohon(ui: &AppRuntime) -> usize {
         fn hitung(tree: &silka_core::tree::RenderTree, id: silka_core::tree::NodeId) -> usize {
             usize::from(tree.node_ref::<TableCellBox>(id).is_some())
@@ -510,9 +514,9 @@ mod tests {
         diam(&mut ui);
         let awal = sel_di_pohon(&ui);
 
-        // Empat puluh lompatan besar menyusuri seluruh data: jumlah node yang
-        // hidup tidak boleh tumbuh satu pun. Inilah "scroll harus tetap mulus"
-        // yang bisa diuji tanpa mata.
+        // Forty big jumps across the whole data set: the number of live nodes
+        // must not grow by one. This is "scrolling must stay smooth" in a form
+        // that can be tested without eyes.
         let mut maksimum = awal;
         for i in 1..=40 {
             let target = i * (BARIS / 40);
@@ -560,7 +564,8 @@ mod tests {
             .filter(|e| e.node.role == AccessRole::Cell)
             .count();
         assert!(sel > 4, "tidak ada sel di pohon a11y:\n{}", pohon.dump());
-        // Judul kolom terbaca, dan baris pertama benar-benar berisi datanya.
+        // The column headings are announced, and the first row really does
+        // carry its data.
         assert!(pohon.find_label("Nominal").is_some());
         assert!(pohon.find_label("#000001").is_some());
     }
@@ -580,8 +585,8 @@ mod tests {
             body(&ui).state().unwrap().sort(),
             Some(SortBy::ascending(1))
         );
-        // Baris pertama berubah: datanya benar-benar diurutkan, bukan cuma
-        // panahnya yang berpindah.
+        // The first row changes: the data really is sorted, not just the arrow
+        // moving.
         let pohon = ui.access_tree();
         assert!(
             pohon.find_label("Apotek Sehat").is_some(),
@@ -589,7 +594,8 @@ mod tests {
             pohon.dump()
         );
 
-        // Klik kedua membalik arah — dan tetap tidak menyentuh jumlah node.
+        // A second click reverses the direction — and still does not touch the
+        // node count.
         klik(&mut ui, judul, 1, Duration::from_secs(4));
         assert_eq!(
             body(&ui).state().unwrap().sort(),
@@ -604,7 +610,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         diam(&mut ui);
 
-        // Tab sampai tabel yang memegang fokus.
+        // Tab until the table holds focus.
         for _ in 0..8 {
             tombol(&mut ui, NamedKey::Tab);
             if body(&ui).is_focused() {
@@ -633,7 +639,7 @@ mod tests {
             pohon.dump()
         );
 
-        // ← → berpindah sel, bukan baris.
+        // ← → move by cell, not by row.
         tombol(&mut ui, NamedKey::ArrowRight);
         assert_eq!(body(&ui).active_column(), 1);
         assert_eq!(body(&ui).selection().len(), 3, "seleksi ikut berubah");
@@ -657,7 +663,7 @@ mod tests {
         assert!(pohon.find_label("Nominal").is_some(), "judul kolom hilang");
         assert_eq!(body(&ui).metrics().count, 0);
 
-        // Dan kembali lagi.
+        // And back again.
         let p = kotak(&ui, TOMBOL_ISI).center();
         klik(&mut ui, p, 1, Duration::from_secs(4));
         assert_eq!(body(&ui).metrics().count, BARIS);

@@ -1,22 +1,23 @@
-//! Penerjemah **winit → kosakata input framework** (INTEGRASI-NATIVE §3).
+//! Translator from **winit into the framework's input vocabulary**
+//! (INTEGRASI-NATIVE §3).
 //!
-//! Ini satu-satunya berkas di seluruh pohon yang tahu bentuk event winit.
-//! Aturannya sama dengan aturan wgpu (§3.2): nama `winit::` tidak boleh muncul
-//! di `silka-core` maupun di kode widget, supaya shell lain (uji headless,
-//! replay rekaman input, platform baru) cukup menghasilkan
+//! This is the only file in the whole tree that knows the shape of a winit
+//! event. The rule matches the wgpu rule (§3.2): the name `winit::` must never
+//! appear in `silka-core` or in widget code, so that other shells (headless
+//! tests, input recording replay, a new platform) only have to produce a
 //! [`silka_core::input::Event`].
 //!
-//! Tiga hal yang **wajib** diselesaikan di sini, bukan di atas:
+//! Three things that **must** be settled here rather than further up:
 //!
-//! 1. **DPI.** winit melapor dalam piksel fisik; seluruh framework berbicara
-//!    poin logis. Pembagian scale factor terjadi sekali, di sini.
-//! 2. **Posisi tombol.** `WindowEvent::MouseInput` tidak membawa koordinat —
-//!    winit mengandalkan `CursorMoved` terakhir. [`WinitInput`] menyimpannya.
-//! 3. **Modifier.** Datang sebagai event terpisah (`ModifiersChanged`) dan
-//!    harus ditempelkan ke setiap event berikutnya.
+//! 1. **DPI.** winit reports physical pixels; the whole framework speaks
+//!    logical points. Dividing by the scale factor happens once, here.
+//! 2. **Button position.** `WindowEvent::MouseInput` carries no coordinates —
+//!    winit relies on the last `CursorMoved`. [`WinitInput`] remembers it.
+//! 3. **Modifiers.** They arrive as a separate event (`ModifiersChanged`) and
+//!    have to be attached to every event that follows.
 //!
-//! Waktu dinyatakan sebagai [`Duration`] sejak window dibuka: velocity tracker
-//! butuh sumbu waktu, dan `Instant` tidak bisa diuji.
+//! Time is expressed as a [`Duration`] since the window opened: the velocity
+//! tracker needs a time axis, and `Instant` cannot be tested.
 
 use std::time::{Duration, Instant};
 
@@ -31,10 +32,10 @@ use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, TouchPhase}
 use winit::keyboard::{Key as WinitKey, NamedKey as WinitNamed};
 
 // ---------------------------------------------------------------------------
-// Terjemahan murni (bisa diuji tanpa window)
+// Pure translation (testable without a window)
 // ---------------------------------------------------------------------------
 
-/// Modifier winit → milik kita.
+/// winit modifiers → ours.
 pub fn modifiers_from_winit(state: winit::keyboard::ModifiersState) -> Modifiers {
     let mut m = Modifiers::NONE;
     if state.shift_key() {
@@ -52,7 +53,7 @@ pub fn modifiers_from_winit(state: winit::keyboard::ModifiersState) -> Modifiers
     m
 }
 
-/// Tombol mouse winit → milik kita.
+/// winit mouse buttons → ours.
 pub fn button_from_winit(button: MouseButton) -> PointerButton {
     match button {
         MouseButton::Left => PointerButton::Primary,
@@ -64,11 +65,11 @@ pub fn button_from_winit(button: MouseButton) -> PointerButton {
     }
 }
 
-/// Tombol logis winit → [`KeyCode`].
+/// winit logical keys → [`KeyCode`].
 ///
-/// Spasi sengaja dinormalkan menjadi [`NamedKey::Space`] walau winit
-/// melaporkannya sebagai karakter: yang dilakukannya pada tombol/checkbox
-/// adalah *mengaktifkan*, bukan mengetik.
+/// Space is deliberately normalised to [`NamedKey::Space`] even though winit
+/// reports it as a character: on a button or checkbox it *activates* rather
+/// than types.
 pub fn key_from_winit(key: &WinitKey) -> KeyCode {
     match key {
         WinitKey::Named(named) => match named {
@@ -97,7 +98,7 @@ pub fn key_from_winit(key: &WinitKey) -> KeyCode {
             Some(c) if s.chars().count() == 1 => KeyCode::Character(c),
             _ => KeyCode::Unidentified,
         },
-        // Dead key belum menghasilkan apa pun; teksnya menyusul lewat IME.
+        // A dead key produces nothing yet; its text follows through the IME.
         WinitKey::Dead(_) | WinitKey::Unidentified(_) => KeyCode::Unidentified,
     }
 }
@@ -120,10 +121,10 @@ fn fungsi_ke_nomor(named: WinitNamed) -> Option<u8> {
     })
 }
 
-/// Besaran guliran winit → milik kita.
+/// winit scroll deltas → ours.
 ///
-/// `LineDelta` datang dari roda mouse, `PixelDelta` dari trackpad. Keduanya
-/// **tidak** disamakan di sini: hanya widget yang tahu berapa poin satu baris.
+/// `LineDelta` comes from a mouse wheel, `PixelDelta` from a trackpad. The two
+/// are **not** unified here: only the widget knows how many points a line is.
 pub fn scroll_delta_from_winit(delta: MouseScrollDelta, scale_factor: f64) -> ScrollDelta {
     match delta {
         MouseScrollDelta::LineDelta(x, y) => ScrollDelta::Lines { x, y },
@@ -137,12 +138,12 @@ pub fn scroll_delta_from_winit(delta: MouseScrollDelta, scale_factor: f64) -> Sc
     }
 }
 
-/// Tahap gesture winit → milik kita.
+/// winit gesture phases → ours.
 ///
-/// winit melaporkan momentum trackpad sebagai `TouchPhase::Moved` **setelah**
-/// `Ended`; itulah ekor inersia milik OS (INTEGRASI-NATIVE §3), dan kita
-/// menandainya supaya widget scroll tidak menyimulasikannya lagi. Pelacakan
-/// "sudah pernah Ended" hidup di [`WinitInput`], bukan di fungsi ini.
+/// winit reports trackpad momentum as `TouchPhase::Moved` **after** `Ended`;
+/// that is the OS-owned inertia tail (INTEGRASI-NATIVE §3), and we tag it so
+/// scroll widgets do not simulate it a second time. Tracking of "an `Ended`
+/// already happened" lives in [`WinitInput`], not in this function.
 pub fn scroll_phase_from_winit(phase: TouchPhase, roda: bool, setelah_ended: bool) -> ScrollPhase {
     if roda {
         return ScrollPhase::Wheel;
@@ -157,7 +158,7 @@ pub fn scroll_phase_from_winit(phase: TouchPhase, roda: bool, setelah_ended: boo
     }
 }
 
-/// Event IME winit → milik kita (pemetaan 1:1, tanpa tafsir).
+/// winit IME events → ours (a 1:1 mapping, no interpretation).
 pub fn ime_from_winit(ime: Ime) -> ImeEvent {
     match ime {
         Ime::Enabled => ImeEvent::Enabled,
@@ -167,7 +168,7 @@ pub fn ime_from_winit(ime: Ime) -> ImeEvent {
     }
 }
 
-/// Kursor kita → kursor winit.
+/// Our cursor icons → winit cursor icons.
 pub fn cursor_to_winit(cursor: CursorIcon) -> winit::window::CursorIcon {
     use winit::window::CursorIcon as W;
     match cursor {
@@ -180,8 +181,8 @@ pub fn cursor_to_winit(cursor: CursorIcon) -> winit::window::CursorIcon {
         CursorIcon::ResizeHorizontal => W::EwResize,
         CursorIcon::ResizeVertical => W::NsResize,
         CursorIcon::NotAllowed => W::NotAllowed,
-        // `CursorIcon` kita `#[non_exhaustive]`: bentuk baru jatuh ke panah
-        // biasa alih-alih menggagalkan compile pemakainya.
+        // Our `CursorIcon` is `#[non_exhaustive]`: new shapes fall back to the
+        // plain arrow instead of breaking downstream compilation.
         _ => W::Default,
     }
 }
@@ -190,22 +191,21 @@ pub fn cursor_to_winit(cursor: CursorIcon) -> winit::window::CursorIcon {
 // WinitInput
 // ---------------------------------------------------------------------------
 
-/// State kecil yang harus diingat antar-event winit.
+/// The small amount of state that must survive between winit events.
 ///
-/// Bukan router: ia tidak tahu apa-apa tentang render tree. Tugasnya hanya
-/// merakit event yang **lengkap** dari potongan-potongan yang dikirim winit
-/// terpisah.
+/// Not a router: it knows nothing about the render tree. Its only job is to
+/// assemble **complete** events out of the pieces winit delivers separately.
 #[derive(Debug)]
 pub struct WinitInput {
     scale_factor: f64,
     modifiers: Modifiers,
     buttons: Buttons,
-    /// Posisi kursor terakhir dalam poin logis; `None` sebelum kursor pernah
-    /// masuk ke window.
+    /// Last cursor position in logical points; `None` before the cursor has
+    /// ever entered the window.
     position: Option<Point>,
     started: Instant,
-    /// Gesture guliran sudah pernah `Ended` → yang datang berikutnya adalah
-    /// momentum milik OS.
+    /// The scroll gesture already saw an `Ended` → whatever comes next is
+    /// OS-owned momentum.
     momentum: bool,
 }
 
@@ -216,12 +216,12 @@ impl Default for WinitInput {
 }
 
 impl WinitInput {
-    /// Penerjemah baru dengan titik nol waktu = sekarang.
+    /// A new translator whose time origin is now.
     pub fn new() -> Self {
         Self::since(Instant::now())
     }
 
-    /// Penerjemah dengan titik nol waktu tertentu (dipakai test).
+    /// A translator with an explicit time origin (used by tests).
     pub fn since(started: Instant) -> Self {
         Self {
             scale_factor: 1.0,
@@ -233,22 +233,22 @@ impl WinitInput {
         }
     }
 
-    /// Scale factor window (2.0 di layar Retina).
+    /// The window's scale factor (2.0 on a Retina display).
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
         self.scale_factor = scale_factor;
     }
 
-    /// Modifier yang sedang ditahan.
+    /// The modifiers currently held down.
     pub fn modifiers(&self) -> Modifiers {
         self.modifiers
     }
 
-    /// Posisi kursor terakhir dalam poin logis.
+    /// The last cursor position, in logical points.
     pub fn position(&self) -> Option<Point> {
         self.position
     }
 
-    /// Waktu sejak window dibuka.
+    /// Time elapsed since the window opened.
     fn now(&self) -> Duration {
         self.started.elapsed()
     }
@@ -279,7 +279,7 @@ impl WinitInput {
         let phase = if self.position.is_some() {
             PointerPhase::Move
         } else {
-            // Sentuhan pertama setelah kursor masuk window.
+            // First contact after the cursor entered the window.
             PointerPhase::Enter
         };
         self.position = Some(p);
@@ -288,8 +288,8 @@ impl WinitInput {
 
     /// `WindowEvent::CursorLeft`.
     ///
-    /// `None` bila kursor memang belum pernah ada di window — tidak ada
-    /// gunanya membangunkan router untuk itu.
+    /// `None` if the cursor has never been in the window — there is no point
+    /// waking the router for that.
     pub fn cursor_left(&mut self) -> Option<Event> {
         let p = self.position.take()?;
         Some(Event::Pointer(self.pointer(
@@ -301,8 +301,8 @@ impl WinitInput {
 
     /// `WindowEvent::MouseInput`.
     ///
-    /// `None` selama posisi kursor belum pernah diketahui: event tombol tanpa
-    /// koordinat akan mendarat di (0,0) dan mengklik hal yang salah.
+    /// `None` while the cursor position is still unknown: a button event with
+    /// no coordinates would land at (0,0) and click the wrong thing.
     pub fn mouse_input(&mut self, state: ElementState, button: MouseButton) -> Option<Event> {
         let position = self.position?;
         let button = button_from_winit(button);
@@ -321,8 +321,8 @@ impl WinitInput {
         Some(Event::Pointer(event))
     }
 
-    /// Window kehilangan fokus: interaksi yang sedang berjalan **dibatalkan**,
-    /// bukan diselesaikan (`WindowEvent::Focused(false)`).
+    /// The window lost focus: an in-flight interaction is **cancelled**, not
+    /// completed (`WindowEvent::Focused(false)`).
     pub fn cancel(&mut self) -> Option<Event> {
         if self.buttons.is_empty() {
             return None;
@@ -341,7 +341,7 @@ impl WinitInput {
         let position = self.position?;
         let roda = matches!(delta, MouseScrollDelta::LineDelta(..));
         let scroll_phase = scroll_phase_from_winit(phase, roda, self.momentum);
-        // Setelah jari diangkat, gerakan berikutnya adalah inersia dari OS.
+        // Once the finger is lifted, the next movement is OS inertia.
         self.momentum = match phase {
             TouchPhase::Started => false,
             TouchPhase::Ended => !roda && !self.momentum,
@@ -371,10 +371,10 @@ impl WinitInput {
         ))
     }
 
-    /// Rakit event keyboard dari bagian-bagiannya.
+    /// Assemble a keyboard event from its parts.
     ///
-    /// Ada terpisah karena `winit::event::KeyEvent` `#[non_exhaustive]` dan
-    /// tidak bisa dibuat di test — jalur ini yang diuji.
+    /// Kept separate because `winit::event::KeyEvent` is `#[non_exhaustive]`
+    /// and cannot be constructed in tests — this is the path under test.
     pub fn key(
         &self,
         code: KeyCode,
@@ -398,10 +398,10 @@ impl WinitInput {
     }
 }
 
-/// Area caret (poin logis) → argumen `Window::set_ime_cursor_area`.
+/// Caret area (logical points) → arguments for `Window::set_ime_cursor_area`.
 ///
-/// Jendela kandidat CJK berlabuh di kotak ini; salah sedikit saja dan ia
-/// menutupi teks yang sedang diketik (REKOMENDASI §3.8).
+/// The CJK candidate window anchors to this box; get it slightly wrong and it
+/// covers the text being typed (REKOMENDASI §3.8).
 pub fn ime_area_to_winit(area: Rect) -> (LogicalPosition<f64>, LogicalSize<f64>) {
     (
         LogicalPosition::new(area.origin.x as f64, area.origin.y as f64),
@@ -455,8 +455,8 @@ mod tests {
             key_from_winit(&WinitKey::Named(WinitNamed::F7)),
             KeyCode::Named(NamedKey::Function(7))
         );
-        // Tombol yang belum ada di kosakata kita tidak boleh menyamar jadi
-        // tombol lain.
+        // A key that is not yet in our vocabulary must not masquerade as
+        // some other key.
         assert_eq!(
             key_from_winit(&WinitKey::Named(WinitNamed::BrowserBack)),
             KeyCode::Unidentified
@@ -469,12 +469,12 @@ mod tests {
             key_from_winit(&WinitKey::Character("a".into())),
             KeyCode::Character('a')
         );
-        // Spasi = aksi, bukan ketikan.
+        // Space = activation, not typing.
         assert_eq!(
             key_from_winit(&WinitKey::Character(" ".into())),
             KeyCode::Named(NamedKey::Space)
         );
-        // Dead key belum menghasilkan karakter apa pun.
+        // A dead key does not produce a character yet.
         assert_eq!(
             key_from_winit(&WinitKey::Dead(Some('´'))),
             KeyCode::Unidentified
@@ -581,7 +581,7 @@ mod tests {
         ) else {
             panic!()
         };
-        // Piksel fisik → poin logis.
+        // Physical pixels → logical points.
         assert_eq!(trackpad.delta, ScrollDelta::Points { x: 0.0, y: -10.0 });
         assert_eq!(trackpad.phase, ScrollPhase::Changed);
     }
@@ -608,8 +608,8 @@ mod tests {
             fase(i.mouse_wheel(pixel, TouchPhase::Ended)),
             ScrollPhase::Ended
         );
-        // Jari sudah diangkat: sisanya inersia milik OS — jangan disimulasikan
-        // ulang oleh scroll physics kita.
+        // The finger is already lifted: the rest is OS-owned inertia — our
+        // scroll physics must not simulate it again.
         assert_eq!(
             fase(i.mouse_wheel(pixel, TouchPhase::Moved)),
             ScrollPhase::Momentum
@@ -618,7 +618,7 @@ mod tests {
             fase(i.mouse_wheel(pixel, TouchPhase::Ended)),
             ScrollPhase::MomentumEnded
         );
-        // Gesture berikutnya mulai bersih.
+        // The next gesture starts clean.
         assert_eq!(
             fase(i.mouse_wheel(pixel, TouchPhase::Started)),
             ScrollPhase::Began

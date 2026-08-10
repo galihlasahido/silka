@@ -1,4 +1,4 @@
-//! `button()` — komponen Tier 2 pertama (`KOMPONEN.md`).
+//! `button()` — the first Tier 2 component (`KOMPONEN.md`).
 //!
 //! ```
 //! # use silka_widgets::{button, Fonts};
@@ -11,39 +11,39 @@
 //! button(&fonts, &t, "Tambah").on_press(move || count.set(count.get() + 1));
 //! ```
 //!
-//! Tombol adalah **komposisi**, bukan primitif baru: yang dirakit di sini
-//! adalah wadah flex berisi [`crate::text`] di dalam sebuah node
-//! ([`ButtonBox`]) yang memegang seluruh kontrak interaksi — hit-test squircle,
-//! hover/press/focus, Space/Enter, emisi a11y — **plus** yang tidak dimiliki
-//! [`silka_core::tree::Interactive`]: setiap perpindahan state berjalan lewat
-//! **spring** (§3.5), bukan lompat.
+//! A button is a **composition**, not a new primitive: what is assembled
+//! here is a flex container holding a [`crate::text`] inside a node
+//! ([`ButtonBox`]) that owns the entire interaction contract — squircle
+//! hit-testing, hover/press/focus, Space/Enter, a11y emission — **plus** the
+//! one thing [`silka_core::tree::Interactive`] does not have: every state
+//! transition runs through a **spring** (§3.5) instead of jumping.
 //!
-//! Empat gerakan yang dijalankan node ini, dan perannya terhadap
-//! reduced-motion ([`MotionRole`]):
+//! The four motions this node drives, and how each relates to reduced-motion
+//! ([`MotionRole`]):
 //!
-//! | Gerakan | Spring | Peran | Alasan |
+//! | Motion | Spring | Role | Why |
 //! |---|---|---|---|
-//! | Warna latar hover/press/disabled | `snappy` | Essential | Menjelaskan keadaan kontrol |
-//! | Kempis saat ditekan (scale-on-press) | `snappy` | Decorative | Hiasan; reduced-motion mematikannya |
-//! | Cincin fokus tumbuh | `smooth` | Essential | Menjelaskan di mana fokus keyboard |
-//! | Titik "memuat" | `smooth` | Decorative | Indikator tak tentu; diam saat reduced-motion |
+//! | Hover/press/disabled background | `snappy` | Essential | Explains the control's state |
+//! | Scale-on-press shrink | `snappy` | Decorative | Decoration; reduced-motion drops it |
+//! | Focus ring grows | `smooth` | Essential | Explains where keyboard focus is |
+//! | "Loading" dots | `smooth` | Decorative | Indeterminate; still under reduced-motion |
 //!
-//! Definition of Done `KOMPONEN.md` yang dipenuhi berkas ini: benar di kedua
-//! preset lewat token semantik, seluruh state interaktif bertransisi spring,
-//! navigasi keyboard penuh + focus ring, node AccessKit dengan peran `Button`
-//! (atau `Link`) beserta aksinya, dark mode, **hit target minimal 44pt**, dan
-//! reduced-motion yang dihormati.
+//! The `KOMPONEN.md` Definition of Done items this file satisfies: correct in
+//! both presets through semantic tokens, every interactive state transitions
+//! with a spring, full keyboard navigation + focus ring, an AccessKit node
+//! with the `Button` (or `Link`) role and its actions, dark mode, a
+//! **44pt minimum hit target**, and reduced-motion honoured.
 //!
-//! Siapa yang memajukan spring-nya: [`crate::advance`], satu kali per frame
-//! untuk seluruh pohon — persis pola [`crate::overlay::advance`], karena "render
-//! hanya saat dirty" (§3.5) baru bisa dijanjikan kalau ada **satu** pihak yang
-//! tahu masih adakah yang bergerak.
+//! Who advances its springs: [`crate::advance`], once per frame for the whole
+//! tree — exactly the [`crate::overlay::advance`] pattern, because "render
+//! only when dirty" (§3.5) can only be promised if **one** party knows
+//! whether anything is still moving.
 //!
-//! Utang teknis yang disadari dan tidak disembunyikan: "scale-on-press" digambar
-//! sebagai **kempisnya kotak latar**, bukan transform sejati, karena lapisan
-//! paint (§3.2) belum punya perintah transform — label di dalamnya karena itu
-//! tidak ikut mengecil. Begitu perintah transform ada, spring yang sama persis
-//! yang menggerakkannya; bentuk API di berkas ini tidak berubah.
+//! Technical debt we know about and do not hide: "scale-on-press" is drawn as
+//! the **background box shrinking**, not as a true transform, because the
+//! paint layer (§3.2) has no transform command yet — which is why the label
+//! inside does not shrink along with it. The moment that command exists, the
+//! very same spring drives it; the API shape in this file does not change.
 
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
@@ -63,35 +63,35 @@ use silka_theme::{Appearance, Theme};
 use crate::fonts::Fonts;
 use crate::text::text;
 
-/// Ukuran minimum area sentuh sebuah kontrol, poin logis (Apple HIG).
+/// Minimum size of a control's touch area, in logical points (Apple HIG).
 pub const MIN_HIT_TARGET: f32 = 44.0;
 
-/// Jumlah titik indikator "memuat".
+/// Number of dots in the "loading" indicator.
 const JUMLAH_TITIK: usize = 3;
 
 // ---------------------------------------------------------------------------
-// Varian
+// Variants
 // ---------------------------------------------------------------------------
 
-/// Varian visual tombol (`KOMPONEN.md`: primary/secondary/ghost/destructive/
-/// link).
+/// Visual variant of a button (`KOMPONEN.md`: primary/secondary/ghost/
+/// destructive/link).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ButtonVariant {
-    /// Aksi utama: latar `accent`, teks `on_accent`.
+    /// Primary action: `accent` background, `on_accent` text.
     #[default]
     Primary,
-    /// Aksi pendamping: latar `surface`, teks `label`, border `border`.
+    /// Companion action: `surface` background, `label` text, `border` border.
     Secondary,
-    /// Tanpa latar sampai di-hover — toolbar, baris daftar.
+    /// No background until hovered — toolbars, list rows.
     Ghost,
-    /// Aksi merusak: latar `destructive`.
+    /// Destructive action: `destructive` background.
     Destructive,
-    /// Terlihat seperti tautan: teks `accent`, tanpa latar.
+    /// Looks like a link: `accent` text, no background.
     Link,
 }
 
 impl ButtonVariant {
-    /// Semua varian, urut — dipakai gallery dan uji lintas-varian.
+    /// Every variant, in order — used by the gallery and cross-variant tests.
     pub const ALL: [ButtonVariant; 5] = [
         ButtonVariant::Primary,
         ButtonVariant::Secondary,
@@ -100,7 +100,7 @@ impl ButtonVariant {
         ButtonVariant::Link,
     ];
 
-    /// Nama pendek untuk gallery, log, dan dump uji.
+    /// Short name for the gallery, logs, and test dumps.
     pub const fn name(self) -> &'static str {
         match self {
             ButtonVariant::Primary => "primary",
@@ -111,7 +111,8 @@ impl ButtonVariant {
         }
     }
 
-    /// Peran a11y varian ini — `Link` dibacakan sebagai tautan, sisanya tombol.
+    /// This variant's a11y role — `Link` is announced as a link, the rest as
+    /// buttons.
     pub const fn role(self) -> AccessRole {
         match self {
             ButtonVariant::Link => AccessRole::Link,
@@ -119,24 +120,24 @@ impl ButtonVariant {
         }
     }
 
-    /// Warna teks varian ini pada keadaan tertentu.
+    /// Text color of this variant in a given state.
     ///
-    /// Warna teks **tidak** dianimasikan: ia milik node teks di dalam tombol,
-    /// dan node itu hanya berubah lewat diff. Yang bergerak adalah latarnya —
-    /// dan justru itulah yang dilakukan macOS/iOS.
+    /// Text color is **not** animated: it belongs to the text node inside the
+    /// button, and that node only ever changes through a diff. What moves is
+    /// the background — and that is exactly what macOS/iOS do.
     pub fn foreground(self, theme: &Theme, state: ButtonState) -> Color {
         if state.disabled {
             return theme.color.disabled_label;
         }
         if state.loading {
-            // Label disembunyikan tapi **tetap diukur**: tombol tidak boleh
-            // berubah lebar saat mulai memuat.
+            // The label is hidden but **still measured**: a button must not
+            // change width when it starts loading.
             return Color::TRANSPARENT;
         }
         self.content_color(theme)
     }
 
-    /// Warna isi (teks/titik) varian ini saat aktif.
+    /// Content color (text/dots) of this variant while active.
     fn content_color(self, theme: &Theme) -> Color {
         match self {
             ButtonVariant::Primary => theme.color.on_accent,
@@ -146,7 +147,7 @@ impl ButtonVariant {
         }
     }
 
-    /// Seluruh nilai gambar varian ini, sudah diresolusi dari token.
+    /// Every paint value of this variant, already resolved from tokens.
     pub fn style(self, theme: &Theme, state: ButtonState) -> ButtonStyle {
         let (rest, hover, pressed) = match self {
             ButtonVariant::Primary => (
@@ -160,7 +161,7 @@ impl ButtonVariant {
                 theme.color.surface_pressed,
             ),
             ButtonVariant::Ghost => (
-                // Ghost tidak menggambar apa pun sampai disentuh.
+                // Ghost draws nothing at all until it is touched.
                 theme.color.surface_hover.with_alpha(0.0),
                 theme.color.surface_hover,
                 theme.color.surface_pressed,
@@ -192,8 +193,8 @@ impl ButtonVariant {
             rest,
             hover,
             pressed,
-            // Kontrol yang mati **meredup ke arah latar halaman** — aturan yang
-            // sama yang dipakai macOS, dan nilainya tetap turunan token.
+            // A disabled control **fades toward the page background** — the
+            // same rule macOS uses, and the value stays token-derived.
             disabled: rest.lerp(theme.color.background, 0.6),
             corners: theme.corners(theme.radius.md),
             border_width,
@@ -211,12 +212,12 @@ impl ButtonVariant {
     }
 }
 
-/// Geser sebuah warna ke arah "lebih ditekan" sebanyak `t`.
+/// Nudge a color `t` of the way toward "more pressed".
 ///
-/// Di appearance terang artinya lebih gelap, di gelap lebih terang — aturan
-/// yang sama yang dipakai macOS. Dipakai hanya di tempat token tidak
-/// menyediakan langkah berikutnya (mis. `destructive_pressed` yang memang tidak
-/// ada), jadi nilainya tetap **turunan** token, bukan angka warna baru.
+/// In a light appearance that means darker, in a dark one lighter — the same
+/// rule macOS uses. Used only where the tokens do not offer the next step
+/// (e.g. `destructive_pressed`, which deliberately does not exist), so the
+/// value stays **derived** from tokens rather than being a new color.
 fn dorong(color: Color, theme: &Theme, jumlah: f32) -> Color {
     let arah = if theme.appearance == Appearance::Dark {
         Color::WHITE
@@ -230,79 +231,80 @@ fn dorong(color: Color, theme: &Theme, jumlah: f32) -> Color {
 // State & style
 // ---------------------------------------------------------------------------
 
-/// Keadaan tombol yang **datang dari aplikasi** (bukan dari penunjuk).
+/// Button state that **comes from the application** (not from the pointer).
 ///
-/// Dipisah dari state runtime (hover/press/focus) karena keduanya hidup di
-/// tempat berbeda: yang ini milik props dan berubah lewat diff, yang itu milik
-/// node dan tidak boleh tersapu rebuild.
+/// Kept apart from runtime state (hover/press/focus) because the two live in
+/// different places: this one belongs to the props and changes through a
+/// diff, that one belongs to the node and must not be swept away by a
+/// rebuild.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct ButtonState {
-    /// Tidak bisa dipakai — tetap dibacakan screen reader sebagai dimmed.
+    /// Unusable — still announced to screen readers as dimmed.
     pub disabled: bool,
-    /// Sedang memproses: label disembunyikan, titik indikator berdenyut.
+    /// Working: the label is hidden and the indicator dots pulse.
     pub loading: bool,
 }
 
 impl ButtonState {
-    /// Benar bila tombol menerima aktivasi sama sekali.
+    /// True while the button accepts activation at all.
     pub fn is_enabled(self) -> bool {
         !self.disabled && !self.loading
     }
 }
 
-/// Seluruh nilai gambar sebuah tombol, **sudah diresolusi** dari token theme.
+/// Every paint value of a button, **already resolved** from theme tokens.
 ///
-/// Mesin tidak pernah punya pendapat tentang warna (§2.6, §2.7): preset
-/// Cupertino dan Tailwind berganti dengan mengisi struct ini, tanpa satu baris
-/// pun berubah di [`ButtonBox`].
+/// The engine never has an opinion about color (§2.6, §2.7): the Cupertino
+/// and Tailwind presets swap over by filling in this struct, without a single
+/// line changing in [`ButtonBox`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ButtonStyle {
-    /// Latar keadaan diam.
+    /// Background at rest.
     pub rest: Color,
-    /// Latar saat penunjuk di atasnya.
+    /// Background while the pointer is over it.
     pub hover: Color,
-    /// Latar saat ditekan.
+    /// Background while pressed.
     pub pressed: Color,
-    /// Latar saat tidak bisa dipakai.
+    /// Background while unusable.
     pub disabled: Color,
-    /// Geometri sudut — sekaligus bentuk area sentuh (§3.6).
+    /// Corner geometry — and with it the shape of the hit area (§3.6).
     pub corners: Corners,
-    /// Tebal border (0 = tanpa border).
+    /// Border width (0 = no border).
     pub border_width: f32,
-    /// Warna border saat aktif.
+    /// Border color while enabled.
     pub border: Color,
-    /// Warna border saat mati.
+    /// Border color while disabled.
     pub border_disabled: Color,
-    /// Bayangan ganda ala HIG.
+    /// HIG-style paired shadow.
     pub shadows: ShadowPair,
-    /// Tebal cincin fokus keyboard.
+    /// Width of the keyboard focus ring.
     pub focus_ring_width: f32,
-    /// Warna cincin fokus.
+    /// Focus ring color.
     pub focus_ring: Color,
-    /// Seberapa jauh latar mengempis saat ditekan, poin logis.
+    /// How far the background shrinks when pressed, in logical points.
     pub press_travel: f32,
-    /// Warna titik indikator "memuat".
+    /// Color of the "loading" indicator dots.
     pub dot: Color,
-    /// Diameter satu titik.
+    /// Diameter of a single dot.
     pub dot_size: f32,
-    /// Jarak antar titik.
+    /// Gap between dots.
     pub dot_gap: f32,
-    /// Keadaan yang datang dari aplikasi.
+    /// State that comes from the application.
     pub state: ButtonState,
 }
 
 impl ButtonStyle {
-    /// Latar yang seharusnya berlaku untuk kombinasi state ini.
+    /// The background that should apply to this combination of state.
     ///
-    /// Inilah **target** spring; yang digambar adalah posisi spring-nya, bukan
-    /// nilai ini.
+    /// This is the spring's **target**; what gets drawn is the spring's
+    /// position, not this value.
     pub fn background_for(&self, hovered: bool, pressed: bool) -> Color {
         if !self.state.is_enabled() {
             return self.disabled;
         }
-        // `pressed` bertahan saat penunjuk ditangkap keluar kotak, tapi tampilan
-        // "ditekan" hanya berlaku selama penunjuknya masih di dalam — persis
-        // AppKit/UIKit.
+        // `pressed` survives while the pointer is captured outside the box,
+        // but the "pressed" look only applies while the pointer is still
+        // inside — exactly like AppKit/UIKit.
         if pressed && hovered {
             self.pressed
         } else if hovered {
@@ -312,7 +314,7 @@ impl ButtonStyle {
         }
     }
 
-    /// Warna border yang berlaku.
+    /// The border color that applies.
     pub fn border_for(&self) -> Color {
         if self.state.disabled {
             self.border_disabled
@@ -326,7 +328,7 @@ impl ButtonStyle {
 // Render node
 // ---------------------------------------------------------------------------
 
-/// Node render sebuah tombol: kontrak input penuh + empat spring.
+/// Render node of a button: the full input contract + four springs.
 #[derive(Debug)]
 pub struct ButtonBox {
     style: ButtonStyle,
@@ -335,25 +337,25 @@ pub struct ButtonBox {
     focus: FocusPolicy,
     on_press: Option<Callback>,
 
-    /// Latar yang benar-benar digambar frame ini.
+    /// The background actually drawn this frame.
     bg: SpringValue<Color>,
-    /// 0 = lepas, 1 = kempis penuh (scale-on-press).
+    /// 0 = released, 1 = fully shrunk (scale-on-press).
     press_t: SpringValue<f32>,
-    /// 0 = tanpa cincin fokus, 1 = cincin penuh.
+    /// 0 = no focus ring, 1 = full ring.
     ring_t: SpringValue<f32>,
-    /// Fase denyut titik "memuat" (ping-pong 0↔1).
+    /// Pulse phase of the "loading" dots (ping-pong 0↔1).
     pulse: SpringValue<f32>,
 
     hovered: bool,
     pressed: bool,
     focused: bool,
-    /// Jumlah aktivasi (klik atau Space/Enter) sejak node dibuat.
+    /// Number of activations (click or Space/Enter) since the node was built.
     activations: u32,
 }
 
 impl ButtonBox {
-    /// Node baru yang **sudah berada** di keadaan diamnya — tombol tidak
-    /// beranimasi masuk saat halaman pertama kali tampil.
+    /// A new node **already sitting** at its rest state — a button does not
+    /// animate in the first time a page appears.
     fn new(style: ButtonStyle, label: Option<String>, role: AccessRole, spring: Spring) -> Self {
         Self {
             bg: SpringValue::new(style.background_for(false, false)).with_spring(spring),
@@ -374,57 +376,57 @@ impl ButtonBox {
         }
     }
 
-    /// Keadaan yang datang dari aplikasi.
+    /// State that comes from the application.
     pub fn state(&self) -> ButtonState {
         self.style.state
     }
 
-    /// Nilai gambar yang sedang berlaku.
+    /// The paint values currently in effect.
     pub fn style(&self) -> ButtonStyle {
         self.style
     }
 
-    /// Latar yang digambar frame ini — posisi spring, bukan targetnya.
+    /// The background drawn this frame — the spring position, not its target.
     pub fn background(&self) -> Color {
         self.bg.position()
     }
 
-    /// Target latar yang sedang dituju spring.
+    /// The background target the spring is heading for.
     pub fn background_target(&self) -> Color {
         self.bg.target()
     }
 
-    /// Kemajuan tekanan 0..1 (0 = lepas).
+    /// Press progress 0..1 (0 = released).
     pub fn press_progress(&self) -> f32 {
         self.press_t.position()
     }
 
-    /// Kemajuan cincin fokus 0..1.
+    /// Focus ring progress 0..1.
     pub fn focus_progress(&self) -> f32 {
         self.ring_t.position()
     }
 
-    /// Penunjuk sedang di atasnya.
+    /// The pointer is over it.
     pub fn is_hovered(&self) -> bool {
         self.hovered
     }
 
-    /// Sedang ditekan.
+    /// Currently pressed.
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
 
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// Jumlah aktivasi sejak node dibuat.
+    /// Number of activations since the node was built.
     pub fn activations(&self) -> u32 {
         self.activations
     }
 
-    /// Benar bila masih ada spring yang bergerak.
+    /// True while any spring is still moving.
     pub fn is_animating(&self) -> bool {
         self.bg.is_animating()
             || self.press_t.is_animating()
@@ -432,10 +434,10 @@ impl ButtonBox {
             || (self.style.state.loading && self.pulse.is_animating())
     }
 
-    /// Arahkan seluruh spring ke keadaan sekarang.
+    /// Point every spring at the current state.
     ///
-    /// **Retarget, bukan animasi baru** (§3.5): tombol yang dilepas di tengah
-    /// animasi tekan berbalik arah membawa kecepatannya.
+    /// **Retarget, not a new animation** (§3.5): a button released halfway
+    /// through the press animation reverses carrying its velocity.
     fn retarget(&mut self) {
         let enabled = self.style.state.is_enabled();
         self.bg
@@ -457,14 +459,14 @@ impl ButtonBox {
         }
     }
 
-    /// Majukan seluruh spring satu frame; benar bila ada yang bergeser.
+    /// Advance every spring by one frame; true if anything moved.
     ///
-    /// Dipanggil [`crate::advance`], satu tempat untuk seluruh pohon.
+    /// Called by [`crate::advance`], one place for the whole tree.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let mut bergeser = false;
 
-        // -- gerakan yang **menjelaskan**: tetap berjalan di reduced-motion,
-        //    hanya kehilangan pantulannya (`Motion::spring`).
+        // -- motion that **explains**: keeps running under reduced-motion, it
+        //    only loses its bounce (`Motion::spring`).
         let bg0 = self.bg.position();
         tick.advance(&mut self.bg);
         bergeser |= self.bg.position() != bg0;
@@ -473,11 +475,11 @@ impl ButtonBox {
         tick.advance(&mut self.ring_t);
         bergeser |= self.ring_t.position() != r0;
 
-        // -- gerakan **hiasan**: hilang sepenuhnya di reduced-motion.
+        // -- **decorative** motion: gone entirely under reduced-motion.
         //
-        // "Hilang" di sini berarti benar-benar tidak terjadi, bukan terjadi
-        // seketika: tombol yang berkedip mengempis dalam satu frame justru
-        // lebih mengganggu daripada tombol yang diam.
+        // "Gone" here means it genuinely never happens, not that it happens
+        // instantly: a button that blinks shrunk in a single frame is more
+        // distracting than a button that stays still.
         if tick.motion().suppresses(MotionRole::Decorative) {
             bergeser |= self.press_t.position() != 0.0 || self.pulse.position() != 0.0;
             self.press_t.jump_to(0.0);
@@ -485,8 +487,8 @@ impl ButtonBox {
             return bergeser;
         }
 
-        // Target dihitung ulang tiap frame supaya keadaan tetap benar sekalipun
-        // pengguna baru saja mematikan reduced-motion di tengah tekanan.
+        // Targets are recomputed every frame so the state stays correct even
+        // if the user just turned reduced-motion off mid-press.
         self.press_t.set_target(
             if self.pressed && self.hovered && self.style.state.is_enabled() {
                 1.0
@@ -498,9 +500,9 @@ impl ButtonBox {
         tick.advance(&mut self.press_t);
         bergeser |= self.press_t.position() != p0;
 
-        // Indikator tak tentu: denyutnya membalik arah setiap kali sampai, dan
-        // ia **satu-satunya** sumber gerakan yang tidak berhenti sendiri — jadi
-        // ia juga satu-satunya yang harus menahan frame tetap datang
+        // Indeterminate indicator: its pulse reverses every time it arrives,
+        // and it is the **only** source of motion that never stops on its own
+        // — so it is also the only one that has to keep frames coming
         // ([`Tick::keep_awake`]).
         if self.style.state.loading {
             if !self.pulse.is_animating() {
@@ -516,7 +518,7 @@ impl ButtonBox {
         bergeser
     }
 
-    /// Selesaikan seluruh gerakan seketika (uji, snapshot, reduced-motion).
+    /// Finish every motion instantly (tests, snapshots, reduced-motion).
     pub fn settle(&mut self) {
         self.bg.settle();
         self.press_t.settle();
@@ -524,11 +526,11 @@ impl ButtonBox {
         self.pulse.settle();
     }
 
-    /// Catat satu aktivasi lalu jalankan `on_press`.
+    /// Record one activation, then run `on_press`.
     ///
-    /// Callback-nya **disalin keluar dulu**: ia hampir selalu menulis signal,
-    /// dan tulisan signal boleh memicu apa saja di runtime — yang tidak boleh
-    /// terjadi adalah ia berjalan sambil node ini masih dipinjam `&mut`.
+    /// The callback is **copied out first**: it almost always writes a signal,
+    /// and a signal write may trigger anything in the runtime — what must
+    /// never happen is it running while this node is still borrowed `&mut`.
     fn aktifkan(&mut self) {
         if !self.style.state.is_enabled() {
             return;
@@ -539,7 +541,7 @@ impl ButtonBox {
         }
     }
 
-    /// Kotak latar frame ini: mengempis mengikuti spring tekanan.
+    /// The background box this frame: shrinks along with the press spring.
     fn kotak_latar(&self, bounds: Rect) -> (Rect, Corners) {
         let kempis = (self.press_t.position() * self.style.press_travel)
             .clamp(0.0, bounds.size.min_side() * 0.25);
@@ -551,7 +553,7 @@ impl ButtonBox {
         )
     }
 
-    /// Kotak ketiga titik indikator "memuat", koordinat lokal.
+    /// The three "loading" indicator dot rects, in local coordinates.
     fn titik(&self, bounds: Rect) -> [Rect; JUMLAH_TITIK] {
         let d = self.style.dot_size.max(1.0);
         let gap = self.style.dot_gap.max(0.0);
@@ -563,11 +565,11 @@ impl ButtonBox {
     }
 }
 
-/// Opasitas satu titik indikator pada fase tertentu.
+/// Opacity of one indicator dot at a given phase.
 ///
-/// Fungsi murni dan karena itu bisa diuji tanpa GPU: gelombang segitiga dengan
-/// beda fase antar titik, dijepit supaya tidak pernah benar-benar hilang (titik
-/// yang berkedip sampai nol terbaca sebagai kedip, bukan sebagai denyut).
+/// A pure function, and therefore testable without a GPU: a triangle wave
+/// with a phase offset per dot, clamped so it never disappears completely (a
+/// dot that blinks all the way to zero reads as a flicker, not as a pulse).
 pub fn dot_opacity(phase: f32, index: usize) -> f32 {
     let t = (phase + index as f32 * 0.25).rem_euclid(1.0);
     let segitiga = 1.0 - (2.0 * t - 1.0).abs();
@@ -589,8 +591,8 @@ impl RenderNode for ButtonBox {
         constraints.constrain(size)
     }
 
-    /// Latar (kempis mengikuti spring), lalu cincin fokus, lalu isinya, lalu
-    /// indikator memuat di paling atas.
+    /// The background (shrinking with the spring), then the focus ring, then
+    /// the contents, then the loading indicator on top of everything.
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         let bounds = ctx.local_bounds();
         let (kotak, corners) = self.kotak_latar(bounds);
@@ -602,13 +604,13 @@ impl RenderNode for ButtonBox {
                 .background(bg)
                 .corners(corners)
                 .border(self.style.border_width, border);
-            // Bayangan ikut mengempis bersama tombolnya karena ia dihitung dari
-            // kotak yang sama — tidak ada geometri kedua yang bisa melenceng.
+            // The shadow shrinks with the button because it is computed from
+            // the same box — there is no second geometry that could drift.
             ctx.shadowed(quad, self.style.shadows);
         }
 
-        // Cincin fokus digambar **di luar** kotak node supaya tidak menutupi
-        // label (kebiasaan AppKit), dan tumbuh lewat spring.
+        // The focus ring is drawn **outside** the node's box so it never
+        // covers the label (AppKit habit), and it grows with a spring.
         let ring = self.ring_t.position().clamp(0.0, 1.0);
         if ring > 0.0 && self.style.focus_ring_width > 0.0 && self.style.focus_ring.a > 0.0 {
             let tebal = self.style.focus_ring_width * ring;
@@ -648,9 +650,9 @@ impl RenderNode for ButtonBox {
     fn access(&self, node: &mut AccessNode) {
         node.role = self.role;
         node.label.clone_from(&self.label);
-        // Tombol yang sedang memuat **tidak bisa** ditekan; bagi teknologi bantu
-        // itu berarti dimmed. (Kosakata `busy` belum ada di `AccessNode` —
-        // utang yang disadari, bukan yang tersembunyi.)
+        // A button that is loading **cannot** be pressed; to assistive
+        // technology that means dimmed. (`AccessNode` has no `busy`
+        // vocabulary yet — debt we acknowledge, not debt we hide.)
         node.disabled = !self.style.state.is_enabled();
         if self.style.state.is_enabled() {
             node.actions |= AccessActions::CLICK;
@@ -661,14 +663,14 @@ impl RenderNode for ButtonBox {
     }
 
     fn hit_shape(&self) -> HitShape {
-        // Bentuk sentuh = bentuk gambar **saat diam**: tombol yang mengempis
-        // tidak boleh kehilangan area sentuhnya di tengah tekanan jari.
+        // Hit shape = the shape drawn **at rest**: a button that shrinks must
+        // not lose its hit area under the user's finger.
         HitShape::Rounded(self.style.corners)
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Tombol mati tetap **menyerap** penunjuk: kliknya tidak boleh menembus
-        // ke konten di belakangnya.
+        // A disabled button still **absorbs** the pointer: its clicks must not
+        // fall through to the content behind it.
         HitBehavior::Opaque
     }
 
@@ -676,8 +678,8 @@ impl RenderNode for ButtonBox {
         if self.style.state.disabled {
             FocusPolicy::NONE
         } else {
-            // Tombol yang sedang memuat tetap boleh dituju keyboard — fokus
-            // tidak boleh melompat pergi hanya karena aplikasi sedang sibuk.
+            // A loading button can still be reached by keyboard — focus must
+            // not jump away just because the application is busy.
             self.focus
         }
     }
@@ -704,8 +706,8 @@ impl RenderNode for ButtonBox {
             Event::Pointer(p) => match p.phase {
                 PointerPhase::Enter => self.hovered = true,
                 PointerPhase::Leave => {
-                    // Sengaja tidak membatalkan `pressed`: penunjuk yang
-                    // ditangkap boleh keluar-masuk selama tombol ditahan.
+                    // Deliberately does not cancel `pressed`: a captured
+                    // pointer may leave and re-enter while the button is held.
                     self.hovered = false;
                 }
                 PointerPhase::Down if p.button == Some(PointerButton::Primary) => {
@@ -721,13 +723,13 @@ impl RenderNode for ButtonBox {
                     ctx.release_pointer();
                     ctx.handled();
                     if aktif {
-                        // Retarget dulu, baru callback: `on_press` boleh menulis
-                        // signal yang membangun ulang tombol ini.
+                        // Retarget first, callback second: `on_press` may
+                        // write a signal that rebuilds this very button.
                         self.retarget();
                         self.aktifkan();
                     }
                 }
-                // Dibatalkan OS ≠ dilepas: tidak ada aktivasi.
+                // Cancelled by the OS ≠ released: no activation.
                 PointerPhase::Cancel if self.pressed => self.pressed = false,
                 _ => {}
             },
@@ -756,8 +758,8 @@ impl RenderNode for ButtonBox {
         if (self.hovered, self.pressed, self.focused) != sebelum {
             self.retarget();
             ctx.request_paint();
-            // Tanpa ini frame berikutnya tidak akan pernah datang dan spring
-            // membeku di tempat (§3.5 "render hanya saat dirty").
+            // Without this the next frame never arrives and the springs
+            // freeze in place (§3.5 "render only when dirty").
             ctx.request_animation();
         }
     }
@@ -767,7 +769,7 @@ impl RenderNode for ButtonBox {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props tombol — bentuk view dari [`ButtonBox`].
+/// Button props — the view form of [`ButtonBox`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ButtonProps {
     style: ButtonStyle,
@@ -796,13 +798,13 @@ impl ViewNode for ButtonProps {
             let disabled_baru = self.style.state.disabled && !n.style.state.disabled;
             n.style = self.style;
             if disabled_baru {
-                // Kontrol yang baru saja dimatikan tidak boleh membeku dalam
-                // keadaan ditekan/hover — penunjuknya tidak akan datang lagi.
+                // A control that was just disabled must not freeze in a
+                // pressed/hovered state — its pointer is never coming back.
                 n.pressed = false;
                 n.hovered = false;
             }
-            // Warna baru **dituju**, bukan dilompati: mengganti theme atau
-            // menyalakan `loading` pun berjalan lewat spring.
+            // The new color is **targeted**, not jumped to: swapping the
+            // theme or turning on `loading` also runs through the spring.
             n.retarget();
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
@@ -819,23 +821,23 @@ impl ViewNode for ButtonProps {
             dirty |= Dirty::PAINT;
         }
         if n.bg.spring() != self.spring {
-            // Ganti preset spring tanpa mengganggu gerakan yang sedang berjalan.
+            // Swap the spring preset without disturbing motion in flight.
             n.bg.set_spring(self.spring);
             n.press_t.set_spring(self.spring);
         }
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan **menangkap nilai baru**. Membiarkan yang lama
-        // berarti tombol yang bekerja dari angka basi.
+        // The callback is always replaced without comparison: closures are
+        // rebuilt on every rebuild and **capture new values**. Keeping the old
+        // one means a button working from stale numbers.
         n.on_press.clone_from(&self.on_press);
         dirty
     }
 }
 
-/// Builder tombol bergaya Dart (§2.5).
+/// Dart-style button builder (§2.5).
 ///
-/// Menyimpan bahan mentahnya (theme, label, varian, state) dan baru
-/// **meresolusi token** saat menjadi [`View`] — dengan begitu `.variant(…)` yang
-/// dipanggil belakangan tetap mengubah seluruh paletnya.
+/// Keeps its raw ingredients (theme, label, variant, state) and only
+/// **resolves the tokens** once it becomes a [`View`] — that way a
+/// `.variant(…)` called later still changes the whole palette.
 #[derive(Debug, Clone)]
 pub struct Button {
     fonts: Fonts,
@@ -849,14 +851,14 @@ pub struct Button {
     key: Option<Key>,
 }
 
-/// Tombol berlabel teks — komponen `button` (`KOMPONEN.md` Tier 2).
+/// A text-labelled button — the `button` component (`KOMPONEN.md` Tier 2).
 ///
-/// `fonts` adalah mesin teks aplikasi, `theme` sumber seluruh nilainya.
+/// `fonts` is the application's text engine, `theme` the source of every value.
 pub fn button(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Button {
     button_variant(fonts, theme, label, ButtonVariant::default())
 }
 
-/// [`button`] dengan varian eksplisit.
+/// [`button`] with an explicit variant.
 pub fn button_variant(
     fonts: &Fonts,
     theme: &Theme,
@@ -869,8 +871,8 @@ pub fn button_variant(
         label: label.into(),
         variant,
         state: ButtonState::default(),
-        // `snappy` adalah rasa kontrol macOS: cepat sampai, nyaris tanpa
-        // pantulan (WWDC23).
+        // `snappy` is the macOS control feel: arrives fast, with almost no
+        // bounce (WWDC23).
         spring: Spring::snappy(),
         focus: FocusPolicy::FOCUSABLE,
         on_press: None,
@@ -879,57 +881,57 @@ pub fn button_variant(
 }
 
 impl Button {
-    /// Varian visual.
+    /// Visual variant.
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
         self.variant = variant;
         self
     }
 
-    /// Apa yang dijalankan saat tombol diaktifkan — klik **atau** Space/Enter.
+    /// What runs when the button is activated — a click **or** Space/Enter.
     pub fn on_press(mut self, f: impl Fn() + 'static) -> Self {
         self.on_press = Some(Callback::new(f));
         self
     }
 
-    /// Matikan tombol (tetap dibacakan screen reader sebagai dimmed).
+    /// Disable the button (still announced to screen readers as dimmed).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.state.disabled = disabled;
         self
     }
 
-    /// Tandai sedang memproses: label disembunyikan tanpa mengubah lebar, titik
-    /// indikator berdenyut, dan aktivasi ditolak.
+    /// Mark it as working: the label is hidden without changing the width,
+    /// the indicator dots pulse, and activation is refused.
     pub fn loading(mut self, loading: bool) -> Self {
         self.state.loading = loading;
         self
     }
 
-    /// Spring yang menjalankan transisi state (`smooth`/`snappy`/`bouncy`).
+    /// The spring that drives state transitions (`smooth`/`snappy`/`bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Bisa menerima fokus keyboard atau tidak.
+    /// Whether it can take keyboard focus.
     pub fn focusable(mut self, focusable: bool) -> Self {
         self.focus.focusable = focusable;
         self
     }
 
-    /// Urutan tab eksplisit (mendahului urutan pohon).
+    /// Explicit tab order (takes precedence over tree order).
     pub fn tab_order(mut self, order: i32) -> Self {
         self.focus.focusable = true;
         self.focus.order = Some(order);
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5).
+    /// Identity key among its siblings (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Nilai gambar yang akan dipakai — dipakai gallery dan uji token.
+    /// The paint values that will be used — for the gallery and token tests.
     pub fn style(&self) -> ButtonStyle {
         self.variant.style(&self.theme, self.state)
     }
@@ -946,15 +948,15 @@ impl From<Button> for View {
             .weight(FontWeight::MEDIUM)
             .color(warna_teks)
             .single_line()
-            // Nama tombol dibacakan sekali, dari node tombolnya — bukan dua kali.
+            // The button's name is announced once, by the button node — not twice.
             .role(AccessRole::Container)])
         .main(MainAlign::Center)
         .cross(CrossAlign::Center)
         .padding(Insets::symmetric(t.space(4.0), t.space(2.0)));
 
-        // Hit target ≥ 44pt di kedua sumbu walau visualnya lebih kecil (HIG);
-        // teksnya tetap di tengah karena wadah flex di dalamnya yang meratakan,
-        // bukan aritmetika.
+        // Hit target ≥ 44pt on both axes even when the visual is smaller
+        // (HIG); the text stays centered because the flex container inside it
+        // does the aligning, not arithmetic.
         let kotak = constrained(
             BoxConstraints::new(MIN_HIT_TARGET, f32::INFINITY, MIN_HIT_TARGET, f32::INFINITY),
             isi,

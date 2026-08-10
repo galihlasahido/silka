@@ -1,18 +1,19 @@
-//! **Model editing teks**: caret per grapheme, seleksi, undo/redo, preedit IME.
+//! **The text editing model**: per-grapheme carets, selection, undo/redo, IME
+//! preedit.
 //!
-//! Ini separuh non-visual dari `text_field` (`KOMPONEN.md` Tier 2, "komponen
-//! tersulit di seluruh katalog"). Ia sengaja hidup di `silka-text`, bukan di
-//! widget, karena tiga alasan:
+//! This is the non-visual half of `text_field` (`KOMPONEN.md` Tier 2, "the
+//! hardest component in the whole catalogue"). It deliberately lives in
+//! `silka-text` rather than in the widget, for three reasons:
 //!
-//! 1. **Aturannya aturan Unicode, bukan aturan tampilan.** Gerakan caret per
-//!    grapheme cluster dan batas kata adalah UAX #29 (§3.3) — sama persis untuk
-//!    `text_field`, `text_area`, `combo_box`, dan nanti `code_editor`.
-//! 2. **Bisa diuji tanpa satu piksel pun.** Seluruh berkas ini tidak menyentuh
-//!    font, GPU, maupun render tree; testnya jalan di CI tanpa layar (§9.5).
-//! 3. **Preedit IME adalah keadaan model, bukan hiasan.** Selama komposisi
-//!    berjalan, teks yang *terlihat* bukan teks yang *tersimpan* — bedanya
-//!    dijaga di sini ([`TextEdit::display_text`]), supaya widget tidak pernah
-//!    salah menyimpan huruf setengah jadi ke aplikasi.
+//! 1. **The rules are Unicode rules, not presentation rules.** Caret movement
+//!    per grapheme cluster and word boundaries are UAX #29 (§3.3) — exactly the
+//!    same for `text_field`, `text_area`, `combo_box`, and later `code_editor`.
+//! 2. **It can be tested without a single pixel.** This whole file touches no
+//!    font, no GPU, and no render tree; its tests run headless in CI (§9.5).
+//! 3. **IME preedit is model state, not decoration.** While composition is in
+//!    progress, the text that is *visible* is not the text that is *stored* —
+//!    the difference is kept here ([`TextEdit::display_text`]), so a widget
+//!    never mistakenly reports a half-formed letter to the application.
 //!
 //! ```
 //! use silka_text::edit::{Movement, TextEdit};
@@ -22,13 +23,13 @@
 //! e.insert(" dunia");
 //! assert_eq!(e.text(), "halo dunia");
 //!
-//! // Satu kata yang diketik beruntun = satu langkah undo.
+//! // One word typed in a run = one undo step.
 //! e.undo();
 //! assert_eq!(e.text(), "halo");
 //! ```
 //!
-//! Yang **tidak** ada di sini: koordinat, piksel, dan warna. Geometri caret dan
-//! seleksi datang dari [`crate::TextLayout`], yang tahu hasil shaping-nya.
+//! What is **not** here: coordinates, pixels, and colors. Caret and selection
+//! geometry come from [`crate::TextLayout`], which knows the shaping result.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -36,14 +37,14 @@ use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 
 // ---------------------------------------------------------------------------
-// Grapheme & kata
+// Graphemes & words
 // ---------------------------------------------------------------------------
 
-/// Jepit `index` ke batas grapheme terdekat **ke kiri**.
+/// Snap `index` to the nearest grapheme boundary **to the left**.
 ///
-/// Indeks yang datang dari luar (klik, aplikasi, dikte suara) tidak pernah
-/// dipercaya: caret yang berhenti di tengah karakter 4 byte atau di tengah
-/// emoji ZWJ adalah bug yang berakhir dengan `String` yang panik saat dipotong.
+/// Indices arriving from outside (clicks, the application, voice dictation) are
+/// never trusted: a caret stopping in the middle of a 4-byte character or inside
+/// a ZWJ emoji is a bug that ends in a panicking `String` slice.
 pub fn snap_grapheme(text: &str, index: usize) -> usize {
     if index >= text.len() {
         return text.len();
@@ -58,11 +59,11 @@ pub fn snap_grapheme(text: &str, index: usize) -> usize {
     batas
 }
 
-/// Batas grapheme berikutnya setelah `index` (UAX #29).
+/// The next grapheme boundary after `index` (UAX #29).
 ///
-/// Satu langkah = satu **grapheme cluster**, bukan satu `char`: "é" yang
-/// tersusun dari e + combining acute, bendera, dan emoji keluarga ZWJ
-/// masing-masing dilewati sekali tekan.
+/// One step = one **grapheme cluster**, not one `char`: an "é" made of
+/// e + combining acute, a flag, and a ZWJ family emoji are each crossed with a
+/// single key press.
 pub fn next_grapheme(text: &str, index: usize) -> usize {
     let index = snap_grapheme(text, index);
     text.grapheme_indices(true)
@@ -71,7 +72,7 @@ pub fn next_grapheme(text: &str, index: usize) -> usize {
         .unwrap_or(text.len())
 }
 
-/// Batas grapheme sebelum `index`.
+/// The grapheme boundary before `index`.
 pub fn prev_grapheme(text: &str, index: usize) -> usize {
     let index = snap_grapheme(text, index);
     text.grapheme_indices(true)
@@ -81,12 +82,12 @@ pub fn prev_grapheme(text: &str, index: usize) -> usize {
         .unwrap_or(0)
 }
 
-/// Benar bila potongan ini dianggap "kata" untuk keperluan lompat/seleksi.
+/// True when this segment counts as a "word" for jumping/selection purposes.
 fn kata(potong: &str) -> bool {
     potong.chars().any(char::is_alphanumeric)
 }
 
-/// Akhir kata berikutnya di kanan `index` — padanan ⌥→ di macOS.
+/// The end of the next word to the right of `index` — macOS's ⌥→.
 pub fn next_word(text: &str, index: usize) -> usize {
     let index = snap_grapheme(text, index);
     for (awal, potong) in text.split_word_bound_indices() {
@@ -98,7 +99,7 @@ pub fn next_word(text: &str, index: usize) -> usize {
     text.len()
 }
 
-/// Awal kata sebelum `index` — padanan ⌥←.
+/// The start of the word before `index` — the ⌥← counterpart.
 pub fn prev_word(text: &str, index: usize) -> usize {
     let index = snap_grapheme(text, index);
     let mut hasil = 0;
@@ -113,11 +114,10 @@ pub fn prev_word(text: &str, index: usize) -> usize {
     hasil
 }
 
-/// Rentang kata yang memuat `index` — inilah yang diseleksi **klik ganda**.
+/// The range of the word containing `index` — what a **double click** selects.
 ///
-/// Klik ganda pada spasi menyeleksi rentang spasi itu, sama seperti AppKit:
-/// yang dikembalikan adalah potongan batas-kata tempat `index` berada, apa pun
-/// isinya.
+/// Double-clicking a space selects that run of spaces, just like AppKit: what is
+/// returned is the word-boundary segment `index` falls in, whatever it contains.
 pub fn word_range(text: &str, index: usize) -> Range<usize> {
     if text.is_empty() {
         return 0..0;
@@ -138,22 +138,22 @@ pub fn word_range(text: &str, index: usize) -> Range<usize> {
 // Selection
 // ---------------------------------------------------------------------------
 
-/// Seleksi teks sebagai pasangan **indeks byte**: tempat seret dimulai
-/// (`anchor`) dan tempat caret sekarang (`focus`).
+/// A text selection as a pair of **byte indices**: where the drag started
+/// (`anchor`) and where the caret is now (`focus`).
 ///
-/// Keduanya dibedakan dengan sengaja: Shift+← memindahkan `focus` dan
-/// membiarkan `anchor`, dan itulah satu-satunya cara seleksi terasa benar saat
-/// arah seretnya berbalik.
+/// The two are kept distinct deliberately: Shift+← moves `focus` and leaves
+/// `anchor` alone, and that is the only way selection feels right when the drag
+/// direction reverses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Selection {
-    /// Titik tambat (tidak bergerak saat seleksi diperluas).
+    /// The anchor point (it does not move as the selection is extended).
     pub anchor: usize,
-    /// Posisi caret (yang bergerak).
+    /// The caret position (the end that moves).
     pub focus: usize,
 }
 
 impl Selection {
-    /// Caret tanpa seleksi pada `at`.
+    /// A caret with no selection at `at`.
     pub const fn caret(at: usize) -> Self {
         Self {
             anchor: at,
@@ -161,32 +161,32 @@ impl Selection {
         }
     }
 
-    /// Seleksi dari `anchor` ke `focus`.
+    /// A selection from `anchor` to `focus`.
     pub const fn new(anchor: usize, focus: usize) -> Self {
         Self { anchor, focus }
     }
 
-    /// Batas kiri.
+    /// The left bound.
     pub fn start(self) -> usize {
         self.anchor.min(self.focus)
     }
 
-    /// Batas kanan.
+    /// The right bound.
     pub fn end(self) -> usize {
         self.anchor.max(self.focus)
     }
 
-    /// Rentang byte yang terseleksi.
+    /// The selected byte range.
     pub fn range(self) -> Range<usize> {
         self.start()..self.end()
     }
 
-    /// Benar bila tidak ada teks yang terseleksi (hanya caret).
+    /// True when no text is selected (a bare caret).
     pub fn is_collapsed(self) -> bool {
         self.anchor == self.focus
     }
 
-    /// Jepit kedua ujungnya ke batas grapheme `text`.
+    /// Snap both ends to grapheme boundaries of `text`.
     pub fn snapped(self, text: &str) -> Self {
         Self {
             anchor: snap_grapheme(text, self.anchor),
@@ -199,44 +199,45 @@ impl Selection {
 // Preedit
 // ---------------------------------------------------------------------------
 
-/// Komposisi IME yang sedang berjalan (CJK, dead key, emoji picker).
+/// An IME composition in progress (CJK, dead keys, the emoji picker).
 ///
-/// Teksnya **belum** masuk ke nilai yang dipegang aplikasi: ia hidup di sini
-/// sampai IME mengirim commit. Itulah yang membuat `on_change` tidak pernah
-/// melaporkan huruf setengah jadi.
+/// Its text has **not** yet entered the value the application holds: it lives
+/// here until the IME sends a commit. That is what keeps `on_change` from ever
+/// reporting a half-formed letter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preedit {
-    /// Teks komposisi.
+    /// The composition text.
     pub text: String,
-    /// Rentang kursor **di dalam** `text` (indeks byte), bila IME memberinya.
+    /// The cursor range **within** `text` (byte indices), when the IME supplies
+    /// one.
     pub cursor: Option<(usize, usize)>,
-    /// Posisi sisipan komposisi di dalam teks tersimpan.
+    /// Where the composition is inserted within the stored text.
     pub at: usize,
 }
 
 // ---------------------------------------------------------------------------
-// Gerakan
+// Movement
 // ---------------------------------------------------------------------------
 
-/// Satu langkah gerakan caret.
+/// One step of caret movement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Movement {
-    /// Satu grapheme ke kiri (←).
+    /// One grapheme left (←).
     Prev,
-    /// Satu grapheme ke kanan (→).
+    /// One grapheme right (→).
     Next,
-    /// Satu kata ke kiri (⌥←).
+    /// One word left (⌥←).
     PrevWord,
-    /// Satu kata ke kanan (⌥→).
+    /// One word right (⌥→).
     NextWord,
-    /// Awal baris (⌘← / Home).
+    /// Start of the line (⌘← / Home).
     LineStart,
-    /// Akhir baris (⌘→ / End).
+    /// End of the line (⌘→ / End).
     LineEnd,
 }
 
-/// Jenis suntingan terakhir — dasar penggabungan langkah undo.
+/// The kind of the last edit — the basis for coalescing undo steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Jenis {
     Sisip,
@@ -254,14 +255,14 @@ struct Rekaman {
 // TextEdit
 // ---------------------------------------------------------------------------
 
-/// Berapa banyak langkah undo yang disimpan sebelum yang tertua dibuang.
+/// How many undo steps are kept before the oldest one is dropped.
 const KAPASITAS_UNDO: usize = 128;
 
-/// Keadaan sebuah kolom teks yang bisa disunting.
+/// The state of an editable text field.
 ///
-/// Semua operasi bekerja dalam **indeks byte yang selalu berada di batas
-/// grapheme**; tidak ada satu pun jalan masuk yang bisa meninggalkan caret di
-/// tengah karakter.
+/// Every operation works in **byte indices that always sit on grapheme
+/// boundaries**; there is no entry point that can leave the caret inside a
+/// character.
 #[derive(Debug, Clone)]
 pub struct TextEdit {
     text: String,
@@ -280,7 +281,7 @@ impl Default for TextEdit {
 }
 
 impl TextEdit {
-    /// Kolom berisi `text`, caret di akhir.
+    /// A field holding `text`, with the caret at the end.
     pub fn new(text: impl Into<String>) -> Self {
         let text: String = text.into();
         let akhir = text.len();
@@ -295,43 +296,45 @@ impl TextEdit {
         }
     }
 
-    /// Izinkan baris baru (fondasi `text_area`). Bawaannya satu baris: newline
-    /// yang tertempel dari clipboard dibuang, bukan diam-diam merusak layout.
+    /// Allow newlines (the foundation for `text_area`). The default is single
+    /// line: newlines pasted from the clipboard are dropped rather than quietly
+    /// wrecking the layout.
     pub fn multiline(mut self, multiline: bool) -> Self {
         self.multiline = multiline;
         self
     }
 
-    /// Benar bila baris baru diizinkan.
+    /// True when newlines are allowed.
     pub fn is_multiline(&self) -> bool {
         self.multiline
     }
 
-    /// Teks **tersimpan** — tanpa preedit yang sedang dikomposisi.
+    /// The **stored** text — without the preedit being composed.
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// Seleksi saat ini terhadap [`TextEdit::text`].
+    /// The current selection, relative to [`TextEdit::text`].
     pub fn selection(&self) -> Selection {
         self.selection
     }
 
-    /// Komposisi IME yang sedang berjalan.
+    /// The IME composition in progress.
     pub fn preedit(&self) -> Option<&Preedit> {
         self.preedit.as_ref()
     }
 
-    /// Benar bila IME sedang mengomposisi.
+    /// True while the IME is composing.
     pub fn is_composing(&self) -> bool {
         self.preedit.is_some()
     }
 
-    /// Teks yang **terlihat**: tersimpan + preedit yang disisipkan di caret.
+    /// The **visible** text: the stored text plus the preedit inserted at the
+    /// caret.
     ///
-    /// Inilah yang dishape dan digambar; [`TextEdit::text`] yang dilaporkan ke
-    /// aplikasi (REKOMENDASI §3.8: preedit dirender inline, tapi ia belum jadi
-    /// isi kolom).
+    /// This is what gets shaped and drawn; [`TextEdit::text`] is what is
+    /// reported to the application (REKOMENDASI §3.8: preedit is rendered
+    /// inline, but it is not yet the field's content).
     pub fn display_text(&self) -> Cow<'_, str> {
         match &self.preedit {
             None => Cow::Borrowed(&self.text),
@@ -345,16 +348,17 @@ impl TextEdit {
         }
     }
 
-    /// Rentang preedit di dalam [`TextEdit::display_text`] — yang digarisbawahi.
+    /// The preedit range within [`TextEdit::display_text`] — what gets
+    /// underlined.
     pub fn preedit_range(&self) -> Option<Range<usize>> {
         self.preedit.as_ref().map(|p| p.at..p.at + p.text.len())
     }
 
-    /// Seleksi dalam koordinat [`TextEdit::display_text`].
+    /// The selection in [`TextEdit::display_text`] coordinates.
     ///
-    /// Selama komposisi, caret mengikuti kursor yang **ditentukan IME** di
-    /// dalam preedit — bukan ujung preedit — karena itulah yang dilihat
-    /// pengguna saat memilih kandidat.
+    /// During composition the caret follows the cursor the **IME specifies**
+    /// inside the preedit — not the preedit's end — because that is what the
+    /// user sees while picking candidates.
     pub fn display_selection(&self) -> Selection {
         let Some(p) = &self.preedit else {
             return self.selection;
@@ -368,10 +372,11 @@ impl TextEdit {
         }
     }
 
-    /// Ganti seluruh isi (aplikasi yang menyetel nilai, dikte suara).
+    /// Replace the entire content (the application setting a value, voice
+    /// dictation).
     ///
-    /// Bukan langkah undo pengguna: seleksi dijepit ke isi baru dan komposisi
-    /// yang sedang berjalan dibuang.
+    /// Not a user undo step: the selection is clamped to the new content and any
+    /// composition in progress is discarded.
     pub fn set_text(&mut self, text: impl Into<String>) -> bool {
         let text: String = text.into();
         if text == self.text {
@@ -384,7 +389,7 @@ impl TextEdit {
         true
     }
 
-    /// Setel seleksi (dijepit ke batas grapheme).
+    /// Set the selection (snapped to grapheme boundaries).
     pub fn set_selection(&mut self, selection: Selection) -> bool {
         let baru = Selection {
             anchor: snap_grapheme(&self.text, selection.anchor.min(self.text.len())),
@@ -398,7 +403,7 @@ impl TextEdit {
         true
     }
 
-    /// Taruh caret di `at`, atau perluas seleksi ke sana bila `extend`.
+    /// Place the caret at `at`, or extend the selection to it when `extend`.
     pub fn place_caret(&mut self, at: usize, extend: bool) -> bool {
         let at = snap_grapheme(&self.text, at.min(self.text.len()));
         let baru = if extend {
@@ -409,24 +414,24 @@ impl TextEdit {
         self.set_selection(baru)
     }
 
-    /// Seleksi seluruh isi (⌘A).
+    /// Select the entire content (⌘A).
     pub fn select_all(&mut self) -> bool {
         self.set_selection(Selection::new(0, self.text.len()))
     }
 
-    /// Seleksi kata yang memuat `at` — **klik ganda**.
+    /// Select the word containing `at` — a **double click**.
     pub fn select_word_at(&mut self, at: usize) -> bool {
         let r = word_range(&self.text, at.min(self.text.len()));
         self.set_selection(Selection::new(r.start, r.end))
     }
 
-    /// Pindahkan caret; `extend` = Shift ditahan.
+    /// Move the caret; `extend` = Shift is held.
     pub fn move_caret(&mut self, movement: Movement, extend: bool) -> bool {
         let t = &self.text;
         let fokus = self.selection.focus;
-        // Tanpa Shift, seleksi yang ada **runtuh ke ujungnya** dulu — kebiasaan
-        // AppKit: ← setelah menyeleksi kata menaruh caret di awal kata, bukan
-        // satu huruf sebelum caret.
+        // Without Shift, an existing selection **collapses to its edge** first —
+        // the AppKit habit: ← after selecting a word puts the caret at the start
+        // of the word, not one letter before the caret.
         if !extend && !self.selection.is_collapsed() {
             match movement {
                 Movement::Prev => {
@@ -449,11 +454,11 @@ impl TextEdit {
         self.place_caret(tujuan, extend)
     }
 
-    /// Sisipkan teks, mengganti seleksi bila ada.
+    /// Insert text, replacing the selection if there is one.
     ///
-    /// Karakter kendali dibuang (dan newline juga, kecuali
-    /// [`TextEdit::multiline`]): teks yang ditempel dari mana pun tidak boleh
-    /// bisa merusak layout satu baris.
+    /// Control characters are dropped (and newlines too, unless
+    /// [`TextEdit::multiline`]): text pasted from anywhere must never be able to
+    /// wreck a single-line layout.
     pub fn insert(&mut self, teks: &str) -> bool {
         let bersih = self.saring(teks);
         if bersih.is_empty() && self.selection.is_collapsed() {
@@ -467,7 +472,7 @@ impl TextEdit {
         true
     }
 
-    /// Hapus ke belakang (Backspace) — satu grapheme, atau seleksi bila ada.
+    /// Delete backwards (Backspace) — one grapheme, or the selection if any.
     pub fn delete_backward(&mut self) -> bool {
         if !self.selection.is_collapsed() {
             return self.hapus_seleksi();
@@ -480,7 +485,7 @@ impl TextEdit {
         self.hapus_rentang(awal..fokus)
     }
 
-    /// Hapus ke depan (Delete/fn+Backspace).
+    /// Delete forwards (Delete/fn+Backspace).
     pub fn delete_forward(&mut self) -> bool {
         if !self.selection.is_collapsed() {
             return self.hapus_seleksi();
@@ -493,7 +498,7 @@ impl TextEdit {
         self.hapus_rentang(fokus..akhir)
     }
 
-    /// Hapus satu kata ke belakang (⌥Backspace).
+    /// Delete one word backwards (⌥Backspace).
     pub fn delete_word_backward(&mut self) -> bool {
         if !self.selection.is_collapsed() {
             return self.hapus_seleksi();
@@ -506,7 +511,7 @@ impl TextEdit {
         self.hapus_rentang(awal..fokus)
     }
 
-    /// Hapus satu kata ke depan (⌥Delete).
+    /// Delete one word forwards (⌥Delete).
     pub fn delete_word_forward(&mut self) -> bool {
         if !self.selection.is_collapsed() {
             return self.hapus_seleksi();
@@ -521,11 +526,11 @@ impl TextEdit {
 
     // -- IME ----------------------------------------------------------------
 
-    /// Mulai/perbarui komposisi IME.
+    /// Start/update an IME composition.
     ///
-    /// Preedit kosong berarti komposisi dibersihkan (winit mengirimnya begitu).
-    /// Komposisi pertama **mengganti seleksi** yang ada, persis seperti
-    /// mengetik.
+    /// An empty preedit means the composition is cleared (that is how winit
+    /// sends it). The first composition **replaces the selection**, exactly like
+    /// typing does.
     pub fn set_preedit(&mut self, teks: &str, cursor: Option<(usize, usize)>) -> bool {
         if teks.is_empty() {
             return self.clear_preedit();
@@ -548,33 +553,33 @@ impl TextEdit {
         true
     }
 
-    /// Buang komposisi yang sedang berjalan tanpa menyisipkan apa pun.
+    /// Discard the composition in progress without inserting anything.
     pub fn clear_preedit(&mut self) -> bool {
         self.preedit.take().is_some()
     }
 
-    /// Commit teks final dari IME.
+    /// Commit the final text from the IME.
     pub fn commit(&mut self, teks: &str) -> bool {
         let ada = self.preedit.take().is_some();
-        // Commit selalu jadi langkah undo sendiri: satu kandidat CJK yang
-        // dipilih adalah satu keputusan pengguna.
+        // A commit is always its own undo step: one chosen CJK candidate is one
+        // user decision.
         self.terakhir = Jenis::Lain;
         self.insert(teks) || ada
     }
 
     // -- undo/redo ----------------------------------------------------------
 
-    /// Benar bila ada yang bisa di-undo.
+    /// True when there is something to undo.
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
 
-    /// Benar bila ada yang bisa di-redo.
+    /// True when there is something to redo.
     pub fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
 
-    /// Kembalikan satu langkah (⌘Z).
+    /// Go back one step (⌘Z).
     pub fn undo(&mut self) -> bool {
         let Some(r) = self.undo.pop() else {
             return false;
@@ -584,7 +589,7 @@ impl TextEdit {
         true
     }
 
-    /// Ulangi langkah yang di-undo (⇧⌘Z).
+    /// Replay an undone step (⇧⌘Z).
     pub fn redo(&mut self) -> bool {
         let Some(r) = self.redo.pop() else {
             return false;
@@ -607,16 +612,16 @@ impl TextEdit {
         self.preedit = None;
         self.text = r.text;
         self.selection = r.selection.snapped(&self.text);
-        // Langkah berikutnya selalu memulai kelompok baru: mengetik setelah
-        // undo tidak boleh menempel ke kelompok yang barusan dipulihkan.
+        // The next step always starts a new group: typing after an undo must not
+        // attach to the group that was just restored.
         self.terakhir = Jenis::Lain;
     }
 
-    /// Catat keadaan sebelum sebuah suntingan.
+    /// Record the state before an edit.
     ///
-    /// Suntingan sejenis yang beruntun **digabung**: mengetik satu kata lalu
-    /// menekan ⌘Z mengembalikan seluruh kata, bukan satu huruf — perilaku yang
-    /// diharapkan di macOS.
+    /// Consecutive edits of the same kind are **coalesced**: typing a word and
+    /// then pressing ⌘Z takes back the whole word, not one letter — the expected
+    /// behaviour on macOS.
     fn rekam(&mut self, jenis: Jenis) {
         self.redo.clear();
         if self.terakhir == jenis && jenis != Jenis::Lain && !self.undo.is_empty() {
@@ -645,7 +650,7 @@ impl TextEdit {
         true
     }
 
-    /// Buang karakter yang tidak boleh masuk kolom ini.
+    /// Drop characters that must not enter this field.
     fn saring(&self, teks: &str) -> String {
         teks.chars()
             .filter_map(|c| match c {
@@ -657,14 +662,14 @@ impl TextEdit {
     }
 }
 
-/// Awal baris yang memuat `index`.
+/// The start of the line containing `index`.
 fn baris_awal(text: &str, index: usize) -> usize {
     text[..index.min(text.len())]
         .rfind('\n')
         .map_or(0, |i| i + 1)
 }
 
-/// Akhir baris yang memuat `index`.
+/// The end of the line containing `index`.
 fn baris_akhir(text: &str, index: usize) -> usize {
     let mulai = index.min(text.len());
     text[mulai..].find('\n').map_or(text.len(), |i| mulai + i)
@@ -674,25 +679,25 @@ fn baris_akhir(text: &str, index: usize) -> usize {
 mod tests {
     use super::*;
 
-    /// "é" sebagai e + combining acute: dua char, **satu** grapheme.
+    /// "é" as e + combining acute: two chars, **one** grapheme.
     const AKSEN: &str = "cafe\u{301}";
-    /// Keluarga emoji ZWJ: satu grapheme, 25 byte.
+    /// A ZWJ family emoji: one grapheme, 25 bytes.
     const KELUARGA: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
 
     #[test]
     fn gerakan_caret_per_grapheme_bukan_per_char() {
-        // Dari akhir "café", satu langkah ke kiri melewati e+acute sekaligus.
+        // From the end of "café", one step left crosses e+acute in one go.
         assert_eq!(prev_grapheme(AKSEN, AKSEN.len()), 3);
         assert_eq!(next_grapheme(AKSEN, 3), AKSEN.len());
 
-        // Emoji ZWJ tidak boleh terbelah jadi tiga.
+        // A ZWJ emoji must never split into three.
         assert_eq!(next_grapheme(KELUARGA, 0), KELUARGA.len());
         assert_eq!(prev_grapheme(KELUARGA, KELUARGA.len()), 0);
     }
 
     #[test]
     fn indeks_di_tengah_karakter_dijepit_ke_batas() {
-        // 1 byte di tengah emoji: bukan batas yang sah.
+        // 1 byte into the emoji: not a valid boundary.
         assert_eq!(snap_grapheme(KELUARGA, 2), 0);
         assert_eq!(snap_grapheme(AKSEN, 5), 3);
         assert_eq!(snap_grapheme("abc", 99), 3);
@@ -707,7 +712,7 @@ mod tests {
         assert_eq!(prev_word(t, 13), 9);
         assert_eq!(prev_word(t, 0), 0);
         assert_eq!(word_range(t, 5), 5..8);
-        // Klik ganda pada spasi menyeleksi spasinya.
+        // Double-clicking a space selects the space itself.
         assert_eq!(word_range(t, 4), 4..5);
     }
 
@@ -778,7 +783,7 @@ mod tests {
         e.set_selection(Selection::caret(4));
         e.move_caret(Movement::PrevWord, true);
         assert_eq!(e.selection(), Selection::new(4, 0));
-        // Berbalik arah: anchor tetap, focus menyeberang.
+        // Reversing direction: the anchor stays, the focus crosses over.
         e.move_caret(Movement::LineEnd, true);
         assert_eq!(e.selection(), Selection::new(4, 8));
         assert!(!e.selection().is_collapsed());
@@ -848,7 +853,7 @@ mod tests {
         assert_eq!(e.preedit_range(), Some(2..5));
         assert_eq!(e.display_selection(), Selection::caret(5));
 
-        // Commit memindahkannya menjadi isi sungguhan.
+        // The commit turns it into real content.
         e.commit("日");
         assert!(!e.is_composing());
         assert_eq!(e.text(), "ha日");
@@ -895,7 +900,7 @@ mod tests {
         let mut e = TextEdit::new(KELUARGA);
         e.set_selection(Selection::new(2, 7));
         assert_eq!(e.selection(), Selection::caret(0));
-        // …dan menghapusnya tidak pernah panik.
+        // …and deleting it never panics.
         assert!(!e.delete_backward());
     }
 

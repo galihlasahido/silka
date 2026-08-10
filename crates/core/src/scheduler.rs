@@ -1,35 +1,35 @@
-//! Frame scheduling: **render hanya saat dirty** (REKOMENDASI §3.5).
+//! Frame scheduling: **render only when dirty** (REKOMENDASI §3.5).
 //!
-//! Modul ini murni logika — tidak tahu winit, tidak tahu wgpu, tidak tahu
-//! CADisplayLink. Yang platform sediakan hanyalah dua hal:
+//! This module is pure logic — it knows nothing of winit, nothing of wgpu,
+//! nothing of CADisplayLink. The platform supplies exactly two things:
 //!
-//! 1. **detak vsync** (kapan boleh menggambar), dan
-//! 2. **interval vsync terukur** yang dipakai sebagai budget frame.
+//! 1. the **vsync tick** (when drawing is allowed), and
+//! 2. the **measured vsync interval**, used as the frame budget.
 //!
-//! Aturan yang mengikat: interval frame **tidak pernah dikonstanta**. Tidak ada
-//! 16,6 ms di mana pun. Kalau platform tahu (CADisplayLink di macOS,
-//! ProMotion-aware), nilainya datang dari sana; kalau tidak tahu, ia ditaksir
-//! dari jarak antar-frame yang benar-benar terjadi ([`RefreshEstimator`]);
-//! kalau belum cukup sampel, budget-nya **tidak diketahui** dan tidak ada yang
-//! berpura-pura tahu.
+//! The binding rule: the frame interval is **never a constant**. There is no
+//! 16.6 ms anywhere. When the platform knows the number (CADisplayLink on
+//! macOS, ProMotion-aware) it comes from there; when it does not, it is
+//! estimated from the gaps between frames that actually happened
+//! ([`RefreshEstimator`]); and until there are enough samples the budget is
+//! **unknown**, with nothing pretending to know better.
 //!
 //! ```
 //! use std::time::{Duration, Instant};
 //! use silka_core::scheduler::{Dirty, FrameScheduler, Wake};
 //!
 //! let mut s = FrameScheduler::new();
-//! assert!(s.is_idle());                        // idle = benar-benar tidak menggambar
+//! assert!(s.is_idle());                        // idle = genuinely drawing nothing
 //! assert_eq!(s.request(Dirty::PAINT), Wake::Schedule);
 //! assert_eq!(s.request(Dirty::LAYOUT), Wake::AlreadyScheduled);
 //!
 //! let t0 = Instant::now();
 //! let mut start = s.begin_frame(t0);
 //! assert!(start.reason().contains(Dirty::PAINT | Dirty::LAYOUT));
-//! start.mark_built(t0 + Duration::from_millis(2));   // scene selesai dibangun
+//! start.mark_built(t0 + Duration::from_millis(2));   // scene finished building
 //! let timing = s.end_frame(start, t0 + Duration::from_millis(9), true);
 //! assert_eq!(timing.build, Duration::from_millis(2));
 //! assert_eq!(timing.present, Duration::from_millis(7));
-//! assert!(s.is_idle());                        // kembali tidur
+//! assert!(s.is_idle());                        // back to sleep
 //! ```
 
 use core::fmt;
@@ -40,28 +40,28 @@ use std::time::{Duration, Instant};
 // Dirty
 // ---------------------------------------------------------------------------
 
-/// Alasan sebuah frame dibutuhkan, sebagai bitset.
+/// Why a frame is needed, as a bitset.
 ///
-/// Scheduler tidak peduli isinya untuk memutuskan menggambar atau tidak —
-/// "tidak kosong" sudah cukup. Nilainya dibawa sampai ke log frame supaya saat
-/// menyelidiki jank kita tahu *siapa* yang membangunkan renderer.
+/// The scheduler does not care about the contents when deciding whether to
+/// draw — "not empty" is enough. The value is carried all the way into the
+/// frame log so that when investigating jank we know *who* woke the renderer.
 #[derive(Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Dirty(u8);
 
 impl Dirty {
-    /// Tidak ada yang perlu digambar.
+    /// Nothing needs drawing.
     pub const NONE: Self = Self(0);
-    /// Ukuran/posisi node berubah — layout harus dihitung ulang.
+    /// A node's size/position changed — layout must be recomputed.
     pub const LAYOUT: Self = Self(1 << 0);
-    /// Hanya tampilan yang berubah (warna, opacity) — layout tetap.
+    /// Only appearance changed (color, opacity) — layout stands.
     pub const PAINT: Self = Self(1 << 1);
-    /// Token theme berubah (dark mode OS, preset, accent color).
+    /// Theme tokens changed (OS dark mode, preset, accent color).
     pub const THEME: Self = Self(1 << 2);
-    /// Surface berubah: resize, scale factor, atau swapchain ditata ulang.
+    /// The surface changed: resize, scale factor, or swapchain reconfigured.
     pub const SURFACE: Self = Self(1 << 3);
-    /// Ada animasi/spring yang masih berjalan dan meminta frame berikutnya.
+    /// An animation/spring is still running and asks for the next frame.
     pub const ANIMATION: Self = Self(1 << 4);
-    /// Dibangunkan dari luar UI thread (hasil async, timer, IPC).
+    /// Woken from off the UI thread (async results, timers, IPC).
     pub const EXTERNAL: Self = Self(1 << 5);
 
     const NAMES: [(Self, &'static str); 6] = [
@@ -73,32 +73,32 @@ impl Dirty {
         (Self::EXTERNAL, "external"),
     ];
 
-    /// Representasi bit mentah.
+    /// The raw bit representation.
     pub const fn bits(self) -> u8 {
         self.0
     }
 
-    /// Benar bila tidak ada satu pun alasan tercatat.
+    /// True when no reason at all has been recorded.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
-    /// Benar bila seluruh bit `other` ada di dalam `self`.
+    /// True when every bit of `other` is present in `self`.
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
-    /// Gabungan dua himpunan alasan.
+    /// The union of two reason sets.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
 
-    /// Tambahkan alasan ke himpunan ini.
+    /// Add a reason to this set.
     pub fn insert(&mut self, other: Self) {
         self.0 |= other.0;
     }
 
-    /// Kosongkan seluruh alasan.
+    /// Clear every reason.
     pub fn clear(&mut self) {
         self.0 = 0;
     }
@@ -160,24 +160,24 @@ impl fmt::Display for Dirty {
 // Vsync
 // ---------------------------------------------------------------------------
 
-/// Interval vsync tercepat yang dianggap masuk akal (1000 Hz).
+/// The fastest vsync interval considered plausible (1000 Hz).
 pub const MIN_VSYNC_INTERVAL: Duration = Duration::from_micros(1_000);
-/// Interval vsync terlambat yang dianggap masuk akal (10 Hz).
+/// The slowest vsync interval considered plausible (10 Hz).
 pub const MAX_VSYNC_INTERVAL: Duration = Duration::from_millis(100);
 
-/// Dari mana angka interval vsync berasal.
+/// Where the vsync interval figure came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ClockSource {
-    /// Belum ada informasi. **Tidak ada tebakan default** — lihat modul doc.
+    /// No information yet. **No default guess** — see the module docs.
     Unknown,
-    /// Ditaksir dari jarak antar-frame nyata ([`RefreshEstimator`]).
+    /// Estimated from real inter-frame gaps ([`RefreshEstimator`]).
     Estimated,
-    /// Dilaporkan langsung oleh OS (CADisplayLink macOS, compositor clock).
+    /// Reported directly by the OS (macOS CADisplayLink, compositor clock).
     DisplayLink,
 }
 
 impl ClockSource {
-    /// Nama pendek untuk log.
+    /// A short name for logs.
     pub const fn label(self) -> &'static str {
         match self {
             ClockSource::Unknown => "unknown",
@@ -186,7 +186,7 @@ impl ClockSource {
         }
     }
 
-    /// Sumber yang lebih tepercaya menang saat keduanya tersedia.
+    /// The more trustworthy source wins when both are available.
     const fn trust(self) -> u8 {
         match self {
             ClockSource::Unknown => 0,
@@ -196,11 +196,11 @@ impl ClockSource {
     }
 }
 
-/// Detak layar: interval antar-vsync beserta asal-usulnya.
+/// The display tick: the interval between vsyncs plus where it came from.
 ///
-/// Sengaja tidak punya nilai default berupa angka. `Vsync::UNKNOWN` berarti
-/// "belum tahu", dan [`Vsync::budget`] mengembalikan `None` — pemanggil harus
-/// menangani ketidaktahuan itu, bukan menggantinya dengan 16,6 ms.
+/// It deliberately has no numeric default. `Vsync::UNKNOWN` means "not known
+/// yet", and [`Vsync::budget`] returns `None` — callers must handle that
+/// ignorance rather than paper over it with 16.6 ms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Vsync {
     interval: Option<Duration>,
@@ -208,13 +208,13 @@ pub struct Vsync {
 }
 
 impl Vsync {
-    /// Detak layar belum diketahui.
+    /// The display tick is not known yet.
     pub const UNKNOWN: Self = Self {
         interval: None,
         source: ClockSource::Unknown,
     };
 
-    /// Bangun dari interval terukur; `None` bila di luar rentang masuk akal.
+    /// Build from a measured interval; `None` when outside the plausible range.
     pub fn new(interval: Duration, source: ClockSource) -> Option<Self> {
         if !plausible(interval) {
             return None;
@@ -225,17 +225,17 @@ impl Vsync {
         })
     }
 
-    /// Interval yang datang dari display link OS (paling tepercaya).
+    /// An interval that came from the OS display link (most trustworthy).
     pub fn display_link(interval: Duration) -> Option<Self> {
         Self::new(interval, ClockSource::DisplayLink)
     }
 
-    /// Interval hasil taksiran dari jarak antar-frame nyata.
+    /// An interval estimated from real inter-frame gaps.
     pub fn estimated(interval: Duration) -> Option<Self> {
         Self::new(interval, ClockSource::Estimated)
     }
 
-    /// Bangun dari laju refresh dalam hertz.
+    /// Build from a refresh rate in hertz.
     pub fn from_hz(hz: f64, source: ClockSource) -> Option<Self> {
         if !hz.is_finite() || hz <= 0.0 {
             return None;
@@ -243,36 +243,35 @@ impl Vsync {
         Self::new(Duration::from_secs_f64(1.0 / hz), source)
     }
 
-    /// Interval antar-vsync, bila diketahui.
+    /// The interval between vsyncs, when known.
     pub fn interval(self) -> Option<Duration> {
         self.interval
     }
 
-    /// Laju refresh dalam hertz, bila diketahui.
+    /// The refresh rate in hertz, when known.
     pub fn hz(self) -> Option<f64> {
         self.interval.map(|d| 1.0 / d.as_secs_f64())
     }
 
-    /// Asal-usul angka interval.
+    /// Where the interval figure came from.
     pub fn source(self) -> ClockSource {
         self.source
     }
 
-    /// Benar bila interval sudah diketahui.
+    /// True once the interval is known.
     pub fn is_known(self) -> bool {
         self.interval.is_some()
     }
 
-    /// Budget CPU untuk satu frame.
+    /// The CPU budget for one frame.
     ///
-    /// Selalu turunan dari interval terukur — di ProMotion 120 Hz nilainya
-    /// ~8,3 ms, di 60 Hz ~16,6 ms, dan di layar 240 Hz ~4,2 ms. Tidak pernah
-    /// dikonstanta.
+    /// Always derived from the measured interval — ~8.3 ms on 120 Hz ProMotion,
+    /// ~16.6 ms at 60 Hz, ~4.2 ms on a 240 Hz display. Never a constant.
     pub fn budget(self) -> Option<Duration> {
         self.interval
     }
 
-    /// Pilih yang lebih tepercaya; seri dimenangkan oleh `other` (lebih baru).
+    /// Pick the more trustworthy one; ties go to `other` (the newer figure).
     fn preferred(self, other: Self) -> Self {
         if other.source.trust() >= self.source.trust() && other.is_known() {
             other
@@ -307,17 +306,17 @@ fn plausible(interval: Duration) -> bool {
 // RefreshEstimator
 // ---------------------------------------------------------------------------
 
-/// Kapasitas jendela sampel penaksir refresh rate.
+/// Sample window capacity of the refresh rate estimator.
 const ESTIMATOR_CAPACITY: usize = 32;
-/// Sampel minimum sebelum taksiran boleh dipercaya.
+/// Minimum samples before the estimate may be trusted.
 const ESTIMATOR_MIN_SAMPLES: usize = 8;
 
-/// Penaksir interval vsync dari jarak antar-frame yang benar-benar terjadi.
+/// Estimates the vsync interval from the inter-frame gaps that really happened.
 ///
-/// Dipakai di platform yang tidak punya display link (fallback
-/// `request_redraw` winit). Memakai **median**, bukan rata-rata: satu frame
-/// yang di-drop tidak menggeser taksiran, dan jeda idle panjang langsung
-/// ditolak karena di luar rentang [`MIN_VSYNC_INTERVAL`]..[`MAX_VSYNC_INTERVAL`].
+/// Used on platforms without a display link (the winit `request_redraw`
+/// fallback). It uses the **median**, not the mean: a single dropped frame does
+/// not shift the estimate, and long idle gaps are rejected outright for falling
+/// outside [`MIN_VSYNC_INTERVAL`]..[`MAX_VSYNC_INTERVAL`].
 #[derive(Debug, Clone)]
 pub struct RefreshEstimator {
     samples: [Duration; ESTIMATOR_CAPACITY],
@@ -326,7 +325,7 @@ pub struct RefreshEstimator {
 }
 
 impl RefreshEstimator {
-    /// Penaksir kosong.
+    /// An empty estimator.
     pub fn new() -> Self {
         Self {
             samples: [Duration::ZERO; ESTIMATOR_CAPACITY],
@@ -335,7 +334,7 @@ impl RefreshEstimator {
         }
     }
 
-    /// Catat satu jarak antar-frame. Mengembalikan `false` bila ditolak.
+    /// Record one inter-frame gap. Returns `false` when it is rejected.
     pub fn observe(&mut self, delta: Duration) -> bool {
         if !plausible(delta) {
             return false;
@@ -346,12 +345,12 @@ impl RefreshEstimator {
         true
     }
 
-    /// Jumlah sampel yang diterima (maksimum [`ESTIMATOR_CAPACITY`]).
+    /// How many samples were accepted (at most [`ESTIMATOR_CAPACITY`]).
     pub fn sample_count(&self) -> usize {
         self.len
     }
 
-    /// Taksiran interval vsync, atau `None` bila sampelnya belum cukup.
+    /// The estimated vsync interval, or `None` while samples are too few.
     pub fn estimate(&self) -> Option<Duration> {
         if self.len < ESTIMATOR_MIN_SAMPLES {
             return None;
@@ -363,7 +362,7 @@ impl RefreshEstimator {
         Some(slice[self.len / 2])
     }
 
-    /// Buang seluruh sampel (mis. window pindah monitor).
+    /// Drop every sample (e.g. the window moved to another monitor).
     pub fn reset(&mut self) {
         self.len = 0;
         self.next = 0;
@@ -377,51 +376,51 @@ impl Default for RefreshEstimator {
 }
 
 // ---------------------------------------------------------------------------
-// Statistik frame
+// Frame statistics
 // ---------------------------------------------------------------------------
 
-/// Jumlah frame terakhir yang disimpan untuk persentil.
+/// How many recent frames are kept for percentiles.
 const STATS_WINDOW: usize = 120;
 
-/// Hasil pengukuran satu frame.
+/// The measurements of a single frame.
 ///
-/// Waktu frame sengaja dipecah dua, karena menggabungkannya menghasilkan angka
-/// yang menipu:
+/// Frame time is deliberately split in two, because merging the halves yields a
+/// misleading number:
 ///
-/// - [`FrameTiming::build`] — kerja kita sendiri: membangun scene (view-diff,
-///   layout, perintah paint). **Inilah yang dinilai terhadap budget vsync.**
-/// - [`FrameTiming::present`] — menyerahkan scene ke backend. Angka ini
-///   sebagian besar adalah *backpressure*: swapchain menahan pemanggil sampai
-///   ada buffer bebas, jadi pada aplikasi yang sehat sekalipun ia mendekati
-///   satu interval vsync. Menghitungnya sebagai "frame lambat" akan menuduh
-///   setiap frame normal.
+/// - [`FrameTiming::build`] — our own work: building the scene (view-diff,
+///   layout, paint commands). **This is what is judged against the vsync
+///   budget.**
+/// - [`FrameTiming::present`] — handing the scene to the backend. This figure
+///   is mostly *backpressure*: the swapchain blocks the caller until a buffer
+///   frees up, so even in a healthy application it approaches one vsync
+///   interval. Counting it as a "slow frame" would indict every normal frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FrameTiming {
-    /// Nomor urut frame sejak scheduler dibuat.
+    /// Frame sequence number since the scheduler was created.
     pub index: u64,
-    /// Alasan frame ini dijadwalkan (kosong = permintaan redraw dari OS).
+    /// Why this frame was scheduled (empty = a redraw request from the OS).
     pub reason: Dirty,
-    /// Waktu membangun scene — kerja CPU framework.
+    /// Time spent building the scene — the framework's CPU work.
     pub build: Duration,
-    /// Waktu menyerahkan scene ke backend, termasuk menunggu swapchain.
+    /// Time spent handing the scene to the backend, swapchain waits included.
     pub present: Duration,
-    /// Jarak ke frame sebelumnya; `None` untuk frame pertama.
+    /// Gap to the previous frame; `None` for the first one.
     pub since_previous: Option<Duration>,
-    /// Benar bila frame benar-benar dipresentasikan (bukan di-skip).
+    /// True when the frame really was presented (rather than skipped).
     pub presented: bool,
-    /// Benar bila [`FrameTiming::build`] melewati budget vsync — hanya
-    /// bermakna kalau interval vsync sudah diketahui.
+    /// True when [`FrameTiming::build`] exceeded the vsync budget — meaningful
+    /// only once the vsync interval is known.
     pub over_budget: bool,
 }
 
 impl FrameTiming {
-    /// Total waktu dinding satu frame (`build + present`).
+    /// Total wall-clock time of one frame (`build + present`).
     pub fn total(&self) -> Duration {
         self.build + self.present
     }
 }
 
-/// Statistik bergulir waktu build frame.
+/// Rolling statistics over frame build times.
 #[derive(Debug, Clone)]
 pub struct FrameStats {
     ring: [Duration; STATS_WINDOW],
@@ -436,7 +435,7 @@ pub struct FrameStats {
 }
 
 impl FrameStats {
-    /// Statistik kosong.
+    /// Empty statistics.
     pub fn new() -> Self {
         Self {
             ring: [Duration::ZERO; STATS_WINDOW],
@@ -468,37 +467,37 @@ impl FrameStats {
         self.last = Some(timing);
     }
 
-    /// Total frame yang diukur.
+    /// Total frames measured.
     pub fn frames(&self) -> u64 {
         self.frames
     }
 
-    /// Frame yang benar-benar dipresentasikan.
+    /// Frames that really were presented.
     pub fn presented(&self) -> u64 {
         self.presented
     }
 
-    /// Frame yang dilewati (window minimal/tertutup/timeout swapchain).
+    /// Frames that were skipped (window minimized/closed, swapchain timeout).
     pub fn skipped(&self) -> u64 {
         self.skipped
     }
 
-    /// Frame yang melewati budget vsync.
+    /// Frames that exceeded the vsync budget.
     pub fn over_budget(&self) -> u64 {
         self.over_budget
     }
 
-    /// Waktu build terlama sepanjang sesi.
+    /// The longest build time of the whole session.
     pub fn worst(&self) -> Duration {
         self.worst
     }
 
-    /// Pengukuran frame terakhir.
+    /// The most recent frame measurement.
     pub fn last(&self) -> Option<FrameTiming> {
         self.last
     }
 
-    /// Rata-rata waktu build pada jendela terakhir.
+    /// Mean build time over the recent window.
     pub fn average(&self) -> Option<Duration> {
         if self.len == 0 {
             return None;
@@ -507,7 +506,7 @@ impl FrameStats {
         Some(total / self.len as u32)
     }
 
-    /// Persentil waktu build pada jendela terakhir (`p` dalam 0.0..=1.0).
+    /// Build-time percentile over the recent window (`p` in 0.0..=1.0).
     pub fn percentile(&self, p: f64) -> Option<Duration> {
         if self.len == 0 || !(0.0..=1.0).contains(&p) {
             return None;
@@ -520,17 +519,17 @@ impl FrameStats {
         Some(slice[rank.saturating_sub(1).min(self.len - 1)])
     }
 
-    /// Median waktu build pada jendela terakhir.
+    /// Median build time over the recent window.
     pub fn p50(&self) -> Option<Duration> {
         self.percentile(0.50)
     }
 
-    /// Persentil 95 waktu build — angka yang menentukan "terasa mulus".
+    /// 95th percentile build time — the number that decides "feels smooth".
     pub fn p95(&self) -> Option<Duration> {
         self.percentile(0.95)
     }
 
-    /// Ringkasan satu baris untuk log.
+    /// A one-line summary for logs.
     pub fn summary(&self, vsync: Vsync) -> String {
         format!(
             "{} frame · build p50 {} · p95 {} · max {} · vsync {vsync} · budget {} · over-budget {}/{} · skipped {}",
@@ -567,10 +566,10 @@ fn opt_ms(d: Option<Duration>) -> String {
 // Logger
 // ---------------------------------------------------------------------------
 
-/// Perakit baris log frame time.
+/// Assembles frame time log lines.
 ///
-/// Sengaja mengembalikan `Option<String>` alih-alih mencetak sendiri: keputusan
-/// "apakah ini debug build" milik pemanggil, dan formatnya jadi bisa diuji.
+/// It deliberately returns `Option<String>` instead of printing: the "is this a
+/// debug build" decision belongs to the caller, and the format stays testable.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameLogger {
     every: u64,
@@ -578,8 +577,8 @@ pub struct FrameLogger {
 }
 
 impl FrameLogger {
-    /// Logger yang mencetak ringkasan tiap `every` frame; `0` mematikan
-    /// ringkasan berkala (hanya frame yang melewati budget yang dicatat).
+    /// A logger that prints a summary every `every` frames; `0` disables the
+    /// periodic summary (only over-budget frames are logged).
     pub fn every(every: u64) -> Self {
         Self {
             every,
@@ -587,13 +586,13 @@ impl FrameLogger {
         }
     }
 
-    /// Matikan peringatan frame yang melewati budget.
+    /// Turn off warnings about frames that exceeded the budget.
     pub fn quiet_over_budget(mut self) -> Self {
         self.warn_over_budget = false;
         self
     }
 
-    /// Baris log untuk frame ini, atau `None` bila tidak perlu dicatat.
+    /// The log line for this frame, or `None` when it need not be logged.
     pub fn line(&self, stats: &FrameStats, vsync: Vsync, timing: &FrameTiming) -> Option<String> {
         let lambat = self.warn_over_budget && timing.over_budget;
         let berkala = self.every > 0 && timing.index > 0 && timing.index % self.every == 0;
@@ -627,22 +626,22 @@ impl Default for FrameLogger {
 // Scheduler
 // ---------------------------------------------------------------------------
 
-/// Apa yang harus platform lakukan setelah sebuah permintaan frame.
+/// What the platform should do after a frame request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Wake {
-    /// Bangunkan sumber vsync (unpause display link / `request_redraw`).
+    /// Wake the vsync source (unpause the display link / `request_redraw`).
     Schedule,
-    /// Frame sudah dijadwalkan — jangan poke platform dua kali.
+    /// A frame is already scheduled — do not poke the platform twice.
     AlreadyScheduled,
-    /// Tidak ada yang perlu digambar: window tersembunyi, atau `Dirty::NONE`.
+    /// Nothing needs drawing: the window is hidden, or `Dirty::NONE`.
     Suppressed,
 }
 
-/// Token satu frame yang sedang berjalan.
+/// A token for the frame currently in flight.
 ///
-/// Dikembalikan [`FrameScheduler::begin_frame`] dan dikonsumsi
-/// [`FrameScheduler::end_frame`] — bentuk ini membuat "lupa menutup frame"
-/// menjadi kesalahan yang terlihat, bukan kebocoran diam-diam.
+/// Returned by [`FrameScheduler::begin_frame`] and consumed by
+/// [`FrameScheduler::end_frame`] — a shape that turns "forgot to close the
+/// frame" into a visible mistake rather than a silent leak.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameStart {
     index: u64,
@@ -652,42 +651,42 @@ pub struct FrameStart {
 }
 
 impl FrameStart {
-    /// Nomor urut frame ini.
+    /// This frame's sequence number.
     pub fn index(&self) -> u64 {
         self.index
     }
 
-    /// Alasan frame ini dijadwalkan.
+    /// Why this frame was scheduled.
     pub fn reason(&self) -> Dirty {
         self.reason
     }
 
-    /// Saat frame ini dimulai.
+    /// When this frame started.
     pub fn at(&self) -> Instant {
         self.at
     }
 
-    /// Tandai bahwa scene selesai dibangun dan penyerahan ke backend dimulai.
+    /// Mark the scene as built and the hand-off to the backend as begun.
     ///
-    /// Inilah yang memisahkan kerja kita dari *backpressure* swapchain. Bila
-    /// tidak pernah dipanggil, seluruh durasi frame dihitung sebagai build.
+    /// This is what separates our own work from swapchain *backpressure*. If it
+    /// is never called, the whole frame duration counts as build time.
     pub fn mark_built(&mut self, now: Instant) {
         self.built_at.get_or_insert(now);
     }
 
-    /// Saat scene selesai dibangun, bila sudah ditandai.
+    /// When the scene finished building, if that has been marked.
     pub fn built_at(&self) -> Option<Instant> {
         self.built_at
     }
 }
 
-/// Scheduler render-on-dirty.
+/// The render-on-dirty scheduler.
 ///
-/// Kontraknya sederhana dan itulah intinya: selama tidak ada yang menandai
-/// dirty, [`FrameScheduler::is_idle`] benar dan platform tidak boleh
-/// menggambar apa pun — tidak ada loop yang berputar, tidak ada timer yang
-/// berdetak. Begitu ada yang dirty, tepat **satu** frame dijadwalkan pada
-/// vsync berikutnya, berapa pun laju layarnya.
+/// Its contract is simple, and that is the point: as long as nothing marks
+/// anything dirty, [`FrameScheduler::is_idle`] is true and the platform must
+/// not draw at all — no loop spinning, no timer ticking. The moment something
+/// is dirty, exactly **one** frame is scheduled on the next vsync, whatever the
+/// display's rate happens to be.
 #[derive(Debug)]
 pub struct FrameScheduler {
     dirty: Dirty,
@@ -701,7 +700,7 @@ pub struct FrameScheduler {
 }
 
 impl FrameScheduler {
-    /// Scheduler baru: idle, terlihat, dan belum tahu detak layar.
+    /// A fresh scheduler: idle, visible, and ignorant of the display tick.
     pub fn new() -> Self {
         Self {
             dirty: Dirty::NONE,
@@ -715,20 +714,21 @@ impl FrameScheduler {
         }
     }
 
-    /// Laporkan detak layar dari platform (CADisplayLink dsb.).
+    /// Report the display tick from the platform (CADisplayLink and friends).
     ///
-    /// Sumber yang lebih tepercaya menang: taksiran tidak akan menimpa angka
-    /// yang datang langsung dari display link.
+    /// The more trustworthy source wins: an estimate will never overwrite a
+    /// figure that came straight from the display link.
     pub fn set_vsync(&mut self, vsync: Vsync) {
         self.vsync = self.vsync.preferred(vsync);
     }
 
-    /// Detak layar yang dipakai saat ini.
+    /// The display tick currently in use.
     pub fn vsync(&self) -> Vsync {
         self.vsync
     }
 
-    /// Buang taksiran refresh rate (mis. window pindah monitor).
+    /// Drop the refresh rate estimate (e.g. the window moved to another
+    /// monitor).
     pub fn reset_vsync_estimate(&mut self) {
         self.estimator.reset();
         if self.vsync.source() != ClockSource::DisplayLink {
@@ -736,15 +736,15 @@ impl FrameScheduler {
         }
     }
 
-    /// Apakah window sedang terlihat.
+    /// Whether the window is currently visible.
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
-    /// Setel visibilitas window (occluded/minimize).
+    /// Set window visibility (occluded/minimized).
     ///
-    /// Saat tersembunyi, permintaan frame tetap **dicatat** tapi tidak pernah
-    /// membangunkan GPU; begitu terlihat lagi, utang itu langsung dibayar.
+    /// While hidden, frame requests are still **recorded** but never wake the
+    /// GPU; the moment it is visible again that debt is paid immediately.
     pub fn set_visible(&mut self, visible: bool) -> Wake {
         if self.visible == visible {
             return if visible && self.awaiting {
@@ -766,7 +766,7 @@ impl FrameScheduler {
         }
     }
 
-    /// Minta satu frame karena `dirty`.
+    /// Request one frame because of `dirty`.
     pub fn request(&mut self, dirty: Dirty) -> Wake {
         if dirty.is_empty() {
             return Wake::Suppressed;
@@ -782,29 +782,29 @@ impl FrameScheduler {
         Wake::Schedule
     }
 
-    /// Alasan-alasan yang belum dilayani.
+    /// The reasons not yet served.
     pub fn pending(&self) -> Dirty {
         self.dirty
     }
 
-    /// Benar bila tidak ada apa pun yang perlu digambar.
+    /// True when nothing whatsoever needs drawing.
     ///
-    /// Inilah sinyal untuk platform mem-pause display link dan tidur di
+    /// This is the platform's cue to pause the display link and sleep in
     /// `ControlFlow::Wait`.
     pub fn is_idle(&self) -> bool {
         self.dirty.is_empty() && !self.awaiting
     }
 
-    /// Benar bila sebuah frame sudah dijadwalkan dan sedang ditunggu.
+    /// True when a frame has been scheduled and is being awaited.
     pub fn awaiting_frame(&self) -> bool {
         self.awaiting
     }
 
-    /// Mulai satu frame; mengosongkan dirty dan memulai pengukuran.
+    /// Begin one frame; clears the dirty set and starts measuring.
     ///
-    /// Boleh dipanggil walau `dirty` kosong: OS bisa meminta redraw sendiri
-    /// (expose/occlusion). `reason` pada [`FrameStart`] akan kosong dan itu
-    /// terbaca jelas di log.
+    /// May be called even when `dirty` is empty: the OS can ask for a redraw on
+    /// its own (expose/occlusion). The [`FrameStart`] `reason` will be empty,
+    /// and that reads clearly in the log.
     pub fn begin_frame(&mut self, now: Instant) -> FrameStart {
         let reason = self.dirty;
         self.dirty.clear();
@@ -817,7 +817,7 @@ impl FrameScheduler {
         }
     }
 
-    /// Tutup frame, catat statistik, dan perbarui taksiran refresh rate.
+    /// Close the frame, record statistics, and update the refresh estimate.
     pub fn end_frame(&mut self, start: FrameStart, now: Instant, presented: bool) -> FrameTiming {
         let built_at = start.built_at.unwrap_or(now).clamp(start.at, now);
         let build = built_at.saturating_duration_since(start.at);
@@ -839,8 +839,8 @@ impl FrameScheduler {
             self.frame += 1;
         }
 
-        // Dinilai dari `build` saja: `present` didominasi antrean swapchain
-        // yang memang menahan sampai vsync berikutnya.
+        // Judged on `build` alone: `present` is dominated by the swapchain
+        // queue, which is meant to block until the next vsync.
         let over_budget = self.vsync.budget().is_some_and(|b| build > b);
         let timing = FrameTiming {
             index: start.index,
@@ -855,12 +855,12 @@ impl FrameScheduler {
         timing
     }
 
-    /// Nomor frame berikutnya yang akan digambar.
+    /// The number of the next frame to be drawn.
     pub fn frame_index(&self) -> u64 {
         self.frame
     }
 
-    /// Statistik frame time.
+    /// Frame time statistics.
     pub fn stats(&self) -> &FrameStats {
         &self.stats
     }
@@ -926,7 +926,7 @@ mod tests {
         s.request(Dirty::PAINT);
         let a = t0();
         let start = s.begin_frame(a);
-        // Scene fn menyatakan spring-nya belum selesai.
+        // The scene fn reports that its spring has not settled yet.
         assert_eq!(s.request(Dirty::ANIMATION), Wake::Schedule);
         s.end_frame(start, a + Duration::from_millis(1), true);
         assert!(!s.is_idle());
@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(s.set_visible(false), Wake::Suppressed);
         assert_eq!(s.request(Dirty::PAINT), Wake::Suppressed);
         assert!(!s.awaiting_frame());
-        // Utangnya tetap tercatat dan dibayar begitu terlihat lagi.
+        // The debt stays recorded and is paid the moment it is visible again.
         assert!(s.pending().contains(Dirty::PAINT));
         assert_eq!(s.set_visible(true), Wake::Schedule);
         assert!(s.awaiting_frame());
@@ -999,7 +999,8 @@ mod tests {
         s.request(Dirty::ANIMATION);
         let a = t0();
         let mut start = s.begin_frame(a);
-        // Build 1 ms (sehat), lalu present memblok 12 ms menunggu buffer bebas.
+        // Build 1 ms (healthy), then present blocks 12 ms awaiting a free
+        // buffer.
         start.mark_built(a + Duration::from_millis(1));
         let timing = s.end_frame(start, a + Duration::from_millis(13), true);
         assert!(!timing.over_budget, "menunggu vsync bukan frame lambat");
@@ -1029,7 +1030,7 @@ mod tests {
         let v60 = Vsync::from_hz(60.0, ClockSource::DisplayLink).unwrap();
         let v120 = Vsync::from_hz(120.0, ClockSource::DisplayLink).unwrap();
         assert!(v120.budget().unwrap() < v60.budget().unwrap());
-        // 120 Hz ≈ 8,33 ms — separuh dari 60 Hz, bukan 16,6 ms.
+        // 120 Hz ≈ 8.33 ms — half of 60 Hz, not 16.6 ms.
         let b = v120.budget().unwrap().as_secs_f64() * 1000.0;
         assert!((b - 8.333).abs() < 0.01, "budget 120 Hz = {b} ms");
     }
@@ -1071,7 +1072,7 @@ mod tests {
     fn taksiran_memakai_median_sehingga_tahan_frame_drop() {
         let mut e = RefreshEstimator::new();
         for i in 0..16 {
-            // Satu dari empat frame di-drop (dua kali interval).
+            // One frame in four is dropped (twice the interval).
             let d = if i % 4 == 3 {
                 Duration::from_micros(16_666)
             } else {
@@ -1105,7 +1106,7 @@ mod tests {
             s.request(Dirty::ANIMATION);
             let start = s.begin_frame(now);
             s.end_frame(start, now + Duration::from_micros(500), true);
-            // Sesekali aplikasi benar-benar idle selama 5 detik.
+            // Every so often the application really is idle for 5 seconds.
             now += if i % 5 == 4 {
                 Duration::from_secs(5)
             } else {

@@ -1,29 +1,30 @@
-//! Bukti nyata scheduler render-on-dirty (REKOMENDASI §3.5).
+//! Live proof of the render-on-dirty scheduler (REKOMENDASI §3.5).
 //!
-//! Jalankan, lalu perhatikan stderr:
+//! Run it, then watch stderr:
 //!
 //! ```text
 //! cargo run -p silka-platform --example frame_scheduling
 //! ```
 //!
-//! Yang seharusnya terlihat:
+//! What you should see:
 //!
-//! 1. Baris pembuka menyebut sumber vsync — di Mac ProMotion ia berbunyi
-//!    `vsync 120.0 Hz (display-link) (CADisplayLink)`, bukan 60 Hz dan bukan
-//!    angka yang dikonstanta.
-//! 2. Selama tiga detik pertama, latar berdenyut karena tiap frame memanggil
-//!    [`silka_platform::FrameContext::request_animation_frame`]; log frame
-//!    time mengalir.
-//! 3. Setelah animasi selesai, **log berhenti total** — tidak ada satu pun
-//!    frame yang digambar sampai window di-resize, dark mode OS berubah, atau
-//!    window ditutup. Itulah inti "render hanya saat dirty".
+//! 1. The opening line names the vsync source — on a ProMotion Mac it reads
+//!    `vsync 120.0 Hz (display-link) (CADisplayLink)`, not 60 Hz and not a
+//!    hardcoded constant.
+//! 2. For the first three seconds the background pulses because every frame
+//!    calls [`silka_platform::FrameContext::request_animation_frame`]; frame
+//!    time logs keep flowing.
+//! 3. Once the animation finishes, **the log stops completely** — not a single
+//!    frame is drawn until the window is resized, the OS dark mode changes, or
+//!    the window is closed. That is the whole point of "render only when
+//!    dirty".
 
 use std::time::Duration;
 
 use silka_paint::Scene;
 use silka_platform::{window, PlatformError};
 
-/// Berapa lama denyut berjalan sebelum window kembali benar-benar diam.
+/// How long the pulse runs before the window goes completely still again.
 const DURASI_ANIMASI: Duration = Duration::from_secs(3);
 
 fn main() -> Result<(), PlatformError> {
@@ -32,12 +33,12 @@ fn main() -> Result<(), PlatformError> {
         .on_frame(|frame| {
             let t = frame.elapsed();
             if t >= DURASI_ANIMASI {
-                // Tidak meminta frame lagi → window tidur.
+                // No further frame requested → the window goes to sleep.
                 return Scene::new(frame.theme().color.background);
             }
 
-            // Selama masih beranimasi, tiap frame memesan penerusnya. Nanti
-            // pemanggil ini adalah spring yang belum mencapai target (§3.5).
+            // While animating, each frame books the next one. Later on this
+            // caller will be a spring that has not reached its target (§3.5).
             frame.request_animation_frame();
 
             let fase = (t.as_secs_f32() * 2.0).sin() * 0.5 + 0.5;
@@ -49,7 +50,7 @@ fn main() -> Result<(), PlatformError> {
                     .lerp(frame.theme().color.accent, fase * 0.35),
             )
         })
-        // Ringkasan tiap 30 frame supaya denyut singkat pun kelihatan.
+        // Summarise every 30 frames so even a short pulse is visible.
         .frame_log_every(30)
         .run()
 }

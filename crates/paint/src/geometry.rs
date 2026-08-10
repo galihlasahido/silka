@@ -1,72 +1,71 @@
-//! Geometri dasar dalam **poin logis** (device-independent).
+//! Basic geometry in **logical points** (device-independent).
 //!
-//! Seluruh framework di atas `silka-paint` berbicara dalam poin logis; hanya
-//! lapisan surface di `silka-renderer` yang mengalikan dengan scale factor
-//! untuk mendapatkan piksel fisik. Dengan begitu DPI tidak pernah bocor ke
-//! kode widget.
+//! Everything in the framework above `silka-paint` speaks in logical points;
+//! only the surface layer in `silka-renderer` multiplies by the scale factor to
+//! get physical pixels. That way DPI never leaks into widget code.
 
-/// Titik pada bidang, satuan poin logis.
+/// A point on the plane, in logical points.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Point {
-    /// Koordinat horizontal.
+    /// Horizontal coordinate.
     pub x: f32,
-    /// Koordinat vertikal (positif ke bawah).
+    /// Vertical coordinate (positive going down).
     pub y: f32,
 }
 
 impl Point {
-    /// Titik asal (0, 0).
+    /// The origin (0, 0).
     pub const ZERO: Point = Point { x: 0.0, y: 0.0 };
 
-    /// Titik baru.
+    /// A new point.
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
 }
 
-/// Ukuran dalam poin logis.
+/// A size in logical points.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Size {
-    /// Lebar.
+    /// Width.
     pub width: f32,
-    /// Tinggi.
+    /// Height.
     pub height: f32,
 }
 
 impl Size {
-    /// Ukuran nol.
+    /// The zero size.
     pub const ZERO: Size = Size {
         width: 0.0,
         height: 0.0,
     };
 
-    /// Ukuran baru.
+    /// A new size.
     pub const fn new(width: f32, height: f32) -> Self {
         Self { width, height }
     }
 
-    /// Sisi terpendek — dipakai untuk membatasi radius sudut.
+    /// The shorter side — used to clamp corner radii.
     pub fn min_side(self) -> f32 {
         self.width.min(self.height)
     }
 
-    /// Benar bila salah satu dimensi nol atau negatif (mis. window diminimalkan).
+    /// True when either dimension is zero or negative (e.g. a minimized window).
     pub fn is_empty(self) -> bool {
         self.width <= 0.0 || self.height <= 0.0
     }
 }
 
-/// Persegi panjang sejajar sumbu, satuan poin logis.
+/// An axis-aligned rectangle, in logical points.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
-    /// Sudut kiri-atas.
+    /// Top-left corner.
     pub origin: Point,
-    /// Ukuran.
+    /// Size.
     pub size: Size,
 }
 
 impl Rect {
-    /// Rect dari komponen mentah.
+    /// A rect from raw components.
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
         Self {
             origin: Point::new(x, y),
@@ -74,29 +73,29 @@ impl Rect {
         }
     }
 
-    /// Rect dari titik asal dan ukuran.
+    /// A rect from an origin and a size.
     pub const fn from_origin_size(origin: Point, size: Size) -> Self {
         Self { origin, size }
     }
 
-    /// Tepi kiri.
+    /// Left edge.
     pub fn min_x(self) -> f32 {
         self.origin.x
     }
-    /// Tepi atas.
+    /// Top edge.
     pub fn min_y(self) -> f32 {
         self.origin.y
     }
-    /// Tepi kanan.
+    /// Right edge.
     pub fn max_x(self) -> f32 {
         self.origin.x + self.size.width
     }
-    /// Tepi bawah.
+    /// Bottom edge.
     pub fn max_y(self) -> f32 {
         self.origin.y + self.size.height
     }
 
-    /// Titik tengah.
+    /// Center point.
     pub fn center(self) -> Point {
         Point::new(
             self.origin.x + self.size.width * 0.5,
@@ -104,15 +103,15 @@ impl Rect {
         )
     }
 
-    /// Benar bila titik berada di dalam rect (tepi kiri/atas inklusif).
+    /// True when the point lies inside the rect (left/top edges inclusive).
     pub fn contains(self, p: Point) -> bool {
         p.x >= self.min_x() && p.x < self.max_x() && p.y >= self.min_y() && p.y < self.max_y()
     }
 
-    /// Rect yang digeser sebesar `offset`.
+    /// The rect translated by `offset`.
     ///
-    /// Dipakai pass paint untuk menaikkan koordinat lokal sebuah node ke
-    /// koordinat absolut window — node tidak pernah tahu posisinya sendiri.
+    /// Used by the paint pass to lift a node's local coordinates into absolute
+    /// window coordinates — a node never knows its own position.
     pub fn translated(self, offset: Point) -> Rect {
         Rect::from_origin_size(
             Point::new(self.origin.x + offset.x, self.origin.y + offset.y),
@@ -120,11 +119,11 @@ impl Rect {
         )
     }
 
-    /// Benar bila kedua rect berbagi luas yang lebih dari nol.
+    /// True when the two rects share more than zero area.
     ///
-    /// Sengaja setengah terbuka seperti [`Rect::contains`]: rect yang hanya
-    /// bersinggungan di tepi tidak menghasilkan satu piksel pun, jadi ia
-    /// **tidak** dianggap beririsan (dan bisa dibuang pass paint).
+    /// Deliberately half-open like [`Rect::contains`]: rects that merely touch
+    /// along an edge produce no pixels at all, so they are **not** considered
+    /// intersecting (and can be culled by the paint pass).
     pub fn intersects(self, other: Rect) -> bool {
         self.min_x() < other.max_x()
             && other.min_x() < self.max_x()
@@ -132,7 +131,7 @@ impl Rect {
             && other.min_y() < self.max_y()
     }
 
-    /// Irisan dua rect; `None` bila tidak beririsan sama sekali.
+    /// The intersection of two rects; `None` when they do not overlap at all.
     pub fn intersect(self, other: Rect) -> Option<Rect> {
         if !self.intersects(other) {
             return None;
@@ -147,7 +146,7 @@ impl Rect {
         ))
     }
 
-    /// Rect yang dikecilkan oleh `insets` di setiap sisi.
+    /// The rect shrunk by `insets` on every side.
     pub fn deflate(self, insets: Insets) -> Rect {
         Rect::new(
             self.origin.x + insets.left,
@@ -158,27 +157,28 @@ impl Rect {
     }
 }
 
-/// Jarak dari tepi (padding/margin), poin logis.
+/// Distances from the edges (padding/margin), in logical points.
 ///
-/// Nama field memakai `left`/`right` fisik; **mirroring RTL** (§9.8) terjadi
-/// satu tingkat di atas, saat token `start`/`end` diresolusi ke sisi fisik.
+/// The field names use physical `left`/`right`; **RTL mirroring** (§9.8)
+/// happens one level up, when `start`/`end` tokens are resolved to physical
+/// sides.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Insets {
-    /// Jarak dari tepi atas.
+    /// Distance from the top edge.
     pub top: f32,
-    /// Jarak dari tepi kanan.
+    /// Distance from the right edge.
     pub right: f32,
-    /// Jarak dari tepi bawah.
+    /// Distance from the bottom edge.
     pub bottom: f32,
-    /// Jarak dari tepi kiri.
+    /// Distance from the left edge.
     pub left: f32,
 }
 
 impl Insets {
-    /// Tanpa jarak.
+    /// No inset at all.
     pub const ZERO: Insets = Insets::all(0.0);
 
-    /// Jarak sama di keempat sisi.
+    /// The same inset on all four sides.
     pub const fn all(v: f32) -> Self {
         Self {
             top: v,
@@ -188,7 +188,7 @@ impl Insets {
         }
     }
 
-    /// Jarak simetris: `x` untuk kiri/kanan, `y` untuk atas/bawah.
+    /// Symmetric insets: `x` for left/right, `y` for top/bottom.
     pub const fn symmetric(x: f32, y: f32) -> Self {
         Self {
             top: y,
@@ -198,12 +198,12 @@ impl Insets {
         }
     }
 
-    /// Total jarak horizontal.
+    /// Total horizontal inset.
     pub fn horizontal(self) -> f32 {
         self.left + self.right
     }
 
-    /// Total jarak vertikal.
+    /// Total vertical inset.
     pub fn vertical(self) -> f32 {
         self.top + self.bottom
     }
@@ -255,7 +255,7 @@ mod tests {
             Some(Rect::new(80.0, 10.0, 20.0, 40.0))
         );
         assert_eq!(a.intersect(Rect::new(200.0, 0.0, 10.0, 10.0)), None);
-        // Bersinggungan di tepi = nol piksel, jadi bukan irisan.
+        // Touching along an edge covers zero pixels, so it is not an intersection.
         assert!(!a.intersects(Rect::new(100.0, 0.0, 10.0, 10.0)));
     }
 

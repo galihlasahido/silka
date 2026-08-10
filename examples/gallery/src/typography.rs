@@ -1,43 +1,43 @@
-//! Halaman demo: **spesimen tipografi** (milestone `glyph-atlas`).
+//! Demo page: **typography specimen** (`glyph-atlas` milestone).
 //!
-//! Yang dibuktikan halaman ini dengan mata — dan dijaga unit test dengan angka:
+//! What this page proves by eye — and what the unit tests guard numerically:
 //!
-//! - **Inter yang dibundel** benar-benar dipakai, termasuk sifat *variable
-//!   font*-nya: satu baris berat 400 → 700 memakai satu berkas font, bukan
-//!   empat (REKOMENDASI §3.6);
-//! - **`measure(text, constraints)`** yang menyusun halaman ini: setiap blok
-//!   diletakkan di bawah blok sebelumnya memakai tinggi hasil ukur, persis
-//!   seperti yang nanti dilakukan sistem layout box-constraints (§3.4);
-//! - **wrap** paragraf mengikuti lebar kolom, dan `max_lines` memotong dengan
-//!   menandai `overflowed` (fondasi truncation/ellipsis);
-//! - **font fallback**: baris multi-skrip harus terbaca, bukan kotak tofu —
-//!   Inter tidak memuat CJK/Arab/emoji, jadi yang muncul di situ datang dari
-//!   font sistem lewat cosmic-text (§3.3).
+//! - the **bundled Inter** really is being used, including its *variable font*
+//!   nature: a weight run of 400 → 700 uses a single font file, not four
+//!   (REKOMENDASI §3.6);
+//! - **`measure(text, constraints)`** is what lays this page out: each block is
+//!   placed below the previous one using the measured height, exactly as the
+//!   box-constraints layout system will later do (§3.4);
+//! - paragraph **wrapping** follows the column width, and `max_lines` truncates
+//!   while flagging `overflowed` (the foundation for truncation/ellipsis);
+//! - **font fallback**: a multi-script line must be readable, not tofu boxes —
+//!   Inter carries no CJK/Arabic/emoji, so what shows up there comes from
+//!   system fonts via cosmic-text (§3.3).
 //!
-//! Semua warna dan jarak datang dari token theme aktif; ukuran font diturunkan
-//! dari token `typography.body_size` sehingga preset Cupertino (13pt) dan
-//! Tailwind (14pt) menghasilkan skala yang berbeda dengan sendirinya (§2.6).
+//! All colors and spacing come from the active theme tokens; font sizes are
+//! derived from the `typography.body_size` token, so the Cupertino (13pt) and
+//! Tailwind (14pt) presets produce different scales on their own (§2.6).
 
 use silka_paint::{Color, Point, Quad, Rect, Scene, Size};
 use silka_text::{FontWeight, TextConstraints, TextEngine, TextStyle};
 use silka_theme::Theme;
 
-/// Satu blok teks yang sudah punya tempat di halaman.
+/// A block of text that has already been placed on the page.
 #[derive(Debug, Clone)]
 pub struct Blok {
-    /// Isi teks.
+    /// The text content.
     pub teks: String,
-    /// Gaya (ukuran, berat, tracking, wrap).
+    /// Style (size, weight, tracking, wrapping).
     pub gaya: TextStyle,
-    /// Warna — selalu token semantik.
+    /// Color — always a semantic token.
     pub warna: Color,
-    /// Sudut kiri-atas blok, poin logis.
+    /// The block's top-left corner, in logical points.
     pub origin: Point,
-    /// Tinggi hasil ukur, poin logis.
+    /// The measured height, in logical points.
     pub tinggi: f32,
 }
 
-/// Susun scene satu frame untuk halaman ini.
+/// Assemble a single frame's scene for this page.
 pub fn scene(teks: &mut TextEngine, theme: &Theme, size: Size) -> Scene {
     let mut scene = Scene::new(theme.color.background);
 
@@ -54,8 +54,8 @@ pub fn scene(teks: &mut TextEngine, theme: &Theme, size: Size) -> Scene {
 
     let batas = batas_kolom(theme, size);
     for blok in susun(teks, theme, size) {
-        // Blok tersusun dari atas ke bawah: begitu satu blok tidak lagi muat di
-        // panel (window dipendekkan), sisanya pasti juga tidak.
+        // Blocks stack top to bottom: once one block no longer fits in the
+        // panel (the window got shorter), neither will any of the rest.
         if blok.origin.y + blok.tinggi > panel.max_y() {
             break;
         }
@@ -69,7 +69,7 @@ pub fn scene(teks: &mut TextEngine, theme: &Theme, size: Size) -> Scene {
     scene
 }
 
-/// Kotak panel yang menampung spesimen.
+/// The panel rectangle that holds the specimen.
 pub fn panel(theme: &Theme, size: Size) -> Rect {
     let margin = theme.space(6.0);
     Rect::new(
@@ -80,25 +80,25 @@ pub fn panel(theme: &Theme, size: Size) -> Rect {
     )
 }
 
-/// Constraints untuk kolom teks di dalam panel.
+/// Constraints for the text column inside the panel.
 pub fn batas_kolom(theme: &Theme, size: Size) -> TextConstraints {
     let panel = panel(theme, size);
     TextConstraints::width((panel.size.width - theme.space(8.0)).max(0.0))
 }
 
-/// Tata letak halaman — **logika murni yang bisa diuji tanpa GPU**.
+/// Page layout — **pure logic that can be tested without a GPU**.
 ///
-/// Inilah demonstrasi kecil protokol "constraints turun, ukuran naik": tiap
-/// blok diukur terhadap lebar kolom, lalu kursor vertikal turun sebanyak tinggi
-/// hasil ukur ditambah jarak dari skala spacing.
+/// This is a small demonstration of the "constraints go down, sizes come up"
+/// protocol: each block is measured against the column width, then the vertical
+/// cursor advances by the measured height plus a gap from the spacing scale.
 pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
     let panel = panel(theme, size);
     let batas = batas_kolom(theme, size);
     let kiri = panel.min_x() + theme.space(4.0);
     let mut y = panel.min_y() + theme.space(4.0);
 
-    // Skala tipografi diturunkan dari token, bukan angka lepas: mengganti
-    // preset otomatis menggeser seluruh skala.
+    // The type scale is derived from tokens, not loose magic numbers: swapping
+    // presets shifts the whole scale automatically.
     let body = theme.typography.body_size;
     let baris = theme.typography.body_line_height;
 
@@ -128,8 +128,8 @@ pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
         TextStyle::new()
             .size(body * 2.0)
             .weight(FontWeight::SEMIBOLD)
-            // Tracking negatif pada ukuran besar — kebiasaan SF yang membuat
-            // judul terasa "Apple" (§3.6).
+            // Negative tracking at large sizes — the SF habit that makes
+            // headings feel "Apple" (§3.6).
             .tracking(-0.02)
             .line_height(1.15)
             .single_line(),
@@ -219,8 +219,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1024.0, 720.0);
 
-    /// Mesin deterministik: tanpa font sistem, hasil test tidak tergantung
-    /// font apa yang kebetulan terpasang di mesin CI (§9.5).
+    /// A deterministic engine: with no system fonts, test results do not
+    /// depend on whichever fonts happen to be installed on the CI machine
+    /// (§9.5).
     fn mesin() -> TextEngine {
         TextEngine::bundled_only()
     }
@@ -288,7 +289,7 @@ mod tests {
         let mut e = mesin();
         let cupertino = susun(&mut e, &Theme::cupertino(Appearance::Light), VIEWPORT);
         let tailwind = susun(&mut e, &Theme::tailwind(Appearance::Light), VIEWPORT);
-        // Tailwind body 14pt > Cupertino 13pt, jadi judulnya pun lebih besar.
+        // Tailwind body 14pt > Cupertino 13pt, so its heading is bigger too.
         assert!(tailwind[0].gaya.size > cupertino[0].gaya.size);
     }
 
@@ -320,8 +321,8 @@ mod tests {
         let t = tema();
         let sub = &susun(&mut e, &t, VIEWPORT)[1];
         assert_eq!(sub.gaya.max_lines, Some(2));
-        // Kolom sesempit ini butuh lebih dari dua baris — jadi baris sisanya
-        // benar-benar dipotong, bukan kebetulan pas.
+        // A column this narrow needs more than two lines — so the remaining
+        // lines really are truncated, rather than happening to fit.
         let sempit = batas_kolom(&t, Size::new(220.0, 720.0));
         let mut tanpa_batas = sub.gaya.clone();
         tanpa_batas.max_lines = None;
@@ -355,7 +356,7 @@ mod tests {
                 FontWeight::BOLD
             ]
         );
-        // Satu berkas font untuk semuanya.
+        // A single font file for all of them.
         assert!(e.ui_family().is_some_and(|f| f.contains("Inter")));
     }
 
@@ -410,9 +411,9 @@ mod tests {
 
     #[test]
     fn frame_kedua_tidak_menambah_glyph_baru() {
-        // Bukti bahwa atlas benar-benar cache: menggambar frame yang sama dua
-        // kali tidak merasterisasi apa pun lagi (§3.5 "render hanya saat dirty"
-        // baru berarti kalau frame yang sama memang murah).
+        // Proof the atlas really is a cache: drawing the same frame twice
+        // rasterizes nothing more (§3.5 "render only when dirty" only means
+        // something if repeating a frame really is cheap).
         let mut e = mesin();
         let t = tema();
         scene(&mut e, &t, VIEWPORT);
@@ -421,11 +422,11 @@ mod tests {
         assert_eq!(e.glyphs().len(), sesudah_frame_1);
     }
 
-    /// Halaman ini digambar ke tekstur offscreen dengan jalur yang **persis
-    /// sama** dengan window (pipeline, format sRGB, blending, atlas glyph),
-    /// lalu pikselnya dihitung. Inilah yang memergoki "teks tidak pernah
-    /// sampai ke GPU": semua uji lain di berkas ini berhenti di sisi CPU dan
-    /// tetap hijau meski layar kosong.
+    /// This page is rendered to an offscreen texture through **exactly the
+    /// same** path as the window (pipeline, sRGB format, blending, glyph
+    /// atlas), then its pixels are counted. This is what catches "the text
+    /// never reached the GPU": every other test in this file stops on the CPU
+    /// side and stays green even with a blank screen.
     #[test]
     fn spesimen_teks_benar_benar_tergambar_di_gpu() {
         use silka_paint::Command;
@@ -443,8 +444,8 @@ mod tests {
         let mut target = OffscreenTarget::new(&gpu, SurfaceGeometry::from_logical(VIEWPORT, SKALA))
             .expect("target headless");
 
-        // Area sampel: bagian dalam panel, cukup jauh dari border agar tepi
-        // anti-alias tidak ikut terhitung.
+        // Sample area: the panel's interior, far enough from the border that
+        // anti-aliased edges are not counted.
         let panel = panel(&t, VIEWPORT).deflate(silka_paint::Insets::all(2.0));
         let permukaan = t.color.surface;
         let hitung = |img: &Rgba8Image| {
@@ -480,8 +481,8 @@ mod tests {
             "halaman teks nyaris kosong di layar: hanya {terisi} piksel bukan-permukaan"
         );
 
-        // Kontrol negatif: panel yang sama tanpa satu pun GlyphRun harus
-        // menghasilkan NOL piksel bukan-permukaan di area yang sama.
+        // Negative control: the same panel with no GlyphRun at all must yield
+        // ZERO non-surface pixels over the same area.
         let mut tanpa_teks = Scene::new(t.color.background);
         let kotak = super::panel(&t, VIEWPORT);
         tanpa_teks.push_shadowed(
@@ -509,7 +510,7 @@ mod tests {
             let p = panel(&t, size);
             assert!(p.size.width >= 0.0 && p.size.height >= 0.0, "{size:?}");
             assert!(batas_kolom(&t, size).max_width >= 0.0, "{size:?}");
-            // Tidak boleh panic.
+            // Must not panic.
             let _ = scene(&mut e, &t, size);
         }
     }

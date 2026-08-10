@@ -1,5 +1,5 @@
-//! `text()` — komponen Tier 0 pertama (`KOMPONEN.md`): teks yang **benar-benar
-//! tampil** di dalam render tree.
+//! `text()` — the first Tier 0 component (`KOMPONEN.md`): text that
+//! **actually shows up** in the render tree.
 //!
 //! ```
 //! # use silka_widgets::{text, Fonts};
@@ -11,21 +11,22 @@
 //!     .color(t.color.label);
 //! ```
 //!
-//! Tiga hal yang membuatnya menyatu dengan mesin, bukan menempel di sampingnya:
+//! Three things make it part of the engine rather than something bolted on
+//! beside it:
 //!
-//! 1. **Ukurannya datang dari `measure`, bukan dari tebakan.** Node ini adalah
-//!    "measure function leaf" §3.4: lebar batas yang turun dari box constraints
-//!    (atau dari wadah flex/grid) dipakai apa adanya untuk membungkus baris,
-//!    dan ukuran hasilnya naik ke induk.
-//! 2. **Menggambar dalam koordinat lokal.** Glyph dirasterisasi dari `(0, 0)`
-//!    sudut kiri-atas node; [`silka_core::tree::PaintCtx`] yang menaikkannya
-//!    ke koordinat absolut — jadi memindahkan teks tidak menyentuh satu baris
-//!    pun kode gambar (§3.2).
-//! 3. **Bisa dibacakan screen reader.** Isi teksnya adalah `name` node a11y,
-//!    dengan `bounds` yang datang dari hasil layout (§3.8).
+//! 1. **Its size comes from `measure`, not from a guess.** This node is the
+//!    "measure function leaf" of §3.4: the width limit handed down by the box
+//!    constraints (or by a flex/grid container) is used as-is to wrap lines,
+//!    and the resulting size travels back up to the parent.
+//! 2. **It draws in local coordinates.** Glyphs are rasterized from `(0, 0)`,
+//!    the node's top-left corner; [`silka_core::tree::PaintCtx`] lifts them
+//!    into absolute coordinates — so moving the text touches not a single line
+//!    of drawing code (§3.2).
+//! 3. **A screen reader can read it.** The text content is the a11y node's
+//!    `name`, with `bounds` coming from the layout result (§3.8).
 //!
-//! Yang **tidak** ada di sini: nama `cosmic-text`, nama `wgpu`, dan angka warna
-//! — semuanya token (§2.6, §3.2, §3.3).
+//! What is **not** here: the name `cosmic-text`, the name `wgpu`, and hard-coded
+//! color numbers — everything is a token (§2.6, §3.2, §3.3).
 
 use silka_core::access::{AccessNode, AccessRole};
 use silka_core::scheduler::Dirty;
@@ -41,11 +42,11 @@ use crate::fonts::Fonts;
 // Render node
 // ---------------------------------------------------------------------------
 
-/// Daun teks: menyimpan sumbernya **dan** hasil shaping-nya.
+/// The text leaf: it keeps both the source **and** the shaping result.
 ///
-/// Sumbernya disimpan karena itulah yang dibandingkan saat diff; hasil
-/// shaping-nya disimpan karena shaping adalah pekerjaan termahal di seluruh
-/// framework dan tidak boleh diulang tiap frame (§3.3).
+/// The source is kept because that is what diffing compares; the shaping
+/// result is kept because shaping is the most expensive work in the whole
+/// framework and must not be redone every frame (§3.3).
 pub struct TextBox {
     text: String,
     style: TextStyle,
@@ -54,12 +55,12 @@ pub struct TextBox {
     role: AccessRole,
     fonts: Fonts,
 
-    // -- turunan (selalu hasil dari yang di atas) --
+    // -- derived (always a product of the fields above) --
     run: GlyphRun,
     size: Size,
-    /// Lebar batas yang dipakai saat shaping terakhir (`INFINITY` = tanpa batas).
+    /// Width limit used for the last shaping pass (`INFINITY` = unbounded).
     shaped_width: f32,
-    /// Scale factor saat rasterisasi terakhir — glyph di atlas terikat padanya.
+    /// Scale factor at the last rasterization — atlas glyphs are tied to it.
     shaped_scale: f32,
 }
 
@@ -81,23 +82,23 @@ impl TextBox {
         node
     }
 
-    /// Lebar batas sebelum layout pertama: hanya yang diminta view.
+    /// The width limit before the first layout: only what the view asked for.
     fn batas_awal(&self) -> f32 {
         self.max_width.unwrap_or(f32::INFINITY)
     }
 
-    /// Shape + rasterisasi terhadap lebar batas tertentu.
+    /// Shape and rasterize against a given width limit.
     ///
-    /// Rasterisasi memakai origin `(0, 0)`: kotak tujuan tiap glyph relatif
-    /// terhadap sudut kiri-atas node, sama seperti perintah gambar lain.
+    /// Rasterization uses origin `(0, 0)`: each glyph's destination rect is
+    /// relative to the node's top-left corner, like every other draw command.
     fn bentuk(&mut self, batas_lebar: f32) {
         let scale = self.fonts.scale_factor();
         let teks = &self.text;
         let gaya = &self.style;
         let warna = self.color;
         let (run, size) = self.fonts.with(|mesin| {
-            // `TextConstraints::width(INFINITY)` = tanpa batas, jadi satu jalur
-            // saja melayani label satu baris maupun paragraf berkolom.
+            // `TextConstraints::width(INFINITY)` = unbounded, so a single path
+            // serves both a one-line label and a column of paragraph text.
             let layout = mesin.layout(teks, gaya, TextConstraints::width(batas_lebar));
             let size = layout.measure().content_size;
             let run = mesin.rasterize(&layout, Point::ZERO, warna);
@@ -109,11 +110,11 @@ impl TextBox {
         self.shaped_scale = scale;
     }
 
-    /// Pastikan hasil shaping masih berlaku untuk lebar batas dan DPI ini.
+    /// Make sure the shaping result is still valid for this width limit and DPI.
     ///
-    /// Dua alasan sah untuk shaping ulang, dan hanya dua: lebar kolom berubah
-    /// (baris harus dibungkus ulang) dan scale factor berubah (bitmap glyph
-    /// di atlas terikat pada resolusi layar, §3.3).
+    /// There are two legitimate reasons to reshape, and only two: the column
+    /// width changed (lines must be re-wrapped) and the scale factor changed
+    /// (atlas glyph bitmaps are tied to the display resolution, §3.3).
     fn pastikan_bentuk(&mut self, batas_lebar: f32) {
         let scale = self.fonts.scale_factor();
         let sama_lebar = self.shaped_width == batas_lebar
@@ -124,17 +125,17 @@ impl TextBox {
         self.bentuk(batas_lebar);
     }
 
-    /// Teks yang sedang ditampilkan.
+    /// The text currently being displayed.
     pub fn text(&self) -> &str {
         &self.text
     }
 
-    /// Ukuran alami hasil ukur terakhir, poin logis.
+    /// The natural size from the last measure, in logical points.
     pub fn measured_size(&self) -> Size {
         self.size
     }
 
-    /// Jumlah glyph yang akan digambar.
+    /// How many glyphs will be drawn.
     pub fn glyph_count(&self) -> usize {
         self.run.len()
     }
@@ -156,9 +157,9 @@ impl RenderNode for TextBox {
     }
 
     fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
-        // Batas lebar = yang paling ketat antara permintaan view dan ruang yang
-        // benar-benar tersedia. Inilah "constraints turun, ukuran naik" untuk
-        // teks (§3.4).
+        // Width limit = the tighter of what the view asked for and the space
+        // actually available. This is "constraints down, sizes up" for text
+        // (§3.4).
         let batas = match self.max_width {
             Some(w) => w.min(constraints.max_width),
             None => constraints.max_width,
@@ -176,9 +177,9 @@ impl RenderNode for TextBox {
 
     fn access(&self, node: &mut AccessNode) {
         node.role = self.role;
-        // Teks yang sengaja dinyatakan struktural (mis. label di dalam tombol,
-        // yang namanya sudah diumumkan tombolnya) tidak punya nama sendiri —
-        // kalau tidak, screen reader membacakannya dua kali.
+        // Text deliberately declared structural (e.g. the label inside a
+        // button, whose name the button already announces) has no name of its
+        // own — otherwise a screen reader would read it twice.
         if !self.text.is_empty() && self.role != AccessRole::Container {
             node.label = Some(self.text.clone());
         }
@@ -189,7 +190,7 @@ impl RenderNode for TextBox {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props daun teks.
+/// Props for the text leaf.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextProps {
     text: String,
@@ -228,26 +229,28 @@ impl ViewNode for TextProps {
         n.color = self.color;
         n.max_width = self.max_width;
         n.fonts = self.fonts.clone();
-        // Shaping ulang ditunda ke layout: di sanalah lebar kolom yang berlaku
-        // diketahui, jadi teks yang berubah tidak dibentuk dua kali.
+        // Reshaping is deferred to layout: that is where the effective column
+        // width is known, so changed text is not shaped twice.
         n.shaped_width = f32::NAN;
         Dirty::LAYOUT | Dirty::PAINT
     }
 }
 
-/// Builder teks bergaya Dart (§2.5).
+/// A Dart-style text builder (§2.5).
 ///
-/// Dibuat lewat [`text`]; menjadi [`View`] saat dimasukkan ke wadah mana pun.
+/// Created through [`text`]; becomes a [`View`] as soon as it is placed into
+/// any container.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Text {
     props: TextProps,
     key: Option<Key>,
 }
 
-/// Teks satu gaya — komponen `text` (`KOMPONEN.md` Tier 0).
+/// Single-style text — the `text` component (`KOMPONEN.md` Tier 0).
 ///
-/// `fonts` adalah mesin teks aplikasi ([`Fonts`]); ia diserahkan eksplisit
-/// selama belum ada context ambient untuk titipan tingkat aplikasi.
+/// `fonts` is the application's text engine ([`Fonts`]); it is passed
+/// explicitly for as long as there is no ambient context for
+/// application-level dependencies.
 pub fn text(fonts: &Fonts, text: impl Into<String>) -> Text {
     Text {
         props: TextProps {
@@ -268,39 +271,39 @@ impl Text {
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5).
+    /// Identity key among its siblings (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Ukuran font, poin logis — **selalu** diturunkan dari token
-    /// `typography` (§2.6).
+    /// Font size in logical points — **always** derived from the
+    /// `typography` tokens (§2.6).
     pub fn size(self, size: f32) -> Self {
         self.map(move |p| p.style.size = size.max(0.5))
     }
 
-    /// Berat font (satu variable font, bukan empat berkas — §3.6).
+    /// Font weight (one variable font, not four files — §3.6).
     pub fn weight(self, weight: FontWeight) -> Self {
         self.map(move |p| p.style.weight = weight)
     }
 
-    /// Warna teks — token `label`/`secondary_label`/`on_accent`.
+    /// Text color — the `label`/`secondary_label`/`on_accent` tokens.
     pub fn color(self, color: Color) -> Self {
         self.map(move |p| p.color = color)
     }
 
-    /// Tinggi baris sebagai kelipatan ukuran font.
+    /// Line height as a multiple of the font size.
     pub fn line_height(self, factor: f32) -> Self {
         self.map(move |p| p.style.line_height = factor)
     }
 
-    /// Tracking (letter-spacing) dalam em — negatif untuk judul besar ala SF.
+    /// Tracking (letter-spacing) in em — negative for big SF-style headlines.
     pub fn tracking(self, em: f32) -> Self {
         self.map(move |p| p.style.tracking = em)
     }
 
-    /// Paksa satu baris (tanpa wrap) — bentuk yang dipakai label dan tombol.
+    /// Force a single line (no wrapping) — the shape labels and buttons use.
     pub fn single_line(self) -> Self {
         self.map(move |p| {
             p.style.wrap = TextWrap::None;
@@ -308,23 +311,23 @@ impl Text {
         })
     }
 
-    /// Batas jumlah baris; sisanya dipotong dan ditandai overflow.
+    /// Cap on the number of lines; the rest is clipped and marked as overflow.
     pub fn max_lines(self, lines: usize) -> Self {
         self.map(move |p| p.style.max_lines = Some(lines.max(1)))
     }
 
-    /// Batas lebar kolom, poin logis. Tanpa ini, lebarnya datang dari
-    /// constraints induk.
+    /// Column width limit, in logical points. Without it, the width comes
+    /// from the parent's constraints.
     pub fn max_width(self, width: f32) -> Self {
         self.map(move |p| p.max_width = Some(width.max(0.0)))
     }
 
-    /// Gaya lengkap sekaligus (mis. gaya yang sudah dirakit dari token).
+    /// A complete style at once (e.g. one already assembled from tokens).
     pub fn style(self, style: TextStyle) -> Self {
         self.map(move |p| p.style = style)
     }
 
-    /// Peran a11y — bawaannya [`AccessRole::Label`].
+    /// The a11y role — [`AccessRole::Label`] by default.
     pub fn role(self, role: AccessRole) -> Self {
         self.map(move |p| p.role = role)
     }
@@ -437,7 +440,7 @@ mod tests {
             BoxConstraints::loose(Size::new(200.0, 100.0)),
         );
         assert!(scene(&mut tree).is_empty());
-        // Tetap setinggi satu baris supaya caret punya tempat.
+        // Still one line tall, so the caret has somewhere to sit.
         assert!(tree.size(tree.children(tree.root())[0]).height > 0.0);
     }
 
@@ -468,7 +471,7 @@ mod tests {
         let satu_x = glyph_run(&scene(&mut tree));
 
         f.set_scale_factor(2.0);
-        // Layout ulang: node melihat scale factor berubah dan membentuk ulang.
+        // Re-layout: the node sees the changed scale factor and reshapes.
         tree.layout(BoxConstraints::loose(Size::new(400.0, 199.0)));
         let dua_x = glyph_run(&scene(&mut tree));
         assert_ne!(
@@ -489,7 +492,7 @@ mod tests {
             .find_label("Nilai: 3")
             .unwrap_or_else(|| panic!("{}", pohon_a11y.dump()));
         assert_eq!(e.node.role, AccessRole::Label);
-        // Kotak a11y datang dari hasil layout, bukan dari widget.
+        // The a11y bounds come from the layout result, not from the widget.
         assert_eq!(e.bounds.size, tree.size(e.id));
     }
 }

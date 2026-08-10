@@ -1,11 +1,11 @@
-//! Uji `list` — dijalankan lewat [`AppRuntime`] yang sama dengan aplikasi
-//! sungguhan.
+//! `list` tests — driven through the same [`AppRuntime`] a real application
+//! uses.
 //!
-//! Bukan kemewahan: `list()` **adalah** sebuah komponen, dan yang paling ingin
-//! dibuktikan justru siklusnya — gulir → `sync` menerbitkan posisi → rebuild
-//! membangun jendela baru → layout menempatkannya. Uji yang berhenti di satu
-//! `reconcile` tidak akan pernah melihat bagian itu, dan bagian itulah yang
-//! membuat seratus ribu baris mungkin.
+//! Not a luxury: `list()` **is** a component, and what most wants proving is
+//! precisely its cycle — scroll → `sync` publishes the position → rebuild
+//! constructs a new window → layout places it. A test that stops at a single
+//! `reconcile` would never see that part, and that part is exactly what makes
+//! a hundred thousand rows possible.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -30,7 +30,7 @@ use crate::scroll_view::ScrollView;
 const VIEWPORT: Size = Size::new(400.0, 440.0);
 const EXTENT: f32 = 44.0;
 
-/// Berapa baris dibangun oleh `item`, dan indeks mana saja.
+/// How many rows `item` built, and which indices.
 #[derive(Default)]
 struct Jejak {
     dibangun: RefCell<Vec<usize>>,
@@ -46,16 +46,16 @@ impl Jejak {
     }
 }
 
-/// Pegangan uji ke sebuah daftar: aplikasi, state-nya, dan jejak build-nya.
+/// A test handle onto a list: the app, its state, and its build trace.
 struct Uji {
     ui: AppRuntime,
     state: Rc<Cell<Option<ListState>>>,
     jejak: Rc<Jejak>,
     aktivasi: Rc<RefCell<Vec<usize>>>,
-    /// Jam uji yang **maju monoton**: dua klik yang berdekatan di jam ini
-    /// benar-benar terhitung sebagai ketuk-ganda, dan dua yang berjauhan
-    /// tidak. Menyetel ulang waktu ke nol tiap kali adalah cara paling mudah
-    /// membuat uji ketuk-tunggal diam-diam menjadi uji ketuk-ganda.
+    /// A **monotonically advancing** test clock: two clicks close together on
+    /// this clock really do count as a double tap, and two far apart do not.
+    /// Resetting the time to zero each round is the easiest way to turn a
+    /// single-tap test quietly into a double-tap test.
     jam: Duration,
 }
 
@@ -66,16 +66,17 @@ impl Uji {
             .expect("state terbit setelah frame pertama")
     }
 
-    /// Satu frame penuh, persis seperti `run_app`: animasi dulu, baru siklus.
+    /// One full frame, exactly like `run_app`: animation first, then the cycle.
     fn frame(&mut self) {
         self.ui.animate(crate::advance);
         self.ui.frame();
     }
 
-    /// Selesaikan seluruh animasi seketika lalu jalankan frame sampai diam.
+    /// Finish every animation instantly, then run frames until idle.
     ///
-    /// Guliran roda dijalankan spring (`scroll_view`), jadi tanpa ini setiap
-    /// uji harus menghitung frame — dan yang sedang diuji bukan springnya.
+    /// Wheel scrolling is driven by a spring (`scroll_view`), so without this
+    /// every test would have to count frames — and the spring is not what is
+    /// under test.
     fn tuntas(&mut self) {
         for _ in 0..8 {
             self.ui.animate(|tree, _| {
@@ -83,9 +84,9 @@ impl Uji {
                 Dirty::LAYOUT | Dirty::PAINT
             });
             self.frame();
-            // Dua syarat, bukan satu: scheduler yang kosong belum berarti
-            // tidak ada spring yang menunggu frame berikutnya — dan justru
-            // spring itulah yang sedang dibawa ke ujungnya.
+            // Two conditions, not one: an empty scheduler does not yet mean no
+            // spring is waiting for the next frame — and it is precisely that
+            // spring being carried to its end here.
             if self.ui.is_idle() && !crate::is_animating(self.ui.tree()) {
                 break;
             }
@@ -109,7 +110,7 @@ impl Uji {
         self.ui.tree().node_ref::<ScrollView>(sv).unwrap()
     }
 
-    /// Berapa baris yang benar-benar menjadi node di pohon.
+    /// How many rows actually became nodes in the tree.
     fn baris_di_pohon(&self) -> usize {
         fn hitung(tree: &RenderTree, id: NodeId) -> usize {
             let ini = usize::from(tree.node_ref::<ListRowBox>(id).is_some());
@@ -143,8 +144,8 @@ impl Uji {
     }
 
     fn klik(&mut self, titik: Point, kali: u32) {
-        // Jeda panjang dari interaksi sebelumnya supaya rentetan ini berdiri
-        // sendiri, lalu ketukan berturut-turut yang cukup rapat.
+        // A long gap from the previous interaction so this burst stands on its
+        // own, then consecutive taps close enough together to count.
         self.jam += Duration::from_secs(2);
         for _ in 0..kali {
             self.ui.dispatch(&Event::Pointer(PointerEvent::new(
@@ -166,7 +167,7 @@ impl Uji {
     }
 }
 
-/// Bangun sebuah daftar uji; `hias` memasang sifat tambahannya.
+/// Build a test list; `hias` attaches its extra traits.
 fn uji(theme: Theme, count: usize, hias: impl Fn(ListBuilder) -> ListBuilder + 'static) -> Uji {
     let state = Rc::new(Cell::new(None::<ListState>));
     let jejak = Rc::new(Jejak::default());
@@ -180,7 +181,7 @@ fn uji(theme: Theme, count: usize, hias: impl Fn(ListBuilder) -> ListBuilder + '
         let untuk_aksi = a.clone();
         let b = list(&theme, st, count, move |i| {
             untuk_baris.catat(i);
-            // Baris apa adanya: yang diuji daftarnya, bukan isinya.
+            // A plain row: what is under test is the list, not its content.
             View::from(fixed(320.0, EXTENT).label(format!("baris {i}")))
         })
         .item_extent(EXTENT)
@@ -199,8 +200,8 @@ fn uji(theme: Theme, count: usize, hias: impl Fn(ListBuilder) -> ListBuilder + '
         aktivasi,
         jam: Duration::ZERO,
     };
-    // Frame pertama memakai tebakan tinggi jendela; dua frame berikutnya
-    // menyusutkannya ke ukuran sebenarnya (lihat `VIEWPORT_HINT`).
+    // The first frame uses the guessed viewport height; the next two shrink it
+    // down to the real size (see `VIEWPORT_HINT`).
     uji.tuntas();
     uji
 }
@@ -210,7 +211,7 @@ fn polos(count: usize) -> Uji {
 }
 
 // ---------------------------------------------------------------------------
-// Virtualisasi — janji utama komponen ini
+// Virtualization — this component's central promise
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -231,8 +232,8 @@ fn hanya_baris_yang_terlihat_yang_pernah_dibangun() {
         "jendela tidak menutup layar"
     );
 
-    // Ukuran jendela **tidak** tumbuh bersama data: daftar sepuluh baris dan
-    // daftar seratus ribu baris membangun jumlah node yang sama.
+    // The window size does **not** grow with the data: a ten-row list and a
+    // hundred-thousand-row list build the same number of nodes.
     let kecil = polos(60);
     assert_eq!(kecil.baris_di_pohon(), u.baris_di_pohon());
 }
@@ -256,9 +257,9 @@ fn menggulir_menggeser_jendela_tanpa_menambah_node() {
     u.gulir(EXTENT * 500.0);
 
     assert_eq!(u.list().first(), 500 - DEFAULT_OVERSCAN);
-    // Di tengah data, cadangan atas ikut terbangun — yang harus tetap adalah
-    // **ordenya**, bukan angkanya persis: jendela tidak boleh tumbuh bersama
-    // data.
+    // In the middle of the data the overscan above gets built too — what must
+    // hold is the **order of magnitude**, not the exact number: the window
+    // must not grow with the data.
     assert_eq!(
         u.baris_di_pohon(),
         sebelum + DEFAULT_OVERSCAN,
@@ -275,7 +276,7 @@ fn menggulir_menggeser_jendela_tanpa_menambah_node() {
         dibangun.len()
     );
 
-    // Baris yang terlihat benar-benar berpindah di layar.
+    // The visible rows really did move on screen.
     let atas = u.list().row_rect(500).min_y() - u.scroll().offset();
     assert!(atas.abs() < 1.0, "baris 500 harusnya di tepi atas: {atas}");
 }
@@ -283,8 +284,8 @@ fn menggulir_menggeser_jendela_tanpa_menambah_node() {
 #[test]
 fn jendela_menyusut_ke_tinggi_jendela_yang_sebenarnya() {
     let u = polos(1_000);
-    // Tebakan awal jauh lebih tinggi dari jendela sungguhan; setelah `sync`
-    // menerbitkan tinggi hasil layout, jendelanya harus mengecil.
+    // The initial guess is far taller than the real viewport; once `sync`
+    // publishes the height from layout, the window has to shrink.
     let dengan_tebakan = (VIEWPORT_HINT / EXTENT).ceil() as usize;
     assert!(
         u.baris_di_pohon() < dengan_tebakan,
@@ -304,7 +305,7 @@ fn daftar_yang_diam_tidak_menyisakan_pekerjaan() {
 }
 
 // ---------------------------------------------------------------------------
-// Hit target, seleksi, keyboard
+// Hit target, selection, keyboard
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -314,22 +315,22 @@ fn hit_target_baris_minimal_44pt_walau_diminta_lebih_rapat() {
     let st = ListState::new(&rt);
     let baris = |_: usize| View::from(fixed(320.0, 20.0));
 
-    // Daftar yang bisa dipilih: tinggi baris dinaikkan ke hit target HIG.
+    // A selectable list: the row height is raised to the HIG hit target.
     let dipilih = list(&t, st, 50, baris).item_extent(20.0);
     assert_eq!(dipilih.extent_final(), crate::MIN_HIT_TARGET);
 
-    // Bisa diaktifkan walau tidak bisa dipilih: tetap sebuah kontrol.
+    // Activatable even though not selectable: still a control.
     let diaktifkan = list(&t, st, 50, baris)
         .item_extent(20.0)
         .selectable(false)
         .on_activate(|_| {});
     assert_eq!(diaktifkan.extent_final(), crate::MIN_HIT_TARGET);
 
-    // Daftar tampilan murni boleh serapat apa pun.
+    // A display-only list may pack as tightly as it likes.
     let padat = list(&t, st, 50, baris).item_extent(20.0).selectable(false);
     assert_eq!(padat.extent_final(), 20.0);
 
-    // Dan yang benar-benar dipakai node adalah angka yang sama.
+    // And what the node actually uses is the same number.
     let u = uji(t, 50, |b| b.item_extent(20.0));
     assert_eq!(u.list().metrics().extent, crate::MIN_HIT_TARGET);
 }
@@ -353,8 +354,8 @@ fn klik_memilih_baris_dan_ketuk_ganda_mengaktifkannya() {
 #[test]
 fn panah_menggerakkan_seleksi_dan_menggulirkannya_ke_layar() {
     let mut u = polos(1_000);
-    // Tab mendaratkan fokus di daftar; tanpa seleksi, ia memilih baris pertama
-    // yang terlihat supaya cincin fokus punya tempat.
+    // Tab lands focus on the list; with nothing selected it picks the first
+    // visible row so the focus ring has somewhere to go.
     u.tombol(NamedKey::Tab);
     assert!(u.list().is_focused());
     assert_eq!(u.list().selected(), Some(0));
@@ -363,8 +364,8 @@ fn panah_menggerakkan_seleksi_dan_menggulirkannya_ke_layar() {
         u.tombol(NamedKey::ArrowDown);
     }
     assert_eq!(u.list().selected(), Some(12));
-    // Baris 12 tidak muat di layar pada guliran nol: daftar harus sudah
-    // menggulir sendiri.
+    // Row 12 does not fit on screen at scroll zero: the list must have
+    // scrolled itself.
     assert!(
         u.scroll().offset() > 0.0,
         "baris terpilih dibiarkan di luar layar"
@@ -421,7 +422,7 @@ fn scroll_to_item_dari_aplikasi_menggulirkan_daftar() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -459,7 +460,8 @@ fn pohon_a11y_menyebut_daftar_baris_dan_baris_terpilih() {
         a11y.dump()
     );
 
-    // Wadah gulirnya sendiri tetap mengumumkan aksi scroll bagi screen reader.
+    // The scroll container itself still announces its scroll action to screen
+    // readers.
     let gulir = a11y
         .find_role(AccessRole::ScrollView)
         .unwrap_or_else(|| panic!("{}", a11y.dump()));
@@ -482,7 +484,7 @@ fn baris_di_luar_layar_tidak_diumumkan_ke_screen_reader() {
 }
 
 // ---------------------------------------------------------------------------
-// Token, dua preset, dark mode
+// Tokens, both presets, dark mode
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -515,8 +517,8 @@ fn seluruh_warna_datang_dari_token_di_kedua_preset_dan_kedua_appearance() {
                 ]
                 .iter()
                 .any(|token| {
-                    // Sorotan memudar lewat alpha; yang harus sama adalah
-                    // warnanya, bukan kepekatannya.
+                    // Highlights fade through alpha; what must match is the
+                    // color, not the opacity.
                     token.r == w.r && token.g == w.g && token.b == w.b
                 });
                 assert!(
@@ -532,7 +534,8 @@ fn seluruh_warna_datang_dari_token_di_kedua_preset_dan_kedua_appearance() {
 fn sorotan_seleksi_memakai_warna_yang_berbeda_saat_daftar_tidak_terfokus() {
     let t = Theme::cupertino(Appearance::Dark);
 
-    // Dipilih dengan mouse: daftar memegang fokus, sorotan memakai `selection`.
+    // Selected with the mouse: the list holds focus, the highlight uses
+    // `selection`.
     let mut berfokus = uji(t, 100, |b| b);
     berfokus.klik(Point::new(100.0, EXTENT + 10.0), 1);
     assert!(berfokus.list().is_focused());
@@ -541,9 +544,9 @@ fn sorotan_seleksi_memakai_warna_yang_berbeda_saat_daftar_tidak_terfokus() {
         "baris terpilih harus memakai token `selection`"
     );
 
-    // Dipilih dari aplikasi tanpa menyentuh fokus: seleksi tetap terlihat,
-    // hanya meredup — itulah kebiasaan macOS, dan satu-satunya cara pengguna
-    // tahu di mana ia tadi berada.
+    // Selected from the app without touching focus: the selection stays
+    // visible, only dimmed — that is the macOS habit, and the only way a user
+    // can tell where they were.
     let mut diam = uji(t, 100, |b| b);
     diam.state().select(Some(1));
     diam.tuntas();
@@ -576,7 +579,7 @@ fn sorotan_meluncur_antar_baris_lewat_spring() {
     u.klik(Point::new(100.0, EXTENT / 2.0), 1);
     assert_eq!(u.list().selected(), Some(0));
 
-    // Pindah jauh: sorotan tidak boleh langsung berada di tujuannya.
+    // A long jump: the highlight must not land on its target immediately.
     u.ui.dispatch(&Event::Key(KeyEvent::pressed(
         KeyCode::Named(NamedKey::ArrowDown),
         Duration::ZERO,
@@ -587,8 +590,8 @@ fn sorotan_meluncur_antar_baris_lewat_spring() {
             Duration::ZERO,
         )));
     }
-    // Satu frame animasi dengan dt kecil: sorotan sudah bergerak tapi belum
-    // sampai — itulah bedanya spring dengan lompatan.
+    // One animation frame with a small dt: the highlight has moved but has not
+    // arrived — that is what separates a spring from a jump.
     u.ui.animate(|tree, _| {
         crate::advance(
             tree,
@@ -614,8 +617,8 @@ fn reduced_motion_menempatkan_sorotan_seketika() {
         KeyCode::Named(NamedKey::ArrowDown),
         Duration::ZERO,
     )));
-    // Satu tick dengan preferensi "kurangi gerakan": sorotan langsung berada
-    // di tempatnya dan tidak ada frame lanjutan yang diminta.
+    // A single tick with the "reduce motion" preference: the highlight lands
+    // in place at once and no follow-up frame is requested.
     let dirty = u.ui.animate(|tree, _| {
         crate::advance(
             tree,
@@ -642,7 +645,7 @@ fn sticky_header_tetap_menempel_di_tepi_atas_saat_digulir() {
     let header = header_rect(&u);
     assert_eq!(header.min_y(), 0.0, "header mulai di tepi atas");
     assert_eq!(header.size.height, 32.0);
-    // Baris pertama mulai **di bawah** header.
+    // The first row starts **below** the header.
     assert_eq!(u.list().row_rect(0).min_y(), 32.0);
 
     u.gulir(EXTENT * 20.0);
@@ -652,7 +655,7 @@ fn sticky_header_tetap_menempel_di_tepi_atas_saat_digulir() {
         "header lepas dari tepi atas: {header:?}"
     );
 
-    // Header yang tidak menempel ikut tergulir keluar.
+    // A non-sticky header scrolls away with the content.
     let mut biasa = uji(Theme::cupertino(Appearance::Dark), 500, |b| {
         b.header(32.0, || View::from(fixed(320.0, 32.0).label("Judul kolom")))
     });
@@ -663,7 +666,7 @@ fn sticky_header_tetap_menempel_di_tepi_atas_saat_digulir() {
     );
 }
 
-/// Kotak header dalam koordinat jendela (bukan koordinat isi).
+/// The header's rect in viewport coordinates (not content coordinates).
 fn header_rect(u: &Uji) -> Rect {
     let tree = u.ui.tree();
     let body = u.body();
@@ -701,7 +704,7 @@ fn daftar_kosong_menampilkan_empty_state_dan_tidak_bisa_digulir() {
 
 #[test]
 fn data_yang_menyusut_tidak_meninggalkan_guliran_di_ruang_kosong() {
-    // 5.000 baris digulir jauh ke bawah, lalu datanya menyusut jadi tiga.
+    // 5,000 rows scrolled far down, then the data shrinks to three.
     let state = Rc::new(Cell::new(None::<ListState>));
     let panjang = Rc::new(Cell::new(None::<silka_core::signals::Signal<usize>>));
     let (s, p) = (state.clone(), panjang.clone());

@@ -1,32 +1,33 @@
-//! Sisi GPU dari glyph atlas: tekstur, sampler, dan **unggah inkremental**.
+//! The GPU side of the glyph atlas: textures, sampler, and **incremental
+//! uploads**.
 //!
-//! Aturan yang menentukan apakah teks murah atau mahal (REKOMENDASI §3.2):
-//! atlas mask 1024² = 1 MiB, dan mengunggahnya setiap frame berarti membakar
-//! bandwidth untuk data yang tidak berubah. Karena itu yang diunggah hanyalah
-//! **kotak yang dilaporkan berubah** oleh
-//! [`GlyphSource::take_dirty`](silka_paint::GlyphSource::take_dirty) — biasanya
-//! nol byte pada frame kedua dan seterusnya.
+//! The rule that decides whether text is cheap or expensive (REKOMENDASI §3.2):
+//! a 1024² mask atlas is 1 MiB, and uploading it every frame means burning
+//! bandwidth on data that did not change. So the only thing uploaded is the
+//! **rect reported as dirty** by
+//! [`GlyphSource::take_dirty`](silka_paint::GlyphSource::take_dirty) — usually
+//! zero bytes from the second frame onward.
 //!
-//! Dua atlas hidup berdampingan dan keduanya selalu ter-bind:
+//! Two atlases live side by side and both are always bound:
 //!
-//! | Atlas | Format tekstur | Isi |
+//! | Atlas | Texture format | Contents |
 //! |---|---|---|
-//! | Mask | `R8Unorm` | cakupan alpha; warnanya datang dari token theme |
-//! | Color | `Rgba8Unorm(Srgb)` | emoji berwarna / COLR (jalurnya sudah ada) |
+//! | Mask | `R8Unorm` | alpha coverage; the color comes from theme tokens |
+//! | Color | `Rgba8Unorm(Srgb)` | color emoji / COLR (the path already exists) |
 //!
-//! Tekstur placeholder 1×1 dibuat sejak awal supaya bind group **selalu**
-//! valid — aplikasi tanpa teks tidak membayar apa pun, dan tidak ada jalur
-//! kode "pipeline tanpa tekstur" yang harus dijaga terpisah.
+//! A 1×1 placeholder texture is created up front so the bind group is **always**
+//! valid — an application without text pays nothing, and there is no separate
+//! "pipeline without textures" code path to maintain.
 
 use silka_paint::{AtlasRegion, GlyphFormat, GlyphSource};
 
-/// Satu tekstur atlas beserta ukuran yang sedang ditampungnya.
+/// One atlas texture together with the size it currently holds.
 #[derive(Debug)]
 struct AtlasTexture {
     texture: wgpu::Texture,
     view: wgpu::TextureView,
     format: wgpu::TextureFormat,
-    /// Sisi tekstur dalam piksel. `1` berarti masih placeholder.
+    /// The texture's side in pixels. `1` means it is still the placeholder.
     size: u32,
 }
 
@@ -56,12 +57,12 @@ impl AtlasTexture {
     }
 }
 
-/// Kedua atlas glyph di GPU, plus sampler-nya.
+/// Both glyph atlases on the GPU, plus their sampler.
 ///
-/// `revision` bertambah setiap kali sebuah tekstur dibuat ulang (atlas tumbuh
-/// karena penuh). Pipeline memakainya untuk tahu kapan bind group harus
-/// dirakit ulang — tanpa itu, bind group akan menunjuk tekstur yang sudah
-/// mati dan teks menghilang tanpa error.
+/// `revision` increments every time a texture is recreated (the atlas grew
+/// because it filled up). The pipeline uses it to know when the bind group must
+/// be rebuilt — without it, the bind group would point at a dead texture and
+/// text would vanish without an error.
 #[derive(Debug)]
 pub(crate) struct GlyphAtlasGpu {
     mask: AtlasTexture,
@@ -71,12 +72,12 @@ pub(crate) struct GlyphAtlasGpu {
 }
 
 impl GlyphAtlasGpu {
-    /// Atlas kosong (placeholder 1×1) untuk target dengan ruang warna tertentu.
+    /// An empty atlas (1×1 placeholder) for a target with a given color space.
     ///
-    /// `srgb_target` menentukan format atlas warna: pada target `*Srgb` shader
-    /// menulis nilai linear, jadi tekstur emoji harus ikut di-decode dari sRGB
-    /// oleh hardware. Atlas mask tidak terpengaruh — ia menyimpan cakupan
-    /// alpha, bukan warna.
+    /// `srgb_target` decides the color atlas format: on a `*Srgb` target the
+    /// shader writes linear values, so the emoji texture must likewise be
+    /// decoded from sRGB by the hardware. The mask atlas is unaffected — it
+    /// stores alpha coverage, not color.
     pub(crate) fn new(device: &wgpu::Device, srgb_target: bool) -> Self {
         let color_format = if srgb_target {
             wgpu::TextureFormat::Rgba8UnormSrgb
@@ -88,15 +89,17 @@ impl GlyphAtlasGpu {
             color: AtlasTexture::new(device, "silka.atlas.color", color_format, 1),
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("silka.atlas.sampler"),
-                // Clamp: glyph di tepi atlas tidak boleh mengambil texel dari
-                // sisi seberang. Padding 1 px antar entri menjaga tetangga.
+                // Clamp: a glyph at the atlas edge must not pull texels from
+                // the opposite side. The 1 px padding between entries keeps
+                // neighbors out.
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
                 address_mode_v: wgpu::AddressMode::ClampToEdge,
                 address_mode_w: wgpu::AddressMode::ClampToEdge,
-                // Linear, bukan nearest: kotak tujuan sudah disetel ke grid
-                // piksel fisik sehingga hasilnya identik dengan nearest pada
-                // scale bulat — tapi pada scale pecahan (Wayland 1.25) linear
-                // menurun dengan anggun alih-alih membuat glyph patah.
+                // Linear, not nearest: the destination box is already snapped
+                // to the physical pixel grid, so the result is identical to
+                // nearest at integer scales — but at fractional scales
+                // (Wayland 1.25) linear degrades gracefully instead of
+                // breaking glyphs apart.
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::MipmapFilterMode::Nearest,
@@ -106,31 +109,32 @@ impl GlyphAtlasGpu {
         }
     }
 
-    /// Nomor revisi tekstur; berubah = bind group harus dirakit ulang.
+    /// The texture revision number; a change means the bind group must be
+    /// rebuilt.
     pub(crate) fn revision(&self) -> u64 {
         self.revision
     }
 
-    /// View atlas mask.
+    /// The mask atlas view.
     pub(crate) fn mask_view(&self) -> &wgpu::TextureView {
         &self.mask.view
     }
 
-    /// View atlas warna.
+    /// The color atlas view.
     pub(crate) fn color_view(&self) -> &wgpu::TextureView {
         &self.color.view
     }
 
-    /// Sampler bersama kedua atlas.
+    /// The sampler shared by both atlases.
     pub(crate) fn sampler(&self) -> &wgpu::Sampler {
         &self.sampler
     }
 
-    /// Samakan tekstur GPU dengan atlas sisi-CPU.
+    /// Bring the GPU textures in sync with the CPU-side atlas.
     ///
-    /// Dipanggil sekali per frame sebelum draw. Biayanya nol byte selama tidak
-    /// ada glyph baru; sebesar kotak dirty saat ada glyph baru; dan sebesar
-    /// seluruh atlas hanya saat atlas berganti ukuran.
+    /// Called once per frame before drawing. It costs zero bytes as long as
+    /// there are no new glyphs; the size of the dirty rect when there are; and
+    /// the size of the whole atlas only when the atlas changes size.
     pub(crate) fn sync(
         &mut self,
         device: &wgpu::Device,
@@ -143,8 +147,9 @@ impl GlyphAtlasGpu {
             let cukup = diminta > 0
                 && glyphs.atlas_pixels(format).len() >= (diminta * diminta * bpp) as usize;
             if !cukup {
-                // Belum ada atlas (aplikasi tanpa teks) — placeholder 1×1
-                // tetap terpasang, dan dirty apa pun tidak berlaku lagi.
+                // No atlas yet (an application without text) — the 1×1
+                // placeholder stays bound, and any dirty rect no longer
+                // applies.
                 glyphs.take_dirty(format);
                 continue;
             }
@@ -159,9 +164,9 @@ impl GlyphAtlasGpu {
                 self.revision += 1;
             }
 
-            // Tekstur baru = seluruh isinya harus diunggah, apa pun kata
-            // dirty region. Kalau tidak, glyph lama akan hilang setelah atlas
-            // tumbuh.
+            // A new texture means the whole thing must be uploaded, whatever
+            // the dirty region says. Otherwise the old glyphs would disappear
+            // once the atlas grows.
             let kotak = match (tumbuh, glyphs.take_dirty(format)) {
                 (true, _) => AtlasRegion::new(0, 0, diminta, diminta),
                 (false, Some(k)) => k,
@@ -174,9 +179,9 @@ impl GlyphAtlasGpu {
 
             let stride = diminta * bpp;
             let piksel = glyphs.atlas_pixels(format);
-            // Offset menunjuk piksel kiri-atas kotak; tiap baris berikutnya
-            // maju satu stride penuh. Dengan begitu unggahan parsial tidak
-            // butuh salinan sementara sama sekali.
+            // The offset points at the rect's top-left pixel; every following
+            // row advances by one full stride. That way a partial upload needs
+            // no temporary copy at all.
             let offset = (kotak.y * stride + kotak.x * bpp) as u64;
             queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
@@ -219,8 +224,8 @@ impl GlyphAtlasGpu {
     }
 }
 
-/// Batasi kotak dirty ke dalam atlas — sumber atlas yang cacat tidak boleh
-/// membuat wgpu panic di tengah frame (§9.7).
+/// Constrain the dirty rect to the atlas — a malformed atlas source must not
+/// make wgpu panic mid-frame (§9.7).
 fn jepit(kotak: AtlasRegion, size: u32) -> AtlasRegion {
     if kotak.x >= size || kotak.y >= size {
         return AtlasRegion::EMPTY;

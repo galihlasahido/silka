@@ -1,32 +1,32 @@
-//! Jembatan DPI: poin logis ⇄ piksel fisik.
+//! The DPI bridge: logical points ⇄ physical pixels.
 //!
-//! Framework di atas backend hanya tahu poin logis (`silka_paint::Size`).
-//! Swapchain hanya tahu piksel fisik. [`SurfaceGeometry`] adalah satu-satunya
-//! tempat konversinya terjadi, sehingga "DPI benar" punya satu titik
-//! kebenaran yang bisa diuji tanpa GPU.
+//! The framework above the backend only knows logical points
+//! (`silka_paint::Size`). The swapchain only knows physical pixels.
+//! [`SurfaceGeometry`] is the single place where the conversion happens, so
+//! "correct DPI" has one source of truth that can be tested without a GPU.
 
 use silka_paint::{Rect, Size};
 
-/// Kotak scissor dalam **piksel fisik**, sudah dijamin berada di dalam surface.
+/// A scissor rect in **physical pixels**, guaranteed to lie inside the surface.
 ///
-/// Tipe tersendiri (bukan `[u32; 4]` telanjang) supaya jaminan itu ikut
-/// terbawa: satu-satunya cara membuatnya adalah lewat
-/// [`SurfaceGeometry::scissor`], yang membulatkan ke luar dan menjepit ke
-/// batas surface. Scissor di luar batas adalah *validation error* wgpu, jadi
-/// jaminan ini bukan kerapian belaka.
+/// It is its own type (rather than a bare `[u32; 4]`) so the guarantee travels
+/// with it: the only way to build one is through [`SurfaceGeometry::scissor`],
+/// which rounds outward and clamps to the surface bounds. An out-of-bounds
+/// scissor is a wgpu *validation error*, so this guarantee is not mere
+/// tidiness.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ScissorRect {
-    /// Tepi kiri, piksel fisik.
+    /// Left edge, physical pixels.
     pub x: u32,
-    /// Tepi atas, piksel fisik.
+    /// Top edge, physical pixels.
     pub y: u32,
-    /// Lebar, piksel fisik (selalu > 0).
+    /// Width, physical pixels (always > 0).
     pub width: u32,
-    /// Tinggi, piksel fisik (selalu > 0).
+    /// Height, physical pixels (always > 0).
     pub height: u32,
 }
 
-/// Ukuran surface dalam piksel fisik plus scale factor window.
+/// The surface size in physical pixels, plus the window's scale factor.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SurfaceGeometry {
     width: u32,
@@ -35,11 +35,11 @@ pub struct SurfaceGeometry {
 }
 
 impl SurfaceGeometry {
-    /// Geometri dari ukuran **fisik** dan scale factor.
+    /// Geometry from a **physical** size and a scale factor.
     ///
-    /// `scale_factor` yang tidak masuk akal (nol, negatif, NaN, tak hingga)
-    /// dinormalkan ke 1.0 — lebih baik tampil salah ukuran daripada membagi
-    /// dengan nol saat window berpindah monitor.
+    /// A nonsensical `scale_factor` (zero, negative, NaN, infinite) is
+    /// normalized to 1.0 — showing up at the wrong size beats dividing by zero
+    /// when the window moves between monitors.
     pub fn new(width: u32, height: u32, scale_factor: f64) -> Self {
         Self {
             width,
@@ -48,7 +48,8 @@ impl SurfaceGeometry {
         }
     }
 
-    /// Geometri dari ukuran **logis** — dibulatkan ke piksel fisik terdekat.
+    /// Geometry from a **logical** size — rounded to the nearest physical
+    /// pixel.
     pub fn from_logical(size: Size, scale_factor: f64) -> Self {
         let scale = sanitize_scale(scale_factor);
         let w = (size.width.max(0.0) as f64 * scale).round() as u32;
@@ -60,22 +61,22 @@ impl SurfaceGeometry {
         }
     }
 
-    /// Lebar dalam piksel fisik.
+    /// Width in physical pixels.
     pub fn physical_width(self) -> u32 {
         self.width
     }
 
-    /// Tinggi dalam piksel fisik.
+    /// Height in physical pixels.
     pub fn physical_height(self) -> u32 {
         self.height
     }
 
-    /// Scale factor window (2.0 di layar Retina).
+    /// The window's scale factor (2.0 on a Retina display).
     pub fn scale_factor(self) -> f64 {
         self.scale_factor
     }
 
-    /// Ukuran dalam poin logis — bentuk yang dilihat layout dan widget.
+    /// The size in logical points — the form layout and widgets see.
     pub fn logical_size(self) -> Size {
         Size::new(
             (self.width as f64 / self.scale_factor) as f32,
@@ -83,15 +84,15 @@ impl SurfaceGeometry {
         )
     }
 
-    /// Benar bila surface punya luas — window yang diminimalkan berukuran 0×0
-    /// dan **tidak boleh** dikonfigurasi (wgpu menolak dimensi nol).
+    /// True when the surface has any area — a minimized window is 0×0 and must
+    /// **not** be configured (wgpu rejects zero dimensions).
     pub fn is_renderable(self) -> bool {
         self.width > 0 && self.height > 0
     }
 
-    /// Seluruh surface sebagai scissor — keadaan awal sebuah render pass.
+    /// The whole surface as a scissor — a render pass's initial state.
     ///
-    /// `None` bila surface tidak punya luas sama sekali.
+    /// `None` when the surface has no area at all.
     pub(crate) fn full_scissor(self) -> Option<ScissorRect> {
         (self.width > 0 && self.height > 0).then_some(ScissorRect {
             x: 0,
@@ -101,24 +102,25 @@ impl SurfaceGeometry {
         })
     }
 
-    /// Kotak potong (**poin logis, absolut**) → scissor rect (piksel fisik).
+    /// Clip rect (**absolute logical points**) → scissor rect (physical
+    /// pixels).
     ///
-    /// Tiga hal terjadi di sini, dan ketiganya wajib:
+    /// Three things happen here, and all three are required:
     ///
-    /// 1. **Skala DPI**: clip datang dalam poin logis karena itulah satu-satunya
-    ///    ruang koordinat yang dikenal layout dan `silka-paint`; scissor
-    ///    bekerja dalam piksel fisik.
-    /// 2. **Pembulatan ke luar** (`floor` di tepi min, `ceil` di tepi max):
-    ///    membulatkan ke dalam akan memakan satu piksel tepi konten pada scale
-    ///    pecahan — kotak yang seharusnya pas dengan viewport jadi kehilangan
-    ///    baris piksel terakhirnya. Scissor bukan alat anti-alias; tugasnya
-    ///    hanya membuang yang jelas-jelas di luar.
-    /// 3. **Penjepitan ke batas surface**: scissor yang melewati attachment
-    ///    adalah validation error wgpu, bukan sekadar gambar yang salah.
+    /// 1. **DPI scaling**: clips arrive in logical points because that is the
+    ///    only coordinate space layout and `silka-paint` know; scissors work in
+    ///    physical pixels.
+    /// 2. **Rounding outward** (`floor` on the min edges, `ceil` on the max
+    ///    edges): rounding inward would eat one pixel off the content edge at
+    ///    fractional scales — a rect meant to line up with the viewport would
+    ///    lose its last row of pixels. A scissor is not an anti-aliasing tool;
+    ///    its job is only to discard what is plainly outside.
+    /// 3. **Clamping to the surface bounds**: a scissor that runs past the
+    ///    attachment is a wgpu validation error, not merely a wrong picture.
     ///
-    /// `None` berarti tidak ada satu piksel pun yang lolos — kotak kosong,
-    /// terbalik, NaN, atau seluruhnya di luar surface. Pemanggil melewati
-    /// batch itu sepenuhnya, bukan menggambarnya tanpa potong.
+    /// `None` means not a single pixel makes it through — an empty, inverted,
+    /// or NaN rect, or one entirely outside the surface. The caller skips that
+    /// batch entirely rather than drawing it unclipped.
     pub(crate) fn scissor(self, rect: Rect) -> Option<ScissorRect> {
         let s = self.scale_factor;
         let x0 = jepit((rect.min_x() as f64 * s).floor(), self.width);
@@ -136,7 +138,7 @@ impl SurfaceGeometry {
         })
     }
 
-    /// Salinan dengan ukuran fisik baru (event `Resized`).
+    /// A copy with a new physical size (the `Resized` event).
     pub fn with_physical_size(self, width: u32, height: u32) -> Self {
         Self {
             width,
@@ -145,8 +147,8 @@ impl SurfaceGeometry {
         }
     }
 
-    /// Salinan dengan scale factor baru (event `ScaleFactorChanged`:
-    /// window pindah monitor, atau user mengubah skala tampilan).
+    /// A copy with a new scale factor (the `ScaleFactorChanged` event: the
+    /// window moved to another monitor, or the user changed the display scale).
     pub fn with_scale_factor(self, scale_factor: f64) -> Self {
         Self {
             scale_factor: sanitize_scale(scale_factor),
@@ -161,10 +163,10 @@ impl Default for SurfaceGeometry {
     }
 }
 
-/// Bulatkan sebuah tepi (sudah dalam piksel fisik) ke `0..=batas`.
+/// Clamp one edge (already in physical pixels) into `0..=batas`.
 ///
-/// NaN jatuh ke 0: tepi min jadi 0 dan tepi max jadi 0, sehingga kotaknya
-/// kosong dan batch-nya dilewati — jauh lebih baik daripada `as u32` atas NaN.
+/// NaN falls to 0: the min edge becomes 0 and the max edge becomes 0, so the
+/// rect is empty and its batch is skipped — far better than `as u32` on a NaN.
 fn jepit(v: f64, batas: u32) -> u32 {
     if !v.is_finite() || v <= 0.0 {
         0
@@ -196,7 +198,7 @@ mod tests {
 
     #[test]
     fn scale_pecahan_wayland_dibulatkan() {
-        // 1.25 adalah kasus `wp_fractional_scale_v1` yang lazim di Linux.
+        // 1.25 is the common `wp_fractional_scale_v1` case on Linux.
         let g = SurfaceGeometry::from_logical(Size::new(801.0, 601.0), 1.25);
         assert_eq!((g.physical_width(), g.physical_height()), (1001, 751));
     }
@@ -217,8 +219,8 @@ mod tests {
 
     #[test]
     fn ganti_scale_tidak_mengubah_piksel_fisik() {
-        // winit mengirim ScaleFactorChanged lebih dulu, Resized menyusul —
-        // ukuran fisik harus bertahan sampai event kedua datang.
+        // winit sends ScaleFactorChanged first and Resized after — the physical
+        // size must survive until that second event arrives.
         let g = SurfaceGeometry::new(2048, 1440, 2.0).with_scale_factor(1.0);
         assert_eq!(g.physical_width(), 2048);
         assert_eq!(g.logical_size(), Size::new(2048.0, 1440.0));
@@ -262,7 +264,7 @@ mod tests {
 
     #[test]
     fn retina_menggandakan_scissor() {
-        // Clip 10..110 poin di layar 2× harus menutup piksel 20..220.
+        // A clip of 10..110 points on a 2× display must cover pixels 20..220.
         let g = SurfaceGeometry::new(512, 512, 2.0);
         assert_eq!(
             scissor(g, Rect::new(10.0, 5.0, 100.0, 50.0)),
@@ -272,23 +274,23 @@ mod tests {
 
     #[test]
     fn pembulatan_selalu_ke_luar_agar_tepi_konten_tidak_termakan() {
-        // Scale pecahan (1,5): clip 10..15 poin jatuh di 15..22,5 px.
-        // Membulatkan ke dalam (15..22) akan memakan piksel tepi konten yang
-        // sah; ke luar (15..23) tidak pernah memotong terlalu banyak.
+        // Fractional scale (1.5): a clip of 10..15 points lands on 15..22.5 px.
+        // Rounding inward (15..22) would eat a legitimate content edge pixel;
+        // rounding outward (15..23) never cuts too much.
         let g = SurfaceGeometry::new(1000, 1000, 1.5);
         assert_eq!(
             scissor(g, Rect::new(10.0, 10.0, 5.0, 5.0)),
             Some((15, 15, 8, 8)),
             "min dibulatkan turun, max dibulatkan naik"
         );
-        // Kotak setipis apa pun tetap menyisakan minimal satu piksel.
+        // However thin the rect, at least one pixel always survives.
         let s = scissor(g, Rect::new(10.125, 10.125, 0.125, 0.125)).expect("tidak boleh hilang");
         assert!(s.2 >= 1 && s.3 >= 1, "{s:?}");
     }
 
     #[test]
     fn clip_yang_melewati_tepi_dijepit_ke_surface() {
-        // Tanpa penjepitan ini wgpu menolak render pass-nya (validation error).
+        // Without this clamping wgpu rejects the render pass (validation error).
         let g = SurfaceGeometry::new(100, 80, 1.0);
         assert_eq!(
             scissor(g, Rect::new(-50.0, -50.0, 500.0, 500.0)),

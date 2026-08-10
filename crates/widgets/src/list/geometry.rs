@@ -1,69 +1,69 @@
-//! Aritmetika daftar tervirtualisasi — murni, tanpa pohon dan tanpa GPU.
+//! Virtualized list arithmetic — pure, no tree and no GPU.
 //!
-//! Semua yang ada di berkas ini adalah fungsi dari angka ke angka, dan itu
-//! disengaja: virtualisasi adalah bagian yang **paling mudah salah** dan paling
-//! mahal kalau salah (satu baris meleset = seluruh daftar bergetar saat
-//! digulir). Dengan memisahkannya dari render node, ia bisa diuji habis-habisan
-//! tanpa membangun satu pohon pun — dan `table` nanti memakai ulang yang sama
-//! persis alih-alih menumbuhkan sistem virtualisasi kedua (`KOMPONEN.md` aturan
-//! urutan #4).
+//! Everything in this file is a function from numbers to numbers, and that is
+//! deliberate: virtualization is the part that is **easiest to get wrong** and
+//! most expensive when it is (one row off = the whole list shivers while you
+//! scroll). Keeping it out of the render node means it can be tested to
+//! exhaustion without building a single tree — and `table` will later reuse
+//! exactly the same code instead of growing a second virtualization system
+//! (`KOMPONEN.md` ordering rule #4).
 
-/// Rentang baris yang benar-benar dimaterialisasi menjadi node.
+/// The range of rows actually materialized into nodes.
 ///
-/// Inilah janji virtualisasi: panjangnya sebanding dengan **viewport**, bukan
-/// dengan jumlah data. Seratus ribu baris dan sepuluh baris menghasilkan
-/// rentang yang sama besar.
+/// This is virtualization's promise: its length is proportional to the
+/// **viewport**, not to the amount of data. A hundred thousand rows and ten rows
+/// produce a range of the same size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ListRange {
-    /// Indeks baris pertama.
+    /// Index of the first row.
     pub first: usize,
-    /// Berapa baris berturut-turut.
+    /// How many consecutive rows.
     pub len: usize,
 }
 
 impl ListRange {
-    /// Rentang kosong.
+    /// The empty range.
     pub const EMPTY: Self = Self { first: 0, len: 0 };
 
-    /// Indeks tepat setelah baris terakhir.
+    /// The index just past the last row.
     pub fn end(self) -> usize {
         self.first + self.len
     }
 
-    /// Benar bila tidak ada satu baris pun.
+    /// True when there is not a single row.
     pub fn is_empty(self) -> bool {
         self.len == 0
     }
 
-    /// Benar bila `index` ada di dalam rentang.
+    /// True when `index` falls inside the range.
     pub fn contains(self, index: usize) -> bool {
         index >= self.first && index < self.end()
     }
 
-    /// Semua indeks di dalam rentang.
+    /// Every index in the range.
     pub fn indices(self) -> std::ops::Range<usize> {
         self.first..self.end()
     }
 }
 
-/// Ukuran-ukuran sebuah daftar dengan tinggi baris seragam.
+/// Measurements of a list with uniform row height.
 ///
-/// **Seragam** adalah syarat, bukan penyederhanaan malas: hanya dengan tinggi
-/// yang sama untuk semua baris, "baris mana yang terlihat pada guliran sekian"
-/// bisa dijawab dalam O(1) tanpa pernah menyentuh data. Baris bertinggi
-/// bervariasi menuntut prefix-sum yang di-cache, dan itu ditulis sebagai utang
-/// yang disadari di [`super`], bukan disembunyikan di sini.
+/// **Uniform** is a requirement, not a lazy simplification: only when every row
+/// is the same height can "which rows are visible at scroll offset X" be
+/// answered in O(1) without ever touching the data. Variable row heights demand
+/// a cached prefix-sum, and that is written down as acknowledged debt in
+/// [`super`] rather than hidden here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ListMetrics {
-    /// Jumlah baris data seluruhnya (boleh ratusan ribu).
+    /// Total number of data rows (hundreds of thousands are fine).
     pub count: usize,
-    /// Tinggi satu baris, poin logis.
+    /// Height of one row, in logical points.
     pub extent: f32,
-    /// Tinggi header; `0` = tanpa header.
+    /// Header height; `0` = no header.
     pub header: f32,
-    /// Header menempel di tepi atas saat isinya tergulir lewat.
+    /// The header sticks to the top edge as the content scrolls past it.
     pub sticky: bool,
-    /// Tinggi jendela pandang hasil layout terakhir.
+    /// Viewport height as measured by the last layout.
     pub viewport: f32,
 }
 
@@ -80,25 +80,25 @@ impl Default for ListMetrics {
 }
 
 impl ListMetrics {
-    /// Tinggi seluruh isi seandainya semua baris dimaterialisasi.
+    /// Height of the whole content, as if every row were materialized.
     pub fn content(&self) -> f32 {
         self.header + self.count as f32 * self.extent
     }
 
-    /// Guliran maksimum yang masih menyisakan isi di layar.
+    /// The largest scroll offset that still leaves content on screen.
     pub fn max_scroll(&self) -> f32 {
         (self.content() - self.viewport).max(0.0)
     }
 
-    /// Tepi atas baris `index` dalam koordinat isi.
+    /// Top edge of row `index` in content coordinates.
     pub fn row_top(&self, index: usize) -> f32 {
         self.header + index as f32 * self.extent
     }
 
-    /// Baris yang berada di koordinat isi `y`, bila ada.
+    /// The row at content coordinate `y`, if there is one.
     ///
-    /// `y` di area header atau di luar isi menghasilkan `None` — pemanggilnya
-    /// tidak perlu menebak apa arti "indeks −1".
+    /// A `y` inside the header area or past the content yields `None` — callers
+    /// never have to guess what "index −1" is supposed to mean.
     pub fn index_at(&self, y: f32) -> Option<usize> {
         if self.count == 0 || self.extent <= 0.0 || y < self.header {
             return None;
@@ -111,13 +111,13 @@ impl ListMetrics {
         (i < self.count).then_some(i)
     }
 
-    /// Baris-baris yang harus dimaterialisasi pada guliran `offset`.
+    /// The rows that must be materialized at scroll offset `offset`.
     ///
-    /// `overscan` adalah baris cadangan di atas dan di bawah viewport. Gunanya
-    /// bukan estetika: selama satu frame, posisi guliran bisa sudah bergerak
-    /// (spring, momentum OS) sementara jendela yang dibangun masih milik frame
-    /// sebelumnya. Cadangan itulah yang membuat tepi daftar tidak pernah
-    /// terlihat kosong sesaat.
+    /// `overscan` is the number of spare rows above and below the viewport. It
+    /// is not there for looks: within a single frame the scroll position may
+    /// already have moved (spring, OS momentum) while the window being built
+    /// still belongs to the previous frame. Those spare rows are what keeps the
+    /// edges of the list from ever flashing empty.
     pub fn visible_range(&self, offset: f32, overscan: usize) -> ListRange {
         if self.count == 0 || self.extent <= 0.0 || self.viewport <= 0.0 {
             return ListRange::EMPTY;
@@ -125,9 +125,9 @@ impl ListMetrics {
         let atas = offset - self.header;
         let bawah = atas + self.viewport;
         if bawah <= 0.0 {
-            // Seluruh viewport masih berada di area header: tidak ada baris
-            // yang terlihat, tapi cadangan tetap dibangun supaya guliran
-            // berikutnya tidak memulai dari nol.
+            // The whole viewport still sits inside the header area: no row is
+            // visible, but the spare rows are built anyway so the next scroll
+            // does not start from nothing.
             return ListRange {
                 first: 0,
                 len: overscan.min(self.count),
@@ -150,10 +150,10 @@ impl ListMetrics {
         }
     }
 
-    /// Guliran terkecil yang membuat baris `index` terlihat utuh.
+    /// The smallest scroll offset that makes row `index` fully visible.
     ///
-    /// Header yang menempel ikut diperhitungkan: baris tidak dianggap terlihat
-    /// kalau yang menutupinya adalah header sendiri.
+    /// A sticky header is taken into account: a row does not count as visible
+    /// when the header itself is what hides it.
     pub fn scroll_to_reveal(&self, index: usize, offset: f32) -> f32 {
         if self.count == 0 || self.extent <= 0.0 {
             return offset;
@@ -171,7 +171,7 @@ impl ListMetrics {
         hasil.clamp(0.0, self.max_scroll())
     }
 
-    /// Guliran yang menempatkan baris `index` di tepi atas viewport.
+    /// The scroll offset that puts row `index` at the top edge of the viewport.
     pub fn scroll_to_item(&self, index: usize) -> f32 {
         if self.count == 0 {
             return 0.0;
@@ -181,11 +181,10 @@ impl ListMetrics {
     }
 }
 
-// Rubber band, momentum, dan pantulan **tidak** ada di sini dengan sengaja:
-// itu milik `crate::scroll_view::physics`, dan daftar ini tinggal di dalam
-// wadah gulir itu. Menyalinnya ke sini akan menghasilkan dua rasa guliran yang
-// berbeda di aplikasi yang sama — persis yang dilarang `KOMPONEN.md` aturan
-// urutan #4.
+// Rubber banding, momentum, and bounce are deliberately **absent** here: they
+// belong to `crate::scroll_view::physics`, and this list lives inside that
+// scroll container. Copying them here would give one application two different
+// scroll feels — exactly what `KOMPONEN.md` ordering rule #4 forbids.
 
 #[cfg(test)]
 mod tests {
@@ -208,7 +207,7 @@ mod tests {
         assert_eq!(kecil, raksasa, "jumlah data tidak boleh ikut menentukan");
         assert_eq!(raksasa.len, 10);
 
-        // Bahkan di tengah data raksasa, yang dimaterialisasi tetap sepuluh.
+        // Even in the middle of a huge dataset, only ten rows are materialized.
         let tengah = metrik(100_000, 440.0).visible_range(44.0 * 50_000.0, 0);
         assert_eq!(tengah.first, 50_000);
         assert_eq!(tengah.len, 10);
@@ -216,8 +215,8 @@ mod tests {
 
     #[test]
     fn baris_yang_terpotong_di_kedua_tepi_ikut_dibangun() {
-        // Guliran setengah baris: baris 0 terpotong di atas, satu baris ekstra
-        // muncul di bawah.
+        // Scrolled by half a row: row 0 is clipped at the top and one extra row
+        // appears at the bottom.
         let r = metrik(100, 440.0).visible_range(22.0, 0);
         assert_eq!(r.first, 0);
         assert_eq!(r.end(), 11, "sebelas baris menyentuh viewport");
@@ -226,13 +225,13 @@ mod tests {
     #[test]
     fn overscan_melebar_ke_dua_arah_dan_tetap_di_dalam_data() {
         let m = metrik(100, 440.0);
-        // Terlihat: baris 20..=29. Cadangan tiga baris di kedua sisi.
+        // Visible: rows 20..=29. Three spare rows on each side.
         let tengah = m.visible_range(44.0 * 20.0, 3);
         assert_eq!(tengah.first, 17);
         assert_eq!(tengah.end(), 33);
 
-        // Di ujung, cadangan dipotong batas data — tidak ada indeks negatif
-        // dan tidak ada indeks melewati akhir.
+        // At either end the spare rows are clamped to the data bounds — no
+        // negative indices and none past the end.
         let atas = m.visible_range(0.0, 5);
         assert_eq!(atas.first, 0);
         let bawah = m.visible_range(m.max_scroll(), 5);
@@ -258,8 +257,8 @@ mod tests {
         };
         assert_eq!(m.row_top(0), 32.0);
         assert_eq!(m.content(), 32.0 + 4400.0);
-        // Guliran nol: header memakan 32pt pertama, jadi baris yang terlihat
-        // satu lebih sedikit dari daftar tanpa header.
+        // At scroll zero the header eats the first 32pt, so one row fewer is
+        // visible than in a list without a header.
         let r = m.visible_range(0.0, 0);
         assert_eq!(r.first, 0);
         assert_eq!(r.end(), 10);
@@ -284,7 +283,7 @@ mod tests {
 
     #[test]
     fn guliran_maksimum_tidak_pernah_negatif() {
-        // Isi lebih pendek dari viewport: tidak ada yang bisa digulir.
+        // Content shorter than the viewport: there is nothing to scroll.
         assert_eq!(metrik(2, 440.0).max_scroll(), 0.0);
         assert_eq!(metrik(100, 440.0).max_scroll(), 4400.0 - 440.0);
     }
@@ -292,13 +291,13 @@ mod tests {
     #[test]
     fn reveal_menggulir_sesedikit_mungkin() {
         let m = metrik(100, 440.0);
-        // Sudah terlihat: tidak bergerak sama sekali.
+        // Already visible: does not move at all.
         assert_eq!(m.scroll_to_reveal(5, 0.0), 0.0);
-        // Di bawah tepi: cukup sampai baris itu pas menyentuh tepi bawah.
+        // Below the edge: just enough for the row to touch the bottom edge.
         assert_eq!(m.scroll_to_reveal(10, 0.0), 44.0 * 11.0 - 440.0);
-        // Di atas tepi: cukup sampai baris itu pas menyentuh tepi atas.
+        // Above the edge: just enough for the row to touch the top edge.
         assert_eq!(m.scroll_to_reveal(3, 1000.0), 44.0 * 3.0);
-        // Tidak pernah keluar batas.
+        // Never goes out of bounds.
         assert_eq!(m.scroll_to_reveal(99, 0.0), m.max_scroll());
     }
 
@@ -309,8 +308,8 @@ mod tests {
             sticky: true,
             ..metrik(100, 440.0)
         };
-        // Baris 3 "terlihat" pada guliran 130 hanya kalau header tidak
-        // menutupinya — header menempel, jadi harus digulir balik.
+        // Row 3 is "visible" at scroll 130 only if the header does not cover it
+        // — the header is sticky, so we have to scroll back.
         let hasil = m.scroll_to_reveal(3, 130.0);
         assert!(
             hasil + m.header <= m.row_top(3),
@@ -323,7 +322,7 @@ mod tests {
         let m = metrik(100, 440.0);
         assert_eq!(m.scroll_to_item(0), 0.0);
         assert_eq!(m.scroll_to_item(10), 440.0);
-        // Baris terakhir tidak bisa berada di tepi atas: guliran mentok.
+        // The last row cannot sit at the top edge: the scroll bottoms out.
         assert_eq!(m.scroll_to_item(99), m.max_scroll());
         assert_eq!(m.scroll_to_item(9_999), m.max_scroll());
     }

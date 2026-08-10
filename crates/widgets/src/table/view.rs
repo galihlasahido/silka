@@ -1,24 +1,24 @@
-//! Bentuk view tabel: `table(...)` gaya Dart + props yang di-diff ke node.
+//! The table view layer: a Dart-style `table(...)` plus props that diff into the node.
 //!
-//! Di sinilah virtualisasi benar-benar terjadi, dan aritmetikanya **bukan
-//! milik tabel**: jendela baris datang dari [`ListMetrics::visible_range`],
-//! fungsi yang sama persis yang dipakai [`list`](mod@crate::list). Yang mahal
-//! pada seratus ribu baris bukan menggambarnya — clip sudah memotongnya —
-//! melainkan **membangunnya**, dan karena itu jendela dihitung di lapisan view,
-//! sebelum satu node pun lahir.
+//! This is where virtualization actually happens, and the arithmetic **does not
+//! belong to the table**: the row window comes from [`ListMetrics::visible_range`],
+//! the very same function [`list`](mod@crate::list) uses. What costs money at a
+//! hundred thousand rows is not painting them — the clip already discards them —
+//! but **building** them, which is why the window is computed in the view layer,
+//! before a single node is born.
 //!
-//! Bentuk pohon yang dihasilkan:
+//! The resulting tree:
 //!
 //! ```text
-//! component("table:…")         ← scope sendiri: guliran hanya membangun ulang ini
-//!   scroll_view                ← momentum OS, rubber band, scrollbar auto-hide
-//!     TableBody                ← setinggi SELURUH isi, berisi jendela saja
-//!       TableRow(first)        ← TableCell × jumlah kolom
+//! component("table:…")         ← its own scope: scrolling rebuilds only this
+//!   scroll_view                ← OS momentum, rubber band, auto-hiding scrollbar
+//!     TableBody                ← as tall as the WHOLE content, holds only the window
+//!       TableRow(first)        ← TableCell × column count
 //!       …
 //!       TableRow(first + n)
 //!       [empty]
-//!       TableHeader            ← terakhir supaya tergambar paling atas
-//!         TableCell × jumlah kolom (judul)
+//!       TableHeader            ← last, so it paints on top
+//!         TableCell × column count (titles)
 //! ```
 
 use std::rc::Rc;
@@ -46,25 +46,25 @@ use super::node::{
 use super::selection::{Selection, SelectionMode};
 use super::state::TableState;
 
-/// Tinggi viewport yang diasumsikan **sebelum layout pertama**.
+/// The viewport height assumed **before the first layout**.
 ///
-/// Alasannya sama persis dengan [`crate::list::VIEWPORT_HINT`]: jendela baris
-/// harus sudah ditentukan saat build, padahal tinggi sebenarnya baru diketahui
-/// setelah layout. Menebak terlalu besar itu murah; menebak terlalu kecil
-/// membuat tabel tampak separuh kosong selama satu frame.
+/// The reasoning is exactly that of [`crate::list::VIEWPORT_HINT`]: the row
+/// window has to be decided at build time, yet the real height is only known
+/// after layout. Guessing too large is cheap; guessing too small leaves the
+/// table looking half empty for one frame.
 pub const VIEWPORT_HINT: f32 = 1600.0;
 
-/// Berapa baris cadangan dibangun di luar viewport, di atas dan di bawah.
+/// How many spare rows are built outside the viewport, above and below.
 pub const DEFAULT_OVERSCAN: usize = 3;
 
-/// Tinggi baris bawaan — sekaligus hit target minimum HIG.
+/// Default row height — also the HIG minimum hit target.
 pub const DEFAULT_ROW_EXTENT: f32 = MIN_HIT_TARGET;
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-/// Props isi tabel — bentuk view dari [`TableBody`].
+/// Table body props — the view form of [`TableBody`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableProps {
     pub(super) metrics: ListMetrics,
@@ -109,8 +109,8 @@ impl ViewNode for TableProps {
         }
         if n.offset != self.offset {
             n.offset = self.offset;
-            // Guliran hanya memindahkan sesuatu **di dalam** node ini kalau ada
-            // header yang menempel; selebihnya wadah gulir yang menggeser.
+            // Scrolling only moves something **inside** this node when there is
+            // a sticky header; otherwise the scroll view does the shifting.
             if self.has_header && self.metrics.sticky {
                 dirty |= Dirty::LAYOUT | Dirty::PAINT;
             }
@@ -137,8 +137,8 @@ impl ViewNode for TableProps {
             n.active = self.active;
             dirty |= Dirty::PAINT;
         }
-        // Seleksi yang datang dari aplikasi (bukan dari node ini sendiri)
-        // memindahkan sorotan **dengan animasi** — sama seperti panah keyboard.
+        // A selection coming from the app (rather than from this node itself)
+        // moves the highlight **with animation** — just like the arrow keys.
         if n.selection() != &self.selection && n.set_selection(self.selection.clone(), true) {
             dirty |= Dirty::PAINT;
         }
@@ -160,7 +160,7 @@ impl ViewNode for TableProps {
     }
 }
 
-/// Props baris judul — bentuk view dari [`TableHeaderBox`].
+/// Header row props — the view form of [`TableHeaderBox`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableHeaderProps {
     pub(super) columns: Rc<[ColumnLayout]>,
@@ -202,7 +202,7 @@ impl ViewNode for TableHeaderProps {
     }
 }
 
-/// Props satu baris.
+/// Props for a single row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TableRowProps {
     index: usize,
@@ -241,7 +241,7 @@ impl ViewNode for TableRowProps {
     }
 }
 
-/// Props satu sel.
+/// Props for a single cell.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TableCellProps {
     align: CellAlign,
@@ -270,12 +270,12 @@ impl ViewNode for TableCellProps {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Builder tabel tervirtualisasi.
+/// Builder for the virtualized table.
 ///
-/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena `table()` bukan
-/// satu node melainkan **satu komponen berisi wadah gulir**: ia harus masuk
-/// scope sendiri supaya guliran hanya membangun ulang tabelnya, bukan seluruh
-/// halaman (§2.5).
+/// A type of its own rather than [`silka_core::view::Builder`], because
+/// `table()` is not one node but **a component wrapping a scroll view**: it
+/// needs its own scope so that scrolling rebuilds the table alone, not the
+/// whole page (§2.5).
 pub struct TableBuilder {
     key: Option<Key>,
     fonts: Fonts,
@@ -304,12 +304,12 @@ pub struct TableBuilder {
     spring: Spring,
 }
 
-/// Tabel tervirtualisasi — komponen `table` (`KOMPONEN.md` Tier 5).
+/// Virtualized table — the `table` component (`KOMPONEN.md` Tier 5).
 ///
-/// `cell` dipanggil **hanya** untuk baris yang benar-benar terlihat, jadi
-/// `count` boleh ratusan ribu. Argumennya `(baris, kolom)` dengan `kolom`
-/// adalah indeks **di dalam data**: menggeser kolom tidak pernah mengubah arti
-/// argumen itu.
+/// `cell` is called **only** for rows that are actually visible, so `count`
+/// may run into the hundreds of thousands. Its arguments are `(row, column)`
+/// where `column` is the index **into the data**: reordering columns never
+/// changes what that argument means.
 ///
 /// ```ignore
 /// let tabel = use_table_state();
@@ -352,8 +352,8 @@ where
             decoration: Decoration::NONE,
             row_corners: Corners::SHARP,
             selection: theme.color.selection,
-            // Seleksi yang kehilangan fokus **tidak hilang**, ia meredup —
-            // kebiasaan macOS.
+            // A selection that loses focus **does not disappear**, it dims —
+            // the macOS convention.
             selection_idle: theme.color.surface_pressed,
             hover: theme.color.surface_hover,
             pressed: theme.color.surface_pressed,
@@ -388,63 +388,63 @@ where
 }
 
 impl TableBuilder {
-    /// Kunci identitas komponen tabel ini di antara saudara-saudaranya.
+    /// Identity key for this table component among its siblings.
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Tinggi satu baris, poin logis.
+    /// Height of one row, in logical points.
     ///
-    /// Seragam untuk semua baris — itulah yang membuat "baris mana yang
-    /// terlihat" bisa dijawab tanpa menyentuh data. Untuk tabel yang bisa
-    /// dipilih, nilainya dinaikkan ke [`MIN_HIT_TARGET`] bila lebih kecil (HIG).
+    /// Uniform across all rows — that is what makes "which rows are visible"
+    /// answerable without touching the data. For selectable tables the value
+    /// is raised to [`MIN_HIT_TARGET`] when it is smaller (HIG).
     pub fn row_extent(mut self, extent: f32) -> Self {
         self.extent = extent.max(1.0);
         self
     }
 
-    /// Tinggi baris judul kolom.
+    /// Height of the column header row.
     pub fn header_extent(mut self, extent: f32) -> Self {
         self.header_extent = extent.max(0.0);
         self
     }
 
-    /// Header ikut tergulir keluar alih-alih menempel di tepi atas.
+    /// Let the header scroll away instead of sticking to the top edge.
     pub fn scrolling_header(mut self) -> Self {
         self.sticky = false;
         self
     }
 
-    /// Tanpa baris judul sama sekali.
+    /// No header row at all.
     pub fn no_header(mut self) -> Self {
         self.header = false;
         self
     }
 
-    /// Baris cadangan di luar viewport, di atas dan di bawah.
+    /// Spare rows outside the viewport, above and below.
     pub fn overscan(mut self, rows: usize) -> Self {
         self.overscan = rows;
         self
     }
 
-    /// Berapa banyak baris yang boleh dipilih sekaligus.
+    /// How many rows may be selected at once.
     pub fn selection_mode(mut self, mode: SelectionMode) -> Self {
         self.mode = mode;
         self
     }
 
-    /// Tepat satu baris terpilih.
+    /// Exactly one selected row.
     pub fn single_selection(self) -> Self {
         self.selection_mode(SelectionMode::Single)
     }
 
-    /// Tabel tampilan murni: tidak ada baris yang bisa dipilih.
+    /// A display-only table: no row can be selected.
     pub fn no_selection(self) -> Self {
         self.selection_mode(SelectionMode::None)
     }
 
-    /// Apa yang ditampilkan saat tabel kosong.
+    /// What to show when the table is empty.
     pub fn empty<F>(mut self, empty: F) -> Self
     where
         F: Fn() -> View + 'static,
@@ -453,8 +453,8 @@ impl TableBuilder {
         self
     }
 
-    /// Apa yang dijalankan saat sebuah baris **diaktifkan**: ketuk-ganda, atau
-    /// Enter/Space pada baris aktif.
+    /// What runs when a row is **activated**: a double click, or Enter/Space
+    /// on the active row.
     pub fn on_activate<F>(mut self, f: F) -> Self
     where
         F: Fn(usize) + 'static,
@@ -463,12 +463,12 @@ impl TableBuilder {
         self
     }
 
-    /// Apa yang dijalankan saat judul kolom diklik.
+    /// What runs when a column header is clicked.
     ///
-    /// Tidak wajib: keadaan pengurutan sudah tersimpan di
-    /// [`TableState::sort`], dan membacanya saat build sudah cukup untuk
-    /// tabel yang mengurutkan datanya sendiri. Callback ini untuk yang
-    /// mengurutkan di tempat lain (basis data, server).
+    /// Optional: the sort state already lives in [`TableState::sort`], and
+    /// reading it at build time is enough for a table that sorts its own data.
+    /// This callback is for tables that sort somewhere else (a database, a
+    /// server).
     pub fn on_sort<F>(mut self, f: F) -> Self
     where
         F: Fn(SortBy) + 'static,
@@ -477,86 +477,86 @@ impl TableBuilder {
         self
     }
 
-    /// Nama tabel yang dibacakan screen reader (§3.8).
+    /// The table name a screen reader announces (§3.8).
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Berapa poin satu "baris" roda mouse; bawaannya satu baris tabel.
+    /// How many points one mouse-wheel "line" covers; defaults to one table row.
     pub fn line_height(mut self, points: f32) -> Self {
         self.line_height = Some(points.max(1.0));
         self
     }
 
-    /// Jarak isi sel ke tepi kolomnya.
+    /// Distance from the cell content to its column edges.
     pub fn cell_padding(mut self, padding: Insets) -> Self {
         self.cell_padding = padding;
         self
     }
 
-    /// Garis pemisah antar baris (token `separator`).
+    /// Separator lines between rows (the `separator` token).
     pub fn separators(mut self, width: f32) -> Self {
         self.style.separator_width = width.max(0.0);
         self
     }
 
-    /// Garis pemisah antar kolom.
+    /// Separator lines between columns.
     pub fn grid_lines(mut self, width: f32) -> Self {
         self.style.grid_width = width.max(0.0);
         self
     }
 
-    /// Baris berselang-seling berlatar `surface_sunken`.
+    /// Alternating rows get a `surface_sunken` background.
     pub fn striped(mut self) -> Self {
         self.style.striped = true;
         self
     }
 
-    /// Bentuk sudut sorotan baris.
+    /// Corner shape of the row highlight.
     pub fn row_corners(mut self, corners: Corners) -> Self {
         self.style.row_corners = corners;
         self
     }
 
-    /// Warna latar tabel — **selalu** token theme.
+    /// Table background color — **always** a theme token.
     pub fn background(mut self, color: Color) -> Self {
         self.container.background = color;
         self
     }
 
-    /// Bentuk sudut tabel — sekaligus bentuk area sentuhnya (§3.6).
+    /// Corner shape of the table — and of its hit area too (§3.6).
     pub fn corners(mut self, corners: Corners) -> Self {
         self.container.corners = corners;
         self
     }
 
-    /// Border setebal `width` berwarna `color`.
+    /// A border `width` thick in `color`.
     pub fn border(mut self, width: f32, color: Color) -> Self {
         self.container.border_width = width.max(0.0);
         self.container.border_color = color;
         self
     }
 
-    /// Bayangan ganda ala HIG.
+    /// The HIG-style layered shadow pair.
     pub fn shadow(mut self, shadows: ShadowPair) -> Self {
         self.container.shadows = shadows;
         self
     }
 
-    /// Kapan scrollbar terlihat.
+    /// When the scrollbar is visible.
     pub fn scrollbar(mut self, scrollbar: Scrollbar) -> Self {
         self.scrollbar = scrollbar;
         self
     }
 
-    /// Spring yang menjalankan sorotan seleksi, hover, dan penunjuk geser.
+    /// The spring driving the selection highlight, hover, and drag indicator.
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Tinggi baris yang benar-benar dipakai, setelah aturan hit target HIG.
+    /// The row height actually used, after the HIG hit-target rule.
     pub fn extent_final(&self) -> f32 {
         if self.mode.is_selectable() || self.on_activate.is_some() {
             self.extent.max(MIN_HIT_TARGET)
@@ -565,7 +565,7 @@ impl TableBuilder {
         }
     }
 
-    /// Kolom dalam urutan tampil, sudah digabung dengan lebar hasil resize.
+    /// Columns in display order, merged with any widths left by a resize.
     fn resolved_columns(&self) -> Rc<[ColumnLayout]> {
         let order = self.state.order(self.columns.len());
         order
@@ -578,7 +578,7 @@ impl TableBuilder {
             .collect()
     }
 
-    /// Ukuran-ukuran tabel terhadap keadaan guliran terakhir yang diterbitkan.
+    /// Table metrics against the last published scroll state.
     fn metrics(&self, viewport: f32) -> ListMetrics {
         ListMetrics {
             count: self.count,
@@ -593,7 +593,7 @@ impl TableBuilder {
         }
     }
 
-    /// Sel judul kolom: teks + ruang untuk segitiga penanda urutan.
+    /// A header cell: the text plus room for the sort triangle.
     fn header_cell(&self, kolom: &ColumnLayout) -> View {
         let Some(def) = self.columns.get(kolom.source) else {
             return pad(Insets::ZERO, crate::text::text(&self.fonts, "")).into();
@@ -605,8 +605,8 @@ impl TableBuilder {
             .tracking(t.typography.footnote.tracking)
             .color(t.color.secondary_label)
             .single_line();
-        // Kolom yang bisa diurutkan menyisakan ruang tetap untuk segitiganya,
-        // supaya judulnya tidak bergeser saat urutan berpindah kolom.
+        // A sortable column reserves fixed room for its triangle, so the title
+        // does not shift when the sort moves to another column.
         let mut padding = self.cell_padding;
         if def.sortable {
             let ruang = self.header_style.indicator_size * 2.0;
@@ -624,12 +624,12 @@ impl TableBuilder {
         .into()
     }
 
-    /// Bangun isi tabel untuk posisi guliran saat ini.
+    /// Build the table content for the current scroll position.
     ///
-    /// Dipanggil ulang setiap kali salah satu signal [`TableState`] berubah —
-    /// yaitu setiap kali tabel digulir, seleksinya berpindah, kolomnya digeser,
-    /// dilebarkan, atau diurutkan. Inilah satu-satunya tempat `cell` dipanggil,
-    /// dan ia hanya dipanggil untuk baris di dalam jendela.
+    /// Re-run whenever one of the [`TableState`] signals changes — that is,
+    /// whenever the table scrolls, the selection moves, or a column is
+    /// reordered, resized, or sorted. This is the only place `cell` is called,
+    /// and it is called only for rows inside the window.
     fn isi(&self) -> View {
         let scroll = self.state.scroll();
         let selection = self.state.selection();
@@ -639,9 +639,9 @@ impl TableBuilder {
             .state
             .active_column()
             .min(columns.len().saturating_sub(1));
-        // Dibaca **hanya** supaya komponen ini berlangganan: `scroll_to` dari
-        // sebuah event handler harus menjadwalkan frame, dan frame itulah yang
-        // menjalankan `sync`.
+        // Read **only** to subscribe this component: a `scroll_to` from an
+        // event handler has to schedule a frame, and it is that frame which
+        // runs `sync`.
         let _ = self.state.scroll_state().pending_scroll();
 
         let metrics = self.metrics(scroll.viewport);
@@ -732,9 +732,9 @@ impl TableBuilder {
             .scrollbar(self.scrollbar)
             .bar_style(self.bar)
             .line_height(self.line_height.unwrap_or(metrics.extent))
-            // Tepat **satu** perhentian Tab: tabel yang bisa dipilih menaruhnya
-            // di isinya (panah = seleksi + sel), tabel tampilan murni di wadah
-            // gulirnya (panah = guliran).
+            // Exactly **one** Tab stop: a selectable table puts it on the body
+            // (arrows = selection + cells), a display-only table on its scroll
+            // view (arrows = scrolling).
             .focusable(!bisa_pilih);
         if let Some(label) = &self.label {
             wadah = wadah.label(label.clone());

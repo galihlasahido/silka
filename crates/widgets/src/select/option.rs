@@ -1,10 +1,10 @@
-//! Satu baris pilihan di dalam popup select.
+//! A single option row inside the select popup.
 //!
-//! Baris **tidak** ikut navigasi fokus: fokus tetap di pemicu (lihat
-//! [`super::trigger`]), persis seperti menu native. Yang dilakukan baris hanya
-//! tiga hal — melapor sorotan saat penunjuk lewat, melapor pilihan saat diklik,
-//! dan mengumumkan dirinya ke teknologi bantu sebagai item menu yang
-//! bertanda/tidak.
+//! Rows take **no** part in focus navigation: focus stays on the trigger (see
+//! [`super::trigger`]), exactly like a native menu. A row does only three
+//! things — report a highlight when the pointer passes over it, report a
+//! selection when it is clicked, and announce itself to assistive technology as
+//! a menu item that is checked or not.
 
 use silka_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
 use silka_core::animation::{Spring, SpringValue, Tick};
@@ -22,29 +22,30 @@ use super::{SelectHandler, SelectIntent};
 // Style
 // ---------------------------------------------------------------------------
 
-/// Nilai gambar satu baris pilihan, **sudah diresolusi** dari token theme.
+/// Paint values for one option row, **already resolved** from theme tokens.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SelectOptionStyle {
-    /// Latar keadaan diam (biasanya transparan).
+    /// Resting background (usually transparent).
     pub rest: Color,
-    /// Latar saat disorot (keyboard atau penunjuk).
+    /// Background while highlighted (keyboard or pointer).
     pub highlight: Color,
-    /// Latar baris yang sedang terpilih.
+    /// Background of the row that is currently selected.
     pub selected: Color,
-    /// Geometri sudut baris.
+    /// Corner geometry of the row.
     pub corners: Corners,
-    /// Jarak isi ke tepi baris.
+    /// Distance from the content to the row's edges.
     pub padding: Insets,
-    /// Warna penanda "terpilih".
+    /// Color of the "selected" marker.
     pub marker: Color,
-    /// Ukuran penanda "terpilih".
+    /// Size of the "selected" marker.
     pub marker_size: f32,
-    /// Tinggi minimum baris — hit target HIG.
+    /// Minimum row height — the HIG hit target.
     pub min_height: f32,
 }
 
 impl SelectOptionStyle {
-    /// Latar yang seharusnya berlaku — **target** spring, bukan yang digambar.
+    /// The background that should apply — the spring's **target**, not what is
+    /// drawn.
     pub fn background_for(&self, highlighted: bool, selected: bool) -> Color {
         if highlighted {
             self.highlight
@@ -55,7 +56,8 @@ impl SelectOptionStyle {
         }
     }
 
-    /// Jarak isi ke tepi, sudah menyediakan ruang penanda di akhir baris (§9.8).
+    /// Content insets, with room already reserved for the marker at the end of
+    /// the row (§9.8).
     pub fn insets(&self, rtl: bool) -> Insets {
         let ruang = self.marker_size * 2.0;
         let mut i = self.padding;
@@ -72,7 +74,7 @@ impl SelectOptionStyle {
 // Node
 // ---------------------------------------------------------------------------
 
-/// Node render satu baris pilihan.
+/// The render node for one option row.
 pub struct SelectOption {
     style: SelectOptionStyle,
     index: usize,
@@ -108,44 +110,44 @@ impl SelectOption {
         }
     }
 
-    /// Indeks baris ini di dalam daftar.
+    /// This row's index within the list.
     pub fn index(&self) -> usize {
         self.index
     }
 
-    /// Latar yang digambar frame ini — posisi spring, bukan targetnya.
+    /// The background drawn this frame — the spring's position, not its target.
     pub fn background(&self) -> Color {
         self.bg.position()
     }
 
-    /// Target latar yang sedang dituju spring.
+    /// The background target the spring is heading for.
     pub fn background_target(&self) -> Color {
         self.bg.target()
     }
 
-    /// Sedang terpilih.
+    /// Currently selected.
     pub fn is_selected(&self) -> bool {
         self.selected
     }
 
-    /// Sedang disorot.
+    /// Currently highlighted.
     pub fn is_highlighted(&self) -> bool {
         self.highlighted
     }
 
-    /// Benar bila spring latarnya masih bergerak.
+    /// True while the background spring is still moving.
     pub fn is_animating(&self) -> bool {
         self.bg.is_animating()
     }
 
-    /// Majukan spring satu frame; benar bila warnanya bergeser.
+    /// Advance the spring by one frame; true when the color moved.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let sebelum = self.bg.position();
         tick.advance(&mut self.bg);
         self.bg.position() != sebelum
     }
 
-    /// Selesaikan gerakan seketika.
+    /// Finish the motion immediately.
     pub fn settle(&mut self) {
         self.bg.settle();
     }
@@ -161,7 +163,7 @@ impl SelectOption {
         }
     }
 
-    /// Kotak penanda "terpilih" dalam koordinat lokal.
+    /// The "selected" marker's rect, in local coordinates.
     pub fn marker_rect(&self, bounds: Rect) -> Rect {
         let d = self.style.marker_size.max(0.0);
         let x = if self.rtl {
@@ -186,8 +188,8 @@ impl RenderNode for SelectOption {
         }
         let child = ctx.child(0);
         let isi = ctx.layout_child(child, constraints.deflate(insets).loosen());
-        // Baris mengisi lebar panel (daftar memberi lebar tight); kalau tidak
-        // ada batas, ia jatuh ke lebar isinya sendiri.
+        // A row fills the panel's width (the list hands down a tight width);
+        // with no bound, it falls back to the width of its own content.
         let lebar = if constraints.has_bounded_width() {
             constraints.max_width
         } else {
@@ -215,8 +217,8 @@ impl RenderNode for SelectOption {
         }
         ctx.paint_children();
 
-        // Penanda "terpilih": titik berbentuk sudut preset yang sama, jadi
-        // squircle Cupertino dan arc Tailwind tetap sejalan (§2.7).
+        // The "selected" marker: a dot shaped by the same corner preset, so the
+        // Cupertino squircle and the Tailwind arc stay in step (§2.7).
         if self.selected && self.style.marker.a > 0.0 {
             let kotak = self.marker_rect(bounds);
             ctx.quad(
@@ -256,9 +258,9 @@ impl RenderNode for SelectOption {
             PointerPhase::Enter | PointerPhase::Move => {
                 self.hovered = true;
                 if !self.highlighted {
-                    // Sorotan ditulis di tempat **dan** dilaporkan: tanpa itu,
-                    // gerakan penunjuk berikutnya sebelum frame berikutnya akan
-                    // melaporkan hal yang sama sekali lagi.
+                    // The highlight is written locally **and** reported:
+                    // without that, the next pointer move before the next frame
+                    // would report the very same thing all over again.
                     self.highlighted = true;
                     self.retarget();
                     self.kirim(SelectIntent::Highlight(self.index));
@@ -305,22 +307,22 @@ impl core::fmt::Debug for SelectOption {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props satu baris pilihan — bentuk view dari [`SelectOption`].
+/// Props for one option row — the view form of [`SelectOption`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectOptionProps {
-    /// Nilai gambar, sudah diresolusi dari token.
+    /// Paint values, already resolved from tokens.
     pub style: SelectOptionStyle,
-    /// Indeks baris ini.
+    /// This row's index.
     pub index: usize,
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub label: Option<String>,
-    /// Sedang terpilih.
+    /// Currently selected.
     pub selected: bool,
-    /// Sedang disorot.
+    /// Currently highlighted.
     pub highlighted: bool,
-    /// Spring yang menjalankan transisi latar.
+    /// The spring that drives the background transition.
     pub spring: Spring,
-    /// Ke mana niat pengguna dikirim.
+    /// Where user intent is sent.
     pub on_intent: Option<SelectHandler>,
 }
 

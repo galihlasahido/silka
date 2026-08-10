@@ -1,28 +1,28 @@
-//! [`Interactive`] — node yang **memakai seluruh kontrak input**.
+//! [`Interactive`] — the node that **exercises the entire input contract**.
 //!
-//! Ia bukan widget: `Button`, `Checkbox`, dan kawan-kawan tinggal membungkusnya
-//! nanti dengan token theme dan spring. Yang ia lakukan adalah menutup satu
-//! putaran penuh — hit-test squircle, hover, tekan, capture, fokus, aktivasi
-//! keyboard, emisi a11y — sehingga ada satu tempat konkret yang membuktikan
-//! kontraknya bisa dipenuhi, dan satu contoh yang bisa ditiru penulis widget.
+//! It is not a widget: `Button`, `Checkbox`, and friends will simply wrap it
+//! later with theme tokens and springs. What it does is close one full loop —
+//! squircle hit-testing, hover, press, capture, focus, keyboard activation, a11y
+//! emission — so there is one concrete place proving the contract can be met,
+//! and one example widget authors can copy.
 //!
-//! Aturan HIG yang sudah tertanam di sini:
+//! The HIG rules already baked in here:
 //!
-//! - **Space dan Enter mengaktifkan** apa pun yang bisa diklik, sehingga
-//!   keyboard tidak pernah menjadi warga kelas dua (`KOMPONEN.md` DoD).
-//! - **Tekan lalu tarik keluar = batal.** Selama tombol ditahan penunjuk
-//!   ditangkap, dan pelepasan di luar bentuk node tidak menghasilkan klik —
-//!   perilaku yang sama dengan AppKit dan UIKit.
-//! - **Bentuk sentuh = bentuk gambar.** [`Interactive::corners`] mengalir ke
-//!   [`RenderNode::hit_shape`] **dan** ke [`Decoration::corners`] saat
-//!   menggambar, jadi squircle Cupertino diuji sebagai squircle dan tidak
-//!   mungkin ada pojok yang terlihat kosong tapi bisa diklik.
-//! - **Warna per state datang dari token, bukan dari sini.**
-//!   [`Interactive::decoration`], [`Interactive::hover_background`], dan
-//!   [`Interactive::press_background`] adalah nilai yang **sudah diresolusi**
-//!   satu tingkat di atas (§2.6, §2.7) — mesin tidak punya pendapat tentang
-//!   warna, jadi preset Cupertino/Tailwind berganti tanpa satu baris pun
-//!   berubah di berkas ini.
+//! - **Space and Enter activate** anything clickable, so the keyboard is never a
+//!   second-class citizen (`KOMPONEN.md` DoD).
+//! - **Press then drag out = cancel.** While the button is held the pointer is
+//!   captured, and releasing outside the node's shape produces no click — the
+//!   same behaviour as AppKit and UIKit.
+//! - **Touch shape = drawn shape.** [`Interactive::corners`] flows into
+//!   [`RenderNode::hit_shape`] **and** into [`Decoration::corners`] when
+//!   drawing, so a Cupertino squircle is hit-tested as a squircle and no corner
+//!   can look empty yet be clickable.
+//! - **Per-state colours come from tokens, not from here.**
+//!   [`Interactive::decoration`], [`Interactive::hover_background`], and
+//!   [`Interactive::press_background`] are values **already resolved** one level
+//!   up (§2.6, §2.7) — the engine has no opinion about colour, so the
+//!   Cupertino/Tailwind presets can swap without a single line changing in this
+//!   file.
 
 use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Size};
 
@@ -37,20 +37,21 @@ use super::arena::{LayoutCtx, RenderNode};
 use super::constraints::BoxConstraints;
 use super::paint::{Decoration, PaintCtx};
 
-/// Cincin fokus keyboard: tebal dan warna, keduanya dari token theme.
+/// The keyboard focus ring: width and colour, both from theme tokens.
 ///
-/// Digambar **di luar** kotak node supaya tidak menutupi isinya — kebiasaan
-/// AppKit, dan syarat agar tombol kecil tetap terbaca saat difokuskan.
+/// Drawn **outside** the node's box so it does not cover the content — the
+/// AppKit habit, and a requirement for small buttons to stay readable while
+/// focused.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FocusRing {
-    /// Tebal cincin, poin logis.
+    /// The ring width, in logical points.
     pub width: f32,
-    /// Warna cincin — token `focus_ring`.
+    /// The ring colour — the `focus_ring` token.
     pub color: Color,
 }
 
 impl FocusRing {
-    /// Cincin setebal `width` berwarna `color`.
+    /// A ring `width` thick in the colour `color`.
     pub fn new(width: f32, color: Color) -> Self {
         Self {
             width: width.max(0.0),
@@ -59,42 +60,43 @@ impl FocusRing {
     }
 }
 
-/// Node interaktif serba guna: bisa di-hover, ditekan, difokuskan, dan
-/// diaktifkan dari keyboard.
+/// A general-purpose interactive node: hoverable, pressable, focusable, and
+/// activatable from the keyboard.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interactive {
-    /// Bentuk sudut — **sama** dengan yang digambar (§3.6).
+    /// The corner shape — **the same** one that gets drawn (§3.6).
     pub corners: Corners,
-    /// Peran fokus keyboard.
+    /// The keyboard focus role.
     pub focus: FocusPolicy,
-    /// Peran a11y.
+    /// The a11y role.
     pub role: AccessRole,
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub label: Option<String>,
-    /// Bentuk kursor saat di-hover.
+    /// The cursor shape while hovered.
     pub cursor: Option<CursorIcon>,
-    /// Tidak bisa dipakai: tidak menerima event, tetap dibacakan sebagai dimmed.
+    /// Unusable: receives no events, still announced as dimmed.
     pub disabled: bool,
 
-    /// Latar keadaan diam — nilainya sudah diresolusi dari token theme.
+    /// The resting background — already resolved from theme tokens.
     pub decoration: Decoration,
-    /// Latar saat penunjuk berada di atasnya (`None` = tidak berubah).
+    /// The background while the pointer is over it (`None` = unchanged).
     pub hover_background: Option<Color>,
-    /// Latar saat sedang ditekan (`None` = pakai yang hover/diam).
+    /// The background while pressed (`None` = use the hover/resting one).
     pub press_background: Option<Color>,
-    /// Cincin fokus keyboard (`None` = tidak digambar).
+    /// The keyboard focus ring (`None` = not drawn).
     pub focus_ring: Option<FocusRing>,
-    /// Apa yang dijalankan setiap kali node ini diaktifkan (klik atau
-    /// Space/Enter) — inilah `on_press` gaya Dart (§2.5).
+    /// What runs every time this node is activated (a click, or Space/Enter) —
+    /// this is the Dart-style `on_press` (§2.5).
     pub on_press: Option<Callback>,
 
-    /// Penunjuk sedang berada di atasnya.
+    /// The pointer is currently over it.
     pub hovered: bool,
-    /// Tombol sedang ditekan **dan** penunjuk masih di dalam bentuknya.
+    /// A button is held **and** the pointer is still inside its shape.
     pub pressed: bool,
-    /// Sedang memegang fokus keyboard.
+    /// It currently holds keyboard focus.
     pub focused: bool,
-    /// Jumlah aktivasi (klik atau Space/Enter) sejak node dibuat.
+    /// The number of activations (clicks or Space/Enter) since the node was
+    /// created.
     pub activations: u32,
 }
 
@@ -121,21 +123,21 @@ impl Default for Interactive {
 }
 
 impl Interactive {
-    /// Node interaktif dengan nilai bawaan (tombol, sudut tajam).
+    /// An interactive node with the default values (a button, sharp corners).
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Benar bila node sedang menerima event sama sekali.
+    /// True while the node accepts events at all.
     fn aktif(&self) -> bool {
         !self.disabled
     }
 
-    /// Catat satu aktivasi lalu jalankan `on_press`.
+    /// Record one activation and then run `on_press`.
     ///
-    /// Callback-nya **disalin keluar dulu**: ia hampir selalu menulis signal,
-    /// dan tulisan signal boleh memicu apa saja di runtime — yang tidak boleh
-    /// terjadi adalah ia berjalan sambil node ini masih dipinjam `&mut`.
+    /// The callback is **copied out first**: it almost always writes a signal,
+    /// and a signal write may trigger anything in the runtime — what must not
+    /// happen is it running while this node is still borrowed `&mut`.
     fn aktifkan(&mut self) {
         self.activations = self.activations.saturating_add(1);
         if let Some(cb) = self.on_press.clone() {
@@ -143,19 +145,19 @@ impl Interactive {
         }
     }
 
-    /// Latar yang berlaku untuk keadaan node saat ini.
+    /// The background that applies to the node's current state.
     ///
-    /// Bentuk sudutnya **selalu** [`Interactive::corners`] — sumber yang sama
-    /// dengan hit-testing (§3.6), sehingga keduanya tidak mungkin berbeda.
+    /// Its corner shape is **always** [`Interactive::corners`] — the same source
+    /// hit-testing uses (§3.6), so the two cannot disagree.
     pub fn dekorasi_aktif(&self) -> Decoration {
         let mut d = self.decoration;
         d.corners = self.corners;
         if self.disabled {
             return d;
         }
-        // `pressed` bertahan saat penunjuk ditangkap keluar kotak (lihat
-        // `PointerPhase::Leave`), tapi tampilan "ditekan" hanya berlaku selama
-        // penunjuknya masih di dalam — persis AppKit/UIKit.
+        // `pressed` survives while the pointer is captured outside the box (see
+        // `PointerPhase::Leave`), but the "pressed" look only applies while the
+        // pointer is still inside — exactly like AppKit/UIKit.
         if self.pressed && self.hovered {
             if let Some(c) = self.press_background.or(self.hover_background) {
                 d.background = c;
@@ -180,16 +182,17 @@ impl RenderNode for Interactive {
         constraints.constrain(size)
     }
 
-    /// Latar sesuai keadaan, lalu cincin fokus, lalu isinya.
+    /// The state background, then the focus ring, then the content.
     ///
-    /// Urutannya menentukan hasil: cincin fokus digambar **di bawah** isi tapi
-    /// **di luar** kotak node, sehingga label tetap terbaca penuh.
+    /// The order is what makes it work: the focus ring is drawn **below** the
+    /// content but **outside** the node's box, so the label stays fully
+    /// readable.
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.decorate(&self.dekorasi_aktif());
         if self.focused && !self.disabled {
             if let Some(ring) = self.focus_ring.filter(|r| r.width > 0.0 && r.color.a > 0.0) {
-                // `deflate` dengan inset negatif = mengembang; radiusnya ikut
-                // tumbuh supaya cincin sejajar dengan tepi yang dibulatkan.
+                // `deflate` with a negative inset expands instead; the radius
+                // grows with it so the ring stays parallel to the rounded edge.
                 let kotak = ctx.local_bounds().deflate(Insets::all(-ring.width));
                 let corners = Corners::new(
                     CornerRadii::all(self.corners.radii.max() + ring.width),
@@ -222,8 +225,8 @@ impl RenderNode for Interactive {
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Node yang tidak bisa dipakai tetap **menyerap** penunjuk: klik pada
-        // tombol disabled tidak boleh menembus ke konten di belakangnya.
+        // A node that cannot be used still **absorbs** the pointer: a click on a
+        // disabled button must not fall through to the content behind it.
         HitBehavior::Opaque
     }
 
@@ -241,7 +244,7 @@ impl RenderNode for Interactive {
 
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         if !self.aktif() {
-            // Tetap menyerap agar tidak tembus, tapi tidak mengubah apa pun.
+            // Still absorbing so nothing falls through, but changing nothing.
             if matches!(event, Event::Pointer(p) if matches!(p.phase, PointerPhase::Down | PointerPhase::Up))
             {
                 ctx.handled();
@@ -260,8 +263,8 @@ impl RenderNode for Interactive {
                 PointerPhase::Leave => {
                     if self.hovered || self.pressed {
                         self.hovered = false;
-                        // Sengaja tidak membatalkan `pressed`: penunjuk yang
-                        // ditangkap boleh keluar-masuk selama tombol ditahan.
+                        // Deliberately not clearing `pressed`: a captured pointer
+                        // may leave and re-enter while the button is held.
                         ctx.request_paint();
                     }
                 }
@@ -282,7 +285,7 @@ impl RenderNode for Interactive {
                     ctx.request_paint();
                     ctx.handled();
                 }
-                // Dibatalkan OS ≠ dilepas: tidak ada aktivasi.
+                // Cancelled by the OS ≠ released: no activation.
                 PointerPhase::Cancel if self.pressed => {
                     self.pressed = false;
                     ctx.request_paint();

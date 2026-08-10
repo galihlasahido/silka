@@ -1,80 +1,84 @@
 //! # silka-renderer
 //!
-//! Backend **wgpu** — satu-satunya tempat di workspace yang boleh menyentuh
-//! tipe wgpu (REKOMENDASI §3.2). Mengimplementasikan perintah gambar
-//! `silka-paint` dengan shader SDF khusus UI ala GPUI:
+//! The **wgpu** backend — the only place in the workspace allowed to touch
+//! wgpu types (REKOMENDASI §3.2). It implements the `silka-paint` draw
+//! commands with a UI-specific SDF shader in the spirit of GPUI:
 //!
-//! - Rounded rect + **squircle** (superellipse G2-continuous) langsung di SDF
-//!   shader; radius/kelengkungan datang sebagai parameter per-perintah.
-//! - Shadow ganda ambient + key, border, glyph dari atlas, ikon monochrome.
-//! - Blur dalam-aplikasi (dual-Kawase) lewat layer/offscreen texture.
+//! - Rounded rect + **squircle** (G2-continuous superellipse) straight in the
+//!   SDF shader; radius/curvature arrive as per-command parameters.
+//! - Double ambient + key shadow, border, glyphs from an atlas, monochrome
+//!   icons.
+//! - In-app blur (dual-Kawase) through a layer/offscreen texture.
 //!
-//! Pelajaran yang MENGIKAT dari Impeller: **semua varian shader dikompilasi
-//! di build time** — tidak pernah generate shader saat runtime (§3.2).
-//! Render hanya saat dirty; vsync lewat display link per platform (§3.5).
+//! The BINDING lesson from Impeller: **every shader variant is compiled at
+//! build time** — a shader is never generated at runtime (§3.2). Render only
+//! when dirty; vsync through the per-platform display link (§3.5).
 //!
-//! Backend alternatif di masa depan (vello_hybrid GL, tiny-skia CPU) menjadi
-//! crate saudara yang mengimplementasikan `silka-paint` yang sama.
+//! Future alternative backends (vello_hybrid GL, tiny-skia CPU) become sibling
+//! crates implementing the very same `silka-paint`.
 //!
-//! ## Yang sudah ada (milestone `window-wgpu` + `sdf-shader` + `glyph-gpu-bridge` + `clip-gpu`)
+//! ## What's here (milestones `window-wgpu` + `sdf-shader` + `glyph-gpu-bridge` + `clip-gpu`)
 //!
-//! Fondasi surface: [`Gpu`] (instance/adapter/device/queue, Metal di macOS),
-//! [`WindowSurface`] (swapchain, resize, DPI), dan konversi ruang warna
-//! sRGB→linear yang benar.
+//! The surface foundation: [`Gpu`] (instance/adapter/device/queue, Metal on
+//! macOS), [`WindowSurface`] (swapchain, resize, DPI), and a correct
+//! sRGB→linear color space conversion.
 //!
-//! Di atasnya, pipeline SDF (`shaders/sdf.wgsl`) merasterisasi seluruh
-//! kosakata kotak dalam **satu draw call**:
+//! On top of that sits the SDF pipeline (`shaders/sdf.wgsl`), which rasterizes
+//! the entire box vocabulary in **a single draw call**:
 //!
-//! | Yang berbeda | Bagaimana dinyatakan |
+//! | What differs | How it is expressed |
 //! |---|---|
-//! | Arc vs squircle | eksponen superellipse per instance (2 vs ≈4) |
-//! | Radius per sudut | empat `f32` per instance, sudah diskalakan CPU-side |
-//! | Border | tebal per instance; cincin antara dua isoline SDF |
-//! | Shadow ambient + key | dua instance ber-blur gaussian di belakang kotak |
-//! | **Glyph** | instance bertekstur: UV atlas + warna run dari token theme |
+//! | Arc vs squircle | per-instance superellipse exponent (2 vs ≈4) |
+//! | Per-corner radius | four `f32` per instance, already scaled CPU-side |
+//! | Border | per-instance width; a ring between two SDF isolines |
+//! | Ambient + key shadow | two gaussian-blurred instances behind the box |
+//! | **Glyph** | textured instance: atlas UV + run color from theme tokens |
 //!
-//! Karena semuanya data, **tidak ada varian shader** dan tidak ada WGSL yang
-//! dirakit saat runtime. Anti-alias diturunkan dari derivatif layar sehingga
-//! benar di Retina 2× maupun scale pecahan Wayland tanpa parameter tambahan.
+//! Because it is all data, there are **no shader variants** and no WGSL is
+//! assembled at runtime. Anti-aliasing is derived from screen-space
+//! derivatives, so it is correct on 2× Retina and on fractional Wayland scales
+//! alike, without any extra parameter.
 //!
-//! ### Teks
+//! ### Text
 //!
-//! Perintah `GlyphRun` menjadi quad bertekstur yang men-sample glyph atlas.
-//! Yang menjaga teks tetap tajam dan murah:
+//! A `GlyphRun` command becomes a textured quad sampling the glyph atlas.
+//! What keeps text crisp and cheap:
 //!
-//! - **Kotak tujuan disetel ke grid piksel fisik** sehingga satu texel jatuh
-//!   tepat pada satu piksel layar (tajam di 2×); subpixel *positioning* tetap
-//!   utuh karena ia terkandung di dalam bitmap yang dipilih lapisan teks.
-//! - **Unggah inkremental**: hanya kotak atlas yang berubah yang dikirim ke
-//!   GPU — nol byte pada frame yang teksnya tidak berubah.
-//! - **Satu draw call untuk seluruh scene**: teks ikut dalam urutan perintah
-//!   yang sama dengan kotak dan bayangan, jadi teks selalu di atas latarnya.
-//! - Atlasnya datang dari [`silka_paint::GlyphSource`] — backend tidak pernah
-//!   menyebut `silka-text`, dan `silka-text` tidak pernah menyebut wgpu.
+//! - **The destination box is snapped to the physical pixel grid** so one texel
+//!   lands exactly on one screen pixel (crisp at 2×); subpixel *positioning* is
+//!   preserved because it is baked into the bitmap the text layer picked.
+//! - **Incremental upload**: only the atlas rects that actually changed are
+//!   sent to the GPU — zero bytes on frames whose text did not change.
+//! - **One draw call for the whole scene**: text rides in the same command
+//!   order as boxes and shadows, so text always sits above its background.
+//! - The atlas comes from [`silka_paint::GlyphSource`] — the backend never
+//!   mentions `silka-text`, and `silka-text` never mentions wgpu.
 //!
 //! ### Clip
 //!
-//! `Command::PushClip`/`PopClip` menjadi **scissor rect GPU**: scene dipecah
-//! menjadi daftar batch `(kotak potong, rentang instance)` yang urutannya
-//! persis urutan perintah, dan batch baru hanya dibuka saat kotak potongnya
-//! berubah — UI tanpa clip tetap satu draw call, satu scroll view menambah dua.
-//! Kotaknya dipakai apa adanya karena irisan clip bersarang sudah diselesaikan
-//! `silka-core`; yang tetap dipelihara backend hanyalah ingatan akan kotak
-//! induk untuk dipulihkan saat `PopClip`. Konversi poin logis → piksel fisik
-//! lewat [`SurfaceGeometry`] membulatkan **ke luar** (tepi konten tidak pernah
-//! termakan) dan menjepit ke batas surface (scissor di luar batas = validation
-//! error wgpu). Batch yang kotaknya kosong dilewati seluruhnya.
+//! `Command::PushClip`/`PopClip` become **GPU scissor rects**: the scene is
+//! split into a list of `(clip rect, instance range)` batches whose order is
+//! exactly the command order, and a new batch only opens when the clip rect
+//! changes — a UI without clipping stays a single draw call, one scroll view
+//! adds two. The rect is used as-is because nested clip intersection is already
+//! resolved by `silka-core`; all the backend still maintains is the memory of
+//! the parent rect, to be restored on `PopClip`. Converting logical points →
+//! physical pixels through [`SurfaceGeometry`] rounds **outward** (content edges
+//! are never eaten) and clamps to the surface bounds (a scissor outside those
+//! bounds is a wgpu validation error). Batches whose rect is empty are skipped
+//! entirely.
 //!
-//! Jalur yang sama tersedia tanpa window lewat [`Gpu::headless`] +
-//! [`OffscreenTarget`] — fondasi golden/snapshot test visual di CI (§9.5),
-//! termasuk uji "piksel teks benar-benar ada" di `tests/teks.rs`.
+//! The same path is available without a window through [`Gpu::headless`] +
+//! [`OffscreenTarget`] — the foundation for visual golden/snapshot tests in CI
+//! (§9.5), including the "text really does produce pixels" check in
+//! `tests/teks.rs`.
 //!
-//! ## Batas yang dijaga
+//! ## The boundaries being kept
 //!
-//! Permukaan publik crate ini hanya memakai tipe `silka-paint` dan
-//! `raw-window-handle`. Ia **tidak** tahu apa itu winit, dan pemanggilnya
-//! **tidak** perlu tahu apa itu wgpu. Satu-satunya pintu ke dunia wgpu adalah
-//! [`Gpu::device`], yang khusus untuk crate backend saudara.
+//! This crate's public surface only uses `silka-paint` and `raw-window-handle`
+//! types. It does **not** know what winit is, and its callers do **not** need
+//! to know what wgpu is. The single door into the wgpu world is
+//! [`Gpu::device`], reserved for sibling backend crates.
 //!
 //! ```no_run
 //! use std::sync::Arc;
@@ -85,7 +89,7 @@
 //! let geometry = SurfaceGeometry::from_logical(Size::new(1024.0, 720.0), 2.0);
 //! let (gpu, mut surface) = Gpu::with_surface(window, geometry)?;
 //!
-//! // Warna latar selalu datang dari token theme, tidak pernah literal.
+//! // The background color always comes from a theme token, never a literal.
 //! let scene = Scene::new(Color::hex(0x1C1C1E));
 //! surface.render(&gpu, &scene)?;
 //! # Ok(())

@@ -1,28 +1,28 @@
-//! **Satu detak untuk seluruh pohon**: siapa yang memajukan spring widget.
+//! **One tick for the whole tree**: who advances the widget springs.
 //!
-//! Animasi framework ini tidak memakai timer yang berdetak (§3.5). Yang ada
-//! adalah satu [`Tick`] per frame yang dibagikan ke pohon; nilai yang masih
-//! bergerak menandai dirinya di situ, dan hanya karena tanda itulah frame
-//! berikutnya dijadwalkan. Modul ini adalah tempat pembagian itu terjadi untuk
-//! seluruh crate — pola yang sudah dipakai [`crate::overlay::advance`],
-//! digeneralisasi supaya setiap komponen baru (`checkbox`, `switch`, `slider`,
-//! …) cukup **menambah satu cabang** alih-alih menumbuhkan loop frame kedua.
+//! This framework's animation has no ticking timer (§3.5). What it has is a
+//! single [`Tick`] per frame shared across the tree; values that are still
+//! moving mark themselves on it, and only because of that mark does the next
+//! frame get scheduled. This module is where that sharing happens for the
+//! whole crate — the pattern [`crate::overlay::advance`] already uses,
+//! generalised so that every new component (`checkbox`, `switch`, `slider`,
+//! …) only has to **add one branch** instead of growing a second frame loop.
 //!
-//! Bentuk sambungannya di aplikasi:
+//! How it is wired up in an application:
 //!
 //! ```no_run
 //! # use silka_core::app::AppRuntime;
 //! # fn contoh(ui: &mut AppRuntime) {
-//! // Sekali per frame, sebelum `ui.frame()`:
+//! // Once per frame, before `ui.frame()`:
 //! ui.animate(silka_widgets::advance);
 //! ui.frame();
 //! # }
 //! ```
 //!
-//! [`silka_core::app::AppRuntime::animate`] yang memegang
-//! [`AnimationDriver`](silka_core::animation::AnimationDriver) — jam,
-//! reduced-motion, dan jawaban "masih adakah yang bergerak" ada di sana, jadi
-//! crate ini tidak perlu tahu apa pun tentang vsync.
+//! [`silka_core::app::AppRuntime::animate`] is what holds the
+//! [`AnimationDriver`](silka_core::animation::AnimationDriver) — the clock,
+//! reduced-motion, and the answer to "is anything still moving" all live
+//! there, so this crate never needs to know anything about vsync.
 
 use silka_core::animation::Tick;
 use silka_core::scheduler::Dirty;
@@ -36,7 +36,7 @@ use crate::slider::Slider;
 use crate::switch::SwitchNode;
 use crate::text_field::TextFieldBox;
 
-/// Seluruh node pohon dalam urutan gambar (induk sebelum anak).
+/// Every node of the tree, in paint order (parent before child).
 fn semua(tree: &RenderTree) -> Vec<NodeId> {
     let mut out = Vec::new();
     kumpulkan(tree, tree.root(), &mut out);
@@ -50,16 +50,16 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
     }
 }
 
-/// Majukan seluruh animasi widget satu frame.
+/// Advance every widget animation by one frame.
 ///
-/// Yang dikembalikan adalah alasan dirty, dengan arti yang tepat:
+/// What comes back is a set of dirty reasons, each with a precise meaning:
 ///
-/// - [`Dirty::PAINT`] — ada yang **berubah tampilannya** frame ini.
-/// - [`Dirty::LAYOUT`] — ada yang **pindah** (panel overlay yang menyembul),
-///   jadi layout subtree-nya harus dijalankan ulang.
-/// - [`Dirty::ANIMATION`] — masih ada spring yang belum settle: frame
-///   berikutnya harus dijadwalkan. Begitu bendera ini hilang, GPU boleh tidur.
-/// - [`Dirty::NONE`] — tidak ada satu pun yang bergerak.
+/// - [`Dirty::PAINT`] — something **changed how it looks** this frame.
+/// - [`Dirty::LAYOUT`] — something **moved** (an overlay panel sliding out),
+///   so its subtree has to be laid out again.
+/// - [`Dirty::ANIMATION`] — a spring has not settled yet: the next frame
+///   must be scheduled. Once this flag is gone, the GPU may sleep.
+/// - [`Dirty::NONE`] — nothing is moving at all.
 ///
 /// ```
 /// # use silka_core::animation::{Motion, Tick};
@@ -81,29 +81,29 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
 /// assert!(advance(&mut tree, &tick).contains(Dirty::ANIMATION));
 /// ```
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
-    // Deretan tab memajukan dirinya sendiri (indikator + sorotan tiap tab)
-    // lewat satu pintu di modulnya; di sini ia cukup dititipkan detak yang
-    // sama supaya aplikasi tetap hanya perlu memanggil satu fungsi.
+    // The tab bar advances itself (the indicator plus each tab's highlight)
+    // through a single door in its own module; here it is simply handed the
+    // same tick so the application still only has to call one function.
     let mut dirty = crate::tabs::advance(tree, tick);
-    // Guliran juga punya pintunya sendiri: selain spring posisi, ia memegang
-    // hitung mundur auto-hide scrollbar yang harus dijalankan sekali per
-    // frame — dan hanya modulnya yang tahu kapan hitungan itu selesai.
+    // Scrolling has its own door too: besides the position spring it owns the
+    // scrollbar auto-hide countdown, which has to run exactly once per frame —
+    // and only its module knows when that countdown is done.
     dirty |= crate::scroll_view::advance(tree, tick);
-    // Daftar tervirtualisasi **sesudah** guliran, dan urutannya mengikat: ia
-    // menerbitkan posisi guliran frame ini ke `ListState`, dan dari situlah
-    // rebuild berikutnya tahu baris mana yang harus dibangun. Menaruhnya lebih
-    // dulu berarti jendela barisnya selalu tertinggal satu frame.
+    // Virtualised lists come **after** scrolling, and the order is binding: the
+    // list publishes this frame's scroll offset into `ListState`, and that is
+    // where the next rebuild learns which rows to build. Putting it first would
+    // leave its row window one frame behind, always.
     dirty |= crate::list::advance(tree, tick);
-    // Tabel: alasan dan urutannya persis sama dengan daftar — ia menumpang
-    // jahitan virtualisasi yang sama (`list::sync_virtual`), jadi ia juga harus
-    // membaca posisi guliran frame **ini**.
+    // Table: same reason and same order as the list — it rides the same
+    // virtualisation seam (`list::sync_virtual`), so it too has to read
+    // **this** frame's scroll offset.
     dirty |= crate::table::advance(tree, tick);
     for id in semua(tree) {
-        // Tombol: yang berubah hanya piksel, jadi tidak ada layout yang perlu
-        // dijalankan ulang — sengaja, karena tombol yang di-hover tidak boleh
-        // membuat halaman dihitung ulang.
-        // Pinjaman `&mut` node diselesaikan di dalam `let` ini, bukan di dalam
-        // `if let`: dengan begitu `tree` bebas dipakai lagi di badannya.
+        // Button: only pixels change, so no layout has to run again —
+        // deliberately, because hovering a button must never make the page
+        // recompute itself.
+        // The `&mut` borrow of the node ends inside this `let`, not inside the
+        // `if let`: that way `tree` is free to be used again in the body.
         let tombol = tree
             .node_mut_ref::<ButtonBox>(id)
             .map(|b| (b.advance(tick), b.is_animating()));
@@ -118,10 +118,9 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Checkbox: latar, border, goresan centang, garis indeterminate,
-        // penyusutan tekan, dan cincin fokus. Kotaknya mengempis **ke dalam**
-        // dirinya sendiri, jadi tidak ada tetangga yang bergeser — cukup
-        // piksel, sama seperti tombol.
+        // Checkbox: background, border, check stroke, indeterminate dash,
+        // press shrink, and focus ring. The box shrinks **into** itself, so no
+        // neighbour ever moves — pixels only, just like the button.
         let centang = tree
             .node_mut_ref::<CheckboxNode>(id)
             .map(|c| (c.advance(tick), c.is_animating()));
@@ -136,10 +135,9 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Sakelar: posisi thumb, warna lintasan, pelebaran tekan, dan cincin
-        // fokus. Thumb bergerak **di dalam** lintasannya sendiri dan lebar
-        // barisnya ditentukan label, jadi tidak ada tetangga yang bergeser —
-        // cukup piksel.
+        // Switch: thumb position, track color, press stretch, and focus ring.
+        // The thumb moves **inside** its own track and the row width is set by
+        // the label, so no neighbour moves — pixels only.
         let sakelar = tree
             .node_mut_ref::<SwitchNode>(id)
             .map(|s| (s.advance(tick), s.is_animating()));
@@ -154,9 +152,8 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Slider: thumb bergerak dan warna isian ikut naik, tapi ukurannya
-        // tidak pernah bergantung pada nilainya — jadi cukup piksel, sama
-        // seperti tombol.
+        // Slider: the thumb moves and the fill color rises with it, but its
+        // size never depends on the value — pixels only, just like the button.
         let geser = tree
             .node_mut_ref::<Slider>(id)
             .map(|s| (s.advance(tick), s.is_animating()));
@@ -171,9 +168,9 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Kolom teks: hover dan cincin fokus. Ukurannya tidak pernah
-        // bergantung pada isinya (lebarnya datang dari constraints), jadi
-        // mengetik pun tidak pernah melahirkan layout ulang halaman.
+        // Text field: hover and focus ring. Its size never depends on its
+        // contents (the width comes from the constraints), so typing never
+        // triggers a page relayout either.
         let kolom = tree
             .node_mut_ref::<TextFieldBox>(id)
             .map(|k| (k.advance(tick), k.is_animating()));
@@ -188,8 +185,8 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Pemicu select: latar, cincin fokus, dan segitiga penunjuk yang
-        // membalik saat popup buka/tutup. Semuanya di dalam kotaknya sendiri.
+        // Select trigger: background, focus ring, and the pointing triangle
+        // that flips as the popup opens and closes. All inside its own box.
         let pemicu = tree
             .node_mut_ref::<SelectTrigger>(id)
             .map(|s| (s.advance(tick), s.is_animating()));
@@ -204,7 +201,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Baris pilihan select: hanya latarnya yang bergerak.
+        // Select option row: only its background moves.
         let baris = tree
             .node_mut_ref::<SelectOption>(id)
             .map(|o| (o.advance(tick), o.is_animating()));
@@ -219,8 +216,8 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             continue;
         }
 
-        // Overlay: panelnya benar-benar **pindah**, jadi layout ikut. Overlay
-        // adalah relayout boundary, jadi kerjanya berhenti di subtree itu.
+        // Overlay: its panel really does **move**, so layout follows. An
+        // overlay is a relayout boundary, so the work stops at that subtree.
         let panel = tree
             .node_mut_ref::<OverlayEntry>(id)
             .map(|o| (o.advance(tick), o.is_animating()));
@@ -237,7 +234,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     dirty
 }
 
-/// Benar bila masih ada animasi widget yang berjalan di pohon ini.
+/// True while any widget animation is still running in this tree.
 pub fn is_animating(tree: &RenderTree) -> bool {
     if crate::tabs::is_animating(tree)
         || crate::scroll_view::is_animating(tree)
@@ -273,7 +270,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
     })
 }
 
-/// Selesaikan seluruh animasi widget seketika (uji, snapshot, golden test).
+/// Finish every widget animation instantly (tests, snapshots, golden tests).
 pub fn settle(tree: &mut RenderTree) {
     crate::tabs::settle(tree);
     crate::scroll_view::settle(tree);

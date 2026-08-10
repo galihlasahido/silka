@@ -1,15 +1,15 @@
-//! Pemilihan konfigurasi surface — logika murni, bisa diuji tanpa GPU.
+//! Surface configuration choices — pure logic, testable without a GPU.
 //!
-//! Dipisah dari [`crate::surface`] justru supaya bisa di-unit-test: bagian
-//! inilah yang menentukan apakah warna token tampil benar (sRGB) atau terlihat
-//! "cuci" karena salah ruang warna.
+//! Split out of [`crate::surface`] precisely so it can be unit-tested: this is
+//! the part that decides whether token colors show up correctly (sRGB) or come
+//! out looking "washed out" because of the wrong color space.
 
 use silka_paint::Color;
 
-/// Pilih format swapchain: utamakan format sRGB agar konversi gamma dikerjakan
-/// hardware saat menulis, bukan ditebak-tebak di shader.
+/// Pick the swapchain format: prefer an sRGB format so the gamma conversion is
+/// done by the hardware on write instead of being guessed at in the shader.
 ///
-/// Di macOS/Metal ini akan jatuh ke `Bgra8UnormSrgb`.
+/// On macOS/Metal this lands on `Bgra8UnormSrgb`.
 pub(crate) fn choose_surface_format(
     available: &[wgpu::TextureFormat],
 ) -> Option<wgpu::TextureFormat> {
@@ -20,8 +20,8 @@ pub(crate) fn choose_surface_format(
         .or_else(|| available.first().copied())
 }
 
-/// Pilih mode komposit alpha: utamakan `Opaque` (window UI biasa), baru
-/// `Inherit`, sisanya apa pun yang tersedia.
+/// Pick the alpha compositing mode: prefer `Opaque` (an ordinary UI window),
+/// then `Inherit`, then whatever else is available.
 pub(crate) fn choose_alpha_mode(
     available: &[wgpu::CompositeAlphaMode],
 ) -> wgpu::CompositeAlphaMode {
@@ -39,12 +39,12 @@ pub(crate) fn choose_alpha_mode(
         .unwrap_or(wgpu::CompositeAlphaMode::Auto)
 }
 
-/// Terjemahkan warna token menjadi clear color GPU.
+/// Translate a token color into a GPU clear color.
 ///
-/// Ini titik konversi ruang warna yang MENGIKAT: token ditulis dalam sRGB
-/// (§2.7), sedangkan attachment berformat `*Srgb` mengharapkan nilai **linear**
-/// karena hardware yang melakukan encoding balik. Melewatkan konversi ini
-/// membuat setiap latar tampak jauh lebih terang dari tokennya.
+/// This is the BINDING color space conversion point: tokens are authored in
+/// sRGB (§2.7), while a `*Srgb` attachment expects **linear** values because
+/// the hardware does the encoding back. Skipping this conversion makes every
+/// background look far brighter than its token.
 pub(crate) fn clear_color(color: Color, format: wgpu::TextureFormat) -> wgpu::Color {
     let [r, g, b, a] = if format.is_srgb() {
         color.to_linear()

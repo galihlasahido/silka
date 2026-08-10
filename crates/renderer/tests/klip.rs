@@ -1,32 +1,35 @@
-//! Uji **piksel** untuk `Command::PushClip`/`PopClip`: apakah yang terpotong
-//! benar-benar hilang di GPU.
+//! **Pixel** tests for `Command::PushClip`/`PopClip`: does what gets clipped
+//! really disappear on the GPU?
 //!
-//! Sebelum milestone ini pasangan clip dilewati diam-diam oleh backend, dan
-//! tidak ada satu pun test yang bisa memergokinya: pass paint sudah membuang
-//! perintah yang **seluruhnya** di luar clip, jadi semua uji sisi CPU lulus
-//! sementara konten yang terpotong **sebagian** tetap tergambar utuh di layar.
-//! Itulah bentuk bug yang akan dilihat pengguna sebagai scroll view, list, dan
-//! table yang bocor keluar viewport.
+//! Before this milestone the backend silently ignored clip pairs, and not a
+//! single test could catch it: the paint pass already discards commands that
+//! fall **entirely** outside the clip, so every CPU-side test passed while
+//! **partially** clipped content still drew in full on screen. That is exactly
+//! the kind of bug users see as scroll views, lists, and tables leaking out of
+//! their viewport.
 //!
-//! Karena itu yang dibuktikan di sini adalah pikselnya, bukan strukturnya:
+//! So what is proven here is the pixels, not the structure:
 //!
-//! 1. kotak yang jauh lebih besar dari clip hanya menyisakan piksel **di dalam**
-//!    kotak clip — dan **nol** di luarnya, padahal geometri quad-nya melampaui;
-//! 2. teks yang terbelah clip kehilangan separuh bawahnya, sementara kontrol
-//!    tanpa clip menunjukkan separuh itu memang ada;
-//! 3. setelah `PopClip` gambar berikutnya kembali tidak terpotong;
-//! 4. clip bersarang menghasilkan irisan yang benar **dan** memulihkan kotak
-//!    induk setelah pop;
-//! 5. clip di luar surface tidak membuat panik maupun validation error wgpu.
+//! 1. a box far larger than the clip leaves pixels only **inside** the clip
+//!    rect — and **zero** outside it, even though the quad's geometry extends
+//!    well past;
+//! 2. text split by a clip loses its bottom half, while the unclipped control
+//!    shows that half really is there;
+//! 3. after `PopClip` the next drawing is unclipped again;
+//! 4. nested clips produce the correct intersection **and** restore the parent
+//!    rect after the pop;
+//! 5. a clip outside the surface causes neither a panic nor a wgpu validation
+//!    error.
 //!
-//! Tanpa adapter GPU, test dilewati dengan pesan — kegagalan palsu di CI jauh
-//! lebih mahal daripada satu test yang absen.
+//! Without a GPU adapter the tests are skipped with a message — a false failure
+//! in CI costs far more than one absent test.
 
 use silka_paint::{Color, Command, Point, Quad, Rect, Scene, Size};
 use silka_renderer::{Gpu, OffscreenTarget, Rgba8Image, SurfaceGeometry};
 use silka_text::{TextConstraints, TextEngine, TextStyle};
 
-/// Kanvas 128×128 poin — cukup lega untuk clip bersarang tanpa menyentuh tepi.
+/// A 128×128 point canvas — roomy enough for nested clips without touching the
+/// edges.
 const SISI: f32 = 128.0;
 
 const LATAR: [u8; 4] = [0, 0, 0, 255];
@@ -50,14 +53,14 @@ fn kanvas(gpu: &Gpu, scale: f64) -> OffscreenTarget {
     OffscreenTarget::new(gpu, geometry).expect("target headless gagal dibuat")
 }
 
-/// Kotak polos tanpa sudut membulat: tepinya lurus, jadi setiap piksel di
-/// dalamnya terisi penuh dan bisa dihitung persis.
+/// A plain box with no rounded corners: its edges are straight, so every pixel
+/// inside is fully covered and can be counted exactly.
 fn kotak(rect: Rect, warna: Color) -> Quad {
     Quad::new(rect).background(warna)
 }
 
-/// Kotak yang jauh lebih besar dari kanvas — geometrinya dijamin melampaui
-/// clip apa pun yang dipakai test ini.
+/// A box far larger than the canvas — its geometry is guaranteed to overflow
+/// any clip these tests use.
 fn seluruh_kanvas(warna: Color) -> Quad {
     kotak(Rect::new(0.0, 0.0, SISI, SISI), warna)
 }
@@ -71,7 +74,8 @@ fn kotak_besar_di_dalam_clip_kecil_hanya_menyisakan_isi_clip() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // Clip 48×48 di tengah; kotaknya 128×128 — hampir tujuh kali lebih luas.
+    // A 48×48 clip in the center; the box is 128×128 — nearly seven times the
+    // area.
     let clip = Rect::new(32.0, 32.0, 48.0, 48.0);
     let mut scene = Scene::new(Color::BLACK);
     scene.push(Command::PushClip(clip));
@@ -80,7 +84,7 @@ fn kotak_besar_di_dalam_clip_kecil_hanya_menyisakan_isi_clip() {
 
     let img = target.render(&gpu, &scene).expect("render gagal");
 
-    // Di dalam: terisi penuh, termasuk piksel tepat di tepi clip.
+    // Inside: fully filled, including the pixels right on the clip edge.
     assert_eq!(img.pixel(56, 56), PUTIH, "tengah clip kosong");
     assert_eq!(
         img.pixel(32, 32),
@@ -93,7 +97,7 @@ fn kotak_besar_di_dalam_clip_kecil_hanya_menyisakan_isi_clip() {
         "piksel sudut kanan-bawah clip termakan"
     );
 
-    // Di luar: NOL, padahal quad-nya menutupi seluruh kanvas.
+    // Outside: ZERO, even though the quad covers the whole canvas.
     assert_eq!(img.pixel(31, 56), LATAR, "bocor ke kiri clip");
     assert_eq!(img.pixel(80, 56), LATAR, "bocor ke kanan clip");
     assert_eq!(img.pixel(56, 31), LATAR, "bocor ke atas clip");
@@ -101,7 +105,7 @@ fn kotak_besar_di_dalam_clip_kecil_hanya_menyisakan_isi_clip() {
     assert_eq!(img.pixel(0, 0), LATAR);
     assert_eq!(img.pixel(127, 127), LATAR);
 
-    // Dan jumlahnya persis seluas clip — bukan seluas kanvas.
+    // And the count is exactly the clip's area — not the canvas's.
     assert_eq!(
         jumlah(&img, PUTIH),
         48 * 48,
@@ -114,8 +118,8 @@ fn clip_dikonversi_ke_piksel_fisik_di_layar_2x() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 2.0);
 
-    // Clip yang sama dalam POIN LOGIS harus menutup empat kali lipat piksel
-    // fisik di layar 2× — inilah jalur konversi `SurfaceGeometry`.
+    // The same clip in LOGICAL POINTS must cover four times as many physical
+    // pixels on a 2× display — this is the `SurfaceGeometry` conversion path.
     let clip = Rect::new(32.0, 32.0, 48.0, 48.0);
     let mut scene = Scene::new(Color::BLACK);
     scene.push(Command::PushClip(clip));
@@ -143,8 +147,9 @@ fn teks_yang_terbelah_clip_kehilangan_separuh_bawahnya() {
     let run = mesin.rasterize(&layout, Point::new(12.0, 24.0), Color::WHITE);
     let kotak_teks = run.bounds().expect("teks harus punya glyph");
 
-    // Belah tepat di tengah kotak teks, pada batas piksel bulat supaya
-    // pembulatan-ke-luar scissor tidak mengaburkan yang sedang diuji.
+    // Split exactly through the middle of the text box, on a whole-pixel
+    // boundary so the scissor's outward rounding does not blur what is being
+    // tested.
     let belah = ((kotak_teks.min_y() + kotak_teks.max_y()) * 0.5).ceil();
     let atas = Rect::new(0.0, 0.0, SISI, belah);
 
@@ -164,7 +169,7 @@ fn teks_yang_terbelah_clip_kehilangan_separuh_bawahnya() {
     let y_bawah = belah as u32;
     let y_akhir = (kotak_teks.max_y().ceil() as u32).min(SISI as u32);
 
-    // Kontrol: tanpa clip, separuh bawah memang berisi piksel teks.
+    // Control: without a clip, the bottom half really does contain text pixels.
     let mut tanpa_clip = Scene::new(Color::BLACK);
     tanpa_clip.push(run.clone());
     let img = target
@@ -177,7 +182,7 @@ fn teks_yang_terbelah_clip_kehilangan_separuh_bawahnya() {
         "kontrol tidak sahih: atas {atas_utuh}, bawah {bawah_utuh}"
     );
 
-    // Dengan clip: baris atas tetap ada, baris bawah hilang sepenuhnya.
+    // With the clip: the top rows survive, the bottom rows vanish completely.
     let mut dengan_clip = Scene::new(Color::BLACK);
     dengan_clip.push(Command::PushClip(atas));
     dengan_clip.push(run);
@@ -215,7 +220,7 @@ fn setelah_pop_clip_gambar_berikutnya_tidak_terpotong() {
 
     assert_eq!(img.pixel(16, 16), PUTIH, "isi clip hilang");
     assert_eq!(img.pixel(40, 16), LATAR, "isi clip bocor");
-    // Kotak setelah PopClip tergambar utuh, jauh di luar kotak clip tadi.
+    // The box after PopClip draws in full, far outside that earlier clip rect.
     assert_eq!(
         img.pixel(70, 70),
         PUTIH,
@@ -228,9 +233,9 @@ fn setelah_pop_clip_gambar_berikutnya_tidak_terpotong() {
     );
     assert_eq!(img.pixel(123, 123), LATAR);
 
-    // Luas totalnya: kotak pertama persis seluas clip (tepi scissor keras),
-    // kotak kedua kurang-lebih seluas dirinya (tepi SDF-nya anti-alias, jadi
-    // empat sudutnya tidak dihitung sebagai putih pekat).
+    // The total area: the first box is exactly the clip's area (a hard scissor
+    // edge), the second roughly its own (its SDF edge is anti-aliased, so its
+    // four corners do not count as solid white).
     let terisi = jumlah(&img, PUTIH);
     assert!(
         (32 * 32 + 55 * 55..=32 * 32 + 56 * 56).contains(&terisi),
@@ -243,8 +248,8 @@ fn clip_bersarang_mengiris_dan_memulihkan_kotak_induk() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // `silka-core` mengirim kotak yang SUDAH diiriskan: `dalam` di bawah ini
-    // adalah hasil luar ∩ viewport dalam, bukan viewport dalam apa adanya.
+    // `silka-core` sends rects that are ALREADY intersected: `dalam` below is
+    // the result of outer ∩ inner viewport, not the inner viewport as-is.
     let luar = Rect::new(16.0, 16.0, 96.0, 96.0); // 16..112
     let dalam = Rect::new(48.0, 48.0, 32.0, 32.0); // 48..80
 
@@ -254,8 +259,8 @@ fn clip_bersarang_mengiris_dan_memulihkan_kotak_induk() {
     scene.push(Command::PushClip(dalam));
     scene.push(seluruh_kanvas(Color::hex(0xFF0000)));
     scene.push(Command::PopClip);
-    // Pita yang seluruhnya di LUAR clip dalam: kalau tumpukan clip tidak
-    // dipulihkan, pita ini akan hilang sama sekali.
+    // A band lying entirely OUTSIDE the inner clip: if the clip stack were not
+    // restored, this band would disappear completely.
     scene.push(kotak(
         Rect::new(0.0, 100.0, SISI, 28.0),
         Color::hex(0x00FF00),
@@ -264,21 +269,21 @@ fn clip_bersarang_mengiris_dan_memulihkan_kotak_induk() {
 
     let img = target.render(&gpu, &scene).expect("render gagal");
 
-    // Irisan clip dalam: merah persis seluas `dalam`.
+    // The inner clip's intersection: red covering exactly `dalam`.
     assert_eq!(img.pixel(64, 64), MERAH, "isi clip dalam hilang");
     assert_eq!(img.pixel(48, 48), MERAH);
     assert_eq!(img.pixel(47, 64), BIRU, "clip dalam bocor ke kiri");
     assert_eq!(img.pixel(80, 64), BIRU, "clip dalam bocor ke kanan");
     assert_eq!(jumlah(&img, MERAH), 32 * 32);
 
-    // Clip luar tetap berlaku untuk yang di luar clip dalam.
+    // The outer clip still applies to everything outside the inner one.
     assert_eq!(img.pixel(20, 20), BIRU);
     assert_eq!(img.pixel(15, 20), LATAR, "clip luar bocor ke kiri");
     assert_eq!(img.pixel(112, 20), LATAR, "clip luar bocor ke kanan");
     assert_eq!(img.pixel(64, 15), LATAR, "clip luar bocor ke atas");
 
-    // Setelah pop, yang berlaku adalah kotak INDUK — bukan kotak dalam, dan
-    // bukan pula "tanpa potong".
+    // After the pop what applies is the PARENT rect — not the inner one, and
+    // not "no clipping" either.
     assert_eq!(
         img.pixel(64, 105),
         HIJAU,
@@ -289,7 +294,7 @@ fn clip_bersarang_mengiris_dan_memulihkan_kotak_induk() {
     assert_eq!(img.pixel(64, 112), LATAR, "pita bocor ke bawah clip induk");
     assert_eq!(jumlah(&img, HIJAU), 96 * 12);
 
-    // Biru = seluruh clip luar dikurangi merah dan hijau.
+    // Blue = the whole outer clip minus the red and the green.
     assert_eq!(jumlah(&img, BIRU), 96 * 96 - 32 * 32 - 96 * 12);
 }
 
@@ -298,8 +303,8 @@ fn clip_di_luar_surface_tidak_menghasilkan_panik_atau_error_validasi() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // Seluruhnya di kanan-bawah surface, seluruhnya di kiri-atas surface,
-    // sangat jauh, dan berukuran ekstrem — semuanya harus aman.
+    // Entirely past the bottom-right of the surface, entirely past its
+    // top-left, extremely far away, and extreme in size — all must be safe.
     for clip in [
         Rect::new(500.0, 500.0, 100.0, 100.0),
         Rect::new(-300.0, -300.0, 100.0, 100.0),
@@ -327,8 +332,8 @@ fn clip_yang_setengah_keluar_surface_dijepit_bukan_dibuang() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // Sudut kiri-atas clip berada di luar surface — kalau dijepit dengan benar
-    // yang tersisa adalah 0..32, dan tidak ada validation error.
+    // The clip's top-left corner lies outside the surface — clamped correctly,
+    // what remains is 0..32, and there is no validation error.
     let mut scene = Scene::new(Color::BLACK);
     scene.push(Command::PushClip(Rect::new(-32.0, -32.0, 64.0, 64.0)));
     scene.push(seluruh_kanvas(Color::WHITE));
@@ -346,7 +351,7 @@ fn clip_kosong_tidak_menggambar_apa_pun() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // Viewport yang menyusut jadi nol (mis. scroll view dengan tinggi 0).
+    // A viewport collapsed to zero (e.g. a scroll view with zero height).
     for clip in [
         Rect::new(32.0, 32.0, 0.0, 48.0),
         Rect::new(32.0, 32.0, 48.0, 0.0),
@@ -366,8 +371,8 @@ fn frame_berikutnya_tidak_mewarisi_clip_frame_sebelumnya() {
     let Some(gpu) = gpu() else { return };
     let mut target = kanvas(&gpu, 1.0);
 
-    // Target yang sama dipakai ulang: scissor adalah state render pass, jadi
-    // ini yang membuktikan ia tidak menetes ke frame berikutnya.
+    // The same target is reused: the scissor is render pass state, so this is
+    // what proves it does not bleed into the next frame.
     let mut terpotong = Scene::new(Color::BLACK);
     terpotong.push(Command::PushClip(Rect::new(0.0, 0.0, 16.0, 16.0)));
     terpotong.push(seluruh_kanvas(Color::WHITE));

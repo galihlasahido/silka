@@ -1,88 +1,89 @@
-//! **Pass paint: render tree → [`Scene`]** (REKOMENDASI §3.2).
+//! **The paint pass: render tree → [`Scene`]** (REKOMENDASI §3.2).
 //!
-//! Pass ketiga, sejajar dengan layout dan a11y — bukan lapisan susulan. Yang
-//! keluar adalah satu daftar perintah gambar `silka-paint`; **tidak ada tipe
-//! wgpu di mana pun di jalur ini**, dan tidak boleh pernah ada. Node render
-//! berbicara dalam quad/shadow/glyph, backend menerjemahkannya.
+//! The third pass, a peer of layout and a11y — not an afterthought layer. What
+//! comes out is a single list of `silka-paint` draw commands; **no wgpu type
+//! appears anywhere along this path**, and none ever may. Render nodes speak in
+//! quads/shadows/glyphs, the backend translates.
 //!
-//! Tiga aturan yang mengatur pass ini, cerminan tiga aturan layout:
+//! Three rules govern this pass, mirroring the three layout rules:
 //!
-//! 1. **Node menggambar dalam koordinat lokal.** Sama seperti layout, node
-//!    tidak pernah tahu posisinya sendiri: `(0, 0)` adalah sudut kiri-atasnya
-//!    dan [`PaintCtx`] yang menaikkannya ke koordinat absolut window. Konsekuensi
-//!    langsungnya: memindahkan sebuah node tidak menyentuh kode gambar satu
-//!    barisnya pun.
-//! 2. **Induk digambar sebelum anak.** Urutan perintah di [`Scene`] adalah
-//!    urutan gambar dari belakang ke depan, jadi anak selalu menumpuk di atas
-//!    induknya. Node yang menimpa [`RenderNode::paint`] wajib memanggil
-//!    [`PaintCtx::paint_children`] (atau [`PaintCtx::paint_child`]) sendiri —
-//!    di situlah ia menentukan apa yang berada di bawah dan di atas anaknya.
-//! 3. **Clip datang dari [`RenderNode::clips_children`]**, kontrak yang sama
-//!    yang sudah dipakai hit-testing. Satu jawaban, dua pass: mustahil ada
-//!    baris yang tergulir keluar layar tapi masih bisa diklik, atau sebaliknya.
+//! 1. **Nodes draw in local coordinates.** Just like layout, a node never knows
+//!    its own position: `(0, 0)` is its top-left corner and [`PaintCtx`] lifts it
+//!    into absolute window coordinates. The immediate consequence: moving a node
+//!    does not touch a single line of its drawing code.
+//! 2. **Parents draw before children.** The order of commands in a [`Scene`] is
+//!    the back-to-front draw order, so a child always stacks on top of its
+//!    parent. A node that overrides [`RenderNode::paint`] must call
+//!    [`PaintCtx::paint_children`] (or [`PaintCtx::paint_child`]) itself — that
+//!    is where it decides what goes below and what goes above its children.
+//! 3. **Clipping comes from [`RenderNode::clips_children`]**, the same contract
+//!    hit-testing already uses. One answer, two passes: it is impossible to have
+//!    a row that has scrolled off screen yet remains clickable, or vice versa.
 //!
-//! ## Melewati subtree yang bersih
+//! ## Skipping clean subtrees
 //!
-//! Perintah gambar satu subtree disimpan di **relayout boundary** — node yang
-//! menjamin ukurannya tidak bergantung pada isinya, mis. viewport scroll
-//! ([`RenderNode::is_relayout_boundary`]). Selama boundary itu tidak kotor
-//! **dan** posisi absolut serta clip-nya tidak berubah, perintahnya
-//! disalin kembali apa adanya — logika gambarnya tidak dijalankan ulang. Karena
-//! itu `needs_paint` merambat **ke atas sampai akar** (lihat
-//! [`RenderTree::mark_needs_paint`]): boundary yang bersih harus benar-benar
-//! berarti "tidak ada apa pun di dalamku yang berubah".
+//! A subtree's draw commands are stored at its **relayout boundary** — the node
+//! that guarantees its size does not depend on its content, e.g. a scroll
+//! viewport ([`RenderNode::is_relayout_boundary`]). As long as that boundary is
+//! not dirty **and** its absolute position and clip are unchanged, its commands
+//! are copied back verbatim — the drawing logic is not re-run. That is why
+//! `needs_paint` propagates **upwards all the way to the root** (see
+//! [`RenderTree::mark_needs_paint`]): a clean boundary has to really mean
+//! "nothing inside me changed".
 //!
-//! Akar sengaja **tidak** ikut menyimpan cache: pass paint hanya dipanggil saat
-//! ada yang kotor (§3.5), jadi cache di akar akan selalu meleset dan hanya
-//! menyalin seluruh frame dua kali.
+//! The root deliberately does **not** keep a cache: the paint pass only runs
+//! when something is dirty (§3.5), so a cache at the root would always miss and
+//! merely copy the whole frame twice.
 
 use silka_paint::{Color, Command, Corners, GlyphRun, Point, Quad, Rect, Scene, ShadowPair, Size};
 
 use super::arena::{NodeId, RenderTree};
-// Hanya untuk tautan dokumentasi: kontrak pass ini hidup di `RenderNode`.
+// Documentation links only: this pass's contract lives on `RenderNode`.
 #[allow(unused_imports)]
 use super::arena::RenderNode;
 
 // ---------------------------------------------------------------------------
-// Dekorasi
+// Decoration
 // ---------------------------------------------------------------------------
 
-/// Latar sebuah node: isi, sudut, border, dan bayangan ganda.
+/// A node's background: fill, corners, border, and the paired shadows.
 ///
-/// **Nilainya selalu hasil resolusi token theme** (`surface`, `separator`,
-/// `radius_md`, `shadow.md`) satu tingkat di atas — persis seperti `Insets`
-/// pada [`super::PaddingBox`] yang sudah menerima sisi fisik, bukan `start`/
-/// `end`. `silka-core` sengaja tidak mengenal `silka-theme`: mesin tidak
-/// boleh punya pendapat tentang warna, dan preset Cupertino/Tailwind (§2.7)
-/// berganti tanpa satu baris pun berubah di sini.
+/// **The values are always already-resolved theme tokens** (`surface`,
+/// `separator`, `radius_md`, `shadow.md`) resolved one level up — exactly like
+/// the `Insets` on [`super::PaddingBox`], which already arrive as physical sides
+/// rather than `start`/`end`. `silka-core` deliberately knows nothing about
+/// `silka-theme`: the engine must not have opinions about colour, and the
+/// Cupertino/Tailwind presets (§2.7) can swap without a single line changing
+/// here.
 ///
-/// Bentuk sudut ikut sebagai **parameter**, bukan konstanta: squircle
-/// Cupertino dan arc Tailwind adalah dua nilai [`Corners`] yang sama sahnya
-/// (§2.7, §3.6).
+/// The corner shape rides along as a **parameter**, not a constant: the
+/// Cupertino squircle and the Tailwind arc are two equally valid [`Corners`]
+/// values (§2.7, §3.6).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Decoration {
-    /// Warna isi.
+    /// The fill colour.
     pub background: Color,
-    /// Geometri sudut — mengalir apa adanya ke shader **dan** ke hit-testing.
+    /// The corner geometry — flows unchanged to the shader **and** to
+    /// hit-testing.
     pub corners: Corners,
-    /// Tebal border (0 = tanpa border).
+    /// The border width (0 = no border).
     pub border_width: f32,
-    /// Warna border.
+    /// The border colour.
     pub border_color: Color,
-    /// Bayangan ganda ala HIG (ambient + key).
+    /// HIG-style paired shadows (ambient + key).
     pub shadows: ShadowPair,
 }
 
 impl Default for Decoration {
-    /// Tidak menggambar apa pun: bawaan sebuah node adalah **tidak terlihat**,
-    /// sehingga warna hanya muncul kalau memang ada token yang memintanya.
+    /// Draws nothing at all: a node is **invisible** by default, so colour only
+    /// appears when a token actually asks for it.
     fn default() -> Self {
         Self::NONE
     }
 }
 
 impl Decoration {
-    /// Tanpa gambar apa pun — node yang murni struktural.
+    /// No drawing at all — for purely structural nodes.
     pub const NONE: Decoration = Decoration {
         background: Color::TRANSPARENT,
         corners: Corners::SHARP,
@@ -91,7 +92,7 @@ impl Decoration {
         shadows: ShadowPair::NONE,
     };
 
-    /// Latar polos berwarna `background`.
+    /// A plain fill of colour `background`.
     pub fn fill(background: Color) -> Self {
         Self {
             background,
@@ -99,29 +100,29 @@ impl Decoration {
         }
     }
 
-    /// Setel geometri sudut.
+    /// Set the corner geometry.
     pub fn corners(mut self, corners: Corners) -> Self {
         self.corners = corners;
         self
     }
 
-    /// Setel border.
+    /// Set the border.
     pub fn border(mut self, width: f32, color: Color) -> Self {
         self.border_width = width.max(0.0);
         self.border_color = color;
         self
     }
 
-    /// Setel bayangan ganda.
+    /// Set the paired shadows.
     pub fn shadows(mut self, shadows: ShadowPair) -> Self {
         self.shadows = shadows;
         self
     }
 
-    /// Benar bila dekorasi ini menyumbang piksel sama sekali.
+    /// True when this decoration contributes any pixels at all.
     ///
-    /// Elevasi 0 dan latar transparan **gratis**: tidak ada perintah yang
-    /// dibuat, jadi node struktural tidak membebani scene.
+    /// Zero elevation and a transparent background are **free**: no command is
+    /// produced, so structural nodes add nothing to the scene.
     pub fn is_visible(&self) -> bool {
         self.background.a > 0.0
             || (self.border_width > 0.0 && self.border_color.a > 0.0)
@@ -133,12 +134,13 @@ impl Decoration {
 // Cache
 // ---------------------------------------------------------------------------
 
-/// Perintah gambar satu subtree, siap dipakai ulang.
+/// One subtree's draw commands, ready to be reused.
 ///
-/// Disimpan bersama **syarat berlakunya**: posisi absolut dan clip saat ia
-/// dibuat. Keduanya dicek sebelum dipakai, sehingga node yang bergeser (atau
-/// yang clip-nya berubah karena guliran) tidak pernah menampilkan geometri
-/// basi meski `needs_paint`-nya kebetulan bersih.
+/// Stored together with **the conditions under which they are valid**: the
+/// absolute position and the clip at the time they were produced. Both are
+/// checked before reuse, so a node that has moved (or whose clip changed because
+/// of scrolling) never shows stale geometry even when its `needs_paint` happens
+/// to be clean.
 pub(super) struct PaintCache {
     pub(super) origin: Point,
     pub(super) clip: Option<Rect>,
@@ -149,54 +151,54 @@ pub(super) struct PaintCache {
 // PaintCtx
 // ---------------------------------------------------------------------------
 
-/// Akses terbatas ke scene selama sebuah node menggambar dirinya.
+/// Restricted access to the scene while a node draws itself.
 ///
-/// Kosakatanya **hanya** `silka-paint` — quad, shadow, glyph run. Tidak ada
-/// jalan dari sini ke tipe grafis backend, dan itu disengaja: kalau nanti ada
-/// backend GL/CPU, ia masuk di satu tempat tanpa menyentuh satu widget pun
-/// (§3.2).
+/// The vocabulary is **only** `silka-paint` — quads, shadows, glyph runs. There
+/// is no path from here to a backend graphics type, and that is deliberate: if a
+/// GL/CPU backend ever arrives, it slots in at one place without touching a
+/// single widget (§3.2).
 ///
-/// Semua koordinat yang diterima method di sini adalah **lokal**: `(0, 0)`
-/// adalah sudut kiri-atas node yang sedang menggambar.
+/// Every coordinate the methods here accept is **local**: `(0, 0)` is the
+/// top-left corner of the node currently drawing.
 pub struct PaintCtx<'a> {
     tree: &'a mut RenderTree,
     scene: &'a mut Scene,
     node: NodeId,
     origin: Point,
     size: Size,
-    /// Clip yang berlaku untuk gambar node ini sendiri (absolut).
+    /// The clip that applies to this node's own drawing (absolute).
     clip: Option<Rect>,
-    /// Clip yang berlaku untuk anak-anaknya (absolut) — sudah termasuk kotak
-    /// node ini bila ia memotong isinya.
+    /// The clip that applies to its children (absolute) — already intersected
+    /// with this node's box when it clips its content.
     child_clip: Option<Rect>,
-    /// Benar bila node ini memotong isinya, sehingga anak perlu dibungkus
+    /// True when this node clips its content, so children need to be wrapped in
     /// [`Command::PushClip`].
     clips: bool,
-    /// Benar selama sebuah pembungkus clip sedang terbuka — penjaga agar
-    /// `paint_child` di dalam `paint_children` tidak membuka pembungkus kedua.
+    /// True while a clip wrapper is open — the guard that keeps `paint_child`
+    /// inside `paint_children` from opening a second wrapper.
     clip_open: bool,
 }
 
 impl PaintCtx<'_> {
-    /// Node yang sedang menggambar.
+    /// The node currently drawing.
     pub fn node(&self) -> NodeId {
         self.node
     }
 
-    /// Ukuran node ini dari layout terakhir.
+    /// This node's size from the last layout.
     pub fn size(&self) -> Size {
         self.size
     }
 
-    /// Kotak node ini dalam koordinat **lokal**: selalu berpangkal di `(0, 0)`.
+    /// This node's box in **local** coordinates: always rooted at `(0, 0)`.
     pub fn local_bounds(&self) -> Rect {
         Rect::from_origin_size(Point::ZERO, self.size)
     }
 
-    /// Kotak potong yang berlaku, dalam koordinat **lokal**.
+    /// The clip rectangle in force, in **local** coordinates.
     ///
-    /// `None` berarti tidak ada yang memotong. Berguna bagi node yang bisa
-    /// menggambar lebih hemat kalau tahu batasnya (mis. daftar tervirtualisasi).
+    /// `None` means nothing is clipping. Useful for nodes that can draw more
+    /// cheaply when they know their bounds (e.g. a virtualized list).
     pub fn clip(&self) -> Option<Rect> {
         self.clip.map(|c| {
             Rect::from_origin_size(
@@ -206,15 +208,15 @@ impl PaintCtx<'_> {
         })
     }
 
-    /// Benar bila kotak lokal ini menyumbang piksel di dalam clip yang berlaku.
+    /// True when this local box contributes pixels inside the clip in force.
     pub fn is_visible(&self, local: Rect) -> bool {
         terlihat(local.translated(self.origin), self.clip)
     }
 
-    /// Gambar sebuah kotak (koordinat lokal).
+    /// Draw a quad (local coordinates).
     ///
-    /// Radius sudut otomatis dibatasi terhadap ukuran kotak, sehingga bentuk
-    /// yang dikirim ke shader tidak pernah mustahil.
+    /// Corner radii are automatically clamped against the box size, so the shape
+    /// sent to the shader is never impossible.
     pub fn quad(&mut self, quad: Quad) -> &mut Self {
         let quad = self.absolutkan(quad);
         if terlihat(quad.rect, self.clip) {
@@ -223,9 +225,9 @@ impl PaintCtx<'_> {
         self
     }
 
-    /// Gambar sebuah kotak beserta bayangan gandanya (ambient + key).
+    /// Draw a quad along with its paired shadows (ambient + key).
     ///
-    /// Urutannya ditentukan `silka-paint`: ambient, key, baru kotaknya.
+    /// The order is set by `silka-paint`: ambient, key, then the quad itself.
     pub fn shadowed(&mut self, quad: Quad, shadows: ShadowPair) -> &mut Self {
         let quad = self.absolutkan(quad);
         for lapis in shadows.layers() {
@@ -233,8 +235,8 @@ impl PaintCtx<'_> {
                 continue;
             }
             let bayangan = silka_paint::ShadowQuad::for_quad(&quad, lapis);
-            // Ekor gaussian ikut diperhitungkan: bayangan yang kotaknya di luar
-            // clip masih bisa menyumbang piksel di dalamnya.
+            // The gaussian tail counts too: a shadow whose box lies outside the
+            // clip can still contribute pixels inside it.
             if bayangan.is_visible() && terlihat(bayangan.bounds(), self.clip) {
                 self.scene.push(bayangan);
             }
@@ -245,11 +247,11 @@ impl PaintCtx<'_> {
         self
     }
 
-    /// Gambar latar, border, dan bayangan sebuah [`Decoration`] pada seluruh
-    /// kotak node ini.
+    /// Draw the fill, border, and shadows of a [`Decoration`] across this node's
+    /// whole box.
     ///
-    /// Inilah jalur yang dipakai semua primitif: warna datang dari token, dan
-    /// dekorasi yang tak terlihat tidak menghasilkan perintah sama sekali.
+    /// This is the path every primitive uses: colours come from tokens, and an
+    /// invisible decoration produces no commands at all.
     pub fn decorate(&mut self, decoration: &Decoration) -> &mut Self {
         if !decoration.is_visible() || self.size.is_empty() {
             return self;
@@ -261,11 +263,11 @@ impl PaintCtx<'_> {
         self.shadowed(quad, decoration.shadows)
     }
 
-    /// Gambar sekumpulan glyph sewarna (koordinat lokal).
+    /// Draw a set of same-coloured glyphs (local coordinates).
     ///
-    /// Glyph yang seluruhnya di luar clip dibuang di sini, di CPU: satu run
-    /// panjang di dalam scroll view tidak dikirim utuh ke GPU hanya karena
-    /// sebagian kecilnya terlihat.
+    /// Glyphs entirely outside the clip are dropped right here, on the CPU: one
+    /// long run inside a scroll view is not shipped to the GPU in full just
+    /// because a small part of it is visible.
     pub fn glyph_run(&mut self, run: GlyphRun) -> &mut Self {
         let mut absolut = GlyphRun::with_capacity(run.color, run.glyphs.len());
         absolut.clip = run.clip.map(|c| c.translated(self.origin));
@@ -282,24 +284,24 @@ impl PaintCtx<'_> {
         self
     }
 
-    // -- anak --------------------------------------------------------------
+    // -- children ----------------------------------------------------------
 
-    /// Anak-anak node ini, dalam urutan gambar.
+    /// This node's children, in draw order.
     pub fn children(&self) -> &[NodeId] {
         self.tree.children(self.node)
     }
 
-    /// Jumlah anak.
+    /// The number of children.
     pub fn child_count(&self) -> usize {
         self.tree.children(self.node).len()
     }
 
-    /// Anak ke-`index`. Panik bila di luar jangkauan.
+    /// The child at `index`. Panics when out of range.
     pub fn child(&self, index: usize) -> NodeId {
         self.tree.children(self.node)[index]
     }
 
-    /// Gambar seorang anak **di atas** apa yang sudah digambar sejauh ini.
+    /// Draw one child **on top of** whatever has been drawn so far.
     pub fn paint_child(&mut self, child: NodeId) {
         debug_assert_eq!(
             self.tree.parent(child),
@@ -313,10 +315,10 @@ impl PaintCtx<'_> {
         }
     }
 
-    /// Gambar semua anak, urut — yang terakhir berada paling atas.
+    /// Draw all children in order — the last one ends up on top.
     ///
-    /// Inilah perilaku bawaan [`RenderNode::paint`]: node yang tidak menggambar
-    /// apa pun sendiri tetap menurunkan isinya.
+    /// This is the default behaviour of [`RenderNode::paint`]: a node that draws
+    /// nothing itself still descends into its content.
     pub fn paint_children(&mut self) {
         if self.child_count() == 0 {
             return;
@@ -339,19 +341,20 @@ impl PaintCtx<'_> {
         paint_node(self.tree, self.scene, child, self.origin, self.child_clip);
     }
 
-    /// Bungkus gambar anak dengan perintah clip bila node ini memotong isinya.
+    /// Wrap the children's drawing in clip commands when this node clips its
+    /// content.
     ///
-    /// Pembungkus yang ternyata tidak berisi apa pun dibatalkan: scene tidak
-    /// boleh memuat pasangan clip kosong yang memaksa backend menyetel scissor
-    /// tanpa alasan.
+    /// A wrapper that turns out to contain nothing is rolled back: the scene must
+    /// not carry an empty clip pair that forces the backend to set a scissor for
+    /// no reason.
     fn dengan_clip(&mut self, f: impl FnOnce(&mut Self)) {
         let Some(clip) = self.child_clip.filter(|_| self.clips) else {
             f(self);
             return;
         };
         if clip.size.is_empty() {
-            // Viewport yang menyusut jadi nol: isinya tidak bisa terlihat sama
-            // sekali, jadi tidak ada gunanya menelusurinya.
+            // A viewport that shrank to zero: none of its content can possibly be
+            // visible, so there is no point walking it.
             return;
         }
         let sebelum = self.scene.len();
@@ -390,7 +393,7 @@ fn terlihat(rect: Rect, clip: Option<Rect>) -> bool {
 // Traversal
 // ---------------------------------------------------------------------------
 
-/// Jalankan pass paint atas seluruh pohon ke dalam `scene`.
+/// Run the paint pass over the whole tree into `scene`.
 pub(super) fn paint_tree(tree: &mut RenderTree, scene: &mut Scene) {
     let root = tree.root();
     paint_node(tree, scene, root, Point::ZERO, None);
@@ -408,8 +411,8 @@ fn paint_node(
     };
     let origin = Point::new(parent_origin.x + offset.x, parent_origin.y + offset.y);
 
-    // Akar tidak ikut menyimpan cache: pass ini hanya berjalan saat ada yang
-    // kotor, jadi cache di akar dijamin meleset dan hanya menyalin frame dua kali.
+    // The root keeps no cache: this pass only runs when something is dirty, so a
+    // cache at the root is guaranteed to miss and would only copy the frame twice.
     let cacheable = boundary && tree.parent(id).is_some();
     if cacheable && !needs_paint {
         if let Some(cache) = tree.paint_cache(id) {
@@ -429,11 +432,11 @@ fn paint_node(
         return;
     };
     let clips = render.clips_children();
-    // `None` di jalur hilir berarti "tanpa batas", jadi irisan kosong TIDAK boleh
-    // dipetakan ke `None`: itu akan menukar "tidak ada yang terlihat" dengan
-    // "semuanya terlihat" dan meloloskan isi node ke scene. Rect degenerate
-    // (ukuran nol) dipakai sebagai sentinel — `dengan_clip` memotong penelusuran
-    // dan `terlihat` menolak semua rect terhadapnya.
+    // Downstream, `None` means "unbounded", so an empty intersection must NOT be
+    // mapped to `None`: that would swap "nothing is visible" for "everything is
+    // visible" and leak the node's content into the scene. A degenerate rect
+    // (zero size) is used as the sentinel — `dengan_clip` cuts the traversal
+    // short and `terlihat` rejects every rect against it.
     let child_clip = if clips {
         let sendiri = Rect::from_origin_size(origin, size);
         Some(match clip {

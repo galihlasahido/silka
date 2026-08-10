@@ -1,24 +1,24 @@
-//! Halaman demo: **button** (`KOMPONEN.md` Tier 2).
+//! Demo page: **button** (`KOMPONEN.md` Tier 2).
 //!
-//! Yang dipamerkan halaman ini adalah Definition of Done komponennya, satu per
-//! satu, dalam bentuk yang bisa **dilihat dan dicoba tangan** — bukan diklaim di
-//! komentar:
+//! What this page shows off is the component's Definition of Done, item by
+//! item, in a form you can **see and try by hand** — not one claimed in a
+//! comment:
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Lima varian, benar di kedua preset | `--preset cupertino` vs `--preset tailwind` |
-//! | Dark mode | `--appearance dark` / `light`, atau ikut OS |
-//! | Transisi spring tiap state | Gerakkan kursor masuk-keluar dengan cepat: warnanya **membalik arah membawa kecepatannya**, tidak melompat |
-//! | Scale-on-press | Tekan dan tahan: tombolnya mengempis, dan kembali saat dilepas |
-//! | Keyboard + focus ring | Tab berkeliling, Space/Enter menekan; cincin fokus **tumbuh** |
-//! | Hit target ≥ 44pt | Tombol terpendek sekalipun tetap 44pt tingginya |
-//! | Loading | Tombol "Simpan perubahan" berdenyut tanpa berubah lebar |
-//! | Node AccessKit | VoiceOver membacakan nama + peran tiap tombol |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: denyut berhenti, kempis hilang, warna tetap berpindah |
+//! | Five variants, correct in both presets | `--preset cupertino` vs `--preset tailwind` |
+//! | Dark mode | `--appearance dark` / `light`, or follow the OS |
+//! | A spring transition per state | Sweep the cursor in and out quickly: the color **reverses direction carrying its velocity**, it does not jump |
+//! | Scale-on-press | Press and hold: the button shrinks, and springs back on release |
+//! | Keyboard + focus ring | Tab around, Space/Enter presses; the focus ring **grows** |
+//! | Hit target ≥ 44pt | Even the shortest button is still 44pt tall |
+//! | Loading | The "Simpan perubahan" button pulses without changing width |
+//! | AccessKit nodes | VoiceOver announces each button's name + role |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the pulse stops, the shrink goes away, colors still cross over |
 //!
-//! Yang **tidak** ada di berkas ini, dan itulah intinya: tidak ada `Scene` yang
-//! disusun tangan, tidak ada aritmetika tata letak, dan tidak ada satu pun angka
-//! warna — semuanya token (§2.6, §2.7).
+//! What is **absent** from this file is the whole point: no hand-assembled
+//! `Scene`, no layout arithmetic, and not a single color number — everything is
+//! a token (§2.6, §2.7).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -29,16 +29,16 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{button, button_variant, text, ButtonVariant, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Button";
-/// Nama tombol yang menyalakan/mematikan keadaan "memuat".
+/// The name of the button that toggles the "loading" state.
 pub const TOMBOL_SIBUK: &str = "Mulai memuat";
-/// Nama tombol yang sedang memuat.
+/// The name of the button that is loading.
 pub const TOMBOL_SIMPAN: &str = "Simpan perubahan";
-/// Nama tombol yang sengaja dimatikan.
+/// The name of the deliberately disabled button.
 pub const TOMBOL_MATI: &str = "Tidak tersedia";
 
-/// Label tiap varian, urut sama dengan [`ButtonVariant::ALL`].
+/// One label per variant, in the same order as [`ButtonVariant::ALL`].
 pub const VARIAN: [&str; 5] = [
     "Simpan",
     "Batal",
@@ -47,10 +47,11 @@ pub const VARIAN: [&str; 5] = [
     "Pelajari selengkapnya",
 ];
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
@@ -62,7 +63,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             text(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
-                // Tracking negatif pada ukuran besar — kebiasaan SF (§3.6).
+                // Negative tracking at large sizes — an SF habit (§3.6).
                 .tracking(t.typography.title2.tracking)
                 .color(t.color.label)
                 .single_line(),
@@ -90,12 +91,12 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Baris kelima varian.
+/// The row of five variants.
 ///
-/// Tombolnya hidup di scope akar dan **tidak** membaca signal apa pun —
-/// closure `on_press`-nya hanya menulis. Karena itu node tombol bertahan apa
-/// adanya lintas klik: yang sedang ditekan jari pengguna tidak pernah dibangun
-/// ulang di tengah interaksi (§2.5).
+/// The buttons live in the root scope and read **no** signal at all — their
+/// `on_press` closures only write. That is why the button nodes survive
+/// unchanged across clicks: whatever the user's finger is pressing is never
+/// rebuilt mid-interaction (§2.5).
 fn varian(fonts: &Fonts, t: &Theme, terakhir: Signal<String>) -> View {
     let tombol: Vec<View> = ButtonVariant::ALL
         .into_iter()
@@ -116,13 +117,13 @@ fn varian(fonts: &Fonts, t: &Theme, terakhir: Signal<String>) -> View {
         .into()
 }
 
-/// Baris keadaan: mati, sedang memuat, dan sakelarnya.
+/// The state row: disabled, loading, and the toggle for it.
 fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
     let fonts = fonts.clone();
     let theme = *t;
     component("keadaan", move |cx| {
-        // Theme dibaca di sini juga supaya dark mode OS yang berganti ikut
-        // membangun ulang baris ini, bukan cuma halamannya.
+        // The theme is read here too so a change in OS dark mode rebuilds
+        // this row as well, not just the page.
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let memuat = sibuk.get();
         row([
@@ -131,8 +132,8 @@ fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
                 button(&fonts, &t, TOMBOL_SIMPAN)
                     .loading(memuat)
                     .on_press(move || {
-                        // Tombol yang sedang memuat menolak aktivasi; ini hanya
-                        // berlaku saat ia belum sibuk.
+                        // A loading button refuses activation; this only
+                        // applies while it is not yet busy.
                         sibuk.set(true)
                     }),
             ),
@@ -153,10 +154,10 @@ fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
     })
 }
 
-/// Baris status sebagai **komponen tersendiri**.
+/// The status row as **its own component**.
 ///
-/// Inilah satu-satunya tempat `terakhir` dibaca, dan karena itu satu-satunya
-/// scope yang ditandai dirty saat sebuah tombol ditekan (§2.5).
+/// This is the only place `terakhir` is read, and therefore the only scope
+/// marked dirty when a button is pressed (§2.5).
 fn status(fonts: &Fonts, terakhir: Signal<String>) -> View {
     let fonts = fonts.clone();
     component("status", move |cx| {
@@ -195,14 +196,14 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app_with`**.
+    /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         headless_app(theme, move |cx| halaman(cx, &untuk_view))
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Satu frame lengkap, termasuk detak animasi — urutan yang sama dengan
+    /// One complete frame, animation tick included — the same order as the
     /// shell (`silka_platform::run_app_with`).
     fn frame(ui: &mut AppRuntime, waktu: Instant) -> Dirty {
         let dirty = ui.animate_at(waktu, silka_widgets::advance);
@@ -284,7 +285,7 @@ mod tests {
             "hanya komponen status yang membaca signalnya"
         );
 
-        // Tombol mati tidak mengubah apa pun.
+        // The disabled button changes nothing.
         let mati = kotak(&ui, TOMBOL_MATI).center();
         klik(&mut ui, mati);
         ui.frame();
@@ -327,12 +328,12 @@ mod tests {
         waktu += Duration::from_millis(16);
         frame(&mut ui, waktu);
 
-        // Tombol yang sedang memuat dibacakan sebagai dimmed…
+        // The loading button is announced as dimmed…
         let pohon = ui.access_tree();
         let e = pohon.find_label(TOMBOL_SIMPAN).unwrap();
         assert!(e.node.disabled);
 
-        // …dan indikatornya menahan frame tetap datang (§3.5).
+        // …and its indicator keeps frames coming (§3.5).
         for _ in 0..5 {
             waktu += Duration::from_millis(16);
             assert!(
@@ -341,7 +342,7 @@ mod tests {
             );
         }
 
-        // Mematikannya mengembalikan aplikasi ke diam.
+        // Turning it off returns the app to rest.
         let selesai = kotak(&ui, "Selesai").center();
         klik(&mut ui, selesai);
         waktu += Duration::from_millis(16);
@@ -360,8 +361,9 @@ mod tests {
         for preset in Preset::ALL {
             let t = Theme::new(preset, Appearance::Dark);
             if t.color.accent_hover == t.color.accent {
-                // Preset yang tidak membedakan keduanya tidak bisa membuktikan
-                // apa pun di sini — dan itu urusan tokennya, bukan tombolnya.
+                // A preset that does not distinguish the two can prove
+                // nothing here — and that is the tokens' business, not the
+                // button's.
                 continue;
             }
             let f = fonts();
@@ -369,9 +371,9 @@ mod tests {
             let mut waktu = Instant::now();
             frame(&mut ui, waktu);
 
-            // Dihitung per **warna**, bukan per tombol: halaman ini punya lebih
-            // dari satu tombol primary, dan yang sedang dibuktikan adalah ke
-            // mana warnanya berpindah, bukan berapa banyak tombolnya.
+            // Counted per **color**, not per button: this page has more than
+            // one primary button, and what is being proven is where the color
+            // moves to, not how many buttons there are.
             let jumlah = |ui: &AppRuntime, warna| {
                 ui.scene()
                     .commands()
@@ -395,7 +397,7 @@ mod tests {
                 "hover tidak boleh melompat ke warna tujuan ({preset:?})"
             );
 
-            // Beberapa frame kemudian ia sampai, dan berhenti minta frame.
+            // A few frames later it arrives, and stops asking for frames.
             for _ in 0..400 {
                 waktu += Duration::from_millis(8);
                 if !frame(&mut ui, waktu).contains(Dirty::ANIMATION) {

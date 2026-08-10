@@ -1,23 +1,23 @@
-//! # Sistem overlay — dibangun **sekali**, dipakai sepuluh komponen
+//! # Overlay system — built **once**, used by ten components
 //!
-//! `KOMPONEN.md` aturan pengerjaan #3 menuliskannya sebagai perintah: "overlay
-//! system dibangun sekali, dipakai 10+ komponen — dialog/popover/tooltip/menu/
-//! toast semuanya menumpang infrastruktur yang sama. Desain dulu, baru
-//! komponennya." Modul ini adalah infrastruktur itu, dan seluruh Tier 4
-//! `KOMPONEN.md` nanti tinggal memilih preset di atasnya alih-alih menghitung
-//! sendiri di mana panelnya harus muncul.
+//! `KOMPONEN.md` working rule #3 states it as an order: "the overlay system is
+//! built once and used by 10+ components — dialog/popover/tooltip/menu/toast
+//! all ride on the same infrastructure. Design first, components after." This
+//! module is that infrastructure, and every Tier 4 component in
+//! `KOMPONEN.md` will later just pick a preset on top of it instead of working
+//! out for itself where its panel belongs.
 //!
-//! Lima potongannya, dan alasan masing-masing berdiri sendiri:
+//! The five pieces, and why each stands on its own:
 //!
-//! | Potong | Berkas | Isi |
+//! | Piece | File | Contents |
 //! |---|---|---|
-//! | **Layer** | [`layer`] | Tumpukan di atas konten + konten inert saat modal |
-//! | **Penempatan** | [`placement`] | Anchor, auto-flip, geser-lalu-jepit, RTL |
-//! | **Entri** | [`entry`] | Backdrop, dismiss, transisi spring, a11y |
-//! | **Jangkar** | [`anchor_rect`] | Node pemicu → kotak di koordinat layer |
-//! | **Detak** | [`advance`] | Semua transisi dimajukan di satu tempat |
+//! | **Layer** | [`layer`] | The stack above the content + inert content when modal |
+//! | **Placement** | [`placement`] | Anchor, auto-flip, shift-then-clamp, RTL |
+//! | **Entry** | [`entry`] | Backdrop, dismiss, spring transitions, a11y |
+//! | **Anchor** | [`anchor_rect`] | Trigger node → rect in layer coordinates |
+//! | **Tick** | [`advance`] | Every transition advanced in one place |
 //!
-//! ## Bagaimana satu overlay dirakit
+//! ## How a single overlay is assembled
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -30,11 +30,11 @@
 //! # let rt = Runtime::new();
 //! # let terbuka = rt.signal(true);
 //! # let t = Theme::cupertino(Appearance::Dark);
-//! let tombol = Rect::new(300.0, 560.0, 80.0, 28.0); // dari `anchor_rect`
+//! let tombol = Rect::new(300.0, 560.0, 80.0, 28.0); // from `anchor_rect`
 //! let view = overlay_layer(fixed(800.0, 600.0).background(t.color.background)).overlay(
 //!     overlay(fixed(220.0, 160.0).background(t.color.surface_elevated))
 //!         .open(terbuka.get())
-//!         // Popover: konten di belakang tetap hidup bagi screen reader.
+//!         // Popover: the content behind stays alive for screen readers.
 //!         .barrier(Barrier::Light)
 //!         .anchor(Anchor::Rect(tombol))
 //!         .placement(Placement::anchored(Side::Bottom).gap(t.space(2.0)))
@@ -47,36 +47,36 @@
 //! tree.layout(BoxConstraints::tight(Size::new(800.0, 600.0)));
 //! ```
 //!
-//! ## Tiga aturan yang mengikat seluruh modul
+//! ## The three rules that bind the whole module
 //!
-//! 1. **Satu geometri untuk semua.** Dialog, popover, tooltip, menu, sheet, dan
-//!    toast berbeda hanya pada [`Placement`] dan [`Barrier`]; tidak ada satu
-//!    pun dari mereka yang boleh menghitung posisinya sendiri. Auto-flip di
-//!    tepi layar karena itu benar sekali, bukan lima kali dengan lima bug.
-//! 2. **Overlay tertutup tetap ada di pohon sampai transisinya habis.** Itulah
-//!    yang membuat "hilangnya" sebuah dialog bisa dianimasikan sehalus
-//!    kemunculannya tanpa aplikasi harus menahan-nahan struktur view-nya —
-//!    [`OverlayEntry::is_visible`] yang menjaga agar selama itu ia tidak
-//!    dibacakan screen reader dan tidak bisa diklik.
-//! 3. **Semua transisi adalah spring yang bisa di-retarget** (§3.5): dialog
-//!    yang ditutup di tengah animasi buka berbalik arah **membawa
-//!    kecepatannya**, tidak melompat ke nol lalu memulai animasi baru.
+//! 1. **One geometry for everyone.** Dialog, popover, tooltip, menu, sheet, and
+//!    toast differ only in their [`Placement`] and [`Barrier`]; not one of them
+//!    is allowed to compute its own position. Edge auto-flip is therefore right
+//!    once, instead of five times with five bugs.
+//! 2. **A closed overlay stays in the tree until its transition finishes.**
+//!    That is what lets a dialog's disappearance be animated as smoothly as its
+//!    arrival without the app having to hold on to its view structure —
+//!    [`OverlayEntry::is_visible`] is what keeps it unreadable to screen
+//!    readers and unclickable in the meantime.
+//! 3. **Every transition is a retargetable spring** (§3.5): a dialog dismissed
+//!    mid-open-animation reverses direction **carrying its velocity**; it does
+//!    not snap to zero and start a fresh animation.
 //!
-//! ## Yang sengaja belum ada
+//! ## Deliberately not here yet
 //!
-//! - **Panah penunjuk popover** — bentuknya perintah gambar SDF tersendiri
-//!   (§3.2), bukan urusan geometri penempatan; [`Placed::side`] sudah menyimpan
-//!   sisi mana yang akhirnya dipakai, yang justru satu-satunya data yang
-//!   dibutuhkan panah itu nanti.
-//! - **Window anak sungguhan** untuk menu yang boleh keluar dari window induk
-//!   (`INTEGRASI-NATIVE.md` §1). Semua penempatan di sini berada di koordinat
-//!   **lokal layer**, jadi menggantinya nanti berarti mengganti `bounds` yang
-//!   masuk ke [`place`] — bukan menulis ulang komponen yang menumpang.
-//! - **Fokus otomatis ke panel yang baru terbuka.** [`topmost`] menyediakan
-//!   node-nya dan [`Barrier::Modal`] sudah menjadi
-//!   [`FocusPolicy`](silka_core::input::FocusPolicy) scope; yang menyambungkan
-//!   keduanya adalah siklus frame aplikasi, dan siklus itu belum punya kait
-//!   "overlay baru saja terbuka".
+//! - **Popover arrows** — their shape is an SDF draw command of its own (§3.2),
+//!   not a placement-geometry concern; [`Placed::side`] already records which
+//!   side ended up being used, which is precisely the only data such an arrow
+//!   will need later.
+//! - **Real child windows** for menus allowed to escape the parent window
+//!   (`INTEGRASI-NATIVE.md` §1). Every placement here happens in **layer-local**
+//!   coordinates, so swapping that in later means swapping the `bounds` handed
+//!   to [`place`] — not rewriting the components riding on top.
+//! - **Automatic focus on a freshly opened panel.** [`topmost`] supplies the
+//!   node and [`Barrier::Modal`] is already a
+//!   [`FocusPolicy`](silka_core::input::FocusPolicy) scope; what connects the
+//!   two is the app's frame cycle, and that cycle has no "an overlay just
+//!   opened" hook yet.
 
 pub mod entry;
 pub mod layer;
@@ -94,22 +94,22 @@ pub use layer::{overlay_layer, InertBox, InertProps, LayerBuilder, LayerProps, O
 pub use placement::{place, Align, Anchor, PhysicalSide, Placed, Placement, PlacementMode, Side};
 
 // ---------------------------------------------------------------------------
-// Jangkar
+// Anchor
 // ---------------------------------------------------------------------------
 
-/// Kotak jangkar sebuah node pemicu, **dalam koordinat lokal `layer`**.
+/// The anchor rect of a trigger node, **in `layer`-local coordinates**.
 ///
-/// Ini satu-satunya jalan sah dari "tombol yang diklik pengguna" ke
-/// [`Anchor`], dan ia sengaja hidup di luar layout. Sebuah render node tidak
-/// boleh mengintip geometri node lain dari dalam layout-nya sendiri (aturan
-/// "node tidak pernah tahu posisinya sendiri", [`silka_core::tree`]) — jadi
-/// yang memanggil fungsi ini adalah handler yang **membuka** overlay-nya,
-/// setelah layout frame sebelumnya selesai, dan hasilnya dititipkan ke signal
-/// seperti nilai biasa.
+/// This is the only legitimate path from "the button the user clicked" to an
+/// [`Anchor`], and it deliberately lives outside layout. A render node must
+/// never peek at another node's geometry from inside its own layout (the rule
+/// that "a node never knows its own position", [`silka_core::tree`]) — so the
+/// caller of this function is the handler that **opens** the overlay, running
+/// after the previous frame's layout has finished, and the result is stashed in
+/// a signal like any other value.
 ///
-/// Mengembalikan [`Anchor::None`] bila salah satu node sudah tidak ada di
-/// pohon — tombol yang menghilang berarti popover-nya jatuh ke tengah layer,
-/// bukan ke koordinat sampah.
+/// Returns [`Anchor::None`] if either node is no longer in the tree — a
+/// vanished button means its popover falls back to the center of the layer,
+/// not to garbage coordinates.
 pub fn anchor_rect(tree: &RenderTree, trigger: NodeId, layer: NodeId) -> Anchor {
     if !tree.contains(trigger) || !tree.contains(layer) {
         return Anchor::None;
@@ -123,14 +123,14 @@ pub fn anchor_rect(tree: &RenderTree, trigger: NodeId, layer: NodeId) -> Anchor 
 }
 
 // ---------------------------------------------------------------------------
-// Detak
+// Tick
 // ---------------------------------------------------------------------------
 
-/// Semua [`OverlayEntry`] di `tree`, dalam **urutan tumpuk** (paling bawah
-/// dulu).
+/// Every [`OverlayEntry`] in `tree`, in **stacking order** (bottom-most
+/// first).
 ///
-/// Urutannya sama dengan urutan pass paint, jadi "yang terakhir" benar-benar
-/// berarti "yang di paling atas".
+/// The order matches the paint pass, so "the last one" really does mean "the
+/// one on top".
 pub fn entries(tree: &RenderTree) -> Vec<NodeId> {
     let mut out = Vec::new();
     kumpulkan(tree, tree.root(), &mut out);
@@ -150,10 +150,10 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
     }
 }
 
-/// Overlay paling atas yang masih menyumbang piksel.
+/// The topmost overlay that still contributes pixels.
 ///
-/// "Paling atas" adalah yang terakhir dalam urutan tumpuk — itulah yang harus
-/// menerima Esc, dan itulah yang harus mendapat fokus saat baru terbuka.
+/// "Topmost" is the last one in stacking order — that is the one that should
+/// receive Esc, and the one that should take focus when it opens.
 pub fn topmost(tree: &RenderTree) -> Option<NodeId> {
     entries(tree).into_iter().rfind(|id| {
         tree.node_ref::<OverlayEntry>(*id)
@@ -161,18 +161,18 @@ pub fn topmost(tree: &RenderTree) -> Option<NodeId> {
     })
 }
 
-/// Majukan seluruh transisi overlay satu frame.
+/// Advance every overlay transition by one frame.
 ///
-/// Satu tempat untuk semuanya, karena "render hanya saat dirty" (§3.5) baru
-/// bisa dijanjikan kalau ada satu pihak yang tahu apakah masih ada yang
-/// bergerak. Yang dikembalikan adalah alasan dirty, dengan arti yang tepat:
+/// One place for all of them, because "render only when dirty" (§3.5) can only
+/// be promised if a single party knows whether anything is still moving. The
+/// return value is the dirty reason, and each flag means exactly one thing:
 ///
-/// - [`Dirty::LAYOUT`] `|` [`Dirty::PAINT`] — ada panel yang **pindah** frame
-///   ini, jadi layout dan gambar harus dijalankan ulang.
-/// - [`Dirty::ANIMATION`] — masih ada spring yang belum settle, jadi frame
-///   berikutnya harus dijadwalkan. Begitu bendera ini hilang, GPU boleh tidur.
-/// - [`Dirty::NONE`] — tidak ada satu pun overlay yang bergerak, dan tidak ada
-///   pekerjaan yang lahir dari modul ini.
+/// - [`Dirty::LAYOUT`] `|` [`Dirty::PAINT`] — some panel **moved** this frame,
+///   so layout and painting have to run again.
+/// - [`Dirty::ANIMATION`] — a spring has yet to settle, so another frame must
+///   be scheduled. Once this flag is gone, the GPU may go to sleep.
+/// - [`Dirty::NONE`] — not a single overlay is moving, and no work at all
+///   originates from this module.
 ///
 /// ```
 /// # use silka_core::animation::{Motion, Tick};
@@ -191,7 +191,7 @@ pub fn topmost(tree: &RenderTree) -> Option<NodeId> {
 /// tree.layout(BoxConstraints::tight(Size::new(400.0, 300.0)));
 ///
 /// let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
-/// // Overlay yang baru terbuka sedang beranimasi masuk: ia meminta frame lagi.
+/// // A freshly opened overlay is animating in: it asks for another frame.
 /// assert!(advance(&mut tree, &tick).contains(Dirty::ANIMATION));
 /// ```
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
@@ -202,9 +202,9 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             None => continue,
         };
         if pindah {
-            // Panel bergeser → layout ulang. Overlay adalah relayout boundary,
-            // jadi kerjanya berhenti di subtree ini: satu dialog yang beranimasi
-            // tidak pernah membuat seluruh window dihitung ulang.
+            // The panel moved → relayout. An overlay is a relayout boundary,
+            // so the work stops inside this subtree: one animating dialog never
+            // forces the whole window to be recomputed.
             tree.mark_needs_layout(id);
             dirty |= Dirty::LAYOUT | Dirty::PAINT;
         }
@@ -215,7 +215,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     dirty
 }
 
-/// Benar bila masih ada transisi overlay yang berjalan.
+/// True while any overlay transition is still running.
 pub fn is_animating(tree: &RenderTree) -> bool {
     entries(tree).into_iter().any(|id| {
         tree.node_ref::<OverlayEntry>(id)
@@ -223,7 +223,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
     })
 }
 
-/// Selesaikan seluruh transisi overlay seketika (dipakai test dan snapshot).
+/// Finish every overlay transition instantly (used by tests and snapshots).
 pub fn settle(tree: &mut RenderTree) {
     for id in entries(tree) {
         if let Some(o) = tree.node_mut_ref::<OverlayEntry>(id) {
@@ -233,15 +233,15 @@ pub fn settle(tree: &mut RenderTree) {
     }
 }
 
-/// Tutup overlay paling atas lewat `cara`; benar bila ada yang benar-benar
-/// ditutup.
+/// Dismiss the topmost overlay via `cara`; true if something was actually
+/// dismissed.
 ///
-/// Jaring pengaman untuk **Esc tanpa fokus**. Jalur normalnya lain: Esc
-/// mengalir dari node terfokus ke atas dan melewati [`OverlayEntry`] karena
-/// entri itu leluhur panelnya. Tapi kalau belum ada satu pun yang terfokus,
-/// event tombol hanya sampai ke akar pohon ([`silka_core::input::InputRouter`])
-/// dan dialog tidak akan pernah melihatnya. Shell memanggil fungsi ini
-/// **hanya** saat router menjawab tidak ada yang menangani:
+/// A safety net for **Esc with nothing focused**. The normal path is different:
+/// Esc bubbles up from the focused node and passes through the
+/// [`OverlayEntry`], because that entry is an ancestor of the panel. But if
+/// nothing is focused yet, the key event only reaches the root of the tree
+/// ([`silka_core::input::InputRouter`]) and the dialog never sees it. The shell
+/// calls this function **only** when the router reports the event unhandled:
 ///
 /// ```
 /// # use silka_core::input::{Event, InputRouter, KeyEvent, KeyCode, NamedKey};

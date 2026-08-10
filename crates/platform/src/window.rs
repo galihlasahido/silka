@@ -1,7 +1,7 @@
-//! Shell window: konstruktor gaya Dart + event loop winit + surface wgpu.
+//! The window shell: Dart-style constructor + winit event loop + wgpu surface.
 //!
-//! Bentuk API mengikuti REKOMENDASI §2.5 — fungsi konstruktor lalu method
-//! chaining, tanpa struct literal dan tanpa macro:
+//! The API shape follows REKOMENDASI §2.5 — a constructor function followed by
+//! method chaining, with no struct literals and no macros:
 //!
 //! ```no_run
 //! use silka_platform::window;
@@ -42,10 +42,10 @@ use crate::error::PlatformError;
 use crate::input::{cursor_to_winit, ime_area_to_winit, WinitInput};
 use crate::vsync::VsyncSource;
 
-/// Informasi satu frame yang diberikan ke pembangun scene.
+/// Everything about one frame that the scene builder is given.
 ///
-/// Semua ukuran dalam **poin logis** — DPI sudah diselesaikan di lapisan
-/// surface, jadi kode di atas sini tidak pernah berurusan dengan piksel fisik.
+/// All sizes are in **logical points** — DPI is already resolved in the surface
+/// layer, so code above here never deals with physical pixels.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameContext<'a> {
     theme: &'a Theme,
@@ -58,47 +58,48 @@ pub struct FrameContext<'a> {
 }
 
 impl<'a> FrameContext<'a> {
-    /// Theme aktif — sumber satu-satunya untuk warna, radius, dan spacing.
+    /// The active theme — the single source of colors, radii, and spacing.
     pub fn theme(&self) -> &'a Theme {
         self.theme
     }
 
-    /// Ukuran area gambar dalam poin logis.
+    /// Size of the drawing area, in logical points.
     pub fn size(&self) -> Size {
         self.size
     }
 
-    /// Scale factor window (2.0 di layar Retina).
+    /// The window's scale factor (2.0 on a Retina display).
     pub fn scale_factor(&self) -> f64 {
         self.scale_factor
     }
 
-    /// Nomor frame sejak window dibuka.
+    /// Frame number since the window opened.
     pub fn frame(&self) -> u64 {
         self.frame
     }
 
-    /// Waktu sejak window dibuka — dasar animasi sebelum sistem spring ada.
+    /// Time since the window opened — the basis for animation until the spring
+    /// system exists.
     pub fn elapsed(&self) -> Duration {
         self.elapsed
     }
 
-    /// Detak layar yang sedang berlaku.
+    /// The display clock currently in effect.
     ///
-    /// Di macOS ini datang dari `CADisplayLink` dan **ikut ProMotion**; di OS
-    /// lain ditaksir dari frame yang benar-benar terjadi. Bisa
-    /// [`Vsync::UNKNOWN`] pada frame-frame pertama — jangan menggantinya
-    /// dengan tebakan.
+    /// On macOS this comes from `CADisplayLink` and **follows ProMotion**; on
+    /// other systems it is estimated from the frames that actually happened. It
+    /// may be [`Vsync::UNKNOWN`] during the first few frames — do not replace
+    /// that with a guess.
     pub fn vsync(&self) -> Vsync {
         self.vsync
     }
 
-    /// Minta satu frame lagi setelah frame ini.
+    /// Ask for one more frame after this one.
     ///
-    /// Inilah satu-satunya cara animasi berjalan: selama ada yang memanggil
-    /// ini, renderer tetap berdetak; begitu tidak ada lagi, window kembali
-    /// benar-benar idle (REKOMENDASI §3.5). Spring yang belum selesai
-    /// memanggilnya tiap frame, lalu berhenti sendiri saat mencapai target.
+    /// This is the only way animation keeps running: as long as someone calls
+    /// it, the renderer keeps ticking; the moment nobody does, the window goes
+    /// truly idle again (REKOMENDASI §3.5). An unsettled spring calls it every
+    /// frame and stops on its own once it reaches its target.
     pub fn request_animation_frame(&self) {
         self.animate.set(true);
     }
@@ -106,37 +107,38 @@ impl<'a> FrameContext<'a> {
 
 type SceneFn = Box<dyn FnMut(&FrameContext<'_>) -> Scene>;
 
-/// Penanggap event input.
+/// Input event handler.
 ///
-/// Bentuknya sengaja `Event -> Response`: aplikasi (atau lapisan widget di
-/// atasnya) meneruskan event ke [`silka_core::input::InputRouter`] dan
-/// mengembalikan apa adanya. Shell lalu menerjemahkan hasilnya menjadi
-/// panggilan winit — `request_redraw`, `set_ime_cursor_area`, `set_cursor` —
-/// sehingga tidak ada satu pun tipe winit yang perlu dilihat kode di atasnya.
+/// Its shape is deliberately `Event -> Response`: the application (or the
+/// widget layer above it) forwards the event to
+/// [`silka_core::input::InputRouter`] and returns the result verbatim. The
+/// shell then translates that into winit calls — `request_redraw`,
+/// `set_ime_cursor_area`, `set_cursor` — so no winit type is ever visible to
+/// the code above.
 type InputFn = Box<dyn FnMut(&InputEvent) -> InputResponse>;
 
-/// Pembangun pohon aksesibilitas satu window.
+/// Builder of one window's accessibility tree.
 ///
-/// Dipanggil **hanya** saat ada teknologi bantu yang mendengarkan — pengguna
-/// yang tidak memakai screen reader tidak membayar pass-nya sama sekali.
+/// Called **only** while some assistive technology is listening — users without
+/// a screen reader do not pay for the pass at all.
 type AccessFn = Box<dyn FnMut() -> AccessTree>;
 
-/// Penanggap permintaan aksi dari teknologi bantu.
+/// Handler for action requests coming from assistive technology.
 type AccessActionFn = Box<dyn FnMut(AccessActionRequest)>;
 
-/// Sumber atlas glyph yang dipakai bersama pembangun scene.
+/// The glyph atlas source shared with the scene builder.
 ///
-/// Dibagikan lewat `Rc<RefCell<…>>` karena dua pihak memakainya bergantian di
-/// thread yang sama: closure `on_frame` saat menyusun scene (merasterisasi
-/// glyph baru ke atlas), lalu backend saat menggambar (mengunggah bagian
-/// atlas yang berubah). Keduanya tidak pernah berjalan bersamaan, jadi tidak
-/// ada biaya sinkronisasi — dan `silka-platform` tetap tidak tahu apa itu
-/// font: yang dipegangnya hanyalah trait dari `silka-paint`.
+/// Shared through `Rc<RefCell<…>>` because two parties use it in turn on the
+/// same thread: the `on_frame` closure while assembling the scene (rasterising
+/// new glyphs into the atlas), then the backend while drawing (uploading the
+/// changed part of the atlas). The two never run at the same time, so there is
+/// no synchronisation cost — and `silka-platform` still has no idea what a font
+/// is: all it holds is a trait from `silka-paint`.
 type GlyphsRef = Rc<RefCell<dyn GlyphSource>>;
 
-/// Konfigurasi window, dibangun dengan method chaining.
+/// Window configuration, built up by method chaining.
 ///
-/// Dibuat lewat [`window`].
+/// Created through [`window`].
 pub struct WindowConfig {
     title: String,
     size: Size,
@@ -152,10 +154,10 @@ pub struct WindowConfig {
     frame_log_every: u64,
 }
 
-/// Buat window baru dengan judul tertentu.
+/// Create a new window with the given title.
 ///
-/// Nilai bawaan: 1024×720 poin, bisa di-resize, preset Cupertino, dan
-/// appearance mengikuti OS.
+/// Defaults: 1024×720 points, resizable, the Cupertino preset, and an
+/// appearance that follows the OS.
 pub fn window(title: impl Into<String>) -> WindowConfig {
     WindowConfig {
         title: title.into(),
@@ -173,73 +175,73 @@ pub fn window(title: impl Into<String>) -> WindowConfig {
     }
 }
 
-/// Tiap berapa frame ringkasan frame time dicetak di debug build.
+/// How many frames apart the frame-time summary is printed in debug builds.
 const DEFAULT_FRAME_LOG_EVERY: u64 = 120;
 
 impl WindowConfig {
-    /// Ukuran awal window dalam poin logis.
+    /// Initial window size, in logical points.
     pub fn size(mut self, width: f32, height: f32) -> Self {
         self.size = Size::new(width, height);
         self
     }
 
-    /// Ukuran minimum window dalam poin logis.
+    /// Minimum window size, in logical points.
     pub fn min_size(mut self, width: f32, height: f32) -> Self {
         self.min_size = Some(Size::new(width, height));
         self
     }
 
-    /// Boleh di-resize atau tidak.
+    /// Whether the window may be resized.
     pub fn resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
         self
     }
 
-    /// Theme lengkap (preset + appearance).
+    /// The complete theme (preset + appearance).
     ///
-    /// Menyetel theme dengan appearance eksplisit **mengunci** appearance:
-    /// perubahan dark mode OS tidak lagi diikuti. Panggil
-    /// [`WindowConfig::follow_system_appearance`] untuk mengembalikannya.
+    /// Setting a theme with an explicit appearance **pins** the appearance: OS
+    /// dark-mode changes are no longer followed. Call
+    /// [`WindowConfig::follow_system_appearance`] to undo that.
     pub fn theme(mut self, theme: Theme) -> Self {
         self.theme = theme;
         self.appearance_source = AppearanceSource::Locked;
         self
     }
 
-    /// Ganti preset saja, appearance tetap mengikuti sumber saat ini.
+    /// Change only the preset; the appearance keeps following its current
+    /// source.
     pub fn preset(mut self, preset: Preset) -> Self {
         self.theme = self.theme.with_preset(preset);
         self
     }
 
-    /// Kunci appearance ke nilai tertentu.
+    /// Pin the appearance to a specific value.
     pub fn appearance(mut self, appearance: Appearance) -> Self {
         self.theme = self.theme.with_appearance(appearance);
         self.appearance_source = AppearanceSource::Locked;
         self
     }
 
-    /// Ikuti dark mode OS secara live (INTEGRASI-NATIVE §6).
+    /// Follow the OS dark mode live (INTEGRASI-NATIVE §6).
     pub fn follow_system_appearance(mut self) -> Self {
         self.appearance_source = AppearanceSource::System;
         self
     }
 
-    /// Pembangun scene per frame.
+    /// The per-frame scene builder.
     ///
-    /// Tanpa ini, window digambar dengan warna token `background` dari theme
-    /// aktif — cukup untuk membuktikan jalur window → surface → token bekerja.
+    /// Without it, the window is painted with the active theme's `background`
+    /// token — enough to prove the window → surface → token path works.
     pub fn on_frame(mut self, scene_fn: impl FnMut(&FrameContext<'_>) -> Scene + 'static) -> Self {
         self.scene_fn = Some(Box::new(scene_fn));
         self
     }
 
-    /// Sumber atlas glyph untuk perintah teks.
+    /// The glyph atlas source for text commands.
     ///
-    /// Tanpa ini, perintah `GlyphRun` di dalam scene **tidak menghasilkan
-    /// piksel** — backend tidak punya bitmap untuk digambar. Biasanya yang
-    /// diserahkan adalah `silka_text::TextEngine` yang sama dengan yang
-    /// dipakai `on_frame`:
+    /// Without it, a `GlyphRun` command inside the scene **produces no pixels**
+    /// — the backend has no bitmap to draw. What is normally handed over is the
+    /// same `silka_text::TextEngine` that `on_frame` uses:
     ///
     /// ```no_run
     /// # use std::cell::RefCell;
@@ -264,32 +266,33 @@ impl WindowConfig {
     ///     .glyphs(mesin);
     /// ```
     ///
-    /// Kontraknya tetap dijaga: yang menyeberang hanyalah trait
-    /// `silka_paint::GlyphSource` — shell tidak tahu apa itu font, dan
-    /// backend tidak tahu apa itu winit.
+    /// The contract still holds: all that crosses over is the
+    /// `silka_paint::GlyphSource` trait — the shell has no idea what a font is,
+    /// and the backend has no idea what winit is.
     pub fn glyphs<G: GlyphSource + 'static>(mut self, glyphs: Rc<RefCell<G>>) -> Self {
         self.glyphs = Some(glyphs as GlyphsRef);
         self
     }
 
-    /// Pembangun pohon aksesibilitas (§3.8).
+    /// The accessibility tree builder (§3.8).
     ///
-    /// Biasanya `move || tree.access_tree(router.focus().focused())`. Tanpa
-    /// ini, window tetap **terlihat** oleh screen reader — dengan judulnya
-    /// sebagai nama — hanya isinya yang kosong; aplikasi tidak pernah buta
-    /// total seperti GPUI/Floem/Makepad (§7.2).
+    /// Usually `move || tree.access_tree(router.focus().focused())`. Without
+    /// it, the window is still **visible** to a screen reader — with its title
+    /// as the name — only its contents are empty; the application is never
+    /// totally blind the way GPUI/Floem/Makepad are (§7.2).
     ///
-    /// Closure hanya dipanggil saat ada teknologi bantu yang aktif.
+    /// The closure is called only while assistive technology is active.
     pub fn on_access(mut self, access_fn: impl FnMut() -> AccessTree + 'static) -> Self {
         self.access_fn = Some(Box::new(access_fn));
         self
     }
 
-    /// Penanggap permintaan aksi dari teknologi bantu (klik VoiceOver, dst.).
+    /// Handler for action requests from assistive technology (a VoiceOver
+    /// click, and so on).
     ///
-    /// Permintaannya sudah divalidasi terhadap pohon yang benar-benar dikirim:
-    /// node yang sudah mati atau aksi yang tidak diumumkan tidak pernah sampai
-    /// ke sini.
+    /// The request has already been validated against the tree that was
+    /// actually sent: dead nodes and actions that were never advertised never
+    /// reach this point.
     pub fn on_access_action(
         mut self,
         action_fn: impl FnMut(AccessActionRequest) + 'static,
@@ -298,10 +301,10 @@ impl WindowConfig {
         self
     }
 
-    /// Penanggap event input (pointer, keyboard, guliran, IME).
+    /// Handler for input events (pointer, keyboard, scroll, IME).
     ///
-    /// Event datang dalam kosakata framework — tidak ada tipe winit yang
-    /// menyeberang (§3.2 diterapkan ke input). Jalur normalnya satu baris:
+    /// Events arrive in the framework's vocabulary — no winit type crosses over
+    /// (§3.2 applied to input). The normal path is a single line:
     ///
     /// ```no_run
     /// # use silka_platform::window;
@@ -317,10 +320,10 @@ impl WindowConfig {
     ///     .unwrap();
     /// ```
     ///
-    /// Yang dikembalikan menentukan apa yang dilakukan shell berikutnya:
-    /// [`silka_core::input::Response::dirty`] membangunkan renderer (dan
-    /// **hanya** itu yang membangunkannya — §3.5), `ime` diterjemahkan menjadi
-    /// `set_ime_allowed`/`set_ime_cursor_area`, dan `cursor` menjadi
+    /// What comes back decides what the shell does next:
+    /// [`silka_core::input::Response::dirty`] wakes the renderer (and it is the
+    /// **only** thing that wakes it — §3.5), `ime` is translated into
+    /// `set_ime_allowed`/`set_ime_cursor_area`, and `cursor` into
     /// `set_cursor`.
     pub fn on_input(
         mut self,
@@ -330,24 +333,24 @@ impl WindowConfig {
         self
     }
 
-    /// Interval ringkasan frame time di debug build.
+    /// Interval between frame-time summaries in debug builds.
     ///
-    /// `0` mematikan ringkasan berkala; frame yang melewati budget vsync tetap
-    /// dicatat. Di release build pengukurannya tetap jalan (murah) tapi tidak
-    /// ada yang dicetak.
+    /// `0` disables the periodic summary; frames that blow the vsync budget are
+    /// still reported. In release builds the measurement still runs (it is
+    /// cheap) but nothing is printed.
     pub fn frame_log_every(mut self, frames: u64) -> Self {
         self.frame_log_every = frames;
         self
     }
 
-    /// Buka window dan jalankan event loop sampai window ditutup.
+    /// Open the window and run the event loop until the window is closed.
     ///
-    /// Event loop memakai [`ControlFlow::Wait`]: **tidak ada** loop yang
-    /// berputar terus saat idle. Frame hanya digambar ketika OS meminta
-    /// redraw atau ketika sesuatu menandai dirty (REKOMENDASI §3.5).
+    /// The event loop uses [`ControlFlow::Wait`]: **nothing** spins while idle.
+    /// A frame is drawn only when the OS asks for a redraw or something marks
+    /// the window dirty (REKOMENDASI §3.5).
     pub fn run(self) -> Result<(), PlatformError> {
-        // Event loop membawa *user event*: itulah jalur balik aksesibilitas
-        // dari thread OS mana pun ke UI thread (§3.8).
+        // The event loop carries a *user event*: that is the accessibility
+        // return path from any OS thread back to the UI thread (§3.8).
         let event_loop = EventLoop::<AccessEvent>::with_user_event()
             .build()
             .map_err(|e| PlatformError::EventLoop(e.to_string()))?;
@@ -363,12 +366,11 @@ impl WindowConfig {
     }
 }
 
-/// Buka window dan jalankan aplikasi reaktif di dalamnya — **API menjalankan
-/// aplikasi** (REKOMENDASI §2.5).
+/// Open a window and run a reactive application inside it — **the
+/// run-an-application API** (REKOMENDASI §2.5).
 ///
-/// Inilah bentuk yang dilihat penulis aplikasi: sebuah window, sebuah closure
-/// yang mengembalikan pohon view, dan tidak ada satu pun jahitan di antaranya
-/// yang perlu dirakit sendiri.
+/// This is the shape application authors see: a window, a closure that returns
+/// a view tree, and not one seam in between that has to be assembled by hand.
 ///
 /// ```no_run
 /// use silka_platform::{run_app, window};
@@ -386,28 +388,27 @@ impl WindowConfig {
 /// .unwrap();
 /// ```
 ///
-/// Yang dirakit fungsi ini, dan alasannya:
+/// What this function wires up, and why:
 ///
-/// - **`on_frame` menghasilkan scene dari siklus hidup**, bukan dari scene yang
-///   disusun tangan: `AppRuntime::frame()` menjalankan rebuild → diff → layout
-///   → paint, dan yang menyeberang ke backend tetap hanya
+/// - **`on_frame` produces the scene from the lifecycle**, not from a
+///   hand-assembled scene: `AppRuntime::frame()` runs rebuild → diff → layout →
+///   paint, and all that crosses over to the backend is still a
 ///   [`silka_paint::Scene`] (§3.2).
-/// - **`on_input` menyalurkan event ke pohon yang sama** dan mengembalikan
-///   alasan dirty-nya — termasuk dirty yang lahir dari tulisan signal di dalam
-///   handler.
-/// - **`on_access` menyusun pohon a11y dari geometri frame yang sama**, dengan
-///   fokus dari router (§3.8).
-/// - **Theme dititipkan sebagai `Signal<Theme>`** di [`silka_core::app::Env`]:
-///   dark mode OS yang berubah menulis signal itu, dan **hanya** komponen yang
-///   benar-benar membaca theme yang ikut dibangun ulang (§2.7).
+/// - **`on_input` routes events into that same tree** and returns the reason it
+///   is dirty — including dirtiness born from signal writes inside the handler.
+/// - **`on_access` builds the a11y tree from that same frame's geometry**, with
+///   focus taken from the router (§3.8).
+/// - **The theme is provided as a `Signal<Theme>`** in
+///   [`silka_core::app::Env`]: an OS dark-mode change writes that signal, and
+///   **only** the components that actually read the theme are rebuilt (§2.7).
 ///
-/// Janji "render hanya saat dirty" tetap utuh: setelah frame selesai, shell
-/// hanya meminta frame berikutnya bila
-/// [`silka_core::app::AppRuntime::is_idle`] bernilai salah.
+/// The "render only when dirty" promise stays intact: once a frame is done, the
+/// shell asks for another one only if
+/// [`silka_core::app::AppRuntime::is_idle`] is false.
 ///
-/// [`WindowConfig::on_frame`], [`WindowConfig::on_input`], dan
-/// [`WindowConfig::on_access`] yang sudah dipasang di `config` **digantikan**
-/// oleh fungsi ini.
+/// Any [`WindowConfig::on_frame`], [`WindowConfig::on_input`], and
+/// [`WindowConfig::on_access`] already set on `config` are **replaced** by this
+/// function.
 pub fn run_app(
     config: WindowConfig,
     build: impl Fn(&BuildCtx) -> View + 'static,
@@ -415,19 +416,19 @@ pub fn run_app(
     sambungkan_app(config, build).run()
 }
 
-/// [`run_app`] **dengan penggerak animasi** — bentuk yang dipakai aplikasi yang
-/// memakai widget beranimasi.
+/// [`run_app`] **with an animation driver** — the shape used by applications
+/// that use animated widgets.
 ///
-/// `animate` dipanggil sekali per frame **sebelum** siklus rebuild → layout →
-/// paint, dengan render tree dan [`Tick`] frame itu; nilainya yang kembali
-/// adalah alasan dirty, dan selama ia masih menyebut
-/// [`Dirty::ANIMATION`](silka_core::scheduler::Dirty::ANIMATION) shell terus
-/// meminta frame berikutnya. Begitu semua spring settle, event loop kembali
-/// menunggu — janji "render hanya saat dirty" (§3.5) tidak dilanggar oleh
-/// keberadaan animasi.
+/// `animate` is called once per frame **before** the rebuild → layout → paint
+/// cycle, with that frame's render tree and [`Tick`]; what it returns is the
+/// dirty reason, and as long as it keeps naming
+/// [`Dirty::ANIMATION`](silka_core::scheduler::Dirty::ANIMATION) the shell
+/// keeps asking for another frame. Once every spring settles, the event loop
+/// goes back to waiting — the presence of animation does not break the "render
+/// only when dirty" promise (§3.5).
 ///
-/// Bentuk `animate` sengaja persis milik `silka_widgets::advance`, sehingga
-/// aplikasi biasa cukup menulis:
+/// The signature of `animate` deliberately matches `silka_widgets::advance`, so
+/// an ordinary application only has to write:
 ///
 /// ```no_run
 /// # use silka_platform::{run_app_with, window};
@@ -444,21 +445,22 @@ pub fn run_app_with(
     sambungkan_app_with(config, build, animate).run()
 }
 
-/// [`AppRuntime`] yang **dirakit persis seperti [`run_app`]**, tanpa window dan
-/// tanpa GPU (REKOMENDASI §9.5).
+/// An [`AppRuntime`] **assembled exactly like [`run_app`] does**, without a
+/// window and without a GPU (REKOMENDASI §9.5).
 ///
-/// Inilah pintu masuk uji integrasi headless: halaman yang sama yang tampil di
-/// window dijalankan di sini, diberi event input lewat
-/// [`AppRuntime::dispatch`], lalu [`AppRuntime::scene`]-nya bisa dirender ke
-/// tekstur offscreen dan dihitung pikselnya. Karena `run_app` sendiri memakai
-/// fungsi ini, titipan [`Env`] yang dilihat aplikasi tidak mungkin berbeda
-/// antara "di layar" dan "di CI".
+/// This is the entry point for headless integration tests: the same page that
+/// shows up in a window runs here, is fed input events through
+/// [`AppRuntime::dispatch`], and its [`AppRuntime::scene`] can then be rendered
+/// into an offscreen texture and have its pixels counted. Because `run_app`
+/// itself uses this function, the [`Env`] values the application sees cannot
+/// differ between "on screen" and "in CI".
 ///
-/// Yang dititipkan sama persis dengan `run_app`:
+/// What is provided is identical to `run_app`:
 ///
-/// - `Signal<Theme>` — dark mode/preset yang berubah hanya membangun ulang
-///   komponen yang benar-benar membacanya (§2.7).
-/// - `Signal<ScaleFactor>` — resolusi layar untuk rasterisasi teks (§3.3).
+/// - `Signal<Theme>` — a dark-mode/preset change rebuilds only the components
+///   that actually read it (§2.7).
+/// - `Signal<ScaleFactor>` — the screen resolution used for text rasterisation
+///   (§3.3).
 ///
 /// ```
 /// use silka_platform::headless_app;
@@ -474,16 +476,16 @@ pub fn headless_app(theme: Theme, build: impl Fn(&BuildCtx) -> View + 'static) -
     AppRuntime::new(build)
         .clear_color(theme.color.background)
         .with_env(move |rt| rt.signal(theme))
-        // Nilai awal jujur: sebelum window ada, scale factor-nya memang belum
-        // diketahui. Shell menimpanya di frame pertama.
+        // An honest starting value: before a window exists, the scale factor
+        // genuinely is unknown. The shell overwrites it on the first frame.
         .with_env(|rt| rt.signal(ScaleFactor::ONE))
 }
 
-/// Bagian [`run_app`] yang tidak menyentuh event loop.
+/// The part of [`run_app`] that never touches the event loop.
 ///
-/// Dipisah supaya jahitannya bisa diuji headless: test memanggil `scene_fn`,
-/// `input_fn`, dan `access_fn` yang terpasang di sini dengan
-/// [`FrameContext`] buatan, tanpa window dan tanpa GPU.
+/// Split out so the seams can be tested headlessly: tests call the `scene_fn`,
+/// `input_fn`, and `access_fn` installed here with a hand-made
+/// [`FrameContext`], without a window and without a GPU.
 fn sambungkan_app(
     config: WindowConfig,
     build: impl Fn(&BuildCtx) -> View + 'static,
@@ -491,7 +493,7 @@ fn sambungkan_app(
     sambungkan_app_with(config, build, |_, _| Dirty::NONE)
 }
 
-/// [`sambungkan_app`] dengan penggerak animasi (lihat [`run_app_with`]).
+/// [`sambungkan_app`] with an animation driver (see [`run_app_with`]).
 fn sambungkan_app_with(
     config: WindowConfig,
     build: impl Fn(&BuildCtx) -> View + 'static,
@@ -506,31 +508,31 @@ fn sambungkan_app_with(
     config
         .on_frame(move |ctx| {
             let mut ui = untuk_frame.borrow_mut();
-            // Perubahan dari shell masuk lebih dulu supaya rebuild frame ini
-            // sudah melihatnya — bukan satu frame kemudian.
+            // Changes from the shell land first so this frame's rebuild
+            // already sees them — not one frame later.
             ui.resize(ctx.size());
             ui.set_clear_color(ctx.theme().color.background);
             if let Some(theme) = ui.env::<Signal<Theme>>() {
                 theme.set_if_changed(*ctx.theme());
             }
-            // Teks harus dirasterisasi pada resolusi layar yang sebenarnya
-            // (§3.3); window yang pindah ke monitor lain menulis signal ini,
-            // dan hanya komponen yang membacanya yang ikut dibangun ulang.
+            // Text must be rasterised at the real screen resolution (§3.3); a
+            // window moved to another monitor writes this signal, and only the
+            // components that read it are rebuilt.
             if let Some(scale) = ui.env::<Signal<ScaleFactor>>() {
                 scale.set_if_changed(ScaleFactor(ctx.scale_factor() as f32));
             }
             ui.set_vsync(ctx.vsync());
 
-            // Spring dimajukan **sebelum** frame: nilai yang bergerak menjadi
-            // nilai frame ini, bukan frame berikutnya (§3.5). `dt`-nya dihitung
-            // dari jam sungguhan oleh `AnimationDriver`, tidak pernah dari
-            // konstanta 16,6 ms.
+            // Springs are advanced **before** the frame: the value that moves
+            // becomes this frame's value, not the next frame's (§3.5). Its `dt`
+            // is computed from a real clock by `AnimationDriver`, never from a
+            // 16.6 ms constant.
             ui.animate(&mut animate);
 
             ui.frame();
 
-            // Satu-satunya cara frame berikutnya terjadi: masih ada yang kotor
-            // (spring yang belum settle, signal yang ditulis saat build).
+            // The only way a next frame happens: something is still dirty (an
+            // unsettled spring, a signal written during build).
             if !ui.is_idle() {
                 ctx.request_animation_frame();
             }
@@ -544,12 +546,12 @@ fn latar_dari_token(ctx: &FrameContext<'_>) -> Scene {
     Scene::new(ctx.theme().color.background)
 }
 
-/// Pohon a11y bawaan: satu node window bernama judul aplikasi.
+/// The default a11y tree: a single window node named after the application.
 ///
-/// Aplikasi yang belum menyambungkan render tree-nya tetap **terlihat** oleh
-/// screen reader — window-nya punya nama dan bisa difokuskan. Buta total
-/// (GPUI, Floem, Makepad — §7.2) bukan keadaan bawaan yang bisa terjadi di
-/// sini.
+/// An application that has not yet wired up its render tree is still
+/// **visible** to a screen reader — its window has a name and can be focused.
+/// Total blindness (GPUI, Floem, Makepad — §7.2) is not a default state that
+/// can happen here.
 fn pohon_window_saja(title: String) -> AccessFn {
     let mut tree = RenderTree::new();
     tree.set_root_label(title);
@@ -616,11 +618,11 @@ impl Shell {
         }
     }
 
-    /// Kirim pohon a11y ke adapter.
+    /// Send the a11y tree to the adapter.
     ///
-    /// Dipisah dari [`Shell::gambar`] supaya bisa dipanggil juga saat teknologi
-    /// bantu meminta pohon awal — momen yang tidak selalu bersamaan dengan
-    /// frame.
+    /// Split out from [`Shell::gambar`] so it can also be called when assistive
+    /// technology asks for the initial tree — a moment that does not always
+    /// coincide with a frame.
     fn kirim_a11y(&mut self, penuh: bool) {
         let Shell {
             state, access_fn, ..
@@ -643,9 +645,9 @@ impl Shell {
     }
 
     fn buat_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), PlatformError> {
-        // Sengaja tersembunyi dulu: adapter aksesibilitas **wajib** terpasang
-        // sebelum window pertama kali terlihat (§3.8). Window ditampilkan
-        // setelah adapter dan surface siap.
+        // Deliberately hidden at first: the accessibility adapter **must** be
+        // attached before the window is ever visible (§3.8). The window is
+        // shown once the adapter and the surface are ready.
         let mut attrs = Window::default_attributes()
             .with_title(self.title.clone())
             .with_resizable(self.resizable)
@@ -667,10 +669,10 @@ impl Shell {
             .map_err(|e| PlatformError::WindowCreation(e.to_string()))?;
         let window = Arc::new(window);
 
-        // Accessibility dari hari pertama, bukan retrofit (§3.8, §5 poin 2).
+        // Accessibility from day one, not a retrofit (§3.8, §5 point 2).
         let access = AccessAdapter::new(event_loop, &window, self.proxy.clone());
 
-        // Appearance awal dari OS, sebelum frame pertama digambar.
+        // Initial appearance from the OS, before the first frame is drawn.
         if self.appearance_source == AppearanceSource::System {
             if let Some(t) = window.theme() {
                 self.theme = self.theme.with_appearance(appearance_from_winit(t));
@@ -678,13 +680,13 @@ impl Shell {
         }
 
         let PhysicalSize { width, height } = window.inner_size();
-        // Input berbicara poin logis; pembagi DPI-nya diketahui dari sini.
+        // Input speaks logical points; its DPI divisor is learned here.
         self.input.set_scale_factor(window.scale_factor());
         let geometry = SurfaceGeometry::new(width, height, window.scale_factor());
         let (gpu, surface) = Gpu::with_surface(window.clone(), geometry)?;
 
-        // Sumber detak frame: CADisplayLink di macOS, `request_redraw` di OS
-        // lain. Dipasang dalam keadaan diam — belum ada yang dirty.
+        // Frame clock source: CADisplayLink on macOS, `request_redraw`
+        // elsewhere. Attached idle — nothing is dirty yet.
         let vsync = VsyncSource::attach(window.clone());
         self.scheduler.set_vsync(vsync.vsync());
 
@@ -701,7 +703,7 @@ impl Shell {
             vsync.kind().label(),
         );
 
-        // Semua sudah siap — baru sekarang window boleh terlihat.
+        // Everything is ready — only now may the window become visible.
         window.set_visible(true);
 
         self.state = Some(ShellState {
@@ -712,17 +714,18 @@ impl Shell {
             access,
         });
 
-        // Frame pertama: satu-satunya frame yang tidak dipicu perubahan.
+        // The first frame: the only frame not triggered by a change.
         self.minta(Dirty::LAYOUT | Dirty::PAINT);
         Ok(())
     }
 
-    /// Salurkan satu event input ke aplikasi lalu jalankan permintaannya.
+    /// Route one input event into the application, then carry out what it asks
+    /// for.
     ///
-    /// Ini satu-satunya tempat hasil routing bertemu winit: dirty membangunkan
-    /// renderer, permintaan IME menjadi `set_ime_allowed`/`set_ime_cursor_area`
-    /// (jendela kandidat CJK berlabuh di caret, §3.8), dan kursor menjadi
-    /// `set_cursor`.
+    /// This is the only place routing results meet winit: dirty wakes the
+    /// renderer, an IME request becomes
+    /// `set_ime_allowed`/`set_ime_cursor_area` (the CJK candidate window
+    /// anchors to the caret, §3.8), and a cursor becomes `set_cursor`.
     fn masukan(&mut self, event: InputEvent) {
         let Some(input_fn) = self.input_fn.as_mut() else {
             return;
@@ -747,7 +750,7 @@ impl Shell {
                     state.window.set_ime_allowed(false);
                     self.ime_aktif = false;
                 }
-                // IME yang memang sudah mati tidak perlu dimatikan lagi.
+                // An IME that is already off does not need turning off again.
                 Some(ImeRequest::Disable) | None => {}
             }
             if let Some(cursor) = hasil.cursor {
@@ -760,7 +763,7 @@ impl Shell {
         }
     }
 
-    /// Tandai dirty dan — hanya bila memang perlu — bangunkan sumber vsync.
+    /// Mark dirty and — only when genuinely needed — wake the vsync source.
     fn minta(&mut self, dirty: Dirty) {
         if self.scheduler.request(dirty) == Wake::Schedule {
             if let Some(state) = self.state.as_ref() {
@@ -784,8 +787,8 @@ impl Shell {
             return Ok(());
         };
 
-        // Interval yang dilaporkan OS bisa berubah kapan saja (ProMotion naik
-        // turun, window pindah monitor) — dibaca ulang tiap frame.
+        // The interval the OS reports can change at any moment (ProMotion
+        // stepping up and down, the window moving monitor) — reread each frame.
         scheduler.set_vsync(state.vsync.vsync());
 
         let mut start = scheduler.begin_frame(Instant::now());
@@ -801,15 +804,16 @@ impl Shell {
         };
         let scene = (scene_fn)(&ctx);
 
-        // Batas antara kerja kita dan antrean swapchain. Tanpa penanda ini,
-        // waktu menunggu vsync akan tercatat sebagai "frame lambat" padahal ia
-        // justru tanda sistem sedang sehat.
+        // The boundary between our work and the swapchain queue. Without this
+        // marker, time spent waiting for vsync would be recorded as a "slow
+        // frame" when it is in fact a sign of a healthy system.
         start.mark_built(Instant::now());
 
-        // Wayland ingin tahu sebelum buffer di-attach; no-op di platform lain.
+        // Wayland wants to know before the buffer is attached; a no-op
+        // elsewhere.
         state.window.pre_present_notify();
-        // Atlas glyph dipinjam HANYA selama menggambar — closure scene sudah
-        // selesai memakainya, jadi tidak pernah ada dua peminjam sekaligus.
+        // The glyph atlas is borrowed ONLY while drawing — the scene closure is
+        // already done with it, so there are never two borrowers at once.
         let hasil = match glyphs {
             Some(g) => {
                 let mut sumber = g.borrow_mut();
@@ -820,15 +824,15 @@ impl Shell {
             None => state.surface.render(&state.gpu, &scene),
         };
 
-        // Frame ditutup lebih dulu, apa pun hasilnya: statistik frame yang
-        // gagal justru yang paling menarik saat menyelidiki jank.
+        // The frame is closed first whatever the outcome: the statistics of a
+        // failed frame are exactly the interesting ones when hunting jank.
         let timing = scheduler.end_frame(
             start,
             Instant::now(),
             matches!(hasil, Ok(FrameOutcome::Presented)),
         );
 
-        // Pengukuran selalu jalan; pencetakannya hanya di debug build.
+        // Measurement always runs; printing happens only in debug builds.
         #[cfg(debug_assertions)]
         if let Some(line) = logger.line(scheduler.stats(), scheduler.vsync(), &timing) {
             eprintln!("{line}");
@@ -838,16 +842,16 @@ impl Shell {
 
         hasil?;
 
-        // Pohon a11y disusun ulang setelah frame, dari geometri frame itu
-        // juga — dan **hanya** kalau ada teknologi bantu yang mendengarkan.
+        // The a11y tree is rebuilt after the frame, from that same frame's
+        // geometry — and **only** if assistive technology is listening.
         self.kirim_a11y(false);
 
         if animate.get() {
             self.minta(Dirty::ANIMATION);
         }
 
-        // Tidak ada sisa pekerjaan → hentikan detak. Inilah yang membuat idle
-        // benar-benar idle, bukan sekadar "menggambar frame kosong".
+        // No work left → stop the clock. This is what makes idle truly idle,
+        // rather than merely "drawing an empty frame".
         if self.scheduler.is_idle() {
             if let Some(state) = self.state.as_ref() {
                 state.vsync.idle();
@@ -856,7 +860,7 @@ impl Shell {
         Ok(())
     }
 
-    /// Ubah visibilitas window (occlusion/minimize) tanpa menggambar sia-sia.
+    /// Change window visibility (occlusion/minimize) without wasted drawing.
     fn set_terlihat(&mut self, terlihat: bool) {
         if self.scheduler.set_visible(terlihat) == Wake::Schedule {
             if let Some(state) = self.state.as_ref() {
@@ -871,10 +875,10 @@ impl Shell {
 }
 
 impl ApplicationHandler<AccessEvent> for Shell {
-    /// Jalur balik dari teknologi bantu.
+    /// The return path from assistive technology.
     ///
-    /// `accesskit_winit` memanggil handler-nya di thread mana pun; event loop
-    /// winit adalah kanal resmi untuk kembali ke UI thread.
+    /// `accesskit_winit` calls its handler on any thread; the winit event loop
+    /// is the official channel back to the UI thread.
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AccessEvent) {
         let cocok = self
             .state
@@ -888,14 +892,14 @@ impl ApplicationHandler<AccessEvent> for Shell {
             None => return,
         };
         match hasil {
-            // Screen reader baru dinyalakan: ia tidak punya riwayat apa pun,
-            // jadi yang dikirim harus pohon lengkap.
+            // A screen reader was just switched on: it has no history at all,
+            // so what we send must be the complete tree.
             AccessOutcome::NeedsFullTree => self.kirim_a11y(true),
             AccessOutcome::Action(request) => {
                 if let Some(f) = self.access_action_fn.as_mut() {
                     f(request);
-                    // Aksi dari teknologi bantu adalah input seperti klik
-                    // mouse: apa pun yang berubah karenanya harus digambar.
+                    // An action from assistive technology is input just like a
+                    // mouse click: whatever it changes must be drawn.
                     self.minta(Dirty::PAINT);
                 }
             }
@@ -904,7 +908,7 @@ impl ApplicationHandler<AccessEvent> for Shell {
     }
 
     fn new_events(&mut self, event_loop: &ActiveEventLoop, _cause: StartCause) {
-        // Idle harus benar-benar idle: tidak ada polling, tidak ada timer.
+        // Idle must really be idle: no polling, no timers.
         event_loop.set_control_flow(ControlFlow::Wait);
     }
 
@@ -918,8 +922,8 @@ impl ApplicationHandler<AccessEvent> for Shell {
     }
 
     fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
-        // Surface tidak valid selama suspend (aturan Android; tidak berbahaya
-        // di desktop). Dibangun ulang di `resumed` berikutnya.
+        // The surface is invalid while suspended (an Android rule; harmless on
+        // desktop). It is rebuilt on the next `resumed`.
         self.state = None;
     }
 
@@ -937,8 +941,8 @@ impl ApplicationHandler<AccessEvent> for Shell {
             return;
         }
 
-        // Adapter a11y melihat event **sebelum** shell memprosesnya: fokus
-        // window dan geometri ikut dari sini.
+        // The a11y adapter sees the event **before** the shell handles it:
+        // window focus and geometry are tracked from here.
         if let Some(state) = self.state.as_mut() {
             let window = state.window.clone();
             state.access.process_event(&window, &event);
@@ -951,9 +955,9 @@ impl ApplicationHandler<AccessEvent> for Shell {
                 if let Some(state) = self.state.as_mut() {
                     state.surface.resize(&state.gpu, width, height);
                 }
-                // Window diminimalkan datang sebagai ukuran 0×0. Tanpa ini,
-                // animasi yang meminta frame berikutnya akan berputar tanpa
-                // henti menggambar ke surface yang tidak bisa digambar.
+                // A minimized window arrives as a 0×0 size. Without this, an
+                // animation that keeps asking for the next frame would spin
+                // forever drawing into an undrawable surface.
                 let bisa_digambar = self
                     .state
                     .as_ref()
@@ -965,13 +969,14 @@ impl ApplicationHandler<AccessEvent> for Shell {
             }
 
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                // winit menyusulkan `Resized` dengan ukuran fisik baru; di sini
-                // cukup memperbarui pembagi poin-logis.
+                // winit follows up with a `Resized` carrying the new physical
+                // size; here it is enough to update the logical-point divisor.
                 if let Some(state) = self.state.as_mut() {
                     state.surface.set_scale_factor(scale_factor);
                 }
                 self.input.set_scale_factor(scale_factor);
-                // Monitor baru bisa punya laju berbeda — taksiran lama batal.
+                // A new monitor may refresh at a different rate — the old
+                // estimate is void.
                 self.scheduler.reset_vsync_estimate();
                 self.minta(Dirty::SURFACE | Dirty::LAYOUT);
             }
@@ -987,8 +992,8 @@ impl ApplicationHandler<AccessEvent> for Shell {
                 }
             }
 
-            // Window tertutup total: jangan bakar GPU untuk piksel yang tak
-            // pernah dilihat siapa pun.
+            // The window is fully covered: do not burn GPU on pixels nobody
+            // will ever see.
             WindowEvent::Occluded(occluded) => self.set_terlihat(!occluded),
 
             // -- input (INTEGRASI-NATIVE §3) ---------------------------------
@@ -999,8 +1004,8 @@ impl ApplicationHandler<AccessEvent> for Shell {
                 self.masukan(e);
             }
 
-            // `CursorEntered` tidak membawa koordinat; `Enter` yang berguna
-            // disintesis dari `CursorMoved` pertama.
+            // `CursorEntered` carries no coordinates; the useful `Enter` is
+            // synthesised from the first `CursorMoved`.
             WindowEvent::CursorEntered { .. } => {}
 
             WindowEvent::CursorLeft { .. } => {
@@ -1031,9 +1036,9 @@ impl ApplicationHandler<AccessEvent> for Shell {
                 self.masukan(e);
             }
 
-            // Window kehilangan fokus: interaksi yang sedang berjalan
-            // **dibatalkan**, bukan diselesaikan — tombol yang ditekan lalu
-            // ditinggal tidak boleh menghasilkan klik.
+            // The window lost focus: an in-flight interaction is **cancelled**,
+            // not completed — a button that is pressed and then abandoned must
+            // not produce a click.
             WindowEvent::Focused(false) => {
                 if let Some(e) = self.input.cancel() {
                     self.masukan(e);
@@ -1051,11 +1056,11 @@ impl ApplicationHandler<AccessEvent> for Shell {
     }
 }
 
-/// Warna latar bawaan untuk theme tertentu — jalur yang sama yang dipakai
-/// shell bila aplikasi tidak menyediakan [`WindowConfig::on_frame`].
+/// The default background color for a theme — the very path the shell uses
+/// when an application supplies no [`WindowConfig::on_frame`].
 ///
-/// Diekspos supaya test dan tooling headless bisa memverifikasi bahwa clear
-/// color memang datang dari token, bukan dari literal.
+/// Exposed so tests and headless tooling can verify that the clear color really
+/// does come from a token rather than from a literal.
 pub fn default_clear_color(theme: &Theme) -> Color {
     theme.color.background
 }
@@ -1065,8 +1070,8 @@ mod tests {
     use super::*;
     use silka_core::access::AccessRole;
 
-    /// Sumber atlas palsu — cukup untuk membuktikan jalurnya terpasang, tanpa
-    /// menyeret stack text ke dalam uji shell.
+    /// A fake atlas source — enough to prove the path is wired up, without
+    /// dragging the text stack into the shell tests.
     #[derive(Default)]
     struct AtlasPalsu {
         diminta: std::cell::Cell<u32>,
@@ -1099,8 +1104,8 @@ mod tests {
 
     #[test]
     fn tanpa_glyphs_window_tetap_bisa_dibangun() {
-        // Aplikasi tanpa teks tidak membayar apa pun: tidak ada sumber atlas,
-        // dan `render` biasa yang dipakai.
+        // An application without text pays nothing: no atlas source, and the
+        // plain `render` path is used.
         assert!(window("Tanpa teks").glyphs.is_none());
     }
 
@@ -1109,8 +1114,8 @@ mod tests {
         let atlas = Rc::new(RefCell::new(AtlasPalsu::default()));
         let config = window("Dengan teks").glyphs(atlas.clone());
         let terpasang = config.glyphs.expect("sumber atlas tersimpan");
-        // Objek yang sama, bukan salinan: atlas yang diisi closure scene
-        // persis yang dibaca backend.
+        // The same object, not a copy: the atlas the scene closure fills is
+        // exactly the one the backend reads.
         assert!(Rc::ptr_eq(
             &(atlas as Rc<RefCell<dyn GlyphSource>>),
             &terpasang
@@ -1234,8 +1239,8 @@ mod tests {
 
     #[test]
     fn tanpa_on_input_event_tidak_ke_mana_mana() {
-        // Window yang tidak memasang penanggap input tetap sah — ia hanya
-        // tidak pernah dibangunkan oleh input.
+        // A window with no input handler is still valid — it simply never gets
+        // woken by input.
         assert!(window("Uji").input_fn.is_none());
     }
 
@@ -1262,8 +1267,8 @@ mod tests {
         assert!(hasil.dirty.contains(Dirty::PAINT));
     }
 
-    /// Kerangka [`FrameContext`] untuk test — satu-satunya bagian frame yang
-    /// tidak bisa dibuat tanpa window.
+    /// A skeleton [`FrameContext`] for tests — the only part of a frame that
+    /// cannot be built without a window.
     fn frame_ctx<'a>(theme: &'a Theme, animate: &'a Cell<bool>) -> FrameContext<'a> {
         FrameContext {
             theme,
@@ -1303,7 +1308,7 @@ mod tests {
         let ctx = frame_ctx(&theme, &animate);
         let f = c.scene_fn.as_mut().expect("run_app memasang scene_fn");
 
-        // Frame pertama: scene datang dari pass paint render tree.
+        // First frame: the scene comes from the render tree's paint pass.
         let scene = f(&ctx);
         assert_eq!(scene.clear_color(), theme.color.background);
         let tinggi: Vec<f32> = scene
@@ -1320,7 +1325,7 @@ mod tests {
             "tanpa perubahan signal, window kembali idle"
         );
 
-        // Perubahan signal → frame berikutnya membawa scene yang berbeda.
+        // A signal change → the next frame carries a different scene.
         pegangan.get().unwrap().set(2);
         let scene = f(&ctx);
         let tinggi: Vec<f32> = scene
@@ -1353,11 +1358,11 @@ mod tests {
         let ctx = frame_ctx(&theme, &animate);
         let _ = c.scene_fn.as_mut().expect("scene_fn terpasang")(&ctx);
 
-        // a11y membaca pohon yang baru saja di-layout, bukan pohon kosong.
+        // a11y reads the tree that was just laid out, not an empty one.
         let pohon = c.access_fn.as_mut().expect("access_fn terpasang")();
         assert!(pohon.find_label("Simpan").is_some(), "{}", pohon.dump());
 
-        // Input mengalir ke pohon yang sama dan menjadwalkan frame.
+        // Input flows into the same tree and schedules a frame.
         let tekan = PointerEvent::new(PointerPhase::Down, Point::new(20.0, 20.0), Duration::ZERO)
             .button(PointerButton::Primary);
         let hasil = c.input_fn.as_mut().expect("input_fn terpasang")(&Event::Pointer(tekan));
@@ -1387,8 +1392,8 @@ mod tests {
         let _ = f(&frame_ctx(&terang, &animate));
         assert_eq!(*terbaca.borrow(), vec![Appearance::Light]);
 
-        // Dark mode OS berubah → signal theme ditulis → komponen pembacanya
-        // dibangun ulang, semuanya di dalam frame yang sama.
+        // OS dark mode changes → the theme signal is written → the components
+        // that read it are rebuilt, all within the same frame.
         let gelap = Theme::cupertino(Appearance::Dark);
         let scene = f(&frame_ctx(&gelap, &animate));
         assert_eq!(*terbaca.borrow(), vec![Appearance::Light, Appearance::Dark]);

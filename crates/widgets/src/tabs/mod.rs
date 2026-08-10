@@ -1,11 +1,11 @@
-//! # `tabs` — deretan tab (`KOMPONEN.md` Tier 3)
+//! # `tabs` — a tab row (`KOMPONEN.md` Tier 3)
 //!
-//! Tiga varian yang diminta katalog, satu mesin: **segmented** (rasa
-//! `NSSegmentedControl`), **underline** (rasa shadcn/ui), dan **enclosed**
-//! (tab map yang menyatu dengan panelnya). Yang membedakan ketiganya hanyalah
-//! token yang diresolusi [`TabsStyle::from_theme`] dan bentuk kotak indikator
-//! ([`TabsStyle::indicator_rect`]) — tidak ada satu pun dari mereka yang punya
-//! jalur layout, input, atau a11y sendiri.
+//! Three variants as the catalog requires, one engine: **segmented** (the
+//! `NSSegmentedControl` feel), **underline** (the shadcn/ui feel), and
+//! **enclosed** (folder tabs that merge into their panel). All that separates
+//! them is the tokens resolved by [`TabsStyle::from_theme`] and the shape of
+//! the indicator rect ([`TabsStyle::indicator_rect`]) — not one of them has a
+//! layout, input, or a11y path of its own.
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -29,37 +29,37 @@
 //! .on_select(move |i| terpilih.set(i));
 //! ```
 //!
-//! ## Komponen terkendali
+//! ## Controlled component
 //!
-//! `tabs` **tidak** memilih sendiri: `selected` datang dari aplikasi dan
-//! `on_select` mengembalikan niat pengguna — pola yang sama dengan `open` pada
-//! [`overlay`](mod@crate::overlay). Karena itu isi panel di bawahnya cukup
-//! deklaratif: bangun view panel yang aktif saja, dan yang tidak aktif tidak
-//! ada di pohon sama sekali (tidak bisa di-Tab, tidak dibacakan screen reader,
-//! tidak dilayout).
+//! `tabs` does **not** select on its own: `selected` comes from the app and
+//! `on_select` reports the user's intent — the same pattern as `open` on
+//! [`overlay`](mod@crate::overlay). That keeps the panel below it purely
+//! declarative: build only the active panel's view, and the inactive ones are
+//! not in the tree at all (not reachable by Tab, not announced by a screen
+//! reader, not laid out).
 //!
 //! ## Definition of Done (`KOMPONEN.md`)
 //!
-//! | Butir | Di mana |
+//! | Item | Where |
 //! |---|---|
-//! | Benar di kedua preset | [`TabsStyle::from_theme`] — tidak ada satu angka warna pun di luar berkas itu |
-//! | State interaktif ber-spring | [`TabBox`] (sorotan hover/press) + [`TabListBox`] (indikator) |
-//! | Keyboard penuh + focus ring | Satu deretan = satu perhentian Tab; panah/Home/End di dalamnya, cincin fokus mengelilingi tab aktif |
-//! | Node AccessKit | [`AccessRole::TabList`] + [`AccessRole::Tab`] dengan keadaan terpilih |
-//! | Dark mode | Ikut token, tanpa satu cabang `if` pun |
-//! | Hit target ≥ 44pt | [`TabsStyle::min_height`] dipaksa ke tiap tab saat layout |
-//! | Reduced-motion | Indikator [`Essential`](silka_core::animation::MotionRole::Essential) (kehilangan pantulan), sorotan hover [`Decorative`](silka_core::animation::MotionRole::Decorative) (hilang sama sekali) |
+//! | Correct in both presets | [`TabsStyle::from_theme`] — not a single color value lives outside that file |
+//! | Interactive state on springs | [`TabBox`] (hover/press) + [`TabListBox`] (indicator) |
+//! | Full keyboard + focus ring | One row = one Tab stop; arrows/Home/End inside it, focus ring around the active tab |
+//! | AccessKit node | [`AccessRole::TabList`] + [`AccessRole::Tab`] carrying selected state |
+//! | Dark mode | Follows the tokens, without a single `if` branch |
+//! | Hit target ≥ 44pt | [`TabsStyle::min_height`] forced onto every tab during layout |
+//! | Reduced-motion | Indicator [`Essential`](silka_core::animation::MotionRole::Essential) (loses its bounce), hover highlight [`Decorative`](silka_core::animation::MotionRole::Decorative) (disappears entirely) |
 //!
-//! ## Siapa yang mendetakkan spring-nya
+//! ## Who ticks the springs
 //!
-//! Sama seperti [`crate::overlay::advance`]: shell memanggil [`advance`] sekali
-//! per frame, dan fungsi itu yang menjawab apakah masih ada yang bergerak
-//! (§3.5 "render hanya saat dirty"). Selama sambungan
-//! [`AnimationDriver`](silka_core::animation::AnimationDriver) ke siklus frame
-//! aplikasi belum ada, sebuah shell bisa saja tidak pernah memanggilnya —
-//! dan node di sini **tidak membeku** kalau itu terjadi: sebelum ada satu pun
-//! detak, transisi dijalankan sebagai lompatan. Begitu detaknya datang,
-//! transisi yang sama menjadi spring tanpa satu baris pun berubah di aplikasi.
+//! Just like [`crate::overlay::advance`]: the shell calls [`advance`] once per
+//! frame, and that function answers whether anything is still moving
+//! (§3.5, "render only when dirty"). Until the
+//! [`AnimationDriver`](silka_core::animation::AnimationDriver) is wired into
+//! the app's frame loop, a shell may never call it at all — and the nodes here
+//! **do not freeze** when that happens: before the first tick arrives,
+//! transitions run as jumps. Once the ticks start coming, those same
+//! transitions become springs without a single line changing in the app.
 
 pub mod item;
 pub mod list;
@@ -84,15 +84,15 @@ pub use list::{OnSelect, TabListBox, TabListProps};
 pub use style::{TabsStyle, TabsVariant};
 
 // ---------------------------------------------------------------------------
-// Satu tab
+// A single tab
 // ---------------------------------------------------------------------------
 
-/// Deskripsi satu tab: label, keadaan, dan kunci identitasnya.
+/// Description of one tab: its label, state, and identity key.
 ///
-/// Sengaja **bukan** [`View`]: deretan perlu membaca `disabled` sebelum pohon
-/// dirakit (navigasi panah melewati tab yang mati), dan begitu sesuatu menjadi
-/// `View` propsnya terkubur di balik `dyn ViewNode`. Alasan yang sama membuat
-/// [`crate::overlay::OverlayBuilder`] punya tipe sendiri.
+/// Deliberately **not** a [`View`]: the row needs to read `disabled` before the
+/// tree is assembled (arrow navigation skips disabled tabs), and the moment
+/// something becomes a `View` its props are buried behind `dyn ViewNode`. The
+/// same reason gives [`crate::overlay::OverlayBuilder`] its own type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Tab {
     label: String,
@@ -100,7 +100,7 @@ pub struct Tab {
     key: Option<Key>,
 }
 
-/// Satu tab berlabel `label`.
+/// A single tab labeled `label`.
 pub fn tab(label: impl Into<String>) -> Tab {
     Tab {
         label: label.into(),
@@ -110,24 +110,24 @@ pub fn tab(label: impl Into<String>) -> Tab {
 }
 
 impl Tab {
-    /// Tab yang tidak bisa dipilih (tetap dibacakan sebagai dimmed).
+    /// A tab that cannot be selected (still announced, as dimmed).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Kunci identitas — wajib untuk daftar tab yang berubah isinya (§2.5).
+    /// Identity key — required for tab lists whose contents change (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Label yang dibacakan screen reader.
+    /// The label a screen reader announces.
     pub fn label_text(&self) -> &str {
         &self.label
     }
 
-    /// Benar bila tab ini tidak bisa dipilih.
+    /// True when this tab cannot be selected.
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
@@ -137,12 +137,13 @@ impl Tab {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Builder deretan tab bergaya Dart (§2.5).
+/// Dart-style builder for a tab row (§2.5).
 ///
-/// Tipe sendiri, bukan [`Builder`], karena ia harus **merakit anak-anaknya**
-/// dari daftar [`Tab`] pada saat menjadi [`View`]: warna label, tebal huruf,
-/// dan callback per-indeks semuanya turunan dari `selected` dan `style` yang
-/// baru diketahui setelah seluruh method chain selesai ditulis.
+/// Its own type rather than a [`Builder`], because it has to **assemble its
+/// children** from the [`Tab`] list at the moment it becomes a [`View`]: label
+/// colors, font weights, and the per-index callbacks are all derived from
+/// `selected` and `style`, which are only known once the whole method chain has
+/// been written out.
 pub struct Tabs {
     fonts: Fonts,
     theme: Theme,
@@ -157,10 +158,10 @@ pub struct Tabs {
     key: Option<Key>,
 }
 
-/// Deretan tab berisi `items`.
+/// A tab row holding `items`.
 ///
-/// `fonts` adalah mesin teks aplikasi dan `theme` sumber seluruh nilainya —
-/// tidak ada satu angka pun yang lahir di kode aplikasi (§2.6).
+/// `fonts` is the app's text engine and `theme` the source of every value —
+/// not a single number originates in application code (§2.6).
 pub fn tabs(fonts: &Fonts, theme: &Theme, items: impl IntoIterator<Item = Tab>) -> Tabs {
     Tabs {
         fonts: fonts.clone(),
@@ -172,81 +173,81 @@ pub fn tabs(fonts: &Fonts, theme: &Theme, items: impl IntoIterator<Item = Tab>) 
         selected: 0,
         label: None,
         on_select: None,
-        // `snappy` adalah preset yang paling dekat dengan rasa memilih segmen
-        // di macOS: cepat sampai, sedikit sekali pantulan (WWDC23).
+        // `snappy` is the preset closest to how picking a segment feels on
+        // macOS: arrives fast, with barely any bounce (WWDC23).
         spring: Spring::snappy(),
         key: None,
     }
 }
 
 impl Tabs {
-    /// Varian visual (bawaan [`TabsVariant::Segmented`]).
+    /// Visual variant (defaults to [`TabsVariant::Segmented`]).
     pub fn variant(mut self, variant: TabsVariant) -> Self {
         self.variant = variant;
         self
     }
 
-    /// Varian [`TabsVariant::Segmented`].
+    /// The [`TabsVariant::Segmented`] variant.
     pub fn segmented(self) -> Self {
         self.variant(TabsVariant::Segmented)
     }
 
-    /// Varian [`TabsVariant::Underline`].
+    /// The [`TabsVariant::Underline`] variant.
     pub fn underline(self) -> Self {
         self.variant(TabsVariant::Underline)
     }
 
-    /// Varian [`TabsVariant::Enclosed`].
+    /// The [`TabsVariant::Enclosed`] variant.
     pub fn enclosed(self) -> Self {
         self.variant(TabsVariant::Enclosed)
     }
 
-    /// Indeks tab yang sedang aktif (komponen terkendali).
+    /// Index of the currently active tab (controlled component).
     pub fn selected(mut self, index: usize) -> Self {
         self.selected = index;
         self
     }
 
-    /// Apa yang dijalankan saat pengguna memilih tab lain.
+    /// What runs when the user picks a different tab.
     pub fn on_select(mut self, f: impl Fn(usize) + 'static) -> Self {
         self.on_select = Some(OnSelect::new(f));
         self
     }
 
-    /// Nama deretan bagi screen reader.
+    /// The row's name for screen readers.
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Paksa semua tab selebar yang terlebar (bawaan: hanya di segmented).
+    /// Force every tab to the widest tab's width (default: segmented only).
     pub fn equal_widths(mut self, equal: bool) -> Self {
         self.equal_widths = Some(equal);
         self
     }
 
-    /// Spring yang menjalankan indikator dan sorotan (`smooth`/`snappy`/
+    /// The spring driving the indicator and the highlights (`smooth`/`snappy`/
     /// `bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Ganti seluruh nilai visual sekaligus — escape hatch untuk brand kustom
-    /// yang tidak cukup diselesaikan dengan mengganti token theme (§2.7).
+    /// Replace every visual value at once — an escape hatch for custom brands
+    /// that swapping theme tokens alone cannot express (§2.7).
     pub fn style(mut self, style: TabsStyle) -> Self {
         self.variant = style.variant;
         self.style = Some(style);
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5).
+    /// Identity key among its siblings (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Nilai visual yang akan dipakai — token yang sudah diresolusi.
+    /// The visual values that will be used — the already-resolved tokens.
     pub fn resolved_style(&self) -> TabsStyle {
         let mut style = self
             .style
@@ -257,11 +258,11 @@ impl Tabs {
         style
     }
 
-    /// Indeks aktif yang benar-benar berlaku: dijepit ke daftar yang ada.
+    /// The active index that actually applies: clamped to the current list.
     ///
-    /// Indeks di luar jangkauan **tidak** panik dan tidak menghilangkan
-    /// indikator — daftar tab yang menyusut satu frame lebih dulu daripada
-    /// signal pilihannya adalah kejadian normal, bukan bug aplikasi.
+    /// An out-of-range index does **not** panic and does not make the indicator
+    /// vanish — a tab list that shrinks one frame ahead of the signal holding
+    /// the selection is normal, not an application bug.
     pub fn active_index(&self) -> usize {
         if self.items.is_empty() {
             return 0;
@@ -294,7 +295,7 @@ impl From<Tabs> for View {
     }
 }
 
-/// Rakit satu tab menjadi view: sorotan + label di atas token.
+/// Assemble one tab into a view: highlight + label, both driven by tokens.
 fn tab_view(t: &Tabs, style: &TabsStyle, index: usize, item: &Tab, selected: bool) -> View {
     let warna = if item.disabled {
         style.disabled_label
@@ -304,9 +305,9 @@ fn tab_view(t: &Tabs, style: &TabsStyle, index: usize, item: &Tab, selected: boo
         style.label
     };
 
-    // Label dibungkus wadah flex yang meratakannya — bukan aritmetika di sini
-    // (§3.4). Perannya `Container` supaya screen reader tidak membacakan nama
-    // tab dua kali: sekali dari node tab, sekali dari teksnya.
+    // The label sits in a flex container that centers it — no arithmetic here
+    // (§3.4). Its role is `Container` so a screen reader does not announce the
+    // tab's name twice: once from the tab node, once from its text.
     let isi = row([text(&t.fonts, &item.label)
         .size(style.label_size)
         .weight(if selected {
@@ -346,10 +347,10 @@ fn tab_view(t: &Tabs, style: &TabsStyle, index: usize, item: &Tab, selected: boo
 }
 
 // ---------------------------------------------------------------------------
-// Detak
+// Ticking
 // ---------------------------------------------------------------------------
 
-/// Semua node `tabs` di `tree`, urut pre-order.
+/// Every `tabs` node in `tree`, in pre-order.
 fn nodes(tree: &RenderTree) -> Vec<NodeId> {
     fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
         if let Some(node) = tree.render(id) {
@@ -368,20 +369,19 @@ fn nodes(tree: &RenderTree) -> Vec<NodeId> {
     out
 }
 
-/// Majukan seluruh transisi `tabs` satu frame.
+/// Advance every `tabs` transition by one frame.
 ///
-/// Dipanggil shell **sekali per frame**, tanpa syarat: fungsi inilah yang tahu
-/// apakah masih ada yang bergerak, dan jawabannya yang menentukan apakah frame
-/// berikutnya perlu dijadwalkan (§3.5). Yang dikembalikan:
+/// The shell calls this **once per frame**, unconditionally: this function is
+/// what knows whether anything is still moving, and its answer decides whether
+/// the next frame needs to be scheduled (§3.5). What it returns:
 ///
-/// - [`Dirty::PAINT`] — ada indikator atau sorotan yang **berubah** frame ini.
-/// - [`Dirty::ANIMATION`] — masih ada spring yang belum settle. Begitu bendera
-///   ini hilang, GPU boleh tidur.
-/// - [`Dirty::NONE`] — tidak ada pekerjaan yang lahir dari modul ini.
+/// - [`Dirty::PAINT`] — an indicator or highlight **changed** this frame.
+/// - [`Dirty::ANIMATION`] — a spring has yet to settle. Once this flag is gone,
+///   the GPU may sleep.
+/// - [`Dirty::NONE`] — this module produced no work.
 ///
-/// Indikator bergerak **tanpa** memicu layout: posisi tab tidak bergantung
-/// padanya, jadi satu deretan yang beranimasi tidak pernah membuat window
-/// dihitung ulang.
+/// The indicator moves **without** triggering layout: tab positions do not
+/// depend on it, so an animating row never forces the window to be recomputed.
 ///
 /// ```
 /// # use silka_core::animation::{Motion, Tick};
@@ -401,7 +401,7 @@ fn nodes(tree: &RenderTree) -> Vec<NodeId> {
 ///
 /// reconcile(&mut tree, tabs(&fonts, &t, [tab("Satu"), tab("Dua")]).selected(0));
 /// tree.layout(BoxConstraints::tight(Size::new(400.0, 60.0)));
-/// // Deretan yang baru lahir sudah pada tempatnya: tidak ada yang bergerak.
+/// // A freshly built row is already in place: nothing is moving.
 /// assert_eq!(advance(&mut tree, &tick), Dirty::NONE);
 /// ```
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
@@ -425,7 +425,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     dirty
 }
 
-/// Benar bila masih ada transisi `tabs` yang berjalan.
+/// True while any `tabs` transition is still running.
 pub fn is_animating(tree: &RenderTree) -> bool {
     nodes(tree).into_iter().any(|id| {
         tree.node_ref::<TabListBox>(id)
@@ -436,7 +436,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
     })
 }
 
-/// Selesaikan seluruh transisi `tabs` seketika (dipakai uji dan snapshot).
+/// Finish every `tabs` transition instantly (used by tests and snapshots).
 pub fn settle(tree: &mut RenderTree) {
     for id in nodes(tree) {
         if let Some(l) = tree.node_mut_ref::<TabListBox>(id) {

@@ -1,5 +1,5 @@
-//! Uji menyeluruh untuk tracking, dirty marking, batching, dan identitas
-//! scope. Semuanya logika murni — tidak ada GPU, tidak ada window.
+//! End-to-end tests for tracking, dirty marking, batching, and scope identity.
+//! All pure logic — no GPU, no window.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -7,7 +7,7 @@ use std::rc::Rc;
 use super::*;
 use crate::scheduler::{Dirty, FrameScheduler};
 
-/// Pencatat berapa kali `on_wake` dipanggil, beserta alasan terakhirnya.
+/// Records how many times `on_wake` fired, along with the last reason.
 #[derive(Clone, Default)]
 struct Bangun {
     jumlah: Rc<Cell<u32>>,
@@ -35,7 +35,7 @@ fn hitung() -> Rc<Cell<u32>> {
 }
 
 // ---------------------------------------------------------------------------
-// Hook / state lokal komponen
+// Hooks / component-local state
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -427,10 +427,10 @@ fn batch_mengembalikan_nilai_dan_tetap_flush_saat_panik() {
 }
 
 // ---------------------------------------------------------------------------
-// Antrean dirty & rebuild per-komponen
+// Dirty queue & per-component rebuild
 // ---------------------------------------------------------------------------
 
-/// Pohon uji: root → (`kiri` → `kiri.bawah`), `kanan`.
+/// Test tree: root → (`kiri` → `kiri.bawah`), `kanan`.
 struct Pohon {
     rt: Runtime,
     kiri: ScopeId,
@@ -536,7 +536,7 @@ fn drain_dirty_membersihkan_antrean() {
     assert!(p.rt.drain_dirty().is_empty());
     assert!(!p.rt.is_dirty(p.kanan));
 
-    // Setelah dibersihkan, tulisan berikutnya tetap tercatat.
+    // Once drained, the next write is still recorded.
     p.s_kanan.set(2);
     assert_eq!(p.rt.drain_dirty(), vec![p.kanan]);
 }
@@ -545,7 +545,7 @@ fn drain_dirty_membersihkan_antrean() {
 fn drain_dirty_melewatkan_scope_yang_sudah_mati() {
     let p = pohon();
     p.s_kanan.set(1);
-    // `kanan` menghilang dari pohon sebelum sempat dilayani.
+    // `kanan` disappears from the tree before it can be serviced.
     let s_root = p.s_root;
     let s_kiri = p.s_kiri;
     let s_bawah = p.s_bawah;
@@ -610,7 +610,7 @@ fn rebuild_scope_mati_mengembalikan_none() {
 }
 
 // ---------------------------------------------------------------------------
-// Identitas scope & list dinamis
+// Scope identity & dynamic lists
 // ---------------------------------------------------------------------------
 
 fn bangun_list(rt: &Runtime, item: &[i64]) -> Vec<Signal<i64>> {
@@ -630,7 +630,7 @@ fn anak_dikenali_dari_kunci_bukan_posisi() {
     let awal = rt.children(rt.root());
     a[1].set(999);
 
-    // Sisipkan item baru di depan: identitas lama tidak boleh bergeser.
+    // Insert a new item at the front: existing identities must not shift.
     let b = bangun_list(&rt, &[0, 1, 2, 3]);
     let sesudah = rt.children(rt.root());
     assert_eq!(&sesudah[1..], &awal[..], "scope lama dipakai ulang");
@@ -734,12 +734,13 @@ fn slot_arena_dipakai_ulang_tanpa_menghidupkan_id_lama() {
     rt.build_root(&body);
     let lama = rt.children(rt.root())[0];
 
-    // Anak lama baru dibebaskan di akhir build, jadi "b" mendapat slot baru ...
+    // The old child is only freed at the end of the build, so "b" gets a fresh
+    // slot ...
     kunci.set("b");
     rt.build_root(&body);
     assert!(!rt.is_scope_alive(lama));
 
-    // ... dan slot "a" yang sudah bebas dipakai ulang oleh "c".
+    // ... and the now-free slot of "a" is reused by "c".
     kunci.set("c");
     rt.build_root(body);
     let baru = rt.children(rt.root())[0];
@@ -789,7 +790,7 @@ fn kunci_teks_dan_angka_tidak_pernah_tertukar() {
 }
 
 // ---------------------------------------------------------------------------
-// Umur signal & kesalahan yang harus terbaca jelas
+// Signal lifetimes & errors that must read clearly
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -865,10 +866,10 @@ fn signal_copy_masuk_ke_closure_event_handler() {
     let rt = Runtime::new();
     let count = rt.signal(0i32);
     rt.build_root(|| {
-        // Dibaca saat build (berlangganan) ...
+        // Read during the build (so it subscribes) ...
         let _teks = format!("Nilai: {}", count.get());
     });
-    // ... lalu dipakai lagi di closure 'static, tanpa clone.
+    // ... then used again from a 'static closure, without cloning.
     let on_press: Box<dyn Fn()> = Box::new(move || count.set(count.peek() + 1));
     on_press();
     on_press();
@@ -877,7 +878,7 @@ fn signal_copy_masuk_ke_closure_event_handler() {
 }
 
 // ---------------------------------------------------------------------------
-// Sambungan ke scheduler
+// Wiring to the scheduler
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -908,7 +909,8 @@ fn signal_membangunkan_frame_scheduler_dan_diam_saat_tidak_ada_pembaca() {
         .pending()
         .contains(Dirty::LAYOUT | Dirty::PAINT));
 
-    // Frame dimulai: dirty scheduler bersih, antrean rebuild dilayani.
+    // The frame begins: the scheduler's dirty flags clear, the rebuild queue is
+    // serviced.
     let start = sched.borrow_mut().begin_frame(std::time::Instant::now());
     assert!(sched.borrow().is_idle());
     assert_eq!(rt.drain_dirty(), vec![rt.root()]);

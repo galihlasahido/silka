@@ -1,13 +1,13 @@
-//! Warna untuk perintah gambar.
+//! Colors for draw commands.
 //!
-//! Keputusan yang MENGIKAT: [`Color`] menyimpan komponen dalam ruang
-//! **sRGB non-linear** dengan alpha *straight* (bukan premultiplied). Alasannya
-//! token theme (`REKOMENDASI` §2.7) ditulis manusia dalam notasi hex sRGB —
-//! palet HIG dan palet Tailwind step 50–950 keduanya begitu. Konversi ke ruang
-//! linear yang dibutuhkan GPU terjadi **di batas backend**
-//! (`silka-renderer`), bukan di kode widget.
+//! BINDING decision: [`Color`] stores its components in **non-linear sRGB**
+//! space with *straight* (non-premultiplied) alpha. The reason is that theme
+//! tokens (`REKOMENDASI` §2.7) are written by humans in sRGB hex notation —
+//! both the HIG palette and the Tailwind 50–950 steps work that way. The
+//! conversion to the linear space the GPU needs happens **at the backend
+//! boundary** (`silka-renderer`), not in widget code.
 
-/// Warna RGBA dalam ruang sRGB non-linear, komponen 0.0–1.0, alpha straight.
+/// An RGBA color in non-linear sRGB space, components 0.0–1.0, straight alpha.
 ///
 /// ```
 /// use silka_paint::Color;
@@ -18,35 +18,36 @@
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
-    /// Komponen merah (sRGB, 0.0–1.0).
+    /// Red component (sRGB, 0.0–1.0).
     pub r: f32,
-    /// Komponen hijau (sRGB, 0.0–1.0).
+    /// Green component (sRGB, 0.0–1.0).
     pub g: f32,
-    /// Komponen biru (sRGB, 0.0–1.0).
+    /// Blue component (sRGB, 0.0–1.0).
     pub b: f32,
-    /// Alpha straight (0.0 transparan – 1.0 opak).
+    /// Straight alpha (0.0 transparent – 1.0 opaque).
     pub a: f32,
 }
 
 impl Color {
-    /// Hitam opak.
+    /// Opaque black.
     pub const BLACK: Color = Color::srgb(0.0, 0.0, 0.0);
-    /// Putih opak.
+    /// Opaque white.
     pub const WHITE: Color = Color::srgb(1.0, 1.0, 1.0);
-    /// Transparan penuh.
+    /// Fully transparent.
     pub const TRANSPARENT: Color = Color::srgba(0.0, 0.0, 0.0, 0.0);
 
-    /// Warna opak dari komponen sRGB 0.0–1.0.
+    /// An opaque color from sRGB components in 0.0–1.0.
     pub const fn srgb(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b, a: 1.0 }
     }
 
-    /// Warna dari komponen sRGB 0.0–1.0 plus alpha straight.
+    /// A color from sRGB components in 0.0–1.0 plus straight alpha.
     pub const fn srgba(r: f32, g: f32, b: f32, a: f32) -> Self {
         Self { r, g, b, a }
     }
 
-    /// Warna dari byte 0–255 (notasi yang dipakai palet HIG maupun Tailwind).
+    /// A color from 0–255 bytes (the notation used by both the HIG and
+    /// Tailwind palettes).
     pub fn rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self {
             r: r as f32 / 255.0,
@@ -56,7 +57,7 @@ impl Color {
         }
     }
 
-    /// Warna opak dari literal hex `0xRRGGBB`.
+    /// An opaque color from a `0xRRGGBB` hex literal.
     pub fn hex(rgb: u32) -> Self {
         Self::rgba8(
             ((rgb >> 16) & 0xFF) as u8,
@@ -66,7 +67,7 @@ impl Color {
         )
     }
 
-    /// Warna dari literal hex `0xRRGGBBAA`.
+    /// A color from a `0xRRGGBBAA` hex literal.
     pub fn hexa(rgba: u32) -> Self {
         Self::rgba8(
             ((rgba >> 24) & 0xFF) as u8,
@@ -76,21 +77,21 @@ impl Color {
         )
     }
 
-    /// Salinan warna dengan alpha diganti — dipakai token semi-transparan
-    /// seperti `secondary_label` di HIG.
+    /// A copy of the color with alpha replaced — used by semi-transparent
+    /// tokens such as `secondary_label` in the HIG.
     pub const fn with_alpha(self, a: f32) -> Self {
         Self { a, ..self }
     }
 
-    /// Komponen apa adanya (masih dalam ruang sRGB).
+    /// The components as-is (still in sRGB space).
     pub const fn components(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
 
-    /// Komponen dalam ruang **linear** — bentuk yang dibutuhkan GPU ketika
-    /// target render memakai format `*Srgb` (encoding balik dilakukan hardware).
+    /// The components in **linear** space — the form the GPU needs when the
+    /// render target uses an `*Srgb` format (the hardware does the re-encoding).
     ///
-    /// Alpha tidak ikut dikonversi: alpha selalu linear menurut definisi sRGB.
+    /// Alpha is not converted: alpha is always linear by the sRGB definition.
     pub fn to_linear(self) -> [f32; 4] {
         [
             srgb_to_linear(self.r),
@@ -100,10 +101,11 @@ impl Color {
         ]
     }
 
-    /// Interpolasi linear antar dua warna dalam ruang sRGB, `t` di-clamp 0..=1.
+    /// Linear interpolation between two colors in sRGB space, with `t` clamped
+    /// to 0..=1.
     ///
-    /// Cukup untuk transisi token (hover/pressed) — sistem spring (§3.5) yang
-    /// menentukan `t`-nya, bukan kurva CSS.
+    /// Good enough for token transitions (hover/pressed) — the spring system
+    /// (§3.5) decides `t`, not a CSS curve.
     pub fn lerp(self, other: Color, t: f32) -> Color {
         let t = t.clamp(0.0, 1.0);
         Color {
@@ -115,7 +117,8 @@ impl Color {
     }
 }
 
-/// Konversi satu komponen sRGB non-linear ke linear (kurva resmi IEC 61966-2-1).
+/// Converts one non-linear sRGB component to linear (the official IEC
+/// 61966-2-1 curve).
 pub fn srgb_to_linear(c: f32) -> f32 {
     if c <= 0.040_449_936 {
         c / 12.92
@@ -124,7 +127,7 @@ pub fn srgb_to_linear(c: f32) -> f32 {
     }
 }
 
-/// Kebalikan [`srgb_to_linear`].
+/// The inverse of [`srgb_to_linear`].
 pub fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.003_130_8 {
         c * 12.92
@@ -158,8 +161,8 @@ mod tests {
 
     #[test]
     fn setengah_srgb_bukan_setengah_linear() {
-        // Nilai referensi umum: 0.5 sRGB ≈ 0.2140 linear. Kalau konversi ini
-        // dilewatkan, clear color terlihat jauh lebih terang dari tokennya.
+        // Common reference value: 0.5 sRGB ≈ 0.2140 linear. Skipping this
+        // conversion makes the clear color look far brighter than its token.
         assert!(dekat(srgb_to_linear(0.5), 0.214_041));
     }
 
@@ -179,7 +182,7 @@ mod tests {
 
     #[test]
     fn segmen_linear_dipakai_untuk_nilai_kecil() {
-        // Di bawah ambang, kurvanya lurus — bukan pangkat 2.4.
+        // Below the threshold the curve is a straight line — not a 2.4 power.
         assert!(dekat(srgb_to_linear(0.02), 0.02 / 12.92));
     }
 

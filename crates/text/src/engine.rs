@@ -1,17 +1,17 @@
-//! [`TextEngine`] — satu-satunya pintu ke stack text.
+//! [`TextEngine`] — the single door into the text stack.
 //!
-//! Semua yang mahal dan berstatus hidup lama ada di sini: database font,
-//! rasterizer swash, atlas glyph, dan cache measure. Satu instance dipakai
-//! bersama seluruh aplikasi (membuat dua berarti membayar pemindaian font
-//! sistem dua kali, dan menggandakan atlas).
+//! Everything expensive and long-lived lives here: the font database, the swash
+//! rasterizer, the glyph atlas, and the measure cache. One instance is shared by
+//! the whole application (creating two means paying for the system font scan
+//! twice, and duplicating the atlas).
 //!
-//! Tiga kata kerja yang dipakai lapisan di atas:
+//! The three verbs the layers above use:
 //!
-//! | Kata kerja | Dipakai oleh | Hasil |
+//! | Verb | Used by | Result |
 //! |---|---|---|
-//! | [`TextEngine::measure`] | layout (box constraints/Taffy, §3.4) | ukuran + baseline |
-//! | [`TextEngine::layout`] | widget teks | hasil shaping yang bisa dipakai ulang |
-//! | [`TextEngine::rasterize`] | paint | `GlyphRun` berisi id atlas |
+//! | [`TextEngine::measure`] | layout (box constraints/Taffy, §3.4) | size + baseline |
+//! | [`TextEngine::layout`] | text widgets | a reusable shaping result |
+//! | [`TextEngine::rasterize`] | paint | a `GlyphRun` holding atlas ids |
 
 use std::collections::HashMap;
 
@@ -27,10 +27,11 @@ use crate::layout::{ukur, TextLayout};
 use crate::measure::{ConstraintsKey, TextConstraints, TextMeasure};
 use crate::style::{StyleKey, TextAlign, TextStyle, TextWrap};
 
-/// Berapa banyak hasil measure disimpan sebelum cache dikosongkan.
+/// How many measure results are kept before the cache is emptied.
 ///
-/// Cache measure adalah pembeda besar saat layout berjalan berkali-kali per
-/// frame (pola Taffy: satu node bisa diukur beberapa kali dalam satu pass).
+/// The measure cache makes a big difference when layout runs many times per
+/// frame (the Taffy pattern: one node can be measured several times in a single
+/// pass).
 const KAPASITAS_CACHE_MEASURE: usize = 512;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,7 +42,7 @@ struct MeasureKey {
     scale_bits: u32,
 }
 
-/// Mesin teks: shaping, pengukuran, dan glyph atlas.
+/// The text engine: shaping, measurement, and the glyph atlas.
 pub struct TextEngine {
     fonts: cosmic_text::FontSystem,
     swash: SwashCache,
@@ -69,21 +70,21 @@ impl Default for TextEngine {
 }
 
 impl TextEngine {
-    /// Mesin dengan font bundel + fallback sistem.
+    /// An engine with the bundled font + system fallback.
     ///
-    /// Memindai font sistem butuh waktu (bisa ~1 detik di debug build) — buat
-    /// satu kali saat aplikasi start, lalu bagikan.
+    /// Scanning system fonts takes time (up to ~1 second in a debug build) —
+    /// create one at application start, then share it.
     pub fn new() -> Self {
         Self::with_fonts(FontOptions::default())
     }
 
-    /// Mesin tanpa font sistem: cepat dan **deterministik**, untuk unit test,
-    /// golden test, dan CI (§9.5).
+    /// An engine without system fonts: fast and **deterministic**, for unit
+    /// tests, golden tests, and CI (§9.5).
     pub fn bundled_only() -> Self {
         Self::with_fonts(FontOptions::bundled_only())
     }
 
-    /// Mesin dengan konfigurasi sumber font tertentu.
+    /// An engine with a specific font-source configuration.
     pub fn with_fonts(options: FontOptions) -> Self {
         let loaded = font::load(options);
         Self {
@@ -97,24 +98,25 @@ impl TextEngine {
         }
     }
 
-    /// Nama keluarga font UI yang aktif (Inter bundel), bila ada.
+    /// The active UI font's family name (bundled Inter), if there is one.
     pub fn ui_family(&self) -> Option<&str> {
         self.ui_family.as_deref()
     }
 
-    /// Tambahkan font aplikasi dari memori (font brand, ikon).
+    /// Add an application font from memory (brand fonts, icon fonts).
     pub fn load_font_data(&mut self, data: Vec<u8>) {
         self.fonts.db_mut().load_font_data(data);
         self.measures.clear();
     }
 
-    /// Scale factor layar tempat teks akan dirasterisasi (2.0 di Retina).
+    /// The scale factor of the screen the text will be rasterized for (2.0 on
+    /// Retina).
     pub fn scale_factor(&self) -> f32 {
         self.scale_factor
     }
 
-    /// Setel scale factor. Ukuran hasil measure tetap dalam poin logis; yang
-    /// berubah hanya resolusi bitmap di atlas.
+    /// Set the scale factor. Measured sizes stay in logical points; only the
+    /// bitmap resolution in the atlas changes.
     pub fn set_scale_factor(&mut self, scale_factor: f32) {
         let baru = if scale_factor.is_finite() && scale_factor > 0.0 {
             scale_factor
@@ -123,38 +125,38 @@ impl TextEngine {
         };
         if baru != self.scale_factor {
             self.scale_factor = baru;
-            // Ukuran logis tidak berubah, tapi hasil pembulatan per piksel
-            // berubah — cache measure dikunci per scale, jadi cukup dibiarkan.
+            // Logical sizes do not change, but per-pixel rounding does — the
+            // measure cache is keyed per scale, so this is all it takes.
             self.measures.retain(|k, _| k.scale_bits == baru.to_bits());
         }
     }
 
-    /// Cache glyph beserta atlasnya — dipakai backend untuk mengunggah tekstur.
+    /// The glyph cache and its atlases — used by the backend to upload textures.
     pub fn glyphs(&self) -> &GlyphCache {
         &self.cache
     }
 
-    /// Versi mutable dari cache glyph (backend menandai dirty sudah diunggah).
+    /// The mutable glyph cache (the backend marks dirty regions as uploaded).
     pub fn glyphs_mut(&mut self) -> &mut GlyphCache {
         &mut self.cache
     }
 
-    /// Jumlah entri cache measure — untuk uji dan diagnostik.
+    /// The number of measure-cache entries — for tests and diagnostics.
     pub fn measure_cache_len(&self) -> usize {
         self.measures.len()
     }
 
-    /// Kosongkan seluruh cache (measure + glyph). Dipakai saat font berubah.
+    /// Empty every cache (measure + glyph). Used when the fonts change.
     pub fn clear_caches(&mut self) {
         self.measures.clear();
         self.cache.clear();
     }
 
-    /// **Ukur** teks terhadap constraints — inilah measure function leaf node
-    /// untuk sistem layout (§3.4).
+    /// **Measure** text against constraints — this is the leaf-node measure
+    /// function for the layout system (§3.4).
     ///
-    /// Hasil dicache: pengukuran berulang dengan (teks, gaya, constraints) yang
-    /// sama tidak melakukan shaping lagi.
+    /// Results are cached: repeated measurements with the same (text, style,
+    /// constraints) do not shape again.
     pub fn measure(
         &mut self,
         text: &str,
@@ -179,7 +181,7 @@ impl TextEngine {
         m
     }
 
-    /// **Shape** teks terhadap constraints.
+    /// **Shape** text against constraints.
     pub fn layout(
         &mut self,
         text: &str,
@@ -228,15 +230,15 @@ impl TextEngine {
         }
     }
 
-    /// **Rasterisasi** hasil layout menjadi perintah gambar.
+    /// **Rasterize** a layout into draw commands.
     ///
-    /// `origin` adalah sudut kiri-atas blok teks dalam poin logis. Posisi
-    /// pecahan `origin` ikut menentukan varian subpixel yang dipakai — teks
-    /// yang bergeser 0,25 pt benar-benar terlihat bergeser 0,25 pt, bukan
-    /// melompat satu piksel.
+    /// `origin` is the top-left corner of the text block in logical points. Its
+    /// fractional part helps decide which subpixel variant is used — text moved
+    /// by 0.25 pt really does look like it moved 0.25 pt, instead of jumping a
+    /// whole pixel.
     ///
-    /// Glyph yang tidak muat di atlas dilewatkan diam-diam; lebih baik satu
-    /// glyph hilang daripada frame yang panic (§9.7).
+    /// Glyphs that do not fit in the atlas are skipped silently; one missing
+    /// glyph beats a panicking frame (§9.7).
     pub fn rasterize(&mut self, layout: &TextLayout, origin: Point, color: Color) -> GlyphRun {
         let scale = self.scale_factor;
         let mut run_out = GlyphRun::with_capacity(color, layout.glyph_count());
@@ -281,10 +283,10 @@ impl TextEngine {
         run_out
     }
 
-    /// Jalur pintas: ukur, shape, rasterisasi, dan dorong ke [`Scene`].
+    /// The shortcut: measure, shape, rasterize, and push into a [`Scene`].
     ///
-    /// Mengembalikan hasil ukur supaya pemanggil bisa menumpuk teks berikutnya
-    /// di bawahnya. Run kosong tidak menghasilkan perintah sama sekali.
+    /// Returns the measurement so the caller can stack the next piece of text
+    /// below it. An empty run produces no command at all.
     pub fn draw(
         &mut self,
         scene: &mut Scene,
@@ -302,8 +304,8 @@ impl TextEngine {
         layout.measure()
     }
 
-    /// Ukuran satu baris teks tanpa batas lebar — jalur tercepat untuk label,
-    /// tombol, dan sel tabel.
+    /// The size of a single line of text with no width bound — the fastest path
+    /// for labels, buttons, and table cells.
     pub fn measure_line(&mut self, text: &str, style: &TextStyle) -> Size {
         let style = style.clone().single_line();
         self.measure(text, &style, TextConstraints::UNBOUNDED).size
@@ -323,8 +325,8 @@ impl TextEngine {
         let format = match image.content {
             SwashContent::Mask => AtlasFormat::Mask,
             SwashContent::Color => AtlasFormat::Color,
-            // Subpixel-AA sudah ditinggalkan (§3.3) dan tidak pernah diminta;
-            // kalau toh muncul, lebih baik dilewatkan daripada salah warna.
+            // Subpixel AA has been left behind (§3.3) and is never requested;
+            // should it show up anyway, skipping beats drawing wrong colors.
             SwashContent::SubpixelMask => {
                 self.cache.insert_empty(key);
                 return None;
@@ -345,10 +347,10 @@ impl TextEngine {
     }
 }
 
-/// Mesin teks **adalah** sumber atlas bagi backend.
+/// The text engine **is** the atlas source for the backend.
 ///
-/// Aplikasi cukup menyerahkan `&mut TextEngine` ke jalur render; tidak perlu
-/// membongkar cache-nya sendiri, dan backend tetap tidak tahu apa itu font
+/// An application just hands `&mut TextEngine` to the render path; it never has
+/// to unpack the cache itself, and the backend still has no idea what a font is
 /// (§3.2, §3.3).
 impl silka_paint::GlyphSource for TextEngine {
     fn atlas_size(&self, format: silka_paint::GlyphFormat) -> u32 {
@@ -379,8 +381,8 @@ fn wrap_cosmic(wrap: TextWrap) -> Wrap {
 
 fn align_cosmic(align: TextAlign) -> Option<Align> {
     match align {
-        // `None` = ikut arah paragraf (kiri di LTR, kanan di RTL) — satu-satunya
-        // pilihan yang benar untuk RTL (§9.8).
+        // `None` = follow the paragraph direction (left in LTR, right in RTL) —
+        // the only correct choice for RTL (§9.8).
         TextAlign::Start => None,
         TextAlign::Center => Some(Align::Center),
         TextAlign::End => Some(Align::End),
@@ -467,7 +469,7 @@ mod tests {
             TextConstraints::width(40.0),
         );
         assert_eq!(m.line_count, 1);
-        // Konten lebih lebar dari constraints → ukuran dijepit, overflow ditandai.
+        // Content wider than the constraints → size clamped, overflow flagged.
         assert!(m.content_size.width > 40.0);
         assert_eq!(m.width(), 40.0);
         assert!(m.overflowed);
@@ -513,7 +515,7 @@ mod tests {
         let b = e.measure("Cache", &s, TextConstraints::UNBOUNDED);
         assert_eq!(e.measure_cache_len(), 1, "tidak menambah entri baru");
         assert_eq!(a, b);
-        // Gaya berbeda = entri berbeda.
+        // A different style = a different entry.
         e.measure(
             "Cache",
             &s.clone().weight(FontWeight::BOLD),
@@ -590,7 +592,7 @@ mod tests {
         assert!(layout.glyph_count() >= 9);
 
         let run = e.rasterize(&layout, Point::new(10.0, 20.0), Color::WHITE);
-        // Spasi tidak punya piksel, jadi glyph yang digambar lebih sedikit.
+        // Spaces have no pixels, so fewer glyphs are actually drawn.
         assert!(!run.is_empty());
         assert!(run.len() < layout.glyph_count());
         assert!(!e.glyphs().is_empty());
@@ -616,8 +618,8 @@ mod tests {
             setelah_frame_pertama,
             "frame kedua tidak boleh merasterisasi ulang"
         );
-        // "AAA" pada posisi berbeda-beda: tiga A di kolom berbeda tetap satu
-        // bitmap bila bin subpixel-nya sama.
+        // "AAA" at different positions: three As in different columns are still
+        // one bitmap when their subpixel bins match.
         assert!(setelah_frame_pertama <= 3);
     }
 
@@ -637,7 +639,7 @@ mod tests {
             "geser setengah piksel harus jadi varian bitmap sendiri"
         );
 
-        // Geseran yang sama persis tidak menambah apa pun.
+        // An identical offset adds nothing at all.
         e.rasterize(&l, Point::new(20.5, 10.0), Color::WHITE);
         assert_eq!(e.glyphs().len(), sesudah_pecahan);
     }
@@ -657,11 +659,11 @@ mod tests {
         let r2 = e.rasterize(&l2, Point::ZERO, Color::WHITE);
 
         assert_eq!(m1.size, m2.size, "ukuran logis tidak boleh berubah");
-        // Kotak logis boleh sedikit berbeda karena pembulatan piksel, tapi
-        // tidak boleh berlipat ganda.
+        // The logical box may differ slightly because of pixel rounding, but it
+        // must never double.
         let tinggi_2x = r2.bounds().unwrap().size.height;
         assert!((tinggi_2x - tinggi_1x).abs() < 2.0);
-        // Bitmap di atlas benar-benar dua kali lebih besar.
+        // The bitmap in the atlas really is twice as large.
         let piksel_1x: u32 = r1
             .glyphs
             .iter()
@@ -703,7 +705,7 @@ mod tests {
         assert_eq!(scene.len(), 1);
         assert!(m.width() > 0.0);
 
-        // Teks kosong tidak menghasilkan perintah sama sekali.
+        // Empty text produces no command at all.
         e.draw(
             &mut scene,
             "   ",

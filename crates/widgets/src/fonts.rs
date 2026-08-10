@@ -1,21 +1,21 @@
-//! [`Fonts`] — pegangan bersama ke mesin teks aplikasi.
+//! [`Fonts`] — a shared handle to the application's text engine.
 //!
-//! Memindai font sistem mahal dan glyph atlas **harus** dibagi (kalau tidak,
-//! glyph yang sama dirasterisasi dua kali dan tekstur atlas digandakan), jadi
-//! satu [`TextEngine`] hidup selama aplikasi berjalan dan dipakai bergantian
-//! oleh dua pihak di UI thread yang sama:
+//! Scanning system fonts is expensive and the glyph atlas **must** be shared
+//! (otherwise the same glyph is rasterized twice and the atlas texture is
+//! duplicated), so a single [`TextEngine`] lives for the lifetime of the
+//! application and is used in turn by two parties on the same UI thread:
 //!
-//! 1. **saat membangun view** — [`crate::text`] mengukur dan merasterisasi;
-//! 2. **saat menggambar** — backend mengunggah bagian atlas yang berubah lewat
-//!    [`silka_paint::GlyphSource`].
+//! 1. **while building the view** — [`crate::text`] measures and rasterizes;
+//! 2. **while painting** — the backend uploads the changed part of the atlas
+//!    through [`silka_paint::GlyphSource`].
 //!
-//! Keduanya tidak pernah berjalan bersamaan, jadi `Rc<RefCell<…>>` sudah cukup
-//! dan tidak ada biaya sinkronisasi (REKOMENDASI §3.3).
+//! The two never run at the same time, so `Rc<RefCell<…>>` is enough and costs
+//! nothing in synchronization (REKOMENDASI §3.3).
 //!
 //! ```
 //! use silka_widgets::Fonts;
 //!
-//! // `bundled_only` = tanpa font sistem: cepat dan deterministik untuk test.
+//! // `bundled_only` = no system fonts: fast and deterministic for tests.
 //! let fonts = Fonts::bundled_only();
 //! fonts.set_scale_factor(2.0);
 //! assert_eq!(fonts.scale_factor(), 2.0);
@@ -27,54 +27,54 @@ use std::rc::Rc;
 
 use silka_text::TextEngine;
 
-/// Pegangan ber-`Clone` ke satu [`TextEngine`] milik aplikasi.
+/// A `Clone`-able handle to the application's single [`TextEngine`].
 #[derive(Clone)]
 pub struct Fonts(Rc<RefCell<TextEngine>>);
 
 impl Fonts {
-    /// Mesin dengan font bundel + fallback sistem — pilihan untuk aplikasi.
+    /// An engine with the bundled fonts plus system fallback — what apps want.
     pub fn new() -> Self {
         Self::from_engine(TextEngine::new())
     }
 
-    /// Mesin tanpa font sistem: **deterministik**, untuk unit test dan CI
-    /// (§9.5).
+    /// An engine without system fonts: **deterministic**, for unit tests and
+    /// CI (§9.5).
     pub fn bundled_only() -> Self {
         Self::from_engine(TextEngine::bundled_only())
     }
 
-    /// Bungkus mesin yang sudah ada.
+    /// Wrap an existing engine.
     pub fn from_engine(engine: TextEngine) -> Self {
         Self(Rc::new(RefCell::new(engine)))
     }
 
-    /// Pegangan mentahnya — inilah yang diserahkan ke
-    /// `WindowConfig::glyphs(…)` supaya atlas yang diisi saat membangun view
-    /// **persis** atlas yang dibaca backend.
+    /// The raw handle — this is what you hand to `WindowConfig::glyphs(…)` so
+    /// that the atlas filled while building the view is **exactly** the atlas
+    /// the backend reads.
     pub fn shared(&self) -> Rc<RefCell<TextEngine>> {
         self.0.clone()
     }
 
-    /// Pinjam mesinnya sebentar.
+    /// Borrow the engine briefly.
     ///
-    /// Panik bila dipanggil saat mesin sedang dipinjam pihak lain — sengaja:
-    /// itu berarti ada dua pemakai yang berjalan bersamaan, dan janji "tidak
-    /// pernah bersamaan" sudah dilanggar.
+    /// Panics if called while the engine is already borrowed elsewhere —
+    /// deliberately: that means two users are running at once, and the
+    /// "never at the same time" promise has been broken.
     pub fn with<R>(&self, f: impl FnOnce(&mut TextEngine) -> R) -> R {
         f(&mut self.0.borrow_mut())
     }
 
-    /// Scale factor yang sedang dipakai untuk rasterisasi.
+    /// The scale factor currently used for rasterization.
     pub fn scale_factor(&self) -> f32 {
         self.0.borrow().scale_factor()
     }
 
-    /// Setel scale factor layar (§3.3). Ukuran logis tidak ikut berubah.
+    /// Set the display scale factor (§3.3). Logical sizes are unaffected.
     pub fn set_scale_factor(&self, scale_factor: f32) {
         self.0.borrow_mut().set_scale_factor(scale_factor);
     }
 
-    /// Benar bila dua pegangan menunjuk mesin yang sama.
+    /// True when two handles point at the same engine.
     pub fn ptr_eq(&self, other: &Fonts) -> bool {
         Rc::ptr_eq(&self.0, &other.0)
     }
@@ -87,8 +87,8 @@ impl Default for Fonts {
 }
 
 impl PartialEq for Fonts {
-    /// Identitas, bukan isi: mesin teks tidak punya kesamaan struktural yang
-    /// bermakna, dan yang penting bagi diffing memang "mesin yang sama".
+    /// Identity, not contents: a text engine has no meaningful structural
+    /// equality, and what diffing cares about is "the same engine".
     fn eq(&self, other: &Self) -> bool {
         self.ptr_eq(other)
     }

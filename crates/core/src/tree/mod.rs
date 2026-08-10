@@ -1,37 +1,38 @@
-//! **Arena render tree + box constraints ala Flutter** (REKOMENDASI §2, §3.4).
+//! **Arena render tree + Flutter-style box constraints** (REKOMENDASI §2, §3.4).
 //!
-//! Ini lapisan `Element`+`RenderObject`-nya Flutter, diterjemahkan ke Rust
-//! tanpa inheritance dan tanpa GC:
+//! This is Flutter's `Element`+`RenderObject` layer, translated into Rust
+//! without inheritance and without a GC:
 //!
-//! | Flutter | Di sini |
+//! | Flutter | Here |
 //! |---|---|
-//! | `Element` (identitas/state) | slot arena ber-[`NodeId`] bergenerasi |
-//! | `RenderObject` (layout/paint/a11y) | [`RenderNode`] sebagai trait object |
-//! | `PaintingContext` | [`PaintCtx`], kosakata `silka-paint` saja |
-//! | `BoxConstraints` | [`BoxConstraints`] — protokol native, bukan tempelan |
-//! | relayout boundary | dihitung tiap layout, lihat [`RenderTree::flush_layout`] |
+//! | `Element` (identity/state) | a generational [`NodeId`] arena slot |
+//! | `RenderObject` (layout/paint/a11y) | [`RenderNode`] as a trait object |
+//! | `PaintingContext` | [`PaintCtx`], `silka-paint` vocabulary only |
+//! | `BoxConstraints` | [`BoxConstraints`] — the native protocol, not a bolt-on |
+//! | relayout boundary | computed on every layout, see [`RenderTree::flush_layout`] |
 //!
-//! Tiga kalimat yang mengatur semuanya: **constraints turun, ukuran naik,
-//! induk menentukan posisi.** Karena ukuran sebuah node hanya fungsi dari
-//! constraints dan isinya, dua optimasi ini sah secara logika (dan keduanya
-//! ada):
+//! Three sentences govern everything: **constraints go down, sizes come up, the
+//! parent sets the position.** Because a node's size is purely a function of its
+//! constraints and its content, two optimizations are logically sound (and both
+//! are here):
 //!
-//! 1. **Cache layout** — constraints sama + node bersih = tidak ada kerja.
-//! 2. **Relayout boundary** — node yang ukurannya tidak mungkin dipengaruhi
-//!    isinya (constraints tight, induk tidak memakai ukurannya, atau viewport)
-//!    menghentikan rambatan dirty. Perubahan di dalam scroll view tidak pernah
-//!    membuat seluruh window di-layout ulang.
+//! 1. **Layout cache** — same constraints + clean node = no work.
+//! 2. **Relayout boundary** — a node whose size cannot possibly be affected by
+//!    its content (tight constraints, the parent not using its size, or a
+//!    viewport) stops dirty propagation. A change inside a scroll view never
+//!    forces the whole window to relayout.
 //!
-//! Struktur pohon **hanya** diubah lapisan view-diff ([`crate::view`]); layout
-//! tidak pernah menambah/membuang node. AccessKit ikut di sini sebagai output
-//! first-class, bukan susulan: [`RenderNode::access`] adalah bagian kontrak dan
-//! `bounds`-nya datang dari hasil layout ([`RenderTree::access_tree`]).
+//! The tree structure is mutated **only** by the view-diff layer
+//! ([`crate::view`]); layout never adds or removes nodes. AccessKit rides along
+//! here as a first-class output rather than an afterthought:
+//! [`RenderNode::access`] is part of the contract and its `bounds` come from
+//! layout results ([`RenderTree::access_tree`]).
 //!
-//! Di atas hasil layout yang sama berdiri **pass paint**
-//! ([`RenderTree::paint`]): node menggambar dalam koordinat lokal, [`PaintCtx`]
-//! menaikkannya ke koordinat absolut, dan subtree yang bersih dilewati. Apa
-//! yang digambar dan apa yang dibacakan screen reader karena itu mustahil
-//! berbeda — keduanya membaca angka yang sama.
+//! On top of those same layout results sits the **paint pass**
+//! ([`RenderTree::paint`]): nodes draw in local coordinates, [`PaintCtx`] lifts
+//! them into absolute coordinates, and clean subtrees are skipped. What gets
+//! drawn and what a screen reader announces therefore cannot disagree — both
+//! read the same numbers.
 //!
 //! ```
 //! use silka_core::tree::{BoxConstraints, RenderTree};
@@ -44,7 +45,7 @@
 //!     column([fixed(80.0, 20.0), fixed(120.0, 30.0)]).spacing(8.0),
 //! );
 //! let ukuran = tree.layout(BoxConstraints::loose(Size::new(400.0, 400.0)));
-//! // 20 + 8 + 30 tinggi, selebar anak terlebar.
+//! // 20 + 8 + 30 tall, as wide as the widest child.
 //! assert_eq!(ukuran, Size::new(120.0, 58.0));
 //! ```
 
@@ -62,8 +63,8 @@ mod taffy_tests;
 #[cfg(test)]
 mod tests;
 
-/// Kosakata a11y diekspos ulang di sini karena ia bagian dari kontrak
-/// [`RenderNode`]; rumahnya ada di [`crate::access`].
+/// The a11y vocabulary is re-exported here because it is part of the
+/// [`RenderNode`] contract; its home is [`crate::access`].
 pub use crate::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
 pub use arena::{AsAny, LayoutCtx, NodeId, RenderNode, RenderTree, TextDirection, TreeId};
 pub use constraints::BoxConstraints;

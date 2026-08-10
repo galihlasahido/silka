@@ -1,32 +1,32 @@
-//! Token radius + **bentuk** lengkungnya.
+//! Radius tokens plus the **shape** of the curve.
 //!
-//! Kontrak §2.7/§3.6: `rounded_lg` bukan angka, melainkan token. Di preset
-//! Cupertino ia menjadi squircle (superellipse G2-continuous), di preset
-//! Tailwind arc 8px. Karena itu yang keluar dari resolusi bukan `f32` melainkan
-//! [`Corners`] — radius **dan** eksponen superellipse-nya sekaligus, persis
-//! seperti yang diterima shader SDF dan hit-testing.
+//! The §2.7/§3.6 contract: `rounded_lg` is not a number, it is a token. Under
+//! the Cupertino preset it becomes a squircle (a G2-continuous superellipse),
+//! under Tailwind an 8px arc. That is why resolution yields not an `f32` but
+//! [`Corners`] — the radius **and** its superellipse exponent together, exactly
+//! what the SDF shader and hit-testing expect.
 
 use silka_paint::{CornerStyle, Corners};
 
-/// Token radius sudut + bentuk lengkungnya.
+/// Corner-radius tokens plus the shape of their curve.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RadiusTokens {
-    /// Bentuk lengkung yang berlaku untuk seluruh preset ini.
+    /// The corner shape that applies across this entire preset.
     pub style: CornerStyle,
-    /// Radius kecil (badge, chip, checkbox).
+    /// Small radius (badges, chips, checkboxes).
     pub sm: f32,
-    /// Radius sedang (tombol, input).
+    /// Medium radius (buttons, inputs).
     pub md: f32,
-    /// Radius besar (kartu, panel).
+    /// Large radius (cards, panels).
     pub lg: f32,
-    /// Radius ekstra besar (sheet, dialog).
+    /// Extra-large radius (sheets, dialogs).
     pub xl: f32,
-    /// Radius "pil" — akan dibatasi ke separuh sisi terpendek saat digambar.
+    /// The "pill" radius — clamped to half the shortest side when drawn.
     pub full: f32,
 }
 
 impl RadiusTokens {
-    /// Nilai radius satu token, dalam poin logis.
+    /// The radius value of one token, in logical points.
     pub fn get(&self, token: RadiusToken) -> f32 {
         match token {
             RadiusToken::None => 0.0,
@@ -38,24 +38,24 @@ impl RadiusTokens {
         }
     }
 
-    /// Paket sudut lengkap satu token: radius + bentuk preset.
+    /// The full corner package for one token: radius plus the preset's shape.
     ///
-    /// Inilah satu-satunya cara widget mendapatkan geometri sudut.
+    /// This is the only way a widget obtains corner geometry.
     pub fn corners(&self, token: RadiusToken) -> Corners {
         match token {
-            // Sudut tajam tidak punya bentuk: arc dan squircle sama saja di
-            // radius 0, dan menyebut `Arc` membuat shader melewati jalur
-            // superellipse sepenuhnya.
+            // A sharp corner has no shape: arc and squircle are identical at
+            // radius 0, and naming `Arc` lets the shader skip the superellipse
+            // path entirely.
             RadiusToken::None => Corners::SHARP,
             _ => Corners::uniform(self.get(token), self.style),
         }
     }
 }
 
-/// Nama token radius — bentuk yang dipakai utility (`rounded_lg`).
+/// The name of a radius token — the form utilities take (`rounded_lg`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RadiusToken {
-    /// Tanpa lengkung.
+    /// No rounding at all.
     None,
     /// [`RadiusTokens::sm`].
     Sm,
@@ -65,12 +65,12 @@ pub enum RadiusToken {
     Lg,
     /// [`RadiusTokens::xl`].
     Xl,
-    /// [`RadiusTokens::full`] — pil/lingkaran.
+    /// [`RadiusTokens::full`] — pill/circle.
     Full,
 }
 
 impl RadiusToken {
-    /// Semua token radius, dari tajam ke paling melengkung.
+    /// Every radius token, from sharp to most rounded.
     pub const ALL: [RadiusToken; 6] = [
         RadiusToken::None,
         RadiusToken::Sm,
@@ -80,7 +80,7 @@ impl RadiusToken {
         RadiusToken::Full,
     ];
 
-    /// Nama token untuk gallery/debug.
+    /// Token name for gallery/debug output.
     pub const fn name(self) -> &'static str {
         match self {
             RadiusToken::None => "none",
@@ -134,9 +134,10 @@ mod tests {
             assert_eq!(cup.corners(token).style, CornerStyle::squircle());
             assert_eq!(tw.corners(token).style, CornerStyle::Arc);
         }
-        // Konsekuensinya terasa sampai hit-testing: pada radius nominal yang
-        // sama, sudut squircle "lebih penuh" — titik dekat pojok masih di
-        // dalam, padahal busur lingkaran sudah memotongnya.
+        // The consequence reaches all the way into hit-testing: at the same
+        // nominal radius a squircle corner is "fuller" — a point near the
+        // corner is still inside, where a circular arc would already have cut
+        // it off.
         let s = Size::new(120.0, 40.0);
         let p = silka_paint::Point::new(2.0, 2.0);
         let r = 10.0;

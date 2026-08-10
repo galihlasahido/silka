@@ -1,63 +1,65 @@
 //! # silka-core
 //!
-//! Mesin framework: semua yang ada di bawah API publik bergaya Dart
-//! (REKOMENDASI §2). Isi crate ini adalah **detail implementasi** — kontrak
-//! yang dilihat penulis aplikasi hidup di `silka-widgets`.
+//! The framework engine: everything that sits beneath the Dart-style public
+//! API (REKOMENDASI §2). This crate is **implementation detail** — the contract
+//! application authors see lives in `silka-widgets`.
 //!
-//! Lapisan yang ditampung:
+//! The layers it hosts:
 //!
-//! - **Signals + rebuild per-komponen** (pola Dioxus 0.7, §2.5): perubahan
-//!   signal menandai komponen yang membacanya sebagai dirty → rebuild subtree
-//!   kecil itu → diff. Butuh scheduler dirty-marking + scope tracking.
-//! - **View-diff → arena render tree** (§2): view tree ringan dibangun ulang
-//!   tiap update dan di-diff ke retained tree berbasis arena/slotmap ber-ID.
-//!   Arena dipilih karena AccessKit dan Taffy sama-sama berbasis ID.
-//! - **Box constraints ala Flutter** sebagai protokol layout native
-//!   ("constraints turun, ukuran naik"), single pass + relayout boundaries;
-//!   Taffy dipakai untuk widget Flex/Grid, dengan measure function leaf
-//!   menumpang `silka-text` (§3.4). Layout harus paham **mirroring RTL**
-//!   sejak awal — retrofit RTL semustahil retrofit a11y (§9.8).
-//! - **Spring animation** (§3.5): nilai animasi menyimpan `(posisi, velocity)`
-//!   dan **selalu interruptible/retargetable** — solusi closed-form damped
-//!   harmonic oscillator, parameter perceptual (duration + bounce), preset
-//!   `smooth`/`snappy`/`bouncy`. Wajib menghormati reduced-motion.
-//! - **Input + hit-testing + velocity tracker** — velocity dibutuhkan untuk
-//!   handoff gesture (fling → spring).
-//! - **Scheduler**: render **hanya saat dirty**; vsync lewat display link per
-//!   platform, jangan pernah hardcode 16.6 ms.
+//! - **Signals + per-component rebuild** (the Dioxus 0.7 pattern, §2.5): a
+//!   signal write marks every component that read it dirty → rebuild that one
+//!   small subtree → diff. Needs a dirty-marking scheduler + scope tracking.
+//! - **View-diff → arena render tree** (§2): a lightweight view tree is rebuilt
+//!   on every update and diffed into a retained tree backed by an ID-addressed
+//!   arena/slotmap. The arena was chosen because AccessKit and Taffy are both
+//!   ID-based.
+//! - **Flutter-style box constraints** as the native layout protocol
+//!   ("constraints go down, sizes come up"), single pass + relayout boundaries;
+//!   Taffy drives the Flex/Grid widgets, with leaf measure functions riding on
+//!   `silka-text` (§3.4). Layout must understand **RTL mirroring** from day
+//!   one — retrofitting RTL is as hopeless as retrofitting a11y (§9.8).
+//! - **Spring animation** (§3.5): an animated value stores
+//!   `(position, velocity)` and is **always interruptible/retargetable** — a
+//!   closed-form damped harmonic oscillator solution, perceptual parameters
+//!   (duration + bounce), and the `smooth`/`snappy`/`bouncy` presets.
+//!   Reduced-motion must be honored.
+//! - **Input + hit-testing + velocity tracker** — velocity is what makes
+//!   gesture handoff (fling → spring) possible.
+//! - **Scheduler**: render **only when dirty**; vsync arrives over a
+//!   per-platform display link, never a hardcoded 16.6 ms.
 //!
-//! **AccessKit adalah output first-class dari render tree** (§3.8), bukan
-//! lapisan susulan: setiap node menyediakan role, name, bounds, dan actions.
+//! **AccessKit is a first-class output of the render tree** (§3.8), not a layer
+//! bolted on later: every node supplies role, name, bounds, and actions.
 //!
-//! ## Yang sudah ada
+//! ## What exists today
 //!
-//! **Milestone `frame-scheduling`** — [`scheduler`]: mesin **render-on-dirty**
-//! beserta pengukuran frame time. Murni logika: ia tidak tahu winit maupun
-//! wgpu. Platform hanya menyuplai detak vsync dan interval terukurnya;
-//! `silka-platform` memakai `CADisplayLink` di macOS (ProMotion-aware) dan
-//! `request_redraw` winit di OS lain. **Tidak ada 16,6 ms di mana pun** —
-//! kalau interval belum diketahui, ia bernilai `None` dan tidak ada yang
-//! berpura-pura tahu.
+//! **Milestone `frame-scheduling`** — [`scheduler`]: the **render-on-dirty**
+//! engine together with frame time measurement. Pure logic: it knows nothing of
+//! winit and nothing of wgpu. The platform supplies only the vsync tick and its
+//! measured interval; `silka-platform` uses `CADisplayLink` on macOS
+//! (ProMotion-aware) and winit's `request_redraw` everywhere else. **There is
+//! no 16.6 ms anywhere** — while the interval is unknown it is `None`, and
+//! nothing pretends to know better.
 //!
-//! **Milestone `signals`** — [`signals`]: runtime state pola Dioxus.
-//! [`signals::use_signal`] untuk state lokal komponen, dependency tracking
-//! per-scope, dirty marking + batching, dan identitas scope berbasis
-//! [`signals::Key`] untuk list dinamis. Sambungannya ke [`scheduler`] hanya
-//! satu baris ([`signals::Runtime::on_wake`]) sehingga janji "render hanya saat
-//! dirty" tetap utuh: signal yang tidak dibaca komponen mana pun **tidak**
-//! membangunkan GPU.
+//! **Milestone `signals`** — [`signals`]: the Dioxus-style state runtime.
+//! [`signals::use_signal`] for component-local state, per-scope dependency
+//! tracking, dirty marking + batching, and [`signals::Key`]-based scope
+//! identity for dynamic lists. Its wiring into [`scheduler`] is a single line
+//! ([`signals::Runtime::on_wake`]), which keeps the "render only when dirty"
+//! promise intact: a signal that no component reads does **not** wake the GPU.
 //!
-//! **Milestone `arena-tree`** — [`tree`] dan [`view`]: retained render tree
-//! berbasis arena ber-ID bergenerasi, protokol **box constraints ala Flutter**
-//! ("constraints turun, ukuran naik, induk menentukan posisi"), cache layout
-//! plus **relayout boundary**, dan di atasnya lapisan **view-diff**: view tree
-//! ringan bergaya Dart dibangun ulang tiap rebuild lalu di-diff ke render tree
-//! (§2). Identitas anak memakai [`signals::Key`] yang sama dengan scope
-//! komponen, jadi hanya ada satu disiplin kunci di seluruh framework.
-//! [`tree::RenderNode::access`] adalah bagian kontrak node sejak awal, dengan
-//! `bounds` yang datang dari hasil layout (§3.8).
+//! **Milestone `arena-tree`** — [`tree`] and [`view`]: a retained render tree
+//! backed by a generational ID arena, the **Flutter-style box constraints**
+//! protocol ("constraints go down, sizes come up, the parent decides
+//! position"), a layout cache plus **relayout boundaries**, and above it the
+//! **view-diff** layer: a lightweight Dart-style view tree rebuilt on every
+//! rebuild and then diffed into the render tree (§2). Child identity uses the
+//! same [`signals::Key`] as component scopes, so there is exactly one key
+//! discipline across the whole framework. [`tree::RenderNode::access`] is part
+//! of the node contract from the start, with `bounds` coming from layout
+//! results (§3.8).
 //!
-//! Alur satu frame yang dirakit ketiganya:
+//! The single-frame flow the three of them assemble:
 //!
 //! ```
 //! use silka_core::scheduler::FrameScheduler;
@@ -68,160 +70,160 @@
 //! let mut scheduler = FrameScheduler::new();
 //! let mut tree = RenderTree::new();
 //!
-//! // 1. Komponen dibangun ulang → view baru → diff ke render tree.
+//! // 1. A component rebuilds → new view → diff into the render tree.
 //! reconcile(&mut tree, column([fixed(120.0, 24.0)]).spacing(8.0));
-//! // 2. Apa yang berubah menentukan apakah renderer perlu dibangunkan.
+//! // 2. What changed decides whether the renderer needs waking at all.
 //! scheduler.request(tree.take_dirty());
-//! // 3. Layout: penuh saat ukuran window berubah, subtree saja selebihnya.
+//! // 3. Layout: full when the window resizes, subtree-only otherwise.
 //! tree.perform_layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
 //! ```
 //!
-//! **Milestone `spring`** — [`animation`]: sistem animasi spring dengan solusi
-//! **closed-form damped harmonic oscillator**. Nilai menyimpan
-//! `(posisi, velocity)` ([`animation::SpringValue`]) sehingga **selalu
-//! interruptible**: [`animation::SpringValue::set_target`] boleh dipanggil
-//! kapan saja dan velocity ikut terbawa (WWDC23), yang sekaligus menjadi jalur
-//! handoff gesture fling → spring. Parameternya perceptual (durasi + bounce)
-//! dengan preset `smooth`/`snappy`/`bouncy`, dan **reduced-motion**
-//! ([`animation::Motion`]) adalah bagian kontrak, bukan poles akhir.
-//! Sambungannya ke [`scheduler`] mengikuti aturan yang sama seperti signal:
-//! [`animation::AnimationDriver::end_frame`] hanya mengembalikan
-//! [`Dirty::ANIMATION`] selama benar-benar ada yang bergerak — tidak ada timer
-//! yang berdetak, dan begitu semua spring settle GPU kembali tidur.
+//! **Milestone `spring`** — [`animation`]: a spring animation system built on
+//! the **closed-form damped harmonic oscillator** solution. A value stores
+//! `(position, velocity)` ([`animation::SpringValue`]) and is therefore
+//! **always interruptible**: [`animation::SpringValue::set_target`] may be
+//! called at any moment and the velocity carries over (WWDC23), which doubles
+//! as the fling → spring gesture handoff path. The parameters are perceptual
+//! (duration + bounce) with `smooth`/`snappy`/`bouncy` presets, and
+//! **reduced-motion** ([`animation::Motion`]) is part of the contract, not a
+//! final coat of polish. Its wiring into [`scheduler`] follows the same rule as
+//! signals: [`animation::AnimationDriver::end_frame`] returns
+//! [`Dirty::ANIMATION`] only while something is genuinely moving — no timer
+//! ticks, and the moment every spring settles the GPU goes back to sleep.
 //!
-//! **Milestone `accesskit`** — [`access`]: emisi node aksesibilitas sebagai
-//! **pass render tree**, sejajar layout dan paint (§3.8).
-//! [`tree::RenderNode::access`] adalah method **wajib** — widget yang lupa
-//! memikirkan screen reader tidak lolos compile — dan `bounds` tiap node
-//! datang dari hasil layout, bukan dari widget, sehingga apa yang dibacakan
-//! teknologi bantu tidak mungkin berbeda dari apa yang digambar.
-//! [`access::AccessTree::dump`] memberi tree dump deterministik untuk golden
-//! test, dan [`access::AccessTree::changes_since`] menjaga janji "hanya saat
-//! dirty" tetap berlaku untuk screen reader juga. Konversi ke `accesskit`
-//! terkurung di satu berkas; adapter winit-nya ada di `silka-platform`.
+//! **Milestone `accesskit`** — [`access`]: accessibility node emission as a
+//! **render tree pass**, on equal footing with layout and paint (§3.8).
+//! [`tree::RenderNode::access`] is a **required** method — a widget that forgot
+//! to think about screen readers does not compile — and every node's `bounds`
+//! comes from layout results rather than from the widget, so what assistive
+//! technology announces cannot diverge from what was drawn.
+//! [`access::AccessTree::dump`] gives a deterministic tree dump for golden
+//! tests, and [`access::AccessTree::changes_since`] keeps the "only when dirty"
+//! promise alive for screen readers too. The conversion to `accesskit` is
+//! confined to a single file; the winit adapter lives in `silka-platform`.
 //!
-//! **Milestone `taffy-flex`** — [`tree::TaffyBox`]: Flexbox dan CSS Grid
-//! dijalankan **Taffy sebagai widget di dalam protokol box constraints**
-//! (§3.4). `row()`/`column()`/`grid()` bergaya Dart ([`view::row`],
-//! [`view::column`], [`view::grid`]) dengan `.spacing()`/`.gap_*()` yang
-//! terkunci ke skala 4pt ([`tree::SPACING_UNIT`], §2.6), `expanded()`/
-//! `flexible()` sebagai padanan `Expanded`/`Flexible` Flutter, dan mirroring
-//! RTL diteruskan apa adanya ke Taffy (§9.8). Nama `taffy::` tidak pernah
-//! keluar dari satu modul: kosakata publiknya milik kita
-//! ([`tree::ContainerStyle`], [`tree::ItemStyle`], [`tree::Track`]).
-//! **Text measurement masuk lewat measure function leaf** —
-//! [`tree::MeasuredBox`] (`view::measured`) adalah satu-satunya pintu, dipakai
-//! sama persis oleh mesin box-constraints kita dan oleh Taffy.
+//! **Milestone `taffy-flex`** — [`tree::TaffyBox`]: Flexbox and CSS Grid run
+//! with **Taffy as a widget inside the box constraints protocol** (§3.4).
+//! Dart-style `row()`/`column()`/`grid()` ([`view::row`], [`view::column`],
+//! [`view::grid`]) with `.spacing()`/`.gap_*()` locked to the 4pt scale
+//! ([`tree::SPACING_UNIT`], §2.6), `expanded()`/`flexible()` as the
+//! counterparts of Flutter's `Expanded`/`Flexible`, and RTL mirroring passed
+//! straight through to Taffy (§9.8). The name `taffy::` never escapes a single
+//! module: the public vocabulary is ours ([`tree::ContainerStyle`],
+//! [`tree::ItemStyle`], [`tree::Track`]). **Text measurement enters through a
+//! leaf measure function** — [`tree::MeasuredBox`] (`view::measured`) is the
+//! only door, used identically by our own box-constraints engine and by Taffy.
 //!
-//! **Milestone `input-hittest`** — [`input`]: routing event pointer/keyboard,
-//! hit-testing, fokus, velocity tracker, dan IME. Empat janji dokumen ditutup
-//! di sini:
+//! **Milestone `input-hittest`** — [`input`]: pointer/keyboard event routing,
+//! hit-testing, focus, velocity tracking, and IME. Four promises from the
+//! design docs are settled here:
 //!
-//! 1. **Hit-testing sadar squircle** (§3.6) — [`input::HitShape::Rounded`]
-//!    menguji superellipse yang **sama persis** dengan yang dikirim ke shader
-//!    ([`silka_paint::Corners::contains`]), jadi pojok yang terlihat kosong
-//!    tidak bisa diklik dan sebaliknya. Viewport memotong isinya, sehingga
-//!    baris yang sudah tergulir keluar tidak lagi bisa disentuh.
-//! 2. **Fokus & tab-order** ([`input::FocusManager`]) dihitung dari render tree
-//!    yang sama dengan layout dan a11y, lengkap dengan urutan eksplisit dan
-//!    **focus scope** sebagai perangkap fokus dialog.
-//! 3. **Velocity tracker** ([`input::VelocityTracker`]) — regresi kuadrat
-//!    terkecil derajat dua ala Flutter; inilah pemasok `velocity` awal untuk
-//!    [`animation::SpringValue::set_target`], yaitu handoff fling → spring yang
-//!    dijanjikan §3.5.
-//! 4. **IME** ([`input::ImeRequest`]) — preedit/commit hanya mengalir ke node
-//!    terfokus, dan permintaan area caret mengalir balik ke shell sehingga
-//!    jendela kandidat CJK berlabuh di tempat yang benar (§3.8).
+//! 1. **Squircle-aware hit-testing** (§3.6) — [`input::HitShape::Rounded`]
+//!    tests **exactly** the superellipse that is handed to the shader
+//!    ([`silka_paint::Corners::contains`]), so a corner that looks empty is not
+//!    clickable, and vice versa. A viewport clips its contents, so a row that
+//!    has scrolled out of view can no longer be touched.
+//! 2. **Focus & tab order** ([`input::FocusManager`]) are computed from the
+//!    same render tree as layout and a11y, complete with explicit ordering and
+//!    **focus scopes** as dialog focus traps.
+//! 3. **Velocity tracker** ([`input::VelocityTracker`]) — Flutter's
+//!    second-degree least-squares regression; this is what supplies the initial
+//!    `velocity` for [`animation::SpringValue::set_target`], i.e. the
+//!    fling → spring handoff promised by §3.5.
+//! 4. **IME** ([`input::ImeRequest`]) — preedit/commit flow only to the focused
+//!    node, and caret area requests flow back out to the shell so that the CJK
+//!    candidate window anchors in the right place (§3.8).
 //!
-//! Kontraknya melekat di [`tree::RenderNode`] (`hit_shape`, `hit_behavior`,
-//! `focus_policy`, `cursor`, `event`) sejajar dengan `access` — bukan lapisan
-//! susulan. [`tree::Interactive`] (`view::interactive`) adalah node pertama yang
-//! memakainya utuh, dan `silka-platform` menerjemahkan winit ke kosakata ini
-//! di satu berkas.
+//! The contract lives on [`tree::RenderNode`] (`hit_shape`, `hit_behavior`,
+//! `focus_policy`, `cursor`, `event`) alongside `access` — not as a later
+//! layer. [`tree::Interactive`] (`view::interactive`) is the first node to use
+//! it in full, and `silka-platform` translates winit into this vocabulary in a
+//! single file.
 //!
-//! **Milestone `paint-pass`** — [`tree::RenderTree::paint`]: penyusunan
-//! [`silka_paint::Scene`] dari render tree, pass ketiga yang sejajar dengan
-//! layout dan a11y (§3.2). [`tree::RenderNode::paint`] adalah bagian kontrak
-//! node, dan kosakatanya **hanya** `silka-paint` — quad, shadow ganda, glyph
-//! run: tidak ada satu tipe wgpu pun yang bisa sampai ke kode widget, jadi
-//! backend baru (GL/CPU) nanti masuk di satu tempat. Empat sifatnya:
+//! **Milestone `paint-pass`** — [`tree::RenderTree::paint`]: assembling a
+//! [`silka_paint::Scene`] from the render tree, a third pass on equal footing
+//! with layout and a11y (§3.2). [`tree::RenderNode::paint`] is part of the node
+//! contract, and its vocabulary is **only** `silka-paint` — quads, double
+//! shadows, glyph runs: not a single wgpu type can reach widget code, so a new
+//! backend (GL/CPU) later lands in exactly one place. Four properties:
 //!
-//! 1. **Node menggambar dalam koordinat lokal** — cerminan aturan layout "node
-//!    tidak pernah tahu posisinya sendiri"; [`tree::PaintCtx`] yang menaikkannya
-//!    ke koordinat absolut, dan absolut itu sama persis dengan `bounds` a11y.
-//! 2. **Induk sebelum anak**, sehingga urutan perintah = urutan tumpuk.
-//! 3. **Clip** memakai jawaban [`tree::RenderNode::clips_children`] yang sudah
-//!    dipakai hit-testing: satu jawaban untuk dua pass, jadi mustahil ada baris
-//!    yang tergulir keluar layar tapi masih bisa diklik.
-//! 4. **Render hanya saat dirty, sampai ke tingkat subtree** (§3.5): perintah
-//!    gambar disimpan di relayout boundary, dan subtree bersih yang tidak
-//!    bergeser tidak dijalankan ulang sama sekali.
+//! 1. **Nodes draw in local coordinates** — the mirror of the layout rule "a
+//!    node never knows its own position"; [`tree::PaintCtx`] is what lifts them
+//!    into absolute coordinates, and those absolutes are exactly the a11y
+//!    `bounds`.
+//! 2. **Parent before child**, so command order = stacking order.
+//! 3. **Clipping** uses the same [`tree::RenderNode::clips_children`] answer
+//!    hit-testing already uses: one answer for two passes, which makes a row
+//!    that has scrolled off screen but is still clickable impossible.
+//! 4. **Render only when dirty, down to subtree granularity** (§3.5): draw
+//!    commands are cached at relayout boundaries, and a clean subtree that has
+//!    not moved is not re-run at all.
 //!
-//! Warna tidak pernah datang dari mesin: [`tree::Decoration`] membawa nilai
-//! yang **sudah diresolusi** dari token theme satu tingkat di atas, sehingga
-//! preset Cupertino/Tailwind (§2.7) berganti tanpa satu baris pun berubah di
-//! sini — termasuk geometri sudut, yang tetap parameter dan bukan konstanta.
+//! Color never originates in the engine: [`tree::Decoration`] carries values
+//! **already resolved** from theme tokens one level up, so the
+//! Cupertino/Tailwind presets (§2.7) can be swapped without a single line
+//! changing here — including corner geometry, which stays a parameter rather
+//! than a constant.
 //!
-//! **Milestone `reactive-glue`** — [`mod@app`]: keenam lapisan di atas akhirnya
-//! **tersambung menjadi satu siklus hidup**. [`app::AppRuntime`] memegang
-//! runtime signals, closure pembangun view akar, render tree, dan
-//! [`scheduler::FrameScheduler`]; [`app::AppRuntime::frame`] menjalankan satu
-//! putaran penuh:
+//! **Milestone `reactive-glue`** — [`mod@app`]: the six layers above are
+//! finally **joined into one lifecycle**. [`app::AppRuntime`] owns the signals
+//! runtime, the root view builder closure, the render tree, and the
+//! [`scheduler::FrameScheduler`]; [`app::AppRuntime::frame`] runs one full
+//! turn:
 //!
 //! ```text
-//! signals::Runtime::drain_dirty()          ← scope yang harus dibangun ulang
-//!   → jalankan ulang closure-nya DI DALAM scope itu
-//!   → view::reconcile_children(tree, jangkar, [view baru])
-//!   → tree::RenderTree::perform_layout(constraints window)
+//! signals::Runtime::drain_dirty()          ← scopes that must be rebuilt
+//!   → re-run their closure INSIDE that scope
+//!   → view::reconcile_children(tree, anchor, [new view])
+//!   → tree::RenderTree::perform_layout(window constraints)
 //!   → tree::RenderTree::paint_into(scene)
 //! ```
 //!
-//! Dua sambungan yang sebelumnya menganga ditutup di sini.
-//! [`signals::Runtime::drain_dirty`] akhirnya punya pemanggil, dan pemanggil
-//! itu memenuhi kontraknya apa adanya: [`app::component`] membangun isinya
-//! secara *eager* di dalam [`signals::scope`], sehingga membangun ulang sebuah
-//! scope **memasuki kembali setiap anak yang dipertahankan** — syarat yang
-//! membuat pemangkasan keturunan pada daftar dirty sah. Dan
-//! [`signals::Runtime::on_wake`] disambungkan langsung ke
-//! [`scheduler::FrameScheduler::request`], jadi janji §3.5 berlaku
-//! ujung-ke-ujung: tulisan signal menjadwalkan tepat satu frame, dan begitu
-//! frame itu selesai [`app::AppRuntime::is_idle`] kembali benar tanpa satu pun
-//! timer yang berdetak.
+//! Two seams that used to gape are closed here.
+//! [`signals::Runtime::drain_dirty`] finally has a caller, and that caller
+//! honors its contract exactly: [`app::component`] builds its body *eagerly*
+//! inside [`signals::scope`], so rebuilding a scope **re-enters every retained
+//! child** — the precondition that makes pruning descendants from the dirty
+//! list sound. And [`signals::Runtime::on_wake`] is wired straight into
+//! [`scheduler::FrameScheduler::request`], so the §3.5 promise holds
+//! end-to-end: a signal write schedules exactly one frame, and once that frame
+//! is done [`app::AppRuntime::is_idle`] is true again with not a single timer
+//! ticking.
 //!
-//! Setiap komponen punya **node jangkar** ([`app::ComponentBox`]) — transparan
-//! bagi layout dan disaring keluar dari pohon a11y — karena tanpa itu satu
-//! satunya cara menerapkan hasil rebuild adalah mendiff dari akar, dan
-//! "rebuild per-komponen" tinggal nama.
+//! Every component owns an **anchor node** ([`app::ComponentBox`]) —
+//! transparent to layout and filtered out of the a11y tree — because without it
+//! the only way to apply a rebuild's result is to diff from the root, and
+//! "per-component rebuild" becomes a name and nothing more.
 //!
-//! **Milestone `demo-end-to-end`** — tiga potong terakhir yang membuat rantai
-//! itu bisa **dilihat dan disentuh**, bukan sekadar diuji:
+//! **Milestone `demo-end-to-end`** — the last three pieces that make that chain
+//! something you can **see and touch** rather than merely test:
 //!
-//! 1. [`Callback`] + [`tree::Interactive::on_press`] — aksi yang dititipkan
-//!    aplikasi ke sebuah node. Inilah `on_press` gaya Dart yang dijanjikan
-//!    §2.5, dan penutup jalur `klik → signal → rebuild`: sebelum ini node
-//!    interaktif hanya bisa **menghitung** aktivasi, tidak bisa menceritakannya
-//!    kepada siapa pun.
-//! 2. **Tampilan per state** ([`tree::Interactive::decoration`],
-//!    `hover_background`, `press_background`, [`tree::FocusRing`]) — nilainya
-//!    sudah diresolusi dari token satu tingkat di atas (§2.6), dan bentuk
-//!    sudutnya dijamin sama dengan bentuk yang diuji hit-test karena keduanya
-//!    membaca [`tree::Interactive::corners`] yang sama (§3.6).
-//! 3. [`app::ScaleFactor`] sebagai titipan [`app::Env`] standar — teks harus
-//!    dirasterisasi pada resolusi layar yang sebenarnya (§3.3), dan window yang
-//!    pindah monitor hanya membangun ulang komponen yang membacanya.
+//! 1. [`Callback`] + [`tree::Interactive::on_press`] — the action an
+//!    application hands to a node. This is the Dart-style `on_press` promised
+//!    by §2.5, and it closes the `click → signal → rebuild` path: before it, an
+//!    interactive node could only **count** activations, never tell anyone
+//!    about them.
+//! 2. **Per-state appearance** ([`tree::Interactive::decoration`],
+//!    `hover_background`, `press_background`, [`tree::FocusRing`]) — the values
+//!    are already resolved from tokens one level up (§2.6), and the corner
+//!    shape is guaranteed to match the shape hit-testing checks because both
+//!    read the same [`tree::Interactive::corners`] (§3.6).
+//! 3. [`app::ScaleFactor`] as a standard [`app::Env`] injected value — text
+//!    must be rasterized at the real screen resolution (§3.3), and a window
+//!    moved to another monitor rebuilds only the components that read it.
 //!
-//! Buktinya hidup di `examples/gallery` halaman `counter`: satu klik yang
-//! disimulasikan lewat lapisan input berakhir sebagai piksel berbeda pada
-//! tekstur yang dirender GPU.
+//! The proof lives in the `counter` page of `examples/gallery`: a single click
+//! simulated through the input layer ends up as different pixels on a
+//! GPU-rendered texture.
 //!
-//! [`silka_paint::Command::PushClip`] sudah dieksekusi backend sebagai scissor
-//! rect per rentang instance, jadi kontrak clip pass ini berlaku sampai ke
-//! piksel.
+//! [`silka_paint::Command::PushClip`] is already executed by the backend as a
+//! scissor rect per instance range, so this pass's clip contract holds all the
+//! way down to the pixel.
 //!
-//! Yang belum ada dan menjadi sambungan berikutnya:
-//! repaint boundary berbasis layer/offscreen, dan sambungan
-//! [`animation::AnimationDriver`] ke [`app::AppRuntime::frame`] (sekarang
-//! spring masih dikemudikan aplikasi lewat `request_animation_frame`).
+//! What is still missing, and what comes next: layer/offscreen-based repaint
+//! boundaries, and wiring [`animation::AnimationDriver`] into
+//! [`app::AppRuntime::frame`] (for now springs are still driven by the
+//! application through `request_animation_frame`).
 
 #![warn(missing_docs)]
 

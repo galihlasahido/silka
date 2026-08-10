@@ -1,24 +1,25 @@
-//! Kolom tabel: definisi, kebijakan lebar, dan **seluruh aritmetikanya** —
-//! murni, tanpa pohon dan tanpa GPU.
+//! Table columns: definitions, width policy, and **all of the arithmetic** —
+//! pure, with no tree and no GPU.
 //!
-//! Alasannya sama persis dengan [`crate::list::ListMetrics`]: lebar kolom
-//! adalah bagian yang paling mudah salah dan paling mahal kalau salah. Satu
-//! poin meleset antara header dan barisnya, dan seluruh tabel terlihat miring.
-//! Dengan memisahkannya dari render node, tiga node yang berbeda
-//! ([`TableBody`](super::TableBody), [`TableHeaderBox`](super::TableHeaderBox),
-//! [`TableRowBox`](super::TableRowBox)) bisa menyelesaikan lebar yang **sama
-//! persis** dari lebar layout mereka sendiri, tanpa satu pun perlu bertanya ke
-//! yang lain.
+//! The reasoning is exactly that of [`crate::list::ListMetrics`]: column widths
+//! are the easiest thing to get wrong and the most expensive to get wrong. One
+//! point of drift between the header and its rows and the whole table looks
+//! crooked. Keeping the arithmetic out of the render nodes lets three different
+//! nodes ([`TableBody`](super::TableBody),
+//! [`TableHeaderBox`](super::TableHeaderBox),
+//! [`TableRowBox`](super::TableRowBox)) resolve the **exact same** widths from
+//! their own layout width, without any of them having to ask another.
 
-/// Kebijakan lebar satu kolom.
+/// Width policy for a single column.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ColumnWidth {
-    /// Ikut membagi sisa lebar, sebanding `flex` (padanan `expanded()`).
+    /// Takes a share of the leftover width proportional to `flex` (the
+    /// equivalent of `expanded()`).
     Auto {
-        /// Bobot pembagian sisa lebar.
+        /// Weight used to divide up the leftover width.
         flex: f32,
     },
-    /// Lebar tetap, poin logis.
+    /// Fixed width, in logical points.
     Fixed(f32),
 }
 
@@ -28,29 +29,30 @@ impl Default for ColumnWidth {
     }
 }
 
-/// Perataan isi sel di dalam kolomnya.
+/// Alignment of cell content within its column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CellAlign {
-    /// Rata ke awal baris (kiri di LTR, kanan di RTL).
+    /// Aligned to the start of the row (left in LTR, right in RTL).
     #[default]
     Start,
-    /// Rata tengah.
+    /// Centered.
     Center,
-    /// Rata ke akhir baris — tempat kolom angka (§9.8 ikut RTL).
+    /// Aligned to the end of the row — where numeric columns belong (§9.8
+    /// follows RTL).
     End,
 }
 
-/// Arah pengurutan sebuah kolom.
+/// The direction a column sorts in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortDirection {
-    /// Kecil ke besar (A→Z, 0→9).
+    /// Smallest to largest (A→Z, 0→9).
     Ascending,
-    /// Besar ke kecil.
+    /// Largest to smallest.
     Descending,
 }
 
 impl SortDirection {
-    /// Arah kebalikannya.
+    /// The opposite direction.
     pub fn flipped(self) -> Self {
         match self {
             SortDirection::Ascending => SortDirection::Descending,
@@ -58,26 +60,26 @@ impl SortDirection {
         }
     }
 
-    /// Benar bila menaik.
+    /// True when ascending.
     pub fn is_ascending(self) -> bool {
         self == SortDirection::Ascending
     }
 }
 
-/// Kolom mana yang sedang mengurutkan tabel, dan ke arah mana.
+/// Which column is currently sorting the table, and in which direction.
 ///
-/// `column` adalah indeks kolom **di dalam data**, bukan urutan tampilnya:
-/// menggeser kolom tidak pernah mengubah arti pengurutan.
+/// `column` is the column's index **within the data**, not its display
+/// position: reordering columns never changes what the sort means.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SortBy {
-    /// Indeks kolom di dalam data.
+    /// The column's index within the data.
     pub column: usize,
-    /// Arah pengurutan.
+    /// The sort direction.
     pub direction: SortDirection,
 }
 
 impl SortBy {
-    /// Urut menaik pada kolom `column`.
+    /// Sort column `column` ascending.
     pub fn ascending(column: usize) -> Self {
         Self {
             column,
@@ -85,7 +87,7 @@ impl SortBy {
         }
     }
 
-    /// Urut menurun pada kolom `column`.
+    /// Sort column `column` descending.
     pub fn descending(column: usize) -> Self {
         Self {
             column,
@@ -94,13 +96,12 @@ impl SortBy {
     }
 }
 
-/// Keadaan pengurutan berikutnya setelah judul kolom `column` diklik.
+/// The next sort state after the header of column `column` is clicked.
 ///
-/// Kebiasaan NSTableView: klik pada kolom lain memulai dari menaik, klik pada
-/// kolom yang sedang aktif membalik arahnya. Tidak pernah kembali ke "tanpa
-/// urutan" — pengguna yang sudah mengurutkan tidak punya cara membayangkan
-/// urutan aslinya, jadi menawarkannya cuma menambah satu keadaan yang
-/// membingungkan.
+/// The NSTableView convention: clicking a different column starts at ascending,
+/// clicking the column that is already active flips its direction. It never
+/// returns to "unsorted" — once a user has sorted, they have no way to picture
+/// the original order, so offering that state only adds one more confusing one.
 pub fn next_sort(current: Option<SortBy>, column: usize) -> SortBy {
     match current {
         Some(s) if s.column == column => SortBy {
@@ -112,39 +113,39 @@ pub fn next_sort(current: Option<SortBy>, column: usize) -> SortBy {
 }
 
 // ---------------------------------------------------------------------------
-// Definisi kolom (API publik, gaya Dart)
+// Column definitions (public API, Dart style)
 // ---------------------------------------------------------------------------
 
-/// Satu kolom tabel — konstruktor + method chaining (§2.5).
+/// A single table column — constructor plus method chaining (§2.5).
 ///
 /// ```ignore
 /// col("Nominal").fixed(140.0).right().sortable(true)
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct Column {
-    /// Judul yang tampil di header dan dibacakan screen reader.
+    /// The title shown in the header and announced by screen readers.
     pub title: String,
-    /// Kebijakan lebar.
+    /// Width policy.
     pub width: ColumnWidth,
-    /// Lebar terkecil yang masih boleh; resize tidak pernah menembusnya.
+    /// The smallest width still allowed; resizing never goes below it.
     pub min_width: f32,
-    /// Perataan isi sel.
+    /// Alignment of the cell content.
     pub align: CellAlign,
-    /// Judulnya bisa diklik untuk mengurutkan.
+    /// The header can be clicked to sort by this column.
     pub sortable: bool,
-    /// Lebarnya bisa diseret di header.
+    /// The width can be dragged in the header.
     pub resizable: bool,
-    /// Kolom ini boleh dipindahkan urutannya dengan seret.
+    /// This column may be dragged to a different position.
     pub movable: bool,
 }
 
-/// Lebar terkecil bawaan sebuah kolom, poin logis.
+/// The default minimum width of a column, in logical points.
 ///
-/// Bukan angka estetika: kolom yang lebih sempit dari ini tidak muat memuat
-/// satu pun kata utuh, dan pegangan resize di kedua tepinya mulai bertumpuk.
+/// Not an aesthetic number: a column narrower than this cannot fit a single
+/// whole word, and the resize handles on its two edges start to overlap.
 pub const MIN_COLUMN_WIDTH: f32 = 48.0;
 
-/// Kolom baru berjudul `title` — konstruktor gaya Dart (§2.5).
+/// A new column titled `title` — Dart-style constructor (§2.5).
 pub fn col(title: impl Into<String>) -> Column {
     Column {
         title: title.into(),
@@ -158,13 +159,13 @@ pub fn col(title: impl Into<String>) -> Column {
 }
 
 impl Column {
-    /// Lebar tetap, poin logis.
+    /// Fixed width, in logical points.
     pub fn fixed(mut self, width: f32) -> Self {
         self.width = ColumnWidth::Fixed(width.max(0.0));
         self
     }
 
-    /// Ikut membagi sisa lebar dengan bobot `flex`.
+    /// Take a share of the leftover width with weight `flex`.
     pub fn flex(mut self, flex: f32) -> Self {
         self.width = ColumnWidth::Auto {
             flex: flex.max(0.0),
@@ -172,83 +173,84 @@ impl Column {
         self
     }
 
-    /// Lebar terkecil yang masih boleh.
+    /// The smallest width still allowed.
     pub fn min_width(mut self, min: f32) -> Self {
         self.min_width = min.max(0.0);
         self
     }
 
-    /// Perataan isi sel.
+    /// Alignment of the cell content.
     pub fn align(mut self, align: CellAlign) -> Self {
         self.align = align;
         self
     }
 
-    /// Rata tengah.
+    /// Center the cell content.
     pub fn center(self) -> Self {
         self.align(CellAlign::Center)
     }
 
-    /// Rata ke akhir baris — kolom angka.
+    /// Align to the end of the row — numeric columns.
     pub fn trailing(self) -> Self {
         self.align(CellAlign::End)
     }
 
-    /// Judulnya bisa diklik untuk mengurutkan.
+    /// The header can be clicked to sort by this column.
     pub fn sortable(mut self, sortable: bool) -> Self {
         self.sortable = sortable;
         self
     }
 
-    /// Lebarnya bisa diseret.
+    /// The width can be dragged.
     pub fn resizable(mut self, resizable: bool) -> Self {
         self.resizable = resizable;
         self
     }
 
-    /// Kolom ini boleh dipindahkan urutannya.
+    /// This column may be moved to a different position.
     pub fn movable(mut self, movable: bool) -> Self {
         self.movable = movable;
         self
     }
 
-    /// Kolom yang tidak bisa diapa-apakan di header (tanpa sort, resize, geser).
+    /// A column the header cannot touch at all (no sorting, resizing, or
+    /// reordering).
     pub fn locked(self) -> Self {
         self.sortable(false).resizable(false).movable(false)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Kolom yang sudah diresolusi
+// Resolved columns
 // ---------------------------------------------------------------------------
 
-/// Satu kolom **dalam urutan tampil**, sudah digabung dengan keadaan runtime
-/// (urutan hasil geser + lebar hasil resize).
+/// A single column **in display order**, already merged with the runtime state
+/// (the order produced by dragging plus the width produced by resizing).
 ///
-/// Inilah bentuk yang dipegang render node: ringan, `Copy`, dan tidak
-/// mengandung `String` — judul kolom sudah menjadi view sendiri di header.
+/// This is the form the render nodes hold: light, `Copy`, and free of `String`
+/// — the column title has already become its own view in the header.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColumnLayout {
-    /// Indeks kolom ini **di dalam data** (bukan urutan tampil).
+    /// This column's index **within the data** (not its display position).
     pub source: usize,
-    /// Kebijakan lebar.
+    /// Width policy.
     pub width: ColumnWidth,
-    /// Lebar terkecil.
+    /// The smallest width.
     pub min_width: f32,
-    /// Perataan isi sel.
+    /// Alignment of the cell content.
     pub align: CellAlign,
-    /// Lebar hasil seret pengguna; `None` = ikut kebijakan.
+    /// Width produced by a user drag; `None` = follow the policy.
     pub resized: Option<f32>,
-    /// Lebarnya bisa diseret.
+    /// The width can be dragged.
     pub resizable: bool,
-    /// Judulnya bisa diklik untuk mengurutkan.
+    /// The header can be clicked to sort by this column.
     pub sortable: bool,
-    /// Boleh dipindahkan urutannya.
+    /// May be moved to a different position.
     pub movable: bool,
 }
 
 impl ColumnLayout {
-    /// Bentuk terpakai dari sebuah [`Column`] di posisi data `source`.
+    /// The resolved form of a [`Column`] sitting at data position `source`.
     pub fn new(source: usize, column: &Column, resized: Option<f32>) -> Self {
         Self {
             source,
@@ -262,7 +264,8 @@ impl ColumnLayout {
         }
     }
 
-    /// Lebar yang **tidak** bergantung pada sisa ruang, bila ada.
+    /// The width that does **not** depend on the leftover space, if there is
+    /// one.
     fn hard_width(&self) -> Option<f32> {
         match (self.resized, self.width) {
             (Some(w), _) => Some(w.max(self.min_width)),
@@ -272,16 +275,17 @@ impl ColumnLayout {
     }
 }
 
-/// Lebar tiap kolom pada lebar tabel `available`.
+/// The width of each column for a table width of `available`.
 ///
-/// Aturannya satu kalimat: **kolom tetap mengambil lebarnya, kolom auto
-/// membagi sisanya sebanding `flex`**, dan tidak ada yang boleh lebih sempit
-/// dari `min_width`-nya.
+/// The rule fits in one sentence: **fixed columns take their width, auto
+/// columns divide up what is left in proportion to `flex`**, and none of them
+/// may end up narrower than its `min_width`.
 ///
-/// Kalau jumlah lebar terkecil sudah melebihi `available`, hasilnya sengaja
-/// **melebihi** lebar tabel alih-alih memampatkan kolom sampai tak terbaca —
-/// isinya dipotong clip wadah gulir, dan itu keadaan yang jujur. Guliran
-/// mendatar untuk menjangkaunya adalah utang yang disadari (lihat [`super`]).
+/// When the sum of the minimum widths already exceeds `available`, the result
+/// deliberately **overflows** the table width instead of squeezing columns
+/// until they are unreadable — the content is clipped by the scroll container,
+/// and that is an honest state. Horizontal scrolling to reach it is a known
+/// debt (see [`super`]).
 pub fn solve_widths(columns: &[ColumnLayout], available: f32) -> Vec<f32> {
     let mut out = vec![0.0; columns.len()];
     let mut keras = 0.0f32;
@@ -315,11 +319,11 @@ pub fn solve_widths(columns: &[ColumnLayout], available: f32) -> Vec<f32> {
     out
 }
 
-/// Tepi kiri tiap kolom (prefix sum), plus tepi kanan kolom terakhir.
+/// The left edge of each column (a prefix sum), plus the right edge of the last
+/// one.
 ///
-/// Panjangnya `widths.len() + 1`, jadi batas antar kolom ke-`k` selalu
-/// `offsets[k + 1]` — tidak ada satu pun pemanggil yang perlu menjumlahkan
-/// sendiri.
+/// The result has `widths.len() + 1` entries, so the boundary after column `k`
+/// is always `offsets[k + 1]` — no caller ever has to sum the widths itself.
 pub fn offsets(widths: &[f32]) -> Vec<f32> {
     let mut out = Vec::with_capacity(widths.len() + 1);
     let mut x = 0.0;
@@ -331,18 +335,19 @@ pub fn offsets(widths: &[f32]) -> Vec<f32> {
     out
 }
 
-/// Jumlah seluruh lebar kolom.
+/// The sum of all column widths.
 pub fn total_width(widths: &[f32]) -> f32 {
     widths.iter().copied().sum()
 }
 
-/// Lebar pita sentuh pegangan resize di kedua sisi batas kolom, poin logis.
+/// The width of the resize handle's touch band on either side of a column
+/// boundary, in logical points.
 ///
-/// Sengaja jauh lebih lebar dari garis yang digambar: yang harus mudah
-/// dikenai adalah **batasnya**, bukan pikselnya (HIG).
+/// Deliberately much wider than the line that gets painted: what has to be easy
+/// to hit is the **boundary**, not the pixel (HIG).
 pub const HANDLE_TOLERANCE: f32 = 5.0;
 
-/// Kolom di posisi mendatar `x` (indeks **tampil**), bila ada.
+/// The column at horizontal position `x` (a **display** index), if there is one.
 pub fn column_at(widths: &[f32], x: f32) -> Option<usize> {
     if x < 0.0 {
         return None;
@@ -358,12 +363,13 @@ pub fn column_at(widths: &[f32], x: f32) -> Option<usize> {
     None
 }
 
-/// Batas kolom yang bisa diseret di posisi `x`, bila ada.
+/// The draggable column boundary at position `x`, if there is one.
 ///
-/// Yang dikembalikan adalah indeks **tampil** kolom di sebelah kiri batas:
-/// menyeret batas ke-`k` mengubah lebar kolom ke-`k`, persis seperti
-/// NSTableView. Batas paling kanan tidak ikut — di sana yang ada bukan kolom
-/// lain melainkan tepi tabel, dan menyeretnya tidak punya arti.
+/// What comes back is the **display** index of the column to the left of the
+/// boundary: dragging boundary `k` changes the width of column `k`, exactly as
+/// in NSTableView. The rightmost boundary is excluded — what lies beyond it is
+/// not another column but the edge of the table, and dragging that means
+/// nothing.
 pub fn handle_at(columns: &[ColumnLayout], widths: &[f32], x: f32) -> Option<usize> {
     let tepi = offsets(widths);
     for k in 0..widths.len().saturating_sub(1) {
@@ -377,17 +383,17 @@ pub fn handle_at(columns: &[ColumnLayout], widths: &[f32], x: f32) -> Option<usi
     None
 }
 
-/// Lebar baru kolom `k` setelah pegangannya diseret sampai `x`.
+/// The new width of column `k` after its handle has been dragged to `x`.
 pub fn width_for_handle(columns: &[ColumnLayout], widths: &[f32], k: usize, x: f32) -> f32 {
     let tepi = offsets(widths);
     let min = columns.get(k).map(|c| c.min_width).unwrap_or(0.0);
     (x - tepi.get(k).copied().unwrap_or(0.0)).max(min)
 }
 
-/// Ke posisi tampil mana kolom `from` jatuh bila dilepas di `x`.
+/// Which display position column `from` lands on when it is dropped at `x`.
 ///
-/// Kolom yang tidak boleh dipindah (`movable == false`) menjadi tembok:
-/// kolom yang diseret berhenti sebelum mereka, bukan melompatinya.
+/// Columns that may not be moved (`movable == false`) act as walls: the dragged
+/// column stops before them rather than jumping over them.
 pub fn drop_index(columns: &[ColumnLayout], widths: &[f32], from: usize, x: f32) -> usize {
     if columns.is_empty() {
         return 0;
@@ -398,7 +404,7 @@ pub fn drop_index(columns: &[ColumnLayout], widths: &[f32], from: usize, x: f32)
         None if x < 0.0 => 0,
         None => terakhir,
     };
-    // Tidak boleh melompati kolom yang terkunci di tempatnya.
+    // Never jump over a column that is locked in place.
     let mut hasil = from;
     if tujuan > from {
         for (i, c) in columns.iter().enumerate().take(tujuan + 1).skip(from + 1) {
@@ -418,7 +424,7 @@ pub fn drop_index(columns: &[ColumnLayout], widths: &[f32], from: usize, x: f32)
     hasil
 }
 
-/// Pindahkan kolom `from` ke posisi `to` di dalam urutan tampil.
+/// Move column `from` to position `to` within the display order.
 pub fn reorder(order: &mut Vec<usize>, from: usize, to: usize) {
     if from >= order.len() || to >= order.len() || from == to {
         return;
@@ -481,14 +487,15 @@ mod tests {
 
     #[test]
     fn min_width_tidak_pernah_ditembus() {
-        // Sisa ruang nol: kolom auto tetap selebar minimumnya, dan tabel
-        // memang jadi lebih lebar dari wadahnya — itu jujur, bukan bug.
+        // Zero leftover space: the auto column stays at its minimum width and
+        // the table really does grow wider than its container — honest, not a
+        // bug.
         let cols = [tetap(400.0), auto(1.0)];
         let w = solve_widths(&cols, 400.0);
         assert_eq!(w[1], 40.0);
         assert!(total_width(&w) > 400.0);
 
-        // Resize di bawah minimum juga ditolak.
+        // A resize below the minimum is rejected as well.
         let cols = [ColumnLayout {
             resized: Some(5.0),
             ..auto(1.0)
@@ -552,9 +559,9 @@ mod tests {
         let cols = [auto(1.0), auto(1.0)];
         let w = [100.0, 100.0];
         assert_eq!(width_for_handle(&cols, &w, 0, 160.0), 160.0);
-        // Tidak pernah menembus minimum.
+        // Never goes below the minimum.
         assert_eq!(width_for_handle(&cols, &w, 0, 10.0), 40.0);
-        // Kolom kedua diukur dari tepinya sendiri, bukan dari nol.
+        // The second column is measured from its own edge, not from zero.
         assert_eq!(width_for_handle(&cols, &w, 1, 260.0), 160.0);
     }
 
@@ -565,7 +572,7 @@ mod tests {
         assert_eq!(drop_index(&cols, &w, 0, 250.0), 2);
         assert_eq!(drop_index(&cols, &w, 2, 50.0), 0);
         assert_eq!(drop_index(&cols, &w, 1, 150.0), 1, "belum pindah");
-        // Di luar tabel: mentok ke ujung, bukan panik.
+        // Outside the table: clamps to the end rather than panicking.
         assert_eq!(drop_index(&cols, &w, 1, -80.0), 0);
         assert_eq!(drop_index(&cols, &w, 1, 9_999.0), 2);
     }
@@ -596,7 +603,7 @@ mod tests {
         assert_eq!(order, vec![1, 2, 0, 3]);
         reorder(&mut order, 3, 0);
         assert_eq!(order, vec![3, 1, 2, 0]);
-        // Di luar batas tidak mengubah apa pun.
+        // Out-of-bounds indices change nothing.
         reorder(&mut order, 9, 0);
         assert_eq!(order, vec![3, 1, 2, 0]);
     }

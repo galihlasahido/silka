@@ -1,5 +1,5 @@
-//! Unit test mesin layout: constraints turun, ukuran naik, induk menempatkan,
-//! plus cache dan relayout boundary.
+//! Unit tests for the layout engine: constraints down, sizes up, the parent
+//! places — plus the cache and relayout boundaries.
 
 use silka_paint::{Insets, Point, Size};
 
@@ -12,7 +12,7 @@ fn window(w: f32, h: f32) -> BoxConstraints {
     BoxConstraints::loose(Size::new(w, h))
 }
 
-/// Anak ke-`i` dari `id`.
+/// The `i`-th child of `id`.
 fn anak(tree: &RenderTree, id: super::NodeId, i: usize) -> super::NodeId {
     tree.children(id)[i]
 }
@@ -52,15 +52,15 @@ fn padding_menurunkan_constraints_menaikkan_ukuran_dan_menempatkan_anak() {
     let padding = anak(&tree, tree.root(), 0);
     let daun = anak(&tree, padding, 0);
 
-    // Constraints turun: anak melihat ruang yang sudah dikurangi insets.
+    // Constraints go down: the child sees the space minus the insets.
     assert_eq!(
         tree.constraints(daun).map(|c| c.biggest()),
         Some(Size::new(384.0, 384.0))
     );
-    // Ukuran naik.
+    // Sizes come up.
     assert_eq!(tree.size(daun), Size::new(100.0, 20.0));
     assert_eq!(tree.size(padding), Size::new(116.0, 36.0));
-    // Induk yang menempatkan.
+    // The parent places.
     assert_eq!(tree.offset(daun), Point::new(8.0, 8.0));
     assert_eq!(tree.offset(padding), Point::ZERO);
 }
@@ -129,7 +129,7 @@ fn row_rtl_mencerminkan_sumbu_utama() {
 
     let baris = anak(&tree, tree.root(), 0);
     assert_eq!(tree.size(baris), Size::new(110.0, 10.0));
-    // Anak pertama menempel di kanan.
+    // The first child sits against the right edge.
     assert_eq!(tree.offset(anak(&tree, baris, 0)), Point::new(70.0, 0.0));
     assert_eq!(tree.offset(anak(&tree, baris, 1)), Point::new(0.0, 0.0));
 }
@@ -142,7 +142,8 @@ fn column_rtl_mencerminkan_sumbu_silang() {
     tree.layout(window(400.0, 400.0));
 
     let kolom = anak(&tree, tree.root(), 0);
-    // Lebar kolom 100; anak selebar 40 menempel di kanan (start = kanan di RTL).
+    // The column is 100 wide; the 40-wide child sits right (start = right in
+    // RTL).
     assert_eq!(tree.offset(anak(&tree, kolom, 0)), Point::new(60.0, 0.0));
     assert_eq!(tree.offset(anak(&tree, kolom, 1)), Point::new(0.0, 10.0));
 }
@@ -175,7 +176,8 @@ fn constrained_box_dibatasi_induk() {
 
     let kotak = anak(&tree, tree.root(), 0);
     let daun = anak(&tree, kotak, 0);
-    // Permintaan 300 dipotong ke 100 oleh induk; 40 muat jadi dihormati.
+    // The request for 300 is clamped to 100 by the parent; 40 fits, so it is
+    // honoured.
     assert_eq!(tree.size(daun), Size::new(100.0, 40.0));
 }
 
@@ -225,8 +227,8 @@ fn constraints_tight_menjadikan_anak_relayout_boundary() {
     let hitung_akar = tree.layout_count(tree.root());
     let hitung_daun = tree.layout_count(daun);
 
-    // Ubah ukuran yang diminta daun — di bawah constraints tight, ini tidak
-    // mungkin mengubah ukuran siapa pun di atasnya.
+    // Change the size the leaf asks for — under tight constraints this cannot
+    // possibly change the size of anything above it.
     reconcile(
         &mut tree,
         constrained(
@@ -291,8 +293,8 @@ fn viewport_menahan_rambatan_dirty() {
     assert_eq!(tree.pending_boundaries(), 0);
 }
 
-/// Pohon repro: scroll view di dalam kotak berukuran tight, bersebelahan
-/// dengan daun biasa yang perubahannya merambat sampai akar.
+/// A repro tree: a scroll view inside a tightly sized box, next to an ordinary
+/// leaf whose changes propagate all the way to the root.
 fn pohon_scroll_dan_saudara(scroll: f32, tinggi_saudara: f32) -> crate::view::View {
     crate::view::View::from(column([
         crate::view::View::from(constrained(
@@ -317,10 +319,10 @@ fn layout_penuh_tidak_membuang_boundary_yang_mengantre() {
     assert!(!tree.is_relayout_boundary(kotak), "kotak ikut layout penuh");
     assert_eq!(tree.offset(isi), Point::ZERO);
 
-    // Satu frame yang mengubah DUA hal sekaligus: guliran (mengantrekan
-    // viewport) dan tinggi saudaranya (membuat akar kotor → layout penuh).
-    // Layout penuh berhenti di cache-hit `kotak` sehingga viewport tidak
-    // pernah tersentuh — antreannya tidak boleh ikut terbuang.
+    // One frame that changes TWO things at once: the scroll offset (queueing
+    // the viewport) and the sibling's height (dirtying the root → full layout).
+    // The full layout stops at the cache hit on `kotak`, so the viewport is
+    // never touched — its queue entry must not be discarded along the way.
     reconcile(&mut tree, pohon_scroll_dan_saudara(140.0, 30.0));
     assert_eq!(tree.pending_boundaries(), 2, "viewport + akar");
     assert!(tree.needs_layout(tree.root()));
@@ -334,8 +336,8 @@ fn layout_penuh_tidak_membuang_boundary_yang_mengantre() {
     assert!(!tree.needs_layout(vp), "viewport tidak boleh tinggal kotor");
     assert_eq!(tree.pending_boundaries(), 0);
 
-    // Frame-frame berikutnya harus tetap hidup: `needs_layout` yang menetap
-    // dulu membuat viewport tidak pernah bisa diantrekan lagi.
+    // The following frames have to stay alive: a `needs_layout` that used to
+    // stick meant the viewport could never be queued again.
     for (i, scroll) in [180.0_f32, 220.0, 60.0].into_iter().enumerate() {
         reconcile(&mut tree, pohon_scroll_dan_saudara(scroll, 30.0));
         tree.perform_layout(window(400.0, 400.0));
@@ -359,15 +361,15 @@ fn antrean_boundary_bebas_duplikat() {
     let isi = anak(&tree, vp, 0);
     assert_eq!(tree.pending_boundaries(), 0);
 
-    // Isi viewport di-layout dengan `layout_child_boundary`, jadi ia boundary
-    // sendiri: berapa kali pun ditandai, antreannya tetap satu entri.
+    // The viewport's content is laid out with `layout_child_boundary`, so it is
+    // a boundary itself: however often it is marked, the queue keeps one entry.
     tree.mark_needs_layout(isi);
     tree.mark_needs_layout(isi);
     tree.mark_needs_layout(isi);
     assert_eq!(tree.pending_boundaries(), 1);
 
-    // Daun tanpa boundary merambat sampai akar — satu entri lagi, juga tanpa
-    // duplikat meski ditandai berulang.
+    // A leaf with no boundary propagates to the root — one more entry, again
+    // without duplicates however often it is marked.
     let saudara = anak(&tree, luar, 1);
     tree.mark_needs_layout(saudara);
     tree.mark_needs_layout(saudara);
@@ -378,7 +380,7 @@ fn antrean_boundary_bebas_duplikat() {
     assert!(!tree.needs_layout(isi));
     assert!(!tree.needs_layout(saudara));
 
-    // Dan setelah antrean dikuras, penandaan berikutnya masuk lagi.
+    // And once the queue is drained, the next mark goes back in.
     tree.mark_needs_layout(isi);
     assert_eq!(tree.pending_boundaries(), 1);
 }
@@ -463,7 +465,7 @@ fn akar_tidak_boleh_dibuang() {
     );
 }
 
-// Pass emisi a11y punya berkas test sendiri: `crate::access::tests`.
+// The a11y emission pass has its own test file: `crate::access::tests`.
 
 #[test]
 fn viewport_menggeser_isinya_tanpa_mengubah_ukurannya() {

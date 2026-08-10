@@ -1,47 +1,48 @@
-//! Jembatan atlas glyph: bagaimana backend menukar [`GlyphImageId`] menjadi
-//! piksel — **tanpa tahu apa itu font, dan tanpa tahu apa itu wgpu**.
+//! The glyph atlas bridge: how a backend turns a [`GlyphImageId`] into
+//! pixels — **without knowing what a font is, and without knowing what wgpu is**.
 //!
-//! Modul ini adalah sisi lain dari [`crate::glyph`]. Di sana perintah gambar
-//! hanya membawa id opaque; di sini didefinisikan kontrak minimum yang harus
-//! dipenuhi penerbit id itu (hari ini `silka-text`, besok penerbit lain)
-//! supaya backend mana pun bisa mengunggah atlasnya:
+//! This module is the other side of [`crate::glyph`]. Over there, draw commands
+//! carry nothing but an opaque id; here we define the minimum contract the
+//! issuer of those ids must satisfy (`silka-text` today, someone else tomorrow)
+//! so that any backend can upload its atlas:
 //!
-//! | Yang ditanya backend | Method |
+//! | What the backend asks | Method |
 //! |---|---|
-//! | "Berapa besar teksturnya?" | [`GlyphSource::atlas_size`] |
-//! | "Mana pikselnya?" | [`GlyphSource::atlas_pixels`] |
-//! | "Bagian mana yang berubah sejak frame lalu?" | [`GlyphSource::take_dirty`] |
-//! | "Di mana glyph ini di dalam atlas?" | [`GlyphSource::placement`] |
+//! | "How big is the texture?" | [`GlyphSource::atlas_size`] |
+//! | "Where are the pixels?" | [`GlyphSource::atlas_pixels`] |
+//! | "Which part changed since the last frame?" | [`GlyphSource::take_dirty`] |
+//! | "Where is this glyph inside the atlas?" | [`GlyphSource::placement`] |
 //!
-//! Kenapa `take_dirty` dan bukan "unggah semuanya": atlas 1024² byte = 1 MiB,
-//! dan mengunggahnya tiap frame membakar bandwidth PCIe untuk data yang
-//! **tidak berubah**. Yang benar adalah unggah inkremental — hanya kotak yang
-//! baru ditulis (REKOMENDASI §3.2: frame time prediktabel).
+//! Why `take_dirty` and not "just upload everything": a 1024² byte atlas is
+//! 1 MiB, and uploading it every frame burns PCIe bandwidth on data that
+//! **did not change**. The right answer is incremental upload — only the region
+//! that was just written (REKOMENDASI §3.2: predictable frame times).
 //!
-//! Kontrak yang MENGIKAT (§3.2, §5 failure mode #7): trait ini hanya memakai
-//! tipe milik crate ini. Backend GL/CPU nanti membaca sumber yang sama persis
-//! seperti backend wgpu hari ini.
+//! BINDING contract (§3.2, §5 failure mode #7): this trait uses only types
+//! owned by this crate. A future GL/CPU backend reads exactly the same source
+//! as today's wgpu backend.
 
 use crate::glyph::GlyphImageId;
 
-/// Format piksel satu atlas, dilihat dari sisi backend.
+/// The pixel format of an atlas, as seen from the backend side.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum GlyphFormat {
-    /// 1 byte per piksel: cakupan alpha. Jalur normal semua teks.
+    /// 1 byte per pixel: alpha coverage. The normal path for all text.
     ///
-    /// Warnanya datang dari [`crate::GlyphRun::color`] (token theme), bukan
-    /// dari atlas — karena itu satu bitmap "a" melayani semua warna teks.
+    /// The color comes from [`crate::GlyphRun::color`] (a theme token), not
+    /// from the atlas — which is why a single "a" bitmap serves every text
+    /// color.
     Mask,
-    /// 4 byte per piksel RGBA (straight alpha): emoji berwarna dan bitmap
-    /// COLR/CBDT.
+    /// 4 bytes per pixel of RGBA (straight alpha): color emoji and COLR/CBDT
+    /// bitmaps.
     Color,
 }
 
 impl GlyphFormat {
-    /// Kedua format, urut — dipakai backend untuk menyapu semua atlas.
+    /// Both formats, in order — used by the backend to sweep every atlas.
     pub const ALL: [GlyphFormat; 2] = [GlyphFormat::Mask, GlyphFormat::Color];
 
-    /// Jumlah byte per piksel.
+    /// Number of bytes per pixel.
     pub const fn bytes_per_pixel(self) -> u32 {
         match self {
             GlyphFormat::Mask => 1,
@@ -50,25 +51,25 @@ impl GlyphFormat {
     }
 }
 
-/// Kotak piksel di dalam sebuah atlas.
+/// A pixel region inside an atlas.
 ///
-/// Satuannya **piksel fisik atlas**, bukan poin logis: atlas dirasterisasi
-/// pada resolusi layar (§3.3), dan backend-lah yang memetakannya kembali ke
-/// kotak tujuan logis.
+/// The unit is **physical atlas pixels**, not logical points: the atlas is
+/// rasterized at screen resolution (§3.3), and it is the backend that maps it
+/// back onto the logical destination rect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct AtlasRegion {
-    /// Tepi kiri, piksel.
+    /// Left edge, in pixels.
     pub x: u32,
-    /// Tepi atas, piksel.
+    /// Top edge, in pixels.
     pub y: u32,
-    /// Lebar, piksel.
+    /// Width, in pixels.
     pub width: u32,
-    /// Tinggi, piksel.
+    /// Height, in pixels.
     pub height: u32,
 }
 
 impl AtlasRegion {
-    /// Kotak baru.
+    /// A new region.
     pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
         Self {
             x,
@@ -78,30 +79,31 @@ impl AtlasRegion {
         }
     }
 
-    /// Kotak kosong.
+    /// The empty region.
     pub const EMPTY: Self = Self::new(0, 0, 0, 0);
 
-    /// Tepi kanan (eksklusif).
+    /// Right edge (exclusive).
     pub const fn max_x(self) -> u32 {
         self.x + self.width
     }
 
-    /// Tepi bawah (eksklusif).
+    /// Bottom edge (exclusive).
     pub const fn max_y(self) -> u32 {
         self.y + self.height
     }
 
-    /// Benar bila kotak tidak memuat satu piksel pun.
+    /// True when the region holds not a single pixel.
     pub const fn is_empty(self) -> bool {
         self.width == 0 || self.height == 0
     }
 
-    /// Koordinat tekstur ternormalisasi `[u0, v0, u1, v1]` pada atlas
-    /// berukuran `size` piksel.
+    /// Normalized texture coordinates `[u0, v0, u1, v1]` within an atlas of
+    /// `size` pixels.
     ///
-    /// Tepi kotak dipetakan ke tepi texel (bukan pusat texel): karena kotak
-    /// tujuan menutupi persis `width × height` piksel fisik, sampling di pusat
-    /// piksel jatuh tepat di pusat texel — itulah syarat teks tetap tajam.
+    /// Region edges map to texel edges (not texel centers): because the
+    /// destination rect covers exactly `width × height` physical pixels,
+    /// sampling at pixel centers lands exactly on texel centers — that is the
+    /// condition for text staying crisp.
     pub fn uv(self, size: u32) -> [f32; 4] {
         let s = size.max(1) as f32;
         [
@@ -113,56 +115,57 @@ impl AtlasRegion {
     }
 }
 
-/// Letak satu bitmap glyph: atlas mana, dan kotak mana di dalamnya.
+/// Where one glyph bitmap lives: which atlas, and which region within it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlyphPlacement {
-    /// Atlas yang memuatnya.
+    /// The atlas holding it.
     pub format: GlyphFormat,
-    /// Kotak piksel di dalam atlas itu.
+    /// The pixel region inside that atlas.
     pub region: AtlasRegion,
 }
 
 impl GlyphPlacement {
-    /// Letak baru.
+    /// A new placement.
     pub const fn new(format: GlyphFormat, region: AtlasRegion) -> Self {
         Self { format, region }
     }
 }
 
-/// Sumber atlas glyph yang bisa dibaca backend.
+/// A glyph atlas source a backend can read.
 ///
-/// Diimplementasikan lapisan teks (`silka_text::GlyphCache` dan
-/// `silka_text::TextEngine`); dipakai backend saat menggambar
+/// Implemented by the text layer (`silka_text::GlyphCache` and
+/// `silka_text::TextEngine`); used by the backend when drawing
 /// [`crate::Command::GlyphRun`].
 ///
-/// Id yang sudah hangus (atlas dibangun ulang karena penuh) harus
-/// mengembalikan `None` dari [`GlyphSource::placement`] — backend melewatkan
-/// glyph itu untuk satu frame, jauh lebih baik daripada menggambar glyph yang
-/// salah atau panic di tengah frame (§9.7).
+/// Ids that have gone stale (because the atlas was rebuilt after filling up)
+/// must return `None` from [`GlyphSource::placement`] — the backend then skips
+/// that glyph for one frame, which is far better than drawing the wrong glyph
+/// or panicking mid-frame (§9.7).
 pub trait GlyphSource {
-    /// Sisi atlas dalam piksel (selalu persegi). `0` berarti belum ada atlas.
+    /// The atlas side length in pixels (always square). `0` means there is no
+    /// atlas yet.
     fn atlas_size(&self, format: GlyphFormat) -> u32;
 
-    /// Buffer piksel atlas, baris demi baris, rapat tanpa padding baris.
+    /// The atlas pixel buffer, row by row, tightly packed with no row padding.
     fn atlas_pixels(&self, format: GlyphFormat) -> &[u8];
 
-    /// Ambil kotak yang berubah sejak panggilan terakhir, sekaligus
-    /// menandainya bersih.
+    /// Takes the region that changed since the last call, marking it clean at
+    /// the same time.
     ///
-    /// Dipanggil **sekali per frame per format** oleh backend. Mengembalikan
-    /// `None` berarti tidak ada yang perlu diunggah — kasus lumrah untuk UI
-    /// yang teksnya tidak berubah.
+    /// Called **once per frame per format** by the backend. Returning `None`
+    /// means there is nothing to upload — the common case for a UI whose text
+    /// did not change.
     fn take_dirty(&mut self, format: GlyphFormat) -> Option<AtlasRegion>;
 
-    /// Letak satu bitmap glyph, atau `None` bila id sudah tidak berlaku.
+    /// Where one glyph bitmap lives, or `None` when the id is no longer valid.
     fn placement(&self, image: GlyphImageId) -> Option<GlyphPlacement>;
 }
 
-/// Sumber atlas kosong: tidak pernah punya glyph.
+/// An empty atlas source: it never has any glyphs.
 ///
-/// Dipakai jalur render yang memang tidak menggambar teks (dan sebagai
-/// kontrol negatif di test): scene dengan `GlyphRun` yang dirender dengan
-/// sumber ini menghasilkan **nol** piksel teks, bukan glyph acak.
+/// Used by render paths that deliberately draw no text (and as a negative
+/// control in tests): a scene containing a `GlyphRun` rendered with this source
+/// produces **zero** text pixels, not random glyphs.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct NoGlyphs;
 

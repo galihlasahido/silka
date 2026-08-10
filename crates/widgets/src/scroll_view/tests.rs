@@ -1,9 +1,9 @@
-//! Uji `scroll_view` di tingkat node: guliran, physics, scrollbar, keyboard,
-//! a11y, dan kedua preset.
+//! Node-level tests for `scroll_view`: scrolling, physics, scrollbar, keyboard,
+//! a11y, and both presets.
 //!
-//! Semuanya berjalan tanpa GPU dan tanpa jam sistem — waktu masuk lewat
-//! [`Tick::manual`] dan stempel waktu event, jadi hasilnya deterministik di CI
-//! (REKOMENDASI §9.5).
+//! Everything runs without a GPU and without the system clock — time comes in
+//! through [`Tick::manual`] and event timestamps, so the results are
+//! deterministic in CI (REKOMENDASI §9.5).
 
 use super::*;
 use silka_core::access::AccessActions;
@@ -19,7 +19,7 @@ use silka_theme::{Appearance, Preset, Theme};
 use std::time::Duration;
 
 const RUANG: Size = Size::new(320.0, 400.0);
-/// Isi tiga kali lebih tinggi dari wadahnya.
+/// Content three times taller than its container.
 const TINGGI_ISI: f32 = 1200.0;
 const FRAME: Duration = Duration::from_millis(16);
 
@@ -34,7 +34,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
     tree
 }
 
-/// Pohon standar: satu `scroll_view` setinggi window berisi kolom panjang.
+/// The standard tree: one window-height `scroll_view` holding a long column.
 fn pohon_gulir(t: &Theme) -> RenderTree {
     pohon(scroll_view(t, fixed(320.0, TINGGI_ISI)))
 }
@@ -51,7 +51,7 @@ fn isi(tree: &RenderTree) -> NodeId {
     tree.children(id(tree))[0]
 }
 
-/// Satu event guliran pada posisi tengah wadah.
+/// A single scroll event at the centre of the container.
 fn gulir(
     tree: &mut RenderTree,
     router: &mut InputRouter,
@@ -72,7 +72,7 @@ fn gulir(
     hasil
 }
 
-/// Majukan animasi `frames` frame; kembalikan alasan dirty terakhir.
+/// Advance the animation by `frames` frames; return the last dirty reason.
 fn maju(tree: &mut RenderTree, frames: usize, motion: Motion) -> Dirty {
     let mut dirty = Dirty::NONE;
     for _ in 0..frames {
@@ -83,7 +83,7 @@ fn maju(tree: &mut RenderTree, frames: usize, motion: Motion) -> Dirty {
     dirty
 }
 
-/// Majukan sampai semua spring berhenti (dengan pagar agar uji tidak menggantung).
+/// Advance until every spring settles (with a guard so the test cannot hang).
 fn selesaikan(tree: &mut RenderTree) {
     for _ in 0..600 {
         if !is_animating(tree) {
@@ -95,7 +95,7 @@ fn selesaikan(tree: &mut RenderTree) {
 }
 
 // ---------------------------------------------------------------------------
-// Guliran dasar
+// Basic scrolling
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -111,7 +111,7 @@ fn roda_menggulir_lewat_spring_dan_isi_benar_benar_bergeser() {
     assert!(hasil.dirty.contains(Dirty::ANIMATION), "roda = spring");
     assert_eq!(sv(&tree).target(), 120.0);
 
-    // Spring, bukan lompatan: satu frame belum sampai tujuan.
+    // A spring, not a jump: one frame does not reach the target.
     maju(&mut tree, 1, Motion::Full);
     let separuh = sv(&tree).offset();
     assert!(
@@ -128,8 +128,8 @@ fn roda_menggulir_lewat_spring_dan_isi_benar_benar_bergeser() {
 #[test]
 fn isi_yang_muat_tidak_menelan_guliran() {
     let t = tema();
-    // Isi lebih pendek dari wadah: tidak ada yang bisa digulir, dan event
-    // harus **menggelembung** supaya wadah di atasnya kebagian.
+    // Content shorter than the container: nothing to scroll, and the event
+    // must **bubble** so the container above it gets its turn.
     let mut tree = pohon(scroll_view(&t, fixed(320.0, 100.0)));
     let mut router = InputRouter::new();
     assert!(!sv(&tree).can_scroll());
@@ -149,12 +149,12 @@ fn mentok_di_bawah_membiarkan_wadah_di_atasnya_mengambil_alih() {
     let mut tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)));
     let mut router = InputRouter::new();
 
-    // Sampai ke dasar dulu.
+    // Get to the bottom first.
     gulir(&mut tree, &mut router, -5000.0, ScrollPhase::Wheel, 0);
     selesaikan(&mut tree);
     assert_eq!(sv(&tree).offset(), 800.0);
 
-    // Roda lagi ke arah yang sama: sudah mentok, jadi tidak diklaim.
+    // Another wheel tick the same way: already pinned, so it is not claimed.
     let hasil = gulir(&mut tree, &mut router, -120.0, ScrollPhase::Wheel, 100);
     assert!(!hasil.handled, "roda di ujung harus bisa chaining");
 }
@@ -170,7 +170,7 @@ fn guliran_dijepit_saat_isi_menyusut() {
     selesaikan(&mut tree);
     assert_eq!(sv(&tree).offset(), 800.0);
 
-    // Isi menyusut jadi 500pt: guliran maksimum tinggal 100pt.
+    // The content shrinks to 500pt: maximum scroll is down to 100pt.
     reconcile(&mut tree, scroll_view(&t, fixed(320.0, 500.0)));
     tree.flush_layout();
     assert_eq!(sv(&tree).max_scroll(), 100.0);
@@ -200,7 +200,8 @@ fn gesture_melewati_tepi_melar_lalu_memantul_kembali() {
         "melarnya harus teredam, tidak 1:1: {melar}"
     );
     assert!(sv(&tree).is_overscrolled());
-    // Selama jari menempel, tidak ada animasi: isinya persis di bawah jari.
+    // While the finger is down there is no animation: the content sits exactly
+    // under it.
     assert!(!sv(&tree).is_animating() || sv(&tree).target() == melar);
 
     gulir(&mut tree, &mut router, 0.0, ScrollPhase::Ended, 32);
@@ -226,8 +227,8 @@ fn momentum_os_dipakai_apa_adanya_dan_memantul_dengan_kecepatannya() {
     let mut tree = pohon_gulir(&t);
     let mut router = InputRouter::new();
 
-    // Ekor inersia dari OS menggulir sampai mentok, lalu melar teredam —
-    // deltanya dipakai apa adanya, tidak ada fling kedua yang kita karang.
+    // The OS inertia tail scrolls all the way to the end, then stretches with
+    // damping — its deltas are used as-is; there is no second fling of our own.
     gulir(&mut tree, &mut router, -900.0, ScrollPhase::Momentum, 0);
     let melar = sv(&tree).offset();
     assert!(melar > 800.0, "harus melar melewati tepi: {melar}");
@@ -241,8 +242,8 @@ fn momentum_os_dipakai_apa_adanya_dan_memantul_dengan_kecepatannya() {
         "selama masih ada paket momentum, isinya mengikuti OS — belum memantul"
     );
 
-    // …lalu satu paket momentum lagi setelah membentur: di sinilah pantulan
-    // lahir, dengan kecepatan yang diwarisi dari ekor itu.
+    // …then one more momentum packet after the impact: this is where the
+    // bounce is born, carrying the velocity inherited from that tail.
     let hasil = gulir(&mut tree, &mut router, -100.0, ScrollPhase::Momentum, 16);
     assert!(hasil.handled);
     assert_eq!(sv(&tree).target(), 800.0, "tujuannya tetap tepi");
@@ -263,7 +264,7 @@ fn momentum_os_dipakai_apa_adanya_dan_memantul_dengan_kecepatannya() {
 }
 
 // ---------------------------------------------------------------------------
-// Keyboard & fokus
+// Keyboard & focus
 // ---------------------------------------------------------------------------
 
 fn tekan(tree: &mut RenderTree, router: &mut InputRouter, key: NamedKey, ms: u64) -> Response {
@@ -284,7 +285,7 @@ fn keyboard_menggulir_penuh_setelah_tab() {
     let mut tree = pohon_gulir(&t);
     let mut router = InputRouter::new();
 
-    // Tab mendarat di wadah gulir: ia satu-satunya yang bisa difokuskan.
+    // Tab lands on the scroll container: it is the only focusable thing here.
     tekan(&mut tree, &mut router, NamedKey::Tab, 0);
     assert_eq!(router.focus().focused(), Some(id(&tree)));
 
@@ -303,7 +304,7 @@ fn keyboard_menggulir_penuh_setelah_tab() {
     selesaikan(&mut tree);
     assert_eq!(sv(&tree).offset(), 0.0);
 
-    // Panah mendatar tidak berlaku di wadah menegak — biarkan menggelembung.
+    // Horizontal arrows do not apply in a vertical container — let them bubble.
     let hasil = tekan(&mut tree, &mut router, NamedKey::ArrowRight, 50);
     assert!(!hasil.handled);
 }
@@ -364,8 +365,8 @@ fn scrollbar_muncul_saat_digulir_lalu_memudar_sendiri() {
         "scrollbar harus muncul saat digulir"
     );
 
-    // Hitung mundur auto-hide berjalan lewat frame, bukan timer: selama masih
-    // menghitung, `advance` tetap meminta frame berikutnya.
+    // The auto-hide countdown runs on frames, not on a timer: while it is
+    // still counting, `advance` keeps asking for the next frame.
     let mut terlihat_lama = 0;
     for _ in 0..40 {
         let dirty = maju(&mut tree, 1, Motion::Full);
@@ -379,8 +380,8 @@ fn scrollbar_muncul_saat_digulir_lalu_memudar_sendiri() {
     }
     assert!(terlihat_lama > 10, "memudar terlalu cepat");
 
-    // Setelah lewat ambang auto-hide, benar-benar habis dan tidak ada lagi
-    // yang meminta frame.
+    // Past the auto-hide threshold it is genuinely gone, and nothing is asking
+    // for frames any more.
     for _ in 0..200 {
         maju(&mut tree, 1, Motion::Full);
     }
@@ -400,7 +401,7 @@ fn scrollbar_always_selalu_terlihat_dan_hidden_tidak_pernah() {
     gulir(&mut tersembunyi, &mut router, -120.0, ScrollPhase::Wheel, 0);
     maju(&mut tersembunyi, 10, Motion::Full);
     assert_eq!(sv(&tersembunyi).bar_opacity(), 0.0);
-    // Tetap bisa digulir: ini soal tampilan, bukan kemampuan.
+    // Still scrollable: this is about appearance, not capability.
     assert!(sv(&tersembunyi).target() > 0.0);
 }
 
@@ -434,8 +435,8 @@ fn thumb_bisa_diseret_langsung() {
     );
     tree.flush_layout();
 
-    // Menyeret thumb 100pt harus menggulir isi sejauh porsinya, seketika
-    // (manipulasi langsung, bukan animasi).
+    // Dragging the thumb 100pt must scroll the content by its share of that,
+    // instantly (direct manipulation, not animation).
     let harap = physics::scroll_for_thumb(RUANG.height, TINGGI_ISI, t0.offset + 100.0, 44.0);
     assert!((sv(&tree).offset() - harap).abs() < 0.5, "{:?}", sv(&tree));
     assert!(harap > 200.0, "seretan harus terasa: {harap}");
@@ -461,8 +462,8 @@ fn area_sentuh_scrollbar_minimal_44pt_walau_visualnya_tipis() {
         bar.hit_width()
     );
 
-    // Thumb pun tidak pernah lebih pendek dari hit target, seberapa pun
-    // panjang isinya.
+    // The thumb, too, is never shorter than the hit target, however long the
+    // content gets.
     let tree = pohon(scroll_view(&t, fixed(320.0, 100_000.0)));
     let thumb = sv(&tree).thumb().expect("ada thumb");
     assert!(thumb.length >= MIN_HIT_TARGET, "{thumb:?}");
@@ -487,7 +488,7 @@ fn hover_di_jalur_melebarkan_scrollbar_lewat_spring() {
             Duration::ZERO,
         )),
     );
-    // Spring, bukan lompatan: butuh beberapa frame untuk melebar.
+    // A spring, not a jump: widening takes a few frames.
     assert_eq!(tebal(&tree), diam, "belum ada frame yang lewat");
     maju(&mut tree, 1, Motion::Full);
     assert!(tebal(&tree) > diam, "harus melebar bertahap");
@@ -566,14 +567,14 @@ fn reduced_motion_menghapus_luncuran_tapi_bukan_tujuannya() {
     gulir(&mut tree, &mut router, -240.0, ScrollPhase::Wheel, 0);
     assert_eq!(sv(&tree).target(), 240.0);
 
-    // Satu frame di bawah reduced-motion: langsung sampai, tanpa meluncur.
+    // One frame under reduced motion: it arrives at once, with no glide.
     maju(&mut tree, 1, Motion::Reduced);
     assert_eq!(sv(&tree).offset(), 240.0, "tujuannya tetap tercapai");
     assert!(!sv(&tree).is_animating(), "tidak ada luncuran yang tersisa");
     assert_eq!(tree.offset(isi(&tree)), Point::new(0.0, -240.0));
 
-    // Yang tersisa hanya hitung mundur auto-hide scrollbar — itu pun berakhir,
-    // dan sesudahnya benar-benar tidak ada yang meminta frame lagi.
+    // All that is left is the scrollbar auto-hide countdown — and that ends
+    // too, after which genuinely nothing asks for another frame.
     for _ in 0..200 {
         maju(&mut tree, 1, Motion::Reduced);
     }
@@ -582,7 +583,7 @@ fn reduced_motion_menghapus_luncuran_tapi_bukan_tujuannya() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -599,7 +600,7 @@ fn node_a11y_menyebut_peran_aksi_dan_posisinya() {
     assert_eq!(e.node.value.as_deref(), Some("0%"));
     assert_eq!(e.bounds.size, RUANG, "kotaknya datang dari hasil layout");
 
-    // Posisinya ikut dibacakan, dan angkanya sama dengan yang digambar.
+    // The position is announced too, and the number matches what is drawn.
     let mut router = InputRouter::new();
     gulir(&mut tree, &mut router, -800.0, ScrollPhase::Wheel, 0);
     selesaikan(&mut tree);
@@ -640,7 +641,7 @@ fn aksi_scroll_dari_teknologi_bantu_benar_benar_menggulir() {
     selesaikan(&mut tree);
     assert!(sv(&tree).offset() < sesudah_turun);
 
-    // Arah yang tidak sesuai sumbu ditolak, bukan ditebak.
+    // Directions that do not match the axis are refused, not guessed at.
     assert!(!handle_access_action(
         &mut tree,
         &minta(AccessAction::ScrollRight)
@@ -673,16 +674,16 @@ fn scroll_into_view_menemukan_wadah_terdekat() {
         "baris harus terlihat penuh: {atas}"
     );
 
-    // Sudah terlihat = tidak bergerak lagi (fokus yang berpindah di antara
-    // baris yang sama-sama terlihat tidak boleh melompat).
+    // Already visible = no further movement (focus moving between items that
+    // are both on screen must not jump).
     assert!(!scroll_into_view(&mut tree, baris_ke_15, 8.0));
-    // Node di luar wadah gulir mana pun ditolak dengan tenang.
+    // A node outside every scroll container is refused quietly.
     let akar = tree.root();
     assert!(!scroll_into_view(&mut tree, akar, 0.0));
 }
 
 // ---------------------------------------------------------------------------
-// Props & identitas
+// Props & identity
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -695,14 +696,14 @@ fn scroll_terkendali_hanya_berlaku_saat_angkanya_berubah() {
     );
     tree.layout(BoxConstraints::tight(RUANG));
 
-    // Pengguna menggulir sendiri…
+    // The user scrolls on their own…
     let mut router = InputRouter::new();
     gulir(&mut tree, &mut router, -300.0, ScrollPhase::Wheel, 0);
     selesaikan(&mut tree);
     assert_eq!(sv(&tree).offset(), 300.0);
 
-    // …lalu ada signal lain yang membuat halaman dibangun ulang dengan nilai
-    // props yang **sama**. Posisinya tidak boleh dilempar kembali ke atas.
+    // …then some other signal rebuilds the page with the **same** prop value.
+    // The position must not be thrown back to the top.
     reconcile(
         &mut tree,
         scroll_view(&t, fixed(320.0, TINGGI_ISI)).scroll(0.0),
@@ -710,8 +711,8 @@ fn scroll_terkendali_hanya_berlaku_saat_angkanya_berubah() {
     tree.flush_layout();
     assert_eq!(sv(&tree).offset(), 300.0, "bug controlled component");
 
-    // Aplikasi yang benar-benar mengubah angkanya tetap didengar, dan sebagai
-    // animasi — bukan lompatan.
+    // An app that really does change the number is still obeyed, and as an
+    // animation — not a jump.
     reconcile(
         &mut tree,
         scroll_view(&t, fixed(320.0, TINGGI_ISI)).scroll(600.0),
@@ -730,13 +731,13 @@ fn wadah_mendatar_memakai_sumbu_yang_benar() {
     let mut router = InputRouter::new();
     assert_eq!(sv(&tree).max_scroll(), 1200.0 - RUANG.width);
 
-    // Roda vertikal di atas daftar mendatar tetap menggulirkannya — satu-
-    // satunya cara memakai mouse biasa di sana.
+    // A vertical wheel over a horizontal list still scrolls it — the only way
+    // to use an ordinary mouse there.
     gulir(&mut tree, &mut router, -120.0, ScrollPhase::Wheel, 0);
     selesaikan(&mut tree);
     assert_eq!(tree.offset(isi(&tree)), Point::new(-120.0, 0.0));
 
-    // Panah mendatar berlaku, panah menegak menggelembung.
+    // Horizontal arrows apply; vertical arrows bubble.
     let mut router = InputRouter::new();
     tekan(&mut tree, &mut router, NamedKey::Tab, 0);
     assert!(tekan(&mut tree, &mut router, NamedKey::ArrowRight, 10).handled);

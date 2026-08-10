@@ -1,64 +1,63 @@
-//! [`ListState`] — posisi guliran dan baris terpilih sebuah daftar.
+//! [`ListState`] — a list's scroll position and selected row.
 //!
-//! State ini **wajib hidup di luar view**, karena view dibangun ulang setiap
-//! kali ada signal berubah sementara jari pengguna masih menggulir. Ia juga
-//! yang menutup lingkaran virtualisasi:
+//! This state **must live outside the view**, because the view is rebuilt every
+//! time a signal changes while the user's finger is still scrolling. It is also
+//! what closes the virtualization loop:
 //!
 //! ```text
-//! roda/trackpad → ScrollView::event → posisi guliran berubah
-//! frame berikut → super::sync       → tulis ListState.scroll   (signal)
-//!                                   → komponen daftar dirty
-//!                 rebuild daftar    → baca ListState.scroll
-//!                                   → bangun HANYA baris yang terlihat
+//! wheel/trackpad → ScrollView::event → scroll position changes
+//! next frame     → super::sync       → write ListState.scroll   (signal)
+//!                                    → list component goes dirty
+//!                  list rebuild      → read ListState.scroll
+//!                                    → build ONLY the visible rows
 //! ```
 //!
-//! Karena itu posisi guliran memang harus berupa [`Signal`]: tanpa
-//! pemberitahuan, jendela baris yang dibangun tidak akan pernah menyusul
-//! guliran, dan daftar akan tampak kosong begitu digulir.
+//! That is why the scroll position really does have to be a [`Signal`]: without
+//! the notification the row window being built would never catch up with the
+//! scroll, and the list would look empty the moment you scrolled it.
 
 use silka_core::signals::{use_signal, Runtime, Signal};
 
 use super::geometry::ListMetrics;
 
-/// Keadaan guliran sebuah daftar, sebagai satu nilai yang bisa dibaca saat
-/// build.
+/// A list's scroll state, as a single value that can be read during build.
 ///
-/// Semua field-nya **hasil pengukuran**, bukan properti: [`super::ListBody`]
-/// mengisi tinggi isi saat layout, dan [`super::sync`] mengisi posisi guliran
-/// dari wadah gulir di atasnya. Aplikasi boleh membacanya (mis. untuk prefetch
-/// data yang akan terlihat); yang boleh **diminta** hanyalah posisi baru, lewat
-/// [`ListState::scroll_to`].
+/// Every field is a **measurement**, not a property: [`super::ListBody`] fills in
+/// the content height during layout, and [`super::sync`] fills in the scroll
+/// position from the scroll container above it. Applications may read it (e.g.
+/// to prefetch data about to become visible); the only thing they may **ask
+/// for** is a new position, via [`ListState::scroll_to`].
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ListScroll {
-    /// Posisi guliran (poin logis, 0 = paling atas).
+    /// Scroll position (logical points, 0 = the very top).
     pub offset: f32,
-    /// Tinggi jendela pandang hasil layout terakhir; 0 = belum pernah.
+    /// Viewport height as measured by the last layout; 0 = never measured.
     pub viewport: f32,
-    /// Tinggi seluruh isi (header + semua baris).
+    /// Height of the whole content (header + every row).
     pub content: f32,
-    /// Tinggi satu baris.
+    /// Height of one row.
     pub extent: f32,
-    /// Tinggi header; 0 = tanpa header.
+    /// Header height; 0 = no header.
     pub header: f32,
 }
 
 impl ListScroll {
-    /// Guliran maksimum yang masih menyisakan isi di layar.
+    /// The largest scroll offset that still leaves content on screen.
     pub fn max_scroll(&self) -> f32 {
         (self.content - self.viewport).max(0.0)
     }
 
-    /// Benar bila daftar sedang menempel di ujung atas.
+    /// True while the list is resting against the top end.
     pub fn is_at_top(&self) -> bool {
         self.offset <= 0.0
     }
 
-    /// Benar bila daftar sedang menempel di ujung bawah.
+    /// True while the list is resting against the bottom end.
     pub fn is_at_bottom(&self) -> bool {
         self.offset >= self.max_scroll()
     }
 
-    /// Rentang baris yang sedang terlihat, untuk prefetch data.
+    /// The range of rows currently visible, for prefetching data.
     pub fn visible_range(&self, count: usize) -> super::ListRange {
         ListMetrics {
             count,
@@ -71,27 +70,26 @@ impl ListScroll {
     }
 }
 
-/// State sebuah daftar: posisi guliran + baris terpilih.
+/// A list's state: scroll position + selected row.
 ///
-/// `Copy` dan seukuran dua ID — boleh masuk ke closure `move` sebanyak yang
-/// diperlukan, persis seperti [`Signal`] (§2.5).
+/// `Copy` and the size of two IDs — move it into as many `move` closures as you
+/// need, exactly like a [`Signal`] (§2.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ListState {
     scroll: Signal<ListScroll>,
     selected: Signal<Option<usize>>,
-    /// Permintaan `scroll_to` yang belum dilayani.
+    /// A `scroll_to` request that has not been served yet.
     ///
-    /// Kanal terpisah dari [`ListScroll::offset`] dengan sengaja: `offset`
-    /// adalah **hasil pengukuran** yang diterbitkan ulang setiap frame, jadi
-    /// perintah yang dititipkan di sana akan tertimpa sebelum sempat dibaca
-    /// siapa pun. Perintah dan hasil pengukuran tidak boleh berbagi satu
-    /// tempat.
+    /// Deliberately a separate channel from [`ListScroll::offset`]: `offset` is a
+    /// **measurement** that is republished every frame, so a command left there
+    /// would be overwritten before anyone got to read it. Commands and
+    /// measurements must not share one place.
     request: Signal<Option<f32>>,
 }
 
 impl ListState {
-    /// State baru di dalam sebuah runtime — bentuk yang dipakai uji dan
-    /// aplikasi yang memegang state-nya sendiri di tingkat aplikasi.
+    /// A fresh state inside a runtime — the form used by tests and by
+    /// applications that hold their own state at application level.
     pub fn new(runtime: &Runtime) -> Self {
         Self {
             scroll: runtime.signal(ListScroll::default()),
@@ -100,34 +98,34 @@ impl ListState {
         }
     }
 
-    /// Keadaan guliran saat ini — **melacak** bila dipanggil saat build.
+    /// The current scroll state — **tracks** when called during build.
     ///
-    /// Inilah pembacaan yang membuat komponen daftar dibangun ulang saat
-    /// digulir, dan karena itulah jendela barisnya selalu menyusul.
+    /// This is the read that makes the list component rebuild while scrolling,
+    /// and that is why its row window always keeps up.
     pub fn scroll(&self) -> ListScroll {
         self.scroll.get()
     }
 
-    /// Keadaan guliran **tanpa** berlangganan.
+    /// The scroll state **without** subscribing.
     pub fn peek_scroll(&self) -> ListScroll {
         self.scroll.peek()
     }
 
-    /// Posisi guliran saat ini, tanpa berlangganan.
+    /// The current scroll position, without subscribing.
     pub fn offset(&self) -> f32 {
         self.scroll.peek().offset
     }
 
-    /// Gulir ke posisi tertentu; daftar **beranimasi** ke sana lewat spring
-    /// milik [`scroll_view`](mod@crate::scroll_view), bukan melompat.
+    /// Scroll to a given position; the list **animates** there through
+    /// [`scroll_view`](mod@crate::scroll_view)'s spring rather than jumping.
     ///
-    /// Permintaannya dilayani pada frame berikutnya oleh [`super::sync`] —
-    /// satu-satunya pihak yang boleh menyentuh wadah gulir di atas daftar.
+    /// The request is served on the next frame by [`super::sync`] — the only
+    /// party allowed to touch the scroll container above the list.
     pub fn scroll_to(&self, offset: f32) {
         self.request.set(Some(offset));
     }
 
-    /// Gulir sampai baris `index` berada di tepi atas.
+    /// Scroll until row `index` sits at the top edge.
     pub fn scroll_to_item(&self, index: usize, count: usize) {
         let s = self.scroll.peek();
         let m = ListMetrics {
@@ -140,14 +138,14 @@ impl ListState {
         self.scroll_to(m.scroll_to_item(index));
     }
 
-    /// Permintaan `scroll_to` yang tertunda — **melacak**, dan itu memang
-    /// gunanya: komponen daftar harus berlangganan supaya `scroll_to` dari
-    /// sebuah event handler benar-benar menjadwalkan frame.
+    /// The pending `scroll_to` request — **tracks**, and that is the whole
+    /// point: the list component must subscribe so that a `scroll_to` from an
+    /// event handler really does schedule a frame.
     pub(crate) fn pending_scroll(&self) -> Option<f32> {
         self.request.get()
     }
 
-    /// Ambil permintaan `scroll_to` yang tertunda (dipanggil [`super::sync`]).
+    /// Take the pending `scroll_to` request (called by [`super::sync`]).
     pub(crate) fn take_request(&self) -> Option<f32> {
         if !self.request.is_alive() {
             return None;
@@ -159,31 +157,31 @@ impl ListState {
         permintaan
     }
 
-    /// Baris yang sedang terpilih — **melacak** bila dipanggil saat build.
+    /// The currently selected row — **tracks** when called during build.
     pub fn selected(&self) -> Option<usize> {
         self.selected.get()
     }
 
-    /// Pilih sebuah baris (atau `None` untuk melepas seleksi).
+    /// Select a row (or `None` to clear the selection).
     pub fn select(&self, index: Option<usize>) {
         self.selected.set_if_changed(index);
     }
 
-    /// Benar bila seluruh signal masih hidup (scope pemiliknya belum dibuang).
+    /// True while every signal is still alive (the owning scope is not disposed).
     ///
-    /// Node render bisa hidup sesaat lebih lama daripada scope yang
-    /// membangunnya saat sebuah daftar dilepas dari pohon; menulis ke signal
-    /// mati adalah panik, jadi penulisan selalu lewat penjaga ini.
+    /// A render node can outlive the scope that built it for a moment when a
+    /// list is detached from the tree; writing to a dead signal panics, so every
+    /// write goes through this guard.
     pub fn is_alive(&self) -> bool {
         self.scroll.is_alive() && self.selected.is_alive() && self.request.is_alive()
     }
 
-    /// Terbitkan hasil pengukuran layout; hanya menulis bila memang berubah.
+    /// Publish the layout measurements; writes only when something changed.
     ///
-    /// "Hanya bila berubah" bukan optimasi melainkan syarat: setiap tulisan
-    /// signal menjadwalkan frame, dan menulis nilai yang sama setiap layout
-    /// akan membuat aplikasi berputar selamanya pada 120 fps tanpa ada satu
-    /// piksel pun yang berubah (§3.5 "render hanya saat dirty").
+    /// "Only when changed" is not an optimization but a requirement: every
+    /// signal write schedules a frame, and writing the same value on every
+    /// layout would spin the application forever at 120 fps without a single
+    /// pixel changing (§3.5 "render only when dirty").
     pub(super) fn publish(&self, scroll: ListScroll) -> bool {
         if !self.scroll.is_alive() {
             return false;
@@ -191,13 +189,13 @@ impl ListState {
         self.scroll.set_if_changed(scroll)
     }
 
-    /// Terbitkan apa yang **hanya diketahui isi daftar**: tinggi seluruh isi,
-    /// tinggi baris, tinggi header.
+    /// Publish what **only the list content knows**: total content height, row
+    /// height, header height.
     ///
-    /// Dipanggil dari layout [`super::ListBody`]. Tulisan pertamanya juga yang
-    /// membangunkan frame kedua sebuah daftar yang baru lahir — dan frame
-    /// kedua itulah yang pertama kali bisa membaca tinggi jendela yang
-    /// sebenarnya lewat [`ListState::publish_view`].
+    /// Called from [`super::ListBody`]'s layout. Its first write is also what
+    /// wakes the second frame of a newly born list — and that second frame is
+    /// the first one able to read the real viewport height via
+    /// [`ListState::publish_view`].
     pub(crate) fn publish_content(&self, content: f32, extent: f32, header: f32) -> bool {
         if !self.scroll.is_alive() {
             return false;
@@ -214,11 +212,11 @@ impl ListState {
         })
     }
 
-    /// Terbitkan apa yang **hanya diketahui wadah gulir**: posisi guliran dan
-    /// tinggi jendela pandang.
+    /// Publish what **only the scroll container knows**: the scroll position and
+    /// the viewport height.
     ///
-    /// Dipanggil [`super::sync`] sekali per frame, sebelum rebuild — itulah
-    /// yang membuat jendela baris menyusul guliran pada frame yang sama.
+    /// Called by [`super::sync`] once per frame, before the rebuild — that is
+    /// what lets the row window catch up with the scroll in the same frame.
     pub(crate) fn publish_view(&self, offset: f32, viewport: f32) -> bool {
         if !self.scroll.is_alive() {
             return false;
@@ -234,7 +232,7 @@ impl ListState {
         })
     }
 
-    /// Setel seleksi dari dalam node (mengabaikan signal yang sudah mati).
+    /// Set the selection from inside the node (ignoring signals already dead).
     pub(super) fn publish_selection(&self, index: Option<usize>) -> bool {
         if !self.selected.is_alive() {
             return false;
@@ -242,17 +240,17 @@ impl ListState {
         self.selected.set_if_changed(index)
     }
 
-    /// Kunci identitas komponen daftar ini — diturunkan dari identitas
-    /// state-nya, sehingga dua daftar bersaudara tidak pernah bertabrakan
-    /// walau penulisnya lupa memberi kunci.
+    /// This list component's identity key — derived from the identity of its
+    /// state, so that two sibling lists never collide even when their author
+    /// forgot to give them a key.
     pub(crate) fn component_key(&self) -> String {
         format!("list:{}", self.scroll.id().index())
     }
 }
 
-/// State daftar milik komponen yang sedang dibangun (§2.5).
+/// List state owned by the component currently being built (§2.5).
 ///
-/// Hook: dipanggil sekali per build, tidak boleh di dalam `if`/`loop`.
+/// A hook: called once per build, never inside an `if`/`loop`.
 ///
 /// ```ignore
 /// let daftar = use_list_state();
@@ -305,8 +303,8 @@ mod tests {
         });
         state.scroll_to(120.0);
 
-        // Hasil pengukuran **tidak** dipalsukan: `offset` tetap apa adanya
-        // sampai wadah gulir benar-benar bergerak.
+        // The measurements are **not** faked: `offset` stays as it is until the
+        // scroll container actually moves.
         let s = state.peek_scroll();
         assert_eq!(s.offset, 0.0);
         assert_eq!(s.viewport, 440.0);
@@ -332,7 +330,7 @@ mod tests {
         });
         state.scroll_to_item(10, 100);
         assert_eq!(state.take_request(), Some(440.0));
-        // Tidak pernah melewati ujung.
+        // Never goes past the end.
         state.scroll_to_item(99, 100);
         assert_eq!(state.take_request(), Some(4400.0 - 440.0));
     }

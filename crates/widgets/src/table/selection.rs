@@ -1,89 +1,91 @@
-//! Seleksi baris tabel: tunggal, jamak, shift, dan ⌘ — murni, tanpa pohon.
+//! Table row selection: single, multiple, shift, and ⌘ — pure, with no tree.
 //!
-//! ## Kenapa rentang, bukan himpunan indeks
+//! ## Why ranges, not a set of indices
 //!
-//! Godaan pertama adalah `HashSet<usize>`. Ia salah di sini, dan salahnya
-//! terukur: seleksi disimpan di sebuah [`Signal`](silka_core::signals::Signal)
-//! yang **disalin setiap rebuild**, dan tabel ini dirancang untuk seratus ribu
-//! baris. ⌘A pada himpunan indeks berarti seratus ribu `usize` disalin setiap
-//! kali pengguna menggulir satu baris — janji "virtualisasi" batal justru di
-//! tempat yang tidak dilihat siapa pun.
+//! The first temptation is `HashSet<usize>`. It is wrong here, and wrong in a
+//! measurable way: the selection lives in a
+//! [`Signal`](silka_core::signals::Signal) that is **cloned on every rebuild**,
+//! and this table is designed for a hundred thousand rows. ⌘A over a set of
+//! indices means a hundred thousand `usize` copied every time the user scrolls
+//! by one row — the "virtualization" promise broken in the one place nobody
+//! looks.
 //!
-//! Karena itu seleksi disimpan sebagai **daftar rentang inklusif yang terurut,
-//! terpisah, dan tidak bersebelahan**. ⌘A menjadi satu rentang; seleksi acak
-//! ⌘-klik tetap sekecil jumlah kelompoknya; dan `contains` tetap O(log n).
+//! So the selection is stored as a **sorted list of inclusive ranges that are
+//! disjoint and non-adjacent**. ⌘A becomes a single range; a scattered ⌘-click
+//! selection stays as small as its number of runs; and `contains` stays
+//! O(log n).
 
 use silka_core::input::Modifiers;
 
-/// Berapa banyak baris yang boleh dipilih sekaligus.
+/// How many rows may be selected at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectionMode {
-    /// Banyak baris: shift merentang, ⌘ (Ctrl di Win/Linux) menambah/melepas.
+    /// Many rows: shift extends, ⌘ (Ctrl on Win/Linux) adds or removes.
     #[default]
     Multiple,
-    /// Tepat satu baris.
+    /// Exactly one row.
     Single,
-    /// Tidak ada seleksi sama sekali — tabel tampilan murni.
+    /// No selection at all — a purely presentational table.
     None,
 }
 
 impl SelectionMode {
-    /// Benar bila tabel ini punya konsep "baris terpilih".
+    /// True when this table has a notion of a "selected row".
     pub fn is_selectable(self) -> bool {
         !matches!(self, SelectionMode::None)
     }
 }
 
-/// Baris-baris yang sedang terpilih, beserta jangkar dan baris aktifnya.
+/// The rows currently selected, along with the anchor and the active row.
 ///
-/// `anchor` adalah titik tumpu shift-klik; `lead` adalah baris yang terakhir
-/// disentuh — dialah yang memegang cincin fokus dan yang digulirkan ke layar.
+/// `anchor` is the pivot for shift-clicking; `lead` is the row touched last —
+/// it is the one that holds the focus ring and the one scrolled into view.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Selection {
-    /// Rentang inklusif `(awal, akhir)`, terurut, terpisah, tidak bersebelahan.
+    /// Inclusive `(start, end)` ranges: sorted, disjoint, and non-adjacent.
     ranges: Vec<(usize, usize)>,
     anchor: Option<usize>,
     lead: Option<usize>,
 }
 
 impl Selection {
-    /// Seleksi kosong.
+    /// The empty selection.
     pub const EMPTY: Self = Self {
         ranges: Vec::new(),
         anchor: None,
         lead: None,
     };
 
-    /// Seleksi berisi satu baris.
+    /// A selection holding a single row.
     pub fn single(index: usize) -> Self {
         let mut s = Self::default();
         s.select_only(index);
         s
     }
 
-    /// Benar bila tidak ada satu baris pun terpilih.
+    /// True when not a single row is selected.
     pub fn is_empty(&self) -> bool {
         self.ranges.is_empty()
     }
 
-    /// Berapa baris terpilih seluruhnya.
+    /// How many rows are selected in total.
     pub fn len(&self) -> usize {
         self.ranges.iter().map(|(a, b)| b - a + 1).sum()
     }
 
-    /// Berapa kelompok baris berurutan yang terpilih.
+    /// How many runs of consecutive selected rows there are.
     ///
-    /// Inilah ukuran memori seleksi yang sebenarnya — bukan [`Selection::len`].
+    /// This, not [`Selection::len`], is the selection's real memory footprint.
     pub fn range_count(&self) -> usize {
         self.ranges.len()
     }
 
-    /// Rentang-rentang terpilih, terurut.
+    /// The selected ranges, in order.
     pub fn ranges(&self) -> &[(usize, usize)] {
         &self.ranges
     }
 
-    /// Benar bila baris `index` terpilih.
+    /// True when row `index` is selected.
     pub fn contains(&self, index: usize) -> bool {
         self.ranges
             .binary_search_by(|(a, b)| {
@@ -98,31 +100,31 @@ impl Selection {
             .is_ok()
     }
 
-    /// Baris terpilih pertama.
+    /// The first selected row.
     pub fn first(&self) -> Option<usize> {
         self.ranges.first().map(|(a, _)| *a)
     }
 
-    /// Titik tumpu shift-klik.
+    /// The pivot for shift-clicking.
     pub fn anchor(&self) -> Option<usize> {
         self.anchor
     }
 
-    /// Baris yang terakhir disentuh — pemegang cincin fokus.
+    /// The row touched last — holder of the focus ring.
     pub fn lead(&self) -> Option<usize> {
         self.lead
     }
 
-    /// Setel baris aktif tanpa mengubah apa pun yang terpilih.
+    /// Set the active row without changing anything that is selected.
     pub fn set_lead(&mut self, index: Option<usize>) {
         self.lead = index;
     }
 
-    /// Baris-baris terpilih yang berada di dalam `first..first + len`.
+    /// The selected rows that fall inside `first..first + len`.
     ///
-    /// Dipakai saat menggambar: yang perlu disorot hanyalah baris di dalam
-    /// jendela, dan jumlahnya selalu sebesar viewport walau seleksinya seratus
-    /// ribu baris.
+    /// Used while painting: only the rows inside the window need highlighting,
+    /// and their count is always bounded by the viewport even when the
+    /// selection covers a hundred thousand rows.
     pub fn ranges_within(&self, first: usize, len: usize) -> impl Iterator<Item = (usize, usize)> {
         let akhir = first.saturating_add(len);
         self.ranges
@@ -132,14 +134,14 @@ impl Selection {
             .map(move |(a, b)| (a.max(first), b.min(akhir.saturating_sub(1))))
     }
 
-    /// Lepaskan seluruh seleksi (jangkar dan baris aktif ikut hilang).
+    /// Drop the entire selection (the anchor and active row go with it).
     pub fn clear(&mut self) {
         self.ranges.clear();
         self.anchor = None;
         self.lead = None;
     }
 
-    /// Pilih **hanya** baris `index`.
+    /// Select **only** row `index`.
     pub fn select_only(&mut self, index: usize) {
         self.ranges.clear();
         self.ranges.push((index, index));
@@ -147,17 +149,17 @@ impl Selection {
         self.lead = Some(index);
     }
 
-    /// Tambahkan rentang `a..=b` ke seleksi.
+    /// Add the range `a..=b` to the selection.
     pub fn add_range(&mut self, a: usize, b: usize) {
         let (mut lo, mut hi) = (a.min(b), a.max(b));
         let mut out = Vec::with_capacity(self.ranges.len() + 1);
         let mut i = 0;
-        // Rentang yang seluruhnya di kiri dan tidak bersentuhan: lewat.
+        // Ranges entirely to the left and not touching: pass them through.
         while i < self.ranges.len() && self.ranges[i].1.saturating_add(1) < lo {
             out.push(self.ranges[i]);
             i += 1;
         }
-        // Rentang yang bersentuhan atau bertumpang tindih: lebur jadi satu.
+        // Ranges that touch or overlap: merge them into one.
         while i < self.ranges.len() && self.ranges[i].0 <= hi.saturating_add(1) {
             lo = lo.min(self.ranges[i].0);
             hi = hi.max(self.ranges[i].1);
@@ -168,7 +170,7 @@ impl Selection {
         self.ranges = out;
     }
 
-    /// Buang satu baris dari seleksi (memecah rentang bila perlu).
+    /// Remove one row from the selection (splitting a range when necessary).
     pub fn remove(&mut self, index: usize) {
         let Some(pos) = self
             .ranges
@@ -188,7 +190,7 @@ impl Selection {
         }
     }
 
-    /// Balik keadaan satu baris (⌘-klik).
+    /// Toggle a single row (⌘-click).
     pub fn toggle(&mut self, index: usize) {
         if self.contains(index) {
             self.remove(index);
@@ -199,13 +201,13 @@ impl Selection {
         self.lead = Some(index);
     }
 
-    /// Pilih **hanya** rentang `a..=b`.
+    /// Select **only** the range `a..=b`.
     pub fn select_range(&mut self, a: usize, b: usize) {
         self.ranges.clear();
         self.add_range(a, b);
     }
 
-    /// Pilih seluruh `count` baris — satu rentang, berapa pun besarnya.
+    /// Select all `count` rows — one range, however large it gets.
     pub fn select_all(&mut self, count: usize) {
         self.ranges.clear();
         if count == 0 {
@@ -218,16 +220,16 @@ impl Selection {
         self.lead = Some(count - 1);
     }
 
-    /// Terapkan sebuah klik pada baris `index`.
+    /// Apply a click on row `index`.
     ///
-    /// Aturannya adalah aturan Finder, dan tidak ada satu pun yang boleh beda:
+    /// The rules are Finder's rules, and not one of them may differ:
     ///
-    /// | Tombol | Akibat |
+    /// | Modifier | Effect |
     /// |---|---|
-    /// | klik biasa | hanya baris itu; jangkar pindah ke sana |
-    /// | ⌘-klik | balik keadaan baris itu, sisanya tetap |
-    /// | ⇧-klik | rentang dari jangkar sampai baris itu, **menggantikan** |
-    /// | ⇧⌘-klik | rentang dari jangkar, **ditambahkan** ke yang sudah ada |
+    /// | plain click | that row alone; the anchor moves there |
+    /// | ⌘-click | toggle that row, leave the rest alone |
+    /// | ⇧-click | the range from the anchor to that row, **replacing** |
+    /// | ⇧⌘-click | the range from the anchor, **added** to what is there |
     pub fn apply_click(&mut self, index: usize, modifiers: Modifiers, mode: SelectionMode) -> bool {
         let sebelum = self.clone();
         match mode {
@@ -254,11 +256,11 @@ impl Selection {
         *self != sebelum
     }
 
-    /// Terapkan perpindahan keyboard ke baris `target`.
+    /// Apply a keyboard move to row `target`.
     ///
-    /// `extend` (⇧ ditahan) merentang dari jangkar tanpa memindahkannya —
-    /// itulah yang membuat ⇧↓ berkali-kali tumbuh ke satu arah dan menyusut
-    /// lagi saat berbalik, bukan menumpuk rentang baru setiap tekan.
+    /// `extend` (⇧ held) extends from the anchor without moving it — that is
+    /// what makes repeated ⇧↓ grow in one direction and shrink again when it
+    /// reverses, instead of piling up a new range with every keystroke.
     pub fn apply_move(&mut self, target: usize, extend: bool, mode: SelectionMode) -> bool {
         let sebelum = self.clone();
         match mode {
@@ -326,13 +328,13 @@ mod tests {
         let mut s = seleksi(&[(0, 10)]);
         s.remove(5);
         assert_eq!(s.ranges(), &[(0, 4), (6, 10)]);
-        // Tepi kiri: rentang menyusut, tidak pecah.
+        // Left edge: the range shrinks, it does not split.
         s.remove(0);
         assert_eq!(s.ranges(), &[(1, 4), (6, 10)]);
-        // Tepi kanan: idem.
+        // Right edge: likewise.
         s.remove(10);
         assert_eq!(s.ranges(), &[(1, 4), (6, 9)]);
-        // Rentang satu baris hilang seluruhnya.
+        // A one-row range disappears entirely.
         let mut satu = seleksi(&[(3, 3)]);
         satu.remove(3);
         assert!(satu.is_empty());
@@ -372,7 +374,7 @@ mod tests {
         assert_eq!(s.ranges(), &[(3, 3)]);
         assert_eq!(s.anchor(), Some(3));
         assert_eq!(s.lead(), Some(3));
-        // Mengklik baris yang sama lagi tidak mengubah apa pun.
+        // Clicking the same row again changes nothing.
         assert!(!s.apply_click(3, Modifiers::NONE, SelectionMode::Multiple));
     }
 
@@ -384,7 +386,7 @@ mod tests {
         assert_eq!(s.ranges(), &[(5, 9)]);
         assert_eq!(s.anchor(), Some(5), "jangkar tidak ikut pindah");
 
-        // Berbalik arah menyusut lagi, bukan menumpuk.
+        // Reversing direction shrinks it again instead of piling up.
         s.apply_click(2, Modifiers::SHIFT, SelectionMode::Multiple);
         assert_eq!(s.ranges(), &[(2, 5)]);
     }
@@ -396,7 +398,7 @@ mod tests {
         s.apply_click(5, Modifiers::COMMAND, SelectionMode::Multiple);
         s.apply_click(9, Modifiers::COMMAND, SelectionMode::Multiple);
         assert_eq!(s.ranges(), &[(1, 1), (5, 5), (9, 9)]);
-        // Sekali lagi = melepas.
+        // Once more = deselect.
         s.apply_click(5, Modifiers::COMMAND, SelectionMode::Multiple);
         assert_eq!(s.ranges(), &[(1, 1), (9, 9)]);
     }

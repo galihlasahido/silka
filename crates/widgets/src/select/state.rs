@@ -1,63 +1,65 @@
-//! Keadaan sebuah select dan satu-satunya tempat aturannya hidup.
+//! A select's state, and the one place its rules live.
 //!
-//! [`SelectState`] sengaja **data murni**: tidak ada node, tidak ada callback,
-//! tidak ada theme. Semua yang bisa salah pada sebuah dropdown — sorotan yang
-//! keluar batas, gulir yang tidak mengikuti sorotan, popup yang lupa menutup
-//! setelah memilih — diselesaikan di [`SelectState::apply`] sebagai fungsi
-//! `(keadaan, niat) → keadaan`. Karena itu seluruhnya bisa diuji tanpa GPU,
-//! tanpa font, dan tanpa satu pun frame (§9.5).
+//! [`SelectState`] is deliberately **pure data**: no nodes, no callbacks, no
+//! theme. Everything that can go wrong in a dropdown — a highlight that runs
+//! out of bounds, scroll that fails to follow the highlight, a popup that
+//! forgets to close after a choice — is settled in [`SelectState::apply`] as a
+//! function `(state, intent) → state`. Which is why all of it can be tested
+//! without a GPU, without fonts, and without a single frame (§9.5).
 
 use silka_paint::Rect;
 
 use crate::overlay::Anchor;
 
-/// Apa yang **diminta** pengguna terhadap sebuah select.
+/// What the user **asks** of a select.
 ///
-/// Node render tidak pernah mengubah pilihan sendiri: ia hanya melapor niat,
-/// dan aplikasi (atau [`SelectState::apply`]) yang memutuskan. Itulah yang
-/// membuat select bisa dikendalikan penuh dari signal — pola "controlled
-/// component" yang sama dengan `Viewport::scroll` (§2.5).
+/// A render node never changes the selection itself: it only reports intent,
+/// and the app (or [`SelectState::apply`]) decides. That is what makes a select
+/// fully drivable from a signal — the same "controlled component" pattern as
+/// `Viewport::scroll` (§2.5).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SelectIntent {
-    /// Buka popup; kotaknya adalah **kotak global pemicu**, calon jangkar.
+    /// Open the popup; the rect is the **trigger's global rect**, the anchor-to-be.
     Open(Rect),
-    /// Tutup popup tanpa mengubah pilihan.
+    /// Close the popup without changing the selection.
     Close,
-    /// Pindahkan sorotan ke indeks ini (arah panah, hover, typeahead).
+    /// Move the highlight to this index (arrow keys, hover, typeahead).
     Highlight(usize),
-    /// Pilih indeks ini lalu tutup.
+    /// Select this index, then close.
     Commit(usize),
 }
 
-/// Keadaan satu select yang **dimiliki aplikasi**.
+/// The state of one select, **owned by the application**.
 ///
-/// Ringkas dan `Copy` supaya muat di satu
-/// [`Signal`](silka_core::signals::Signal): satu titipan state, bukan empat.
+/// Compact and `Copy` so it fits in a single
+/// [`Signal`](silka_core::signals::Signal): one piece of state to keep, not
+/// four.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SelectState {
-    /// Popup sedang terbuka.
+    /// The popup is open.
     pub open: bool,
-    /// Indeks yang terpilih; `None` = belum ada (placeholder tampil).
+    /// The selected index; `None` = nothing yet (the placeholder shows).
     pub selected: Option<usize>,
-    /// Indeks yang sedang disorot di dalam popup (keyboard/hover).
+    /// The index highlighted inside the popup (keyboard/hover).
     pub highlight: usize,
-    /// Baris pertama yang terlihat saat daftar lebih panjang dari jendelanya.
+    /// The first visible row when the list is longer than its window.
     ///
-    /// Inilah yang membuat sorotan keyboard **selalu ikut terlihat** tanpa
-    /// state kedua di dalam node: posisi gulir adalah turunan darinya
-    /// ([`SelectState::scroll_offset`]).
+    /// This is what keeps the keyboard highlight **always in view** without a
+    /// second piece of state inside the node: the scroll position is derived
+    /// from it ([`SelectState::scroll_offset`]).
     pub first_visible: usize,
-    /// Kotak pemicu pada koordinat lokal layer overlay — jangkar popup.
+    /// The trigger's rect in the overlay layer's local coordinates — the
+    /// popup's anchor.
     pub anchor: Anchor,
 }
 
 impl SelectState {
-    /// Keadaan awal: tertutup, belum memilih apa pun.
+    /// The initial state: closed, nothing selected yet.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Keadaan awal dengan satu pilihan sudah aktif.
+    /// The initial state with one option already active.
     pub fn with_selected(index: usize) -> Self {
         Self {
             selected: Some(index),
@@ -66,31 +68,32 @@ impl SelectState {
         }
     }
 
-    /// Benar bila popup sedang terbuka.
+    /// True while the popup is open.
     pub fn is_open(&self) -> bool {
         self.open
     }
 
-    /// Posisi gulir daftar, poin logis — turunan [`SelectState::first_visible`].
+    /// The list's scroll position, in logical points — derived from
+    /// [`SelectState::first_visible`].
     pub fn scroll_offset(&self, row_height: f32) -> f32 {
         self.first_visible as f32 * row_height.max(0.0)
     }
 
-    /// Terapkan sebuah niat; benar bila keadaannya benar-benar berubah.
+    /// Apply an intent; true when the state actually changed.
     ///
-    /// `count` adalah jumlah pilihan dan `visible` jumlah baris yang muat di
-    /// jendela popup. Keduanya diserahkan pemanggil karena keduanya milik
-    /// tampilan, bukan milik keadaan — select yang sama bisa ditampilkan dua
-    /// kali dengan tinggi berbeda.
+    /// `count` is the number of options and `visible` the number of rows that
+    /// fit in the popup's window. Both are supplied by the caller because both
+    /// belong to the presentation, not to the state — the same select can be
+    /// shown twice at different heights.
     pub fn apply(&mut self, intent: SelectIntent, count: usize, visible: usize) -> bool {
         let sebelum = *self;
         match intent {
             SelectIntent::Open(kotak) => {
                 self.open = true;
                 self.anchor = Anchor::Rect(kotak);
-                // Popup selalu terbuka dengan sorotan pada yang terpilih —
-                // kebiasaan NSPopUpButton, dan yang membuat panah pertama
-                // bergerak dari tempat yang benar.
+                // The popup always opens with the highlight on the selected
+                // option — the NSPopUpButton habit, and what makes the first
+                // arrow key move from the right place.
                 let mulai = self.selected.unwrap_or(0);
                 self.set_highlight(mulai, count, visible);
             }
@@ -108,7 +111,8 @@ impl SelectState {
         *self != sebelum
     }
 
-    /// Pindahkan sorotan, jepit ke rentang yang sah, lalu pastikan terlihat.
+    /// Move the highlight, clamp it to the valid range, then make sure it is
+    /// visible.
     fn set_highlight(&mut self, index: usize, count: usize, visible: usize) {
         if count == 0 {
             self.highlight = 0;
@@ -119,11 +123,11 @@ impl SelectState {
         self.reveal(count, visible);
     }
 
-    /// Geser jendela seminimal mungkin agar sorotan berada di dalamnya.
+    /// Shift the window as little as possible so the highlight lands inside it.
     ///
-    /// "Seminimal mungkin" itu penting: menggulir ke tengah setiap kali sorotan
-    /// pindah membuat daftar terasa melompat-lompat, dan itulah bedanya listbox
-    /// yang enak dengan yang membingungkan.
+    /// "As little as possible" matters: scrolling to the middle every time the
+    /// highlight moves makes a list feel jumpy, and that is the difference
+    /// between a listbox that feels good and one that is confusing.
     fn reveal(&mut self, count: usize, visible: usize) {
         let jendela = visible.max(1).min(count);
         if self.highlight < self.first_visible {

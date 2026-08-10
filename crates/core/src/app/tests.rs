@@ -1,9 +1,9 @@
-//! Verifikasi siklus hidup **tanpa GPU**: seluruh berkas ini berjalan headless.
+//! Lifecycle verification **without a GPU**: this whole file runs headless.
 //!
-//! Yang dibuktikan di sini persis lima hal yang membuat jahitan ini bisa
-//! dipercaya: frame pertama menghasilkan scene, perubahan signal menjadwalkan
-//! frame, hanya subtree terkait yang dibangun ulang, scene ikut berubah, dan
-//! tanpa perubahan signal tidak ada frame sama sekali.
+//! What is proven here is exactly the five things that make this seam
+//! trustworthy: the first frame produces a scene, a signal change schedules a
+//! frame, only the relevant subtree is rebuilt, the scene changes with it, and
+//! without a signal change there is no frame at all.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -20,10 +20,10 @@ use crate::view::{column, fixed, interactive, row};
 use super::*;
 
 // ---------------------------------------------------------------------------
-// Bantuan
+// Helpers
 // ---------------------------------------------------------------------------
 
-/// Semua quad di dalam scene, dalam urutan gambar.
+/// Every quad in the scene, in draw order.
 fn quads(scene: &Scene) -> Vec<Quad> {
     scene
         .commands()
@@ -35,13 +35,13 @@ fn quads(scene: &Scene) -> Vec<Quad> {
         .collect()
 }
 
-/// Tinggi setiap quad — sidik jari scene yang mudah dibaca.
+/// The height of every quad — a scene fingerprint that is easy to read.
 fn tinggi(scene: &Scene) -> Vec<f32> {
     quads(scene).iter().map(|q| q.rect.size.height).collect()
 }
 
-/// Aplikasi contoh: satu counter di scope akar, dua komponen anak. Hanya
-/// komponen `"angka"` yang **membaca** counter-nya.
+/// Sample application: one counter in the root scope, two child components.
+/// Only the `"angka"` component **reads** the counter.
 fn app_counter() -> (AppRuntime, Rc<Cell<Option<Signal<i32>>>>) {
     let pegangan: Rc<Cell<Option<Signal<i32>>>> = Rc::default();
     let simpan = pegangan.clone();
@@ -64,7 +64,7 @@ fn app_counter() -> (AppRuntime, Rc<Cell<Option<Signal<i32>>>>) {
     (ui, pegangan)
 }
 
-/// Jangkar komponen ke-`i` di bawah kolom akar.
+/// The `i`-th component anchor under the root column.
 fn jangkar(ui: &AppRuntime, i: usize) -> crate::tree::NodeId {
     let akar = ui.tree().root();
     let kolom = ui.tree().children(akar)[0];
@@ -72,14 +72,15 @@ fn jangkar(ui: &AppRuntime, i: usize) -> crate::tree::NodeId {
 }
 
 // ---------------------------------------------------------------------------
-// (a)+(b) frame pertama
+// (a)+(b) the first frame
 // ---------------------------------------------------------------------------
 
 #[test]
 fn frame_pertama_membangun_pohon_dan_scene() {
     let (mut ui, pegangan) = app_counter();
 
-    // Sebelum frame pertama: pohon masih kosong, tapi frame sudah dijadwalkan.
+    // Before the first frame: the tree is still empty, but a frame is already
+    // scheduled.
     assert!(
         !ui.is_idle(),
         "frame pertama harus terjadwal sejak konstruksi"
@@ -89,7 +90,7 @@ fn frame_pertama_membangun_pohon_dan_scene() {
     let laporan = ui.frame();
 
     assert_eq!(laporan.rebuilt, 1, "hanya scope akar yang dibangun");
-    // kolom + 2 jangkar komponen + 2 daun.
+    // column + 2 component anchors + 2 leaves.
     assert_eq!(laporan.diff.created, 5);
     assert_eq!(laporan.diff.removed, 0);
     assert_eq!(laporan.size, Size::new(320.0, 240.0));
@@ -111,7 +112,7 @@ fn scene_memakai_warna_latar_dari_token() {
 }
 
 // ---------------------------------------------------------------------------
-// (c)+(d) perubahan signal → rebuild subtree saja
+// (c)+(d) a signal change → rebuild the subtree only
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -128,7 +129,7 @@ fn perubahan_signal_hanya_membangun_ulang_subtree_pembacanya() {
 
     let laporan = ui.frame();
 
-    // (d) — satu scope dibangun ulang, dan tidak ada node baru sama sekali.
+    // (d) — one scope rebuilt, and not a single new node.
     assert_eq!(laporan.rebuilt, 1, "hanya komponen 'angka'");
     assert_eq!(laporan.diff.created, 0);
     assert_eq!(laporan.diff.replaced, 0);
@@ -137,12 +138,12 @@ fn perubahan_signal_hanya_membangun_ulang_subtree_pembacanya() {
     assert_eq!(laporan.diff.reused, 1, "hanya daun 'angka' yang di-diff");
     assert_eq!(laporan.diff.updated, 1);
 
-    // Identitas node tetangga bertahan: ia tidak pernah masuk jalur diff.
+    // The neighbour node keeps its identity: it never entered the diff path.
     assert_eq!(jangkar(&ui, 0), jangkar_judul);
     assert_eq!(jangkar(&ui, 1), jangkar_angka);
     assert_eq!(ui.tree().children(jangkar_judul)[0], daun_judul);
 
-    // Scene berubah persis sesuai nilai baru.
+    // The scene changes exactly in line with the new value.
     assert_eq!(tinggi(ui.scene()), vec![20.0, 50.0]);
 }
 
@@ -204,8 +205,8 @@ fn komponen_yang_tidak_membaca_apa_pun_tidak_pernah_dibangun_ulang() {
 
 #[test]
 fn rebuild_akar_memasuki_kembali_setiap_anak_yang_dipertahankan() {
-    // Kontrak `drain_dirty`: pemangkasan keturunan hanya sah bila membangun
-    // ulang leluhur benar-benar memasuki lagi setiap anaknya.
+    // The `drain_dirty` contract: pruning descendants is sound only if
+    // rebuilding an ancestor really does re-enter each of its children.
     let masuk = Rc::new(RefCell::new(Vec::<&'static str>::new()));
     let catat = masuk.clone();
     let pegangan: Rc<Cell<Option<Signal<i32>>>> = Rc::default();
@@ -214,7 +215,7 @@ fn rebuild_akar_memasuki_kembali_setiap_anak_yang_dipertahankan() {
     let mut ui = app(move |_cx| {
         let akar = use_signal(|| 0i32);
         simpan.set(Some(akar));
-        let _ = akar.get(); // akar sendiri yang berlangganan
+        let _ = akar.get(); // the root itself subscribes
         let catat = catat.clone();
         column([
             component("a", {
@@ -247,7 +248,7 @@ fn rebuild_akar_memasuki_kembali_setiap_anak_yang_dipertahankan() {
 }
 
 // ---------------------------------------------------------------------------
-// (e) idle = nol
+// (e) idle = zero
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -255,23 +256,23 @@ fn tanpa_perubahan_signal_tidak_ada_frame_terjadwal() {
     let (mut ui, pegangan) = app_counter();
     ui.frame();
 
-    // (e) — sesudah frame pertama, benar-benar idle.
+    // (e) — after the first frame, genuinely idle.
     assert!(ui.is_idle());
     assert_eq!(ui.pending(), Dirty::NONE);
 
-    // Membaca signal tidak membangunkan apa pun.
+    // Reading a signal wakes nothing.
     let count = pegangan.get().unwrap();
     assert_eq!(count.peek(), 0);
     assert!(ui.is_idle());
 
-    // Menulis nilai yang sama juga tidak.
+    // Neither does writing the same value.
     assert!(!count.set_if_changed(0));
     assert!(
         ui.is_idle(),
         "nilai yang tidak berubah tidak menjadwalkan frame"
     );
 
-    // Baru perubahan sungguhan yang menjadwalkan.
+    // Only a real change schedules anything.
     count.set(1);
     assert!(!ui.is_idle());
     assert_eq!(ui.pending(), Dirty::LAYOUT | Dirty::PAINT);
@@ -299,7 +300,7 @@ fn frame_ulang_tanpa_perubahan_tidak_mengerjakan_apa_pun() {
     ui.frame();
     let sebelum = tinggi(ui.scene());
 
-    // Frame yang diminta OS (expose) boleh terjadi walau tidak ada yang dirty.
+    // A frame the OS asks for (expose) may happen even with nothing dirty.
     let laporan = ui.frame();
     assert!(laporan.is_noop());
     assert_eq!(laporan.reason, Dirty::NONE);
@@ -308,7 +309,7 @@ fn frame_ulang_tanpa_perubahan_tidak_mengerjakan_apa_pun() {
 }
 
 // ---------------------------------------------------------------------------
-// Sambungan ke scheduler
+// The wiring into the scheduler
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -324,14 +325,14 @@ fn on_wake_meneruskan_jadwal_ke_shell() {
     count.set(1);
     assert_eq!(*jejak.borrow(), vec![Wake::Schedule]);
 
-    // Tulisan kedua ke signal yang sama tidak menandai scope baru mana pun,
-    // jadi ia tidak sampai ke scheduler sama sekali — platform tidak di-poke
-    // dua kali untuk satu frame yang sama.
+    // A second write to the same signal marks no new scope, so it never
+    // reaches the scheduler at all — the platform is not poked twice for one
+    // and the same frame.
     count.set(2);
     assert_eq!(*jejak.borrow(), vec![Wake::Schedule]);
 
-    // Sumber lain yang benar-benar baru pun hanya menemukan frame yang sudah
-    // terjadwal.
+    // Even a genuinely different source only finds the frame already
+    // scheduled.
     assert_eq!(ui.request(Dirty::EXTERNAL), Wake::AlreadyScheduled);
     assert_eq!(
         *jejak.borrow(),
@@ -383,7 +384,7 @@ fn resize_menjadwalkan_layout_tanpa_membangun_ulang_komponen() {
 }
 
 // ---------------------------------------------------------------------------
-// Identitas & daftar dinamis
+// Identity & dynamic lists
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -396,7 +397,7 @@ fn daftar_berkunci_mempertahankan_state_saat_urutannya_berubah() {
             |id| {
                 let id = *id;
                 component(Key::num(id), move |_| {
-                    // State lokal per baris: dibuat sekali, ikut kuncinya.
+                    // Per-row local state: created once, tied to its key.
                     let tinggi = use_signal(|| 10.0 + id as f32);
                     fixed(20.0, tinggi.get()).background(Color::WHITE).into()
                 })
@@ -419,14 +420,14 @@ fn daftar_berkunci_mempertahankan_state_saat_urutannya_berubah() {
     assert_eq!(laporan.diff.created, 0, "tidak ada baris yang lahir");
     assert_eq!(laporan.diff.removed, 0, "tidak ada baris yang mati");
     assert_eq!(ui.runtime().live_scopes(), hidup);
-    // State ikut kuncinya, bukan posisinya.
+    // State follows its key, not its position.
     assert_eq!(tinggi(ui.scene()), vec![13.0, 12.0, 11.0]);
 }
 
 #[test]
 fn daftar_yang_menyusut_membuang_scope_dan_node() {
-    // `component()` sudah membuat scope-nya sendiri, jadi `list()` tidak dipakai
-    // di sini — kalau keduanya dipakai bersama, tiap baris punya dua scope.
+    // `component()` already creates its own scope, so `list()` is not used
+    // here — using both together would give every row two scopes.
     let mut ui = app(|cx| {
         let urutan: Signal<Vec<i64>> = cx.expect_env();
         row(urutan
@@ -459,7 +460,7 @@ fn daftar_yang_menyusut_membuang_scope_dan_node() {
 }
 
 // ---------------------------------------------------------------------------
-// Kontrak lain yang ikut lewat siklus ini
+// Other contracts that travel through this cycle
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -479,7 +480,7 @@ fn jangkar_komponen_transparan_bagi_layout() {
     let b = berkomponen.frame();
     assert_eq!(a.size, b.size);
 
-    // Ukuran & posisi daun harus identik dengan versi tanpa komponen.
+    // Leaf sizes & positions must be identical to the component-free version.
     let geometri = |ui: &AppRuntime| -> Vec<(Size, Point)> {
         let akar = ui.tree().root();
         let kolom = ui.tree().children(akar)[0];
@@ -487,7 +488,7 @@ fn jangkar_komponen_transparan_bagi_layout() {
             .children(kolom)
             .iter()
             .map(|c| {
-                // Turun melewati jangkar komponen bila ada.
+                // Descend past the component anchor when there is one.
                 let daun = match ui.tree().render(*c) {
                     Some(n) if n.downcast_ref::<ComponentBox>().is_some() => {
                         ui.tree().children(*c)[0]
@@ -586,11 +587,11 @@ fn komponen_di_luar_build_adalah_kesalahan_yang_jelas() {
 }
 
 // ---------------------------------------------------------------------------
-// Animasi: siapa yang menjadwalkan frame berikutnya
+// Animation: who schedules the next frame
 // ---------------------------------------------------------------------------
 
-/// Node yang punya satu spring dan bisa diarahkan lewat props — bentuk yang
-/// sama dengan panel overlay dan tombol yang masuk keadaan loading.
+/// A node with one spring that can be retargeted through props — the same
+/// shape as an overlay panel or a button entering its loading state.
 #[derive(Debug)]
 struct Bergerak {
     nilai: crate::animation::SpringValue<f32>,
@@ -628,13 +629,13 @@ impl crate::view::ViewNode for BergerakProps {
             return Dirty::NONE;
         }
         n.nilai.set_target(self.target);
-        // Persis yang dilaporkan `OverlayProps::update` saat dialog dibuka:
-        // ada yang akan **bergerak**, tapi belum bergerak frame ini.
+        // Exactly what `OverlayProps::update` reports when a dialog opens:
+        // something is **going to move**, but has not moved this frame.
         Dirty::LAYOUT | Dirty::PAINT | Dirty::ANIMATION
     }
 }
 
-/// Majukan seluruh `Bergerak` di pohon — bentuk `silka_widgets::advance`.
+/// Advance every `Bergerak` in the tree — the `silka_widgets::advance` shape.
 fn maju(tree: &mut crate::tree::RenderTree, tick: &crate::animation::Tick) -> Dirty {
     let mut dirty = Dirty::NONE;
     let mut tumpukan = vec![tree.root()];
@@ -675,10 +676,10 @@ fn app_bergerak() -> (AppRuntime, Rc<Cell<Option<Signal<f32>>>>) {
 
 #[test]
 fn animasi_yang_dimulai_view_diff_menjadwalkan_frame_berikutnya() {
-    // Regresi: `Dirty::ANIMATION` dari `ViewNode::update` sempat hilang dua
-    // kali — di `terapkan_dirty` (tidak pernah sampai ke pohon) dan di akhir
-    // `frame` (dibuang bersama tanda lain). Akibatnya dialog yang dibuka lewat
-    // signal membeku di frame pertama sampai ada event input berikutnya.
+    // Regression: `Dirty::ANIMATION` from `ViewNode::update` used to be lost
+    // twice — in `terapkan_dirty` (it never reached the tree) and at the end of
+    // `frame` (dropped along with the other flags). A dialog opened through a
+    // signal therefore froze on its first frame until the next input event.
     let (mut ui, pegangan) = app_bergerak();
     ui.frame();
     assert!(ui.is_idle());
@@ -701,9 +702,9 @@ fn spring_yang_belum_settle_tetap_meminta_frame_sampai_selesai() {
     pegangan.get().unwrap().set(50.0);
     ui.frame();
 
-    // Siklus shell: animate → frame. `begin_frame` mengosongkan alasan yang
-    // menjadwalkan frame ini, jadi yang menjaga animasi tetap hidup adalah
-    // `frame` sendiri — bukan permintaan yang sudah dilayani.
+    // The shell cycle: animate → frame. `begin_frame` clears the reasons that
+    // scheduled this frame, so what keeps the animation alive is `frame`
+    // itself — not a request that has already been served.
     let mut jam = Instant::now();
     let mut n = 0;
     while !ui.is_idle() {
@@ -715,7 +716,7 @@ fn spring_yang_belum_settle_tetap_meminta_frame_sampai_selesai() {
     }
     assert!(n > 1, "transisi harus memakan lebih dari satu frame");
     assert!(!ui.is_animating());
-    // Nilainya benar-benar sampai di tujuan, bukan berhenti di tengah jalan.
+    // The value really does reach its target rather than stopping halfway.
     let node = ui.tree().children(ui.tree().root())[0];
     let posisi = ui
         .tree()

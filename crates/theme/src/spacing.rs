@@ -1,28 +1,29 @@
-//! Skala spacing 4pt.
+//! The 4pt spacing scale.
 //!
-//! Filosofi constraint-based Tailwind dengan angka HIG (§2.6): jarak bukan
-//! angka bebas melainkan **kelipatan satu unit**. Kedua preset memakai unit
-//! 4pt, jadi `p_4` berarti hal yang sama di mana pun — yang berbeda hanyalah
-//! di mana widget memakainya.
+//! Tailwind's constraint-based philosophy with HIG's numbers (§2.6): a distance
+//! is not a free-floating number but a **multiple of one unit**. Both presets
+//! use a 4pt unit, so `p_4` means the same thing everywhere — all that differs
+//! is where widgets reach for it.
 //!
-//! Satu-satunya nilai yang bukan kelipatan unit adalah [`SpaceToken::Px`]:
-//! garis rambut 1pt untuk border dan separator. Ia sengaja ada supaya widget
-//! tidak tergoda menulis `1.0` sendiri.
+//! The only value that is not a multiple of the unit is [`SpaceToken::Px`]: the
+//! 1pt hairline for borders and separators. It exists deliberately, so widgets
+//! are never tempted to write `1.0` themselves.
 
-/// Skala spacing.
+/// The spacing scale.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpacingTokens {
-    /// Satu langkah skala, dalam poin logis.
+    /// One step of the scale, in logical points.
     pub unit: f32,
 }
 
 impl SpacingTokens {
-    /// Jarak untuk `steps` langkah skala (`space(3)` = 12pt saat unit 4pt).
+    /// The distance for `steps` steps of the scale (`space(3)` = 12pt at a 4pt
+    /// unit).
     pub fn space(self, steps: f32) -> f32 {
         self.unit * steps
     }
 
-    /// Nilai satu token skala, dalam poin logis.
+    /// The value of one scale token, in logical points.
     pub fn get(self, token: SpaceToken) -> f32 {
         match token {
             SpaceToken::None => 0.0,
@@ -32,51 +33,51 @@ impl SpacingTokens {
     }
 }
 
-/// Nama token spacing — bentuk yang dipakai utility (`p_4`, `gap_3`).
+/// The name of a spacing token — the form utilities take (`p_4`, `gap_3`).
 ///
-/// Angkanya adalah **langkah**, bukan poin: `S4` = 4 langkah = 16pt pada unit
-/// 4pt. Penamaan ini sengaja sama dengan Tailwind supaya perpindahan mental
-/// dari web nyaris nol.
+/// The number counts **steps**, not points: `S4` = 4 steps = 16pt at a 4pt
+/// unit. The naming deliberately matches Tailwind so the mental jump from the
+/// web is close to zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SpaceToken {
-    /// 0 langkah.
+    /// 0 steps.
     None,
-    /// Garis rambut 1pt — satu-satunya nilai di luar skala.
+    /// The 1pt hairline — the only value outside the scale.
     Px,
-    /// Setengah langkah (2pt).
+    /// Half a step (2pt).
     S0_5,
-    /// 1 langkah (4pt).
+    /// 1 step (4pt).
     S1,
-    /// 1,5 langkah (6pt).
+    /// 1.5 steps (6pt).
     S1_5,
-    /// 2 langkah (8pt).
+    /// 2 steps (8pt).
     S2,
-    /// 2,5 langkah (10pt).
+    /// 2.5 steps (10pt).
     S2_5,
-    /// 3 langkah (12pt).
+    /// 3 steps (12pt).
     S3,
-    /// 4 langkah (16pt).
+    /// 4 steps (16pt).
     S4,
-    /// 5 langkah (20pt).
+    /// 5 steps (20pt).
     S5,
-    /// 6 langkah (24pt).
+    /// 6 steps (24pt).
     S6,
-    /// 8 langkah (32pt).
+    /// 8 steps (32pt).
     S8,
-    /// 10 langkah (40pt).
+    /// 10 steps (40pt).
     S10,
-    /// 12 langkah (48pt).
+    /// 12 steps (48pt).
     S12,
-    /// 16 langkah (64pt).
+    /// 16 steps (64pt).
     S16,
-    /// 20 langkah (80pt).
+    /// 20 steps (80pt).
     S20,
-    /// 24 langkah (96pt).
+    /// 24 steps (96pt).
     S24,
 }
 
 impl SpaceToken {
-    /// Semua token, urut dari yang terkecil.
+    /// Every token, smallest first.
     pub const ALL: [SpaceToken; 17] = [
         SpaceToken::None,
         SpaceToken::Px,
@@ -97,10 +98,10 @@ impl SpaceToken {
         SpaceToken::S24,
     ];
 
-    /// Jumlah langkah skala yang diwakili token ini.
+    /// How many scale steps this token stands for.
     ///
-    /// [`SpaceToken::Px`] mengembalikan 0 karena ia memang bukan bagian skala —
-    /// nilainya diambil khusus oleh [`SpacingTokens::get`].
+    /// [`SpaceToken::Px`] returns 0 because it is genuinely not part of the
+    /// scale — its value is special-cased in [`SpacingTokens::get`].
     pub fn steps(self) -> f32 {
         match self {
             SpaceToken::None => 0.0,
@@ -123,7 +124,7 @@ impl SpaceToken {
         }
     }
 
-    /// Nama token untuk gallery/debug.
+    /// Token name for gallery/debug output.
     pub const fn name(self) -> &'static str {
         match self {
             SpaceToken::None => "0",
@@ -175,8 +176,8 @@ mod tests {
     fn px_adalah_garis_rambut_bukan_kelipatan_unit() {
         let s = SpacingTokens { unit: 4.0 };
         assert_eq!(s.get(SpaceToken::Px), 1.0);
-        // Termasuk saat unit-nya diganti preset brand kustom: garis rambut
-        // tetap 1pt, karena ia soal ketajaman tepi, bukan soal ritme layout.
+        // Including when a custom brand preset changes the unit: the hairline
+        // stays 1pt, because it is about edge crispness, not layout rhythm.
         let s = SpacingTokens { unit: 8.0 };
         assert_eq!(s.get(SpaceToken::Px), 1.0);
         assert_eq!(s.get(SpaceToken::S1), 8.0);

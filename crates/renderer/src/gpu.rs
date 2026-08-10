@@ -1,4 +1,4 @@
-//! Konteks GPU: instance, adapter, device, queue.
+//! The GPU context: instance, adapter, device, queue.
 
 use std::sync::Arc;
 
@@ -6,11 +6,11 @@ use crate::error::RendererError;
 use crate::geometry::SurfaceGeometry;
 use crate::surface::WindowSurface;
 
-/// Target window untuk pembuatan surface.
+/// A window target for surface creation.
 ///
-/// Sengaja dinyatakan lewat `raw-window-handle`, bukan lewat tipe winit:
-/// `silka-renderer` tidak boleh tahu shell mana yang memakainya, dan
-/// `silka-platform` tidak boleh tahu API grafis mana yang dipakai.
+/// Deliberately expressed through `raw-window-handle` rather than a winit type:
+/// `silka-renderer` must not know which shell is driving it, and
+/// `silka-platform` must not know which graphics API is in use.
 pub trait WindowTarget:
     raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync + 'static
 {
@@ -25,11 +25,10 @@ impl<T> WindowTarget for T where
 {
 }
 
-/// Konteks GPU bersama untuk seluruh aplikasi.
+/// The GPU context shared by the whole application.
 ///
-/// Satu `Gpu` melayani banyak window: surface tambahan memakai adapter dan
-/// device yang sama sehingga resource (atlas glyph, pipeline SDF) bisa
-/// dipakai bersama.
+/// A single `Gpu` serves many windows: additional surfaces use the same adapter
+/// and device, so resources (glyph atlas, SDF pipeline) can be shared.
 #[derive(Debug)]
 pub struct Gpu {
     instance: wgpu::Instance,
@@ -39,17 +38,17 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    /// Bangun konteks GPU sekaligus surface pertamanya.
+    /// Build the GPU context together with its first surface.
     ///
-    /// Adapter dipilih **setelah** surface ada supaya wgpu bisa menjamin
-    /// adapter itu benar-benar bisa mempresentasikan ke window tersebut
-    /// (syarat mutlak di Vulkan/GL, dan hal yang benar di Metal).
+    /// The adapter is picked **after** the surface exists so wgpu can guarantee
+    /// that adapter really can present to that window (mandatory on Vulkan/GL,
+    /// and the right thing to do on Metal).
     ///
     /// # Platform
     ///
-    /// Di macOS pemanggilan ini harus terjadi di main thread — batasan Metal,
-    /// bukan batasan kita. `silka-platform` memanggilnya dari `resumed()`
-    /// event loop winit, jadi syarat itu otomatis terpenuhi.
+    /// On macOS this call must happen on the main thread — a Metal
+    /// restriction, not ours. `silka-platform` calls it from winit's
+    /// `resumed()` event loop, so the requirement is met automatically.
     pub fn with_surface<W: WindowTarget>(
         target: Arc<W>,
         geometry: SurfaceGeometry,
@@ -63,8 +62,9 @@ impl Gpu {
             .map_err(|e| RendererError::SurfaceCreation(e.to_string()))?;
 
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            // UI bukan game: adapter hemat daya lebih tepat, dan di Mac
-            // dual-GPU inilah yang menghindari menyalakan GPU diskrit.
+            // A UI is not a game: the low-power adapter is the right fit, and
+            // on dual-GPU Macs this is what avoids spinning up the discrete
+            // GPU.
             power_preference: wgpu::PowerPreference::LowPower,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface),
@@ -76,12 +76,12 @@ impl Gpu {
         Ok((gpu, window_surface))
     }
 
-    /// Konteks GPU **tanpa window** — untuk rendering headless.
+    /// A GPU context **without a window** — for headless rendering.
     ///
-    /// Inilah pintu masuk golden/snapshot test visual dan benchmark frame-time
-    /// di CI (REKOMENDASI §9.5): scene yang sama yang digambar ke window bisa
-    /// digambar ke [`crate::OffscreenTarget`] dan dibandingkan piksel demi
-    /// piksel, tanpa server tampilan.
+    /// This is the entry point for visual golden/snapshot tests and frame-time
+    /// benchmarks in CI (REKOMENDASI §9.5): the same scene that is drawn into a
+    /// window can be drawn into a [`crate::OffscreenTarget`] and compared pixel
+    /// by pixel, with no display server.
     pub fn headless() -> Result<Self, RendererError> {
         let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
         descriptor.backends = preferred_backends();
@@ -104,9 +104,9 @@ impl Gpu {
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("silka.device"),
             required_features: wgpu::Features::empty(),
-            // Downlevel defaults menjaga jalur Linux/GL tetap terbuka
-            // (REKOMENDASI §3.2), dinaikkan resolusinya mengikuti adapter agar
-            // window besar/multi-monitor tidak menabrak limit tekstur.
+            // Downlevel defaults keep the Linux/GL path open (REKOMENDASI
+            // §3.2), with the resolution raised to follow the adapter so large
+            // or multi-monitor windows do not hit the texture limit.
             required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
             ..Default::default()
         }))
@@ -120,7 +120,7 @@ impl Gpu {
         })
     }
 
-    /// Surface tambahan untuk window kedua dan seterusnya.
+    /// An additional surface, for the second window and beyond.
     pub fn create_surface<W: WindowTarget>(
         &self,
         target: Arc<W>,
@@ -133,8 +133,8 @@ impl Gpu {
         WindowSurface::new(self, surface, geometry)
     }
 
-    /// Nama backend aktif, mis. `"Metal"` di macOS — berguna untuk log dan
-    /// laporan bug pengguna.
+    /// The active backend's name, e.g. `"Metal"` on macOS — useful for logs and
+    /// user bug reports.
     pub fn backend_name(&self) -> &'static str {
         match self.adapter.get_info().backend {
             wgpu::Backend::Metal => "Metal",
@@ -146,7 +146,7 @@ impl Gpu {
         }
     }
 
-    /// Nama adapter/GPU yang terpilih.
+    /// The name of the selected adapter/GPU.
     pub fn adapter_name(&self) -> String {
         self.adapter.get_info().name
     }
@@ -159,19 +159,19 @@ impl Gpu {
         &self.queue
     }
 
-    /// Akses mentah ke `wgpu::Device`.
+    /// Raw access to the `wgpu::Device`.
     ///
-    /// **Hanya untuk crate backend saudara** (pipeline SDF, atlas glyph) —
-    /// kode widget tidak boleh memanggil ini, dan tidak pernah punya
-    /// referensi `Gpu` untuk melakukannya (REKOMENDASI §3.2).
+    /// **For sibling backend crates only** (SDF pipeline, glyph atlas) — widget
+    /// code must not call this, and never holds a `Gpu` reference with which it
+    /// could (REKOMENDASI §3.2).
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
 }
 
 fn preferred_backends() -> wgpu::Backends {
-    // PRIMARY = Metal / Vulkan / D3D12 sesuai §3.2; GL disertakan sebagai
-    // jaring pengaman Linux lama, ditangani wgpu sendiri tanpa tier terpisah.
+    // PRIMARY = Metal / Vulkan / D3D12 per §3.2; GL is included as a safety net
+    // for older Linux, handled by wgpu itself without a separate tier.
     wgpu::Backends::PRIMARY | wgpu::Backends::GL
 }
 
@@ -186,8 +186,8 @@ mod tests {
         assert!(b.contains(wgpu::Backends::VULKAN));
         assert!(b.contains(wgpu::Backends::DX12));
         assert!(b.contains(wgpu::Backends::GL));
-        // `Backends::PRIMARY` juga membawa BROWSER_WEBGPU; itu tidak apa-apa
-        // karena backend web tidak pernah ikut dikompilasi di target desktop.
+        // `Backends::PRIMARY` also brings in BROWSER_WEBGPU; that is fine,
+        // since the web backend is never compiled into a desktop target.
         assert_eq!(b, wgpu::Backends::PRIMARY | wgpu::Backends::GL);
     }
 }

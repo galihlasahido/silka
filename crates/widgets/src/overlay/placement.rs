@@ -1,32 +1,32 @@
-//! Geometri penempatan overlay: **anchor + auto-flip di tepi**.
+//! Overlay placement geometry: **anchoring + auto-flip at the edges**.
 //!
-//! Ini bagian overlay yang tidak menyentuh pohon, tidak menyentuh GPU, dan
-//! tidak menyentuh waktu — murni `(ukuran panel, kotak jangkar, batas layar)`
-//! menjadi `(posisi, sisi yang akhirnya dipakai)`. Karena itu ia bisa diuji
-//! habis-habisan tanpa window (§9.5), dan karena itu pula seluruh komponen
-//! Tier 4 `KOMPONEN.md` (dialog/popover/tooltip/menu/toast) memakai satu
-//! implementasi yang sama alih-alih masing-masing menghitung sendiri.
+//! This is the part of the overlay system that touches neither the tree, nor
+//! the GPU, nor time — purely `(panel size, anchor rect, screen bounds)` in,
+//! `(position, side actually used)` out. That is why it can be tested to
+//! exhaustion without a window (§9.5), and why every Tier 4 component in
+//! `KOMPONEN.md` (dialog/popover/tooltip/menu/toast) shares one implementation
+//! instead of each computing its own.
 //!
-//! Tiga aturan yang dijalankan [`place`]:
+//! The three rules [`place`] enforces:
 //!
-//! 1. **Sisi logis, bukan fisik.** [`Side::Start`]/[`Side::End`] diresolusi
-//!    lewat [`TextDirection`], jadi menu yang membuka "ke arah akhir baris"
-//!    otomatis membuka ke kiri di antarmuka Arab (§9.8). Mirroring RTL bukan
-//!    fitur susulan.
-//! 2. **Auto-flip.** Panel yang tidak muat di sisi yang diminta pindah ke sisi
-//!    seberang — dan kalau kedua sisi sama-sama sempit, ia memilih yang
-//!    ruangnya lebih besar, bukan yang kebetulan ditulis lebih dulu.
-//! 3. **Geser lalu jepit.** Setelah sisi ditentukan, panel digeser sepanjang
-//!    sumbu silang agar tetap di dalam layar, dan sebagai jaring pengaman
-//!    kedua sumbu dijepit ke batas. Panel **tidak pernah** keluar layar,
-//!    seburuk apa pun ukurannya.
+//! 1. **Logical sides, not physical ones.** [`Side::Start`]/[`Side::End`] are
+//!    resolved through [`TextDirection`], so a menu that opens "towards the end
+//!    of the line" opens to the left in an Arabic UI (§9.8). RTL mirroring is
+//!    not an afterthought.
+//! 2. **Auto-flip.** A panel that does not fit on the requested side moves to
+//!    the opposite one — and when both sides are equally cramped it picks the
+//!    one with more room, not the one that happens to be written first.
+//! 3. **Shift, then clamp.** Once the side is settled, the panel is shifted
+//!    along the cross axis to stay on screen, and as a second safety net both
+//!    axes are clamped to the bounds. A panel **never** leaves the screen, no
+//!    matter how badly sized it is.
 //!
 //! ```
 //! use silka_core::tree::TextDirection;
 //! use silka_paint::{Rect, Size};
 //! use silka_widgets::overlay::{place, Placement, PhysicalSide, Side};
 //!
-//! // Tombol menempel di tepi bawah layar: popover "di bawah" tidak muat…
+//! // A button hugging the bottom edge: a popover "below" does not fit…
 //! let layar = Rect::new(0.0, 0.0, 400.0, 300.0);
 //! let tombol = Rect::new(100.0, 270.0, 80.0, 24.0);
 //! let hasil = place(
@@ -36,7 +36,7 @@
 //!     Placement::anchored(Side::Bottom).gap(8.0),
 //!     TextDirection::Ltr,
 //! );
-//! // …jadi ia membalik ke atas dengan sendirinya.
+//! // …so it flips above the anchor all by itself.
 //! assert_eq!(hasil.side, PhysicalSide::Top);
 //! assert!(hasil.flipped);
 //! ```
@@ -45,25 +45,26 @@ use silka_core::tree::{TextDirection, SPACING_UNIT};
 use silka_paint::{Point, Rect, Size};
 
 // ---------------------------------------------------------------------------
-// Sisi & perataan
+// Sides & alignment
 // ---------------------------------------------------------------------------
 
-/// Sisi **logis** sebuah penempatan — mengikuti arah baca (§9.8).
+/// The **logical** side of a placement — it follows the reading direction
+/// (§9.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Side {
-    /// Di atas jangkar (atau menempel tepi atas layer).
+    /// Above the anchor (or hugging the layer's top edge).
     Top,
-    /// Di bawah jangkar (atau menempel tepi bawah layer).
+    /// Below the anchor (or hugging the layer's bottom edge).
     #[default]
     Bottom,
-    /// Ke arah awal baris: kiri di LTR, kanan di RTL.
+    /// Towards the start of the line: left in LTR, right in RTL.
     Start,
-    /// Ke arah akhir baris: kanan di LTR, kiri di RTL.
+    /// Towards the end of the line: right in LTR, left in RTL.
     End,
 }
 
 impl Side {
-    /// Sisi fisik yang berlaku pada arah baca `direction`.
+    /// The physical side this resolves to under the `direction` reading order.
     pub fn resolve(self, direction: TextDirection) -> PhysicalSide {
         match (self, direction.is_rtl()) {
             (Side::Top, _) => PhysicalSide::Top,
@@ -74,22 +75,22 @@ impl Side {
     }
 }
 
-/// Sisi **fisik** hasil resolusi — inilah yang dipakai geometri.
+/// The resolved **physical** side — this is what the geometry works with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum PhysicalSide {
-    /// Di atas.
+    /// Above.
     Top,
-    /// Di bawah.
+    /// Below.
     #[default]
     Bottom,
-    /// Di kiri.
+    /// To the left.
     Left,
-    /// Di kanan.
+    /// To the right.
     Right,
 }
 
 impl PhysicalSide {
-    /// Sisi seberang — tujuan auto-flip.
+    /// The opposite side — where auto-flip goes.
     pub fn opposite(self) -> Self {
         match self {
             PhysicalSide::Top => PhysicalSide::Bottom,
@@ -99,12 +100,12 @@ impl PhysicalSide {
         }
     }
 
-    /// Benar bila sumbu utamanya vertikal (atas/bawah).
+    /// True if its main axis is vertical (top/bottom).
     pub fn is_vertical(self) -> bool {
         matches!(self, PhysicalSide::Top | PhysicalSide::Bottom)
     }
 
-    /// Nama pendek untuk debug dan golden test.
+    /// A short name for debugging and golden tests.
     pub const fn name(self) -> &'static str {
         match self {
             PhysicalSide::Top => "top",
@@ -115,20 +116,20 @@ impl PhysicalSide {
     }
 }
 
-/// Perataan panel pada **sumbu silang** sisi yang dipakai.
+/// How the panel is aligned on the **cross axis** of the side in use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Align {
-    /// Rata awal (kiri/atas; kanan/atas di RTL untuk sisi vertikal).
+    /// Start-aligned (left/top; right/top under RTL for vertical sides).
     Start,
-    /// Rata tengah.
+    /// Center-aligned.
     #[default]
     Center,
-    /// Rata akhir.
+    /// End-aligned.
     End,
 }
 
 impl Align {
-    /// Perataan yang sudah dicerminkan — dipakai saat arah baca RTL.
+    /// The mirrored alignment — used under an RTL reading direction.
     pub fn mirrored(self) -> Self {
         match self {
             Align::Start => Align::End,
@@ -142,45 +143,45 @@ impl Align {
 // Placement
 // ---------------------------------------------------------------------------
 
-/// Cara sebuah overlay menempatkan dirinya.
+/// How an overlay positions itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum PlacementMode {
-    /// Di tengah layer, tanpa jangkar — dialog/alert.
+    /// Centered in the layer, without an anchor — dialogs/alerts.
     #[default]
     Center,
-    /// Menempel di luar kotak jangkar — popover, menu, tooltip.
+    /// Attached outside the anchor rect — popovers, menus, tooltips.
     Anchored,
-    /// Menempel di **dalam** tepi layer — sheet, drawer, toast.
+    /// Attached **inside** an edge of the layer — sheets, drawers, toasts.
     Edge,
 }
 
-/// Resep penempatan lengkap: mode, sisi, perataan, jarak, dan izin
-/// flip/geser.
+/// The full placement recipe: mode, side, alignment, gap, and permission to
+/// flip/shift.
 ///
-/// Ditulis gaya Dart (§2.5): fungsi konstruktor + method chaining.
+/// Written Dart-style (§2.5): a constructor function + method chaining.
 ///
 /// ```
 /// use silka_widgets::overlay::{Align, Placement, Side};
 ///
-/// // Menu yang membuka ke bawah, rata awal baris, berjarak 4pt.
+/// // A menu opening downwards, aligned to the line start, 4pt away.
 /// let _ = Placement::anchored(Side::Bottom).align(Align::Start).gap(4.0);
-/// // Toast di pojok bawah-akhir dengan margin 16pt.
+/// // A toast in the bottom-end corner with a 16pt margin.
 /// let _ = Placement::edge(Side::Bottom).align(Align::End).gap(16.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
-    /// Mode penempatan.
+    /// The placement mode.
     pub mode: PlacementMode,
-    /// Sisi logis yang diminta.
+    /// The requested logical side.
     pub side: Side,
-    /// Perataan pada sumbu silang.
+    /// Alignment on the cross axis.
     pub align: Align,
-    /// Jarak ke jangkar ([`PlacementMode::Anchored`]) atau ke tepi layer
-    /// ([`PlacementMode::Edge`]) — **selalu** dari skala spacing theme.
+    /// Distance to the anchor ([`PlacementMode::Anchored`]) or to the layer
+    /// edge ([`PlacementMode::Edge`]) — **always** from the theme spacing scale.
     pub gap: f32,
-    /// Boleh membalik ke sisi seberang saat tidak muat.
+    /// May flip to the opposite side when it does not fit.
     pub flip: bool,
-    /// Boleh digeser sepanjang sumbu silang agar tetap di dalam layar.
+    /// May be shifted along the cross axis to stay on screen.
     pub shift: bool,
 }
 
@@ -191,7 +192,7 @@ impl Default for Placement {
 }
 
 impl Placement {
-    /// Di tengah layer — dialog modal.
+    /// Centered in the layer — a modal dialog.
     pub fn center() -> Self {
         Self {
             mode: PlacementMode::Center,
@@ -203,7 +204,7 @@ impl Placement {
         }
     }
 
-    /// Menempel pada jangkar di `side` — popover/menu/tooltip.
+    /// Attached to the anchor on `side` — popover/menu/tooltip.
     pub fn anchored(side: Side) -> Self {
         Self {
             mode: PlacementMode::Anchored,
@@ -215,7 +216,7 @@ impl Placement {
         }
     }
 
-    /// Menempel pada tepi layer di `side` — sheet/drawer/toast.
+    /// Attached to the layer edge on `side` — sheet/drawer/toast.
     pub fn edge(side: Side) -> Self {
         Self {
             mode: PlacementMode::Edge,
@@ -227,36 +228,36 @@ impl Placement {
         }
     }
 
-    /// Perataan pada sumbu silang.
+    /// Alignment on the cross axis.
     pub fn align(mut self, align: Align) -> Self {
         self.align = align;
         self
     }
 
-    /// Jarak ke jangkar/tepi, poin logis (token spacing).
+    /// Distance to the anchor/edge, in logical points (spacing token).
     pub fn gap(mut self, gap: f32) -> Self {
         self.gap = gap.max(0.0);
         self
     }
 
-    /// Izinkan/larang auto-flip.
+    /// Allow/forbid auto-flip.
     pub fn flip(mut self, flip: bool) -> Self {
         self.flip = flip;
         self
     }
 
-    /// Izinkan/larang geser sumbu silang.
+    /// Allow/forbid cross-axis shifting.
     pub fn shift(mut self, shift: bool) -> Self {
         self.shift = shift;
         self
     }
 
-    /// Jarak tempuh bawaan transisi masuk untuk panel seukuran `panel`.
+    /// The default enter-transition travel distance for a panel of size `panel`.
     ///
-    /// [`PlacementMode::Edge`] muncul dari luar layar, jadi jaraknya seukuran
-    /// panelnya sendiri; sisanya cukup "menyembul" dua langkah skala spacing
-    /// (§2.6) — cukup untuk terbaca sebagai gerakan, tidak cukup untuk terasa
-    /// lambat.
+    /// [`PlacementMode::Edge`] comes in from off-screen, so its distance is the
+    /// size of the panel itself; everything else only needs to "emerge" by two
+    /// steps of the spacing scale (§2.6) — enough to read as movement, not
+    /// enough to feel sluggish.
     pub fn default_travel(self, panel: Size) -> f32 {
         match self.mode {
             PlacementMode::Edge => {
@@ -273,42 +274,43 @@ impl Placement {
 }
 
 // ---------------------------------------------------------------------------
-// Hasil
+// Result
 // ---------------------------------------------------------------------------
 
-/// Hasil satu penempatan.
+/// The result of one placement.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placed {
-    /// Sudut kiri-atas panel, dalam koordinat yang sama dengan `bounds`.
+    /// The panel's top-left corner, in the same coordinates as `bounds`.
     pub origin: Point,
-    /// Sisi fisik yang **akhirnya** dipakai (sesudah auto-flip).
+    /// The physical side **ultimately** used (after auto-flip).
     pub side: PhysicalSide,
-    /// Mode yang menghasilkannya — menentukan arah transisi masuk.
+    /// The mode that produced it — it decides the enter-transition direction.
     pub mode: PlacementMode,
-    /// Benar bila auto-flip mengubah sisi dari yang diminta.
+    /// True if auto-flip changed the side away from the one requested.
     pub flipped: bool,
-    /// Pergeseran sumbu silang yang dilakukan agar tetap di dalam layar.
+    /// The cross-axis shift applied to keep the panel on screen.
     pub shifted: f32,
 }
 
 impl Placed {
-    /// Kotak panel berukuran `panel` pada posisi ini.
+    /// The rect of a `panel`-sized panel at this position.
     pub fn rect(self, panel: Size) -> Rect {
         Rect::from_origin_size(self.origin, panel)
     }
 
-    /// Geseran transisi masuk pada `progress` (0 = tertutup, 1 = terbuka).
+    /// The enter-transition offset at `progress` (0 = closed, 1 = open).
     ///
-    /// Arahnya mengikuti sisi, dan itu yang membuat gerakannya terbaca:
+    /// Its direction follows the side, and that is what makes the motion
+    /// legible:
     ///
-    /// - **Anchored/Center** menyembul *dari* jangkar — popover di bawah
-    ///   tombol mulai sedikit lebih tinggi lalu turun ke tempatnya (pola yang
-    ///   sama dipakai AppKit dan Radix).
-    /// - **Edge** masuk *dari luar* layar — sheet dari atas benar-benar turun
-    ///   dari tepi atas, bukan sekadar bergeser sedikit.
+    /// - **Anchored/Center** emerges *from* the anchor — a popover below a
+    ///   button starts slightly higher and settles down into place (the same
+    ///   pattern AppKit and Radix use).
+    /// - **Edge** comes in *from off* screen — a sheet from the top really does
+    ///   descend from the top edge rather than merely nudging into place.
     ///
-    /// `distance` datang dari [`Placement::default_travel`] atau dari token
-    /// spacing yang dipilih pemanggil; tidak ada angka yang lahir di sini.
+    /// `distance` comes from [`Placement::default_travel`] or from a spacing
+    /// token the caller picked; no number is born here.
     pub fn enter_offset(self, distance: f32, progress: f32) -> Point {
         let sisa = distance * (1.0 - progress.clamp(0.0, 1.0));
         if sisa == 0.0 {
@@ -327,29 +329,29 @@ impl Placed {
 }
 
 // ---------------------------------------------------------------------------
-// Jangkar
+// Anchor
 // ---------------------------------------------------------------------------
 
-/// Titik tambat sebuah overlay, dalam koordinat **lokal layer**.
+/// An overlay's anchor point, in **layer-local** coordinates.
 ///
-/// Sengaja data, bukan `NodeId`: sebuah render node tidak boleh mengintip
-/// geometri node lain dari dalam layout-nya sendiri (aturan "node tidak pernah
-/// tahu posisinya sendiri", `silka_core::tree`). Yang menerjemahkan node
-/// pemicu menjadi kotak adalah [`crate::overlay::anchor_rect`], dipanggil di
-/// luar layout — biasanya di handler yang membuka overlay-nya.
+/// Deliberately data rather than a `NodeId`: a render node must never peek at
+/// another node's geometry from inside its own layout (the rule that "a node
+/// never knows its own position", `silka_core::tree`). Translating a trigger
+/// node into a rect is the job of [`crate::overlay::anchor_rect`], called
+/// outside layout — usually in the handler that opens the overlay.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum Anchor {
-    /// Tanpa jangkar — [`PlacementMode::Anchored`] jatuh ke tengah layer.
+    /// No anchor — [`PlacementMode::Anchored`] falls back to the layer center.
     #[default]
     None,
-    /// Kotak pemicu (tombol, baris menu).
+    /// The trigger's rect (a button, a menu row).
     Rect(Rect),
-    /// Satu titik — menu konteks pada posisi kursor.
+    /// A single point — a context menu at the cursor position.
     Point(Point),
 }
 
 impl Anchor {
-    /// Kotak jangkar yang berlaku; `bounds` dipakai sebagai jatuhan terakhir.
+    /// The effective anchor rect; `bounds` serves as the last-resort fallback.
     pub fn rect(self, bounds: Rect) -> Rect {
         match self {
             Anchor::Rect(r) => r,
@@ -358,7 +360,7 @@ impl Anchor {
         }
     }
 
-    /// Benar bila jangkarnya benar-benar ada.
+    /// True if there really is an anchor.
     pub fn is_some(self) -> bool {
         !matches!(self, Anchor::None)
     }
@@ -368,12 +370,12 @@ impl Anchor {
 // place()
 // ---------------------------------------------------------------------------
 
-/// Tempatkan panel berukuran `panel` terhadap `anchor` di dalam `bounds`.
+/// Place a `panel`-sized panel relative to `anchor` inside `bounds`.
 ///
-/// Seluruh koordinat berada di ruang yang sama (lokal layer). Hasilnya
-/// **selalu** berada di dalam `bounds` selama panelnya muat; kalau tidak muat,
-/// ia dipatok ke tepi awal — panel yang terpotong masih bisa dibaca, panel yang
-/// hilang di luar layar tidak.
+/// All coordinates live in the same space (layer-local). The result is
+/// **always** inside `bounds` as long as the panel fits; when it does not, it
+/// is pinned to the start edge — a clipped panel can still be read, a panel
+/// lost off-screen cannot.
 pub fn place(
     panel: Size,
     anchor: Rect,
@@ -404,7 +406,7 @@ fn pusat(panel: Size, bounds: Rect, placement: Placement) -> Placed {
     );
     Placed {
         origin: Point::new(x, y),
-        // Dialog menyembul ke atas: sisi "Top" berarti gerakan naik.
+        // A dialog rises into place: side "Top" means upward motion.
         side: PhysicalSide::Top,
         mode: placement.mode,
         flipped: false,
@@ -455,8 +457,8 @@ fn tertambat(
         PhysicalSide::Left => utama_di(s) >= bounds.min_x(),
         PhysicalSide::Right => utama_di(s) + panel.width <= bounds.max_x(),
     };
-    // Ruang kosong di luar jangkar pada sisi itu — penentu saat kedua sisi
-    // sama-sama tidak muat.
+    // The free space beyond the anchor on that side — the tiebreaker when
+    // neither side fits.
     let ruang = |s: PhysicalSide| match s {
         PhysicalSide::Top => anchor.min_y() - bounds.min_y(),
         PhysicalSide::Bottom => bounds.max_y() - anchor.max_y(),
@@ -516,11 +518,11 @@ fn tertambat(
     )
 }
 
-/// Jepit sumbu utama lalu susun hasilnya.
+/// Clamp the main axis, then assemble the result.
 ///
-/// Sumbu utama **selalu** dijepit, bahkan saat `shift` dimatikan: `shift`
-/// mengatur sumbu silang (perataan terhadap jangkar), sedangkan menjaga panel
-/// tetap di layar adalah jaring pengaman yang tidak boleh bisa dimatikan.
+/// The main axis is **always** clamped, even when `shift` is off: `shift`
+/// governs the cross axis (alignment against the anchor), whereas keeping the
+/// panel on screen is a safety net that must not be switchable.
 #[allow(clippy::too_many_arguments)]
 fn rakit(
     panel: Size,
@@ -558,10 +560,10 @@ fn rakit(
     }
 }
 
-/// Perataan setelah mirroring RTL.
+/// The alignment after RTL mirroring.
 ///
-/// Hanya sisi vertikal yang ikut tercermin: sumbu silangnya horizontal, dan
-/// horizontal-lah satu-satunya sumbu yang punya arah baca (§9.8).
+/// Only vertical sides get mirrored: their cross axis is horizontal, and
+/// horizontal is the only axis that has a reading direction (§9.8).
 fn perataan_efektif(align: Align, sisi: PhysicalSide, direction: TextDirection) -> Align {
     if sisi.is_vertical() && direction.is_rtl() {
         align.mirrored()
@@ -570,7 +572,7 @@ fn perataan_efektif(align: Align, sisi: PhysicalSide, direction: TextDirection) 
     }
 }
 
-/// Jepit `v` ke `[min, max - size]`; kalau tidak muat, patok ke `min`.
+/// Clamp `v` to `[min, max - size]`; if it does not fit, pin it to `min`.
 fn jepit(v: f32, min: f32, max: f32, size: f32) -> f32 {
     if !v.is_finite() {
         return min;
@@ -605,7 +607,7 @@ mod tests {
         );
         assert_eq!(hasil.side, PhysicalSide::Bottom);
         assert!(!hasil.flipped);
-        // 50 + 24 + gap 8 = 82; rata tengah terhadap jangkar: 140 - 100 = 40.
+        // 50 + 24 + gap 8 = 82; centered on the anchor: 140 - 100 = 40.
         assert_eq!(hasil.origin, Point::new(40.0, 82.0));
     }
 
@@ -637,13 +639,13 @@ mod tests {
         );
         assert_eq!(hasil.side, PhysicalSide::Bottom);
         assert!(!hasil.flipped);
-        // Tetap dijepit ke dalam layar walau flip dimatikan.
+        // Still clamped onto the screen even with flipping turned off.
         assert_eq!(hasil.origin.y, 180.0);
     }
 
     #[test]
     fn dua_sisi_sempit_memilih_yang_ruangnya_lebih_besar() {
-        // Jangkar dekat atas: ruang di bawah (300-60=240) > ruang di atas (36).
+        // Anchor near the top: room below (300-60=240) > room above (36).
         let anchor = Rect::new(0.0, 36.0, 40.0, 24.0);
         let hasil = place(
             Size::new(100.0, 280.0),
@@ -658,7 +660,7 @@ mod tests {
 
     #[test]
     fn digeser_agar_tetap_di_dalam_layar() {
-        // Jangkar mepet kanan: panel rata tengah akan melewati tepi.
+        // Anchor flush right: a centered panel would overshoot the edge.
         let anchor = Rect::new(380.0, 50.0, 20.0, 24.0);
         let hasil = place(
             Size::new(200.0, 100.0),
@@ -683,7 +685,7 @@ mod tests {
             TextDirection::Ltr,
         );
         assert_eq!(hasil.shifted, 0.0, "tidak ada geseran yang dilaporkan");
-        // …tapi panel tetap tidak boleh keluar layar.
+        // …but the panel still must not leave the screen.
         assert!(hasil.origin.x + 200.0 <= LAYAR.max_x());
     }
 
@@ -704,7 +706,7 @@ mod tests {
         assert_eq!(Side::Start.resolve(TextDirection::Ltr), PhysicalSide::Left);
         assert_eq!(Side::Start.resolve(TextDirection::Rtl), PhysicalSide::Right);
         assert_eq!(Side::End.resolve(TextDirection::Rtl), PhysicalSide::Left);
-        // Sisi vertikal tidak punya arah baca.
+        // Vertical sides have no reading direction.
         assert_eq!(Side::Top.resolve(TextDirection::Rtl), PhysicalSide::Top);
     }
 
@@ -740,7 +742,7 @@ mod tests {
             Placement::edge(Side::Bottom).align(Align::End).gap(16.0),
             TextDirection::Ltr,
         );
-        // Bawah: 300 - 16 - 60 = 224. Akhir baris (LTR = kanan): 400-16-120=264.
+        // Bottom: 300 - 16 - 60 = 224. Line end (LTR = right): 400-16-120=264.
         assert_eq!(hasil.origin, Point::new(264.0, 224.0));
         assert_eq!(hasil.side, PhysicalSide::Bottom);
     }
@@ -766,11 +768,11 @@ mod tests {
             flipped: false,
             shifted: 0.0,
         };
-        // Tertutup: mulai di atas tempatnya (lebih dekat ke jangkar).
+        // Closed: it starts above its resting spot (closer to the anchor).
         assert_eq!(bawah.enter_offset(10.0, 0.0), Point::new(0.0, -10.0));
-        // Terbuka: tepat di tempatnya.
+        // Open: exactly at its resting spot.
         assert_eq!(bawah.enter_offset(10.0, 1.0), Point::ZERO);
-        // Setengah jalan: setengah jarak.
+        // Halfway through: half the distance.
         assert_eq!(bawah.enter_offset(10.0, 0.5), Point::new(0.0, -5.0));
     }
 
@@ -783,7 +785,7 @@ mod tests {
             flipped: false,
             shifted: 0.0,
         };
-        // Sheet dari atas mulai di atas tepi layar, bukan di bawahnya.
+        // A sheet from the top starts above the screen edge, not below it.
         assert_eq!(sheet.enter_offset(120.0, 0.0), Point::new(0.0, -120.0));
         assert_eq!(sheet.enter_offset(120.0, 1.0), Point::ZERO);
     }

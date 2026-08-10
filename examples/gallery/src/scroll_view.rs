@@ -1,28 +1,27 @@
-//! Halaman demo: **scroll_view** (`KOMPONEN.md` Tier 1).
+//! Demo page: **scroll_view** (`KOMPONEN.md` Tier 1).
 //!
-//! `KOMPONEN.md` menyebut guliran sebagai "pembeda rasa native paling awal yang
-//! terasa pengguna" — dan rasa itu adalah satu-satunya hal yang tidak bisa
-//! dibuktikan oleh unit test. Karena itu halaman ini: setiap baris tabel di
-//! bawah adalah sesuatu yang harus **terasa benar di tangan**, bukan sekadar
-//! hijau di CI.
+//! `KOMPONEN.md` calls scrolling "the earliest native-feel differentiator a user
+//! notices" — and that feel is the one thing no unit test can prove. Hence this
+//! page: every row of the table below is something that must **feel right in
+//! the hand**, not merely be green in CI.
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Rubber band ala macOS | Gulir melewati ujung atas/bawah: isinya melar makin berat, lalu memantul pulang |
-//! | Momentum milik OS | Lempar dua jari di trackpad: ekor inersianya milik macOS, tidak dilipatgandakan |
-//! | Handoff fling → spring | Lempar sampai membentur ujung: pantulannya **melanjutkan kecepatan** lemparannya (§3.5) |
-//! | Roda mouse halus | Satu klik roda meluncur lewat spring, bukan melompat |
-//! | Scrollbar overlay auto-hide | Bar muncul saat digulir, lalu memudar sendiri setelah diam |
-//! | Scrollbar melebar saat di-hover | Dekatkan kursor ke tepi kanan: bar melebar lewat spring, jalurnya ikut muncul |
-//! | Seret thumb | Tarik bar-nya langsung: isinya mengikuti seketika, tanpa animasi |
-//! | Keyboard penuh + focus ring | Tab ke daftar, lalu ↑ ↓ PageUp/PageDown Home/End; cincin fokus terlihat |
-//! | Scroll-to | Tombol "Ke atas"/"Tengah"/"Ke bawah" |
-//! | Kedua preset & dark mode | `--preset tailwind`, `--appearance dark` |
-//! | Node AccessKit | VoiceOver menyebut "scroll view" beserta posisinya dalam persen |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: guliran **sampai di tempat yang sama**, hanya luncurannya yang hilang |
+//! | macOS-style rubber banding | Scroll past the top/bottom edge: the content stretches with growing resistance, then springs back |
+//! | The OS's own momentum | Fling with two fingers on the trackpad: the inertial tail is macOS's, not multiplied by us |
+//! | Fling → spring handoff | Fling until it hits the edge: the bounce **continues the velocity** of the fling (§3.5) |
+//! | Smooth mouse wheel | One wheel click glides on a spring, it does not jump |
+//! | Auto-hiding overlay scrollbar | The bar appears while scrolling, then fades on its own once things settle |
+//! | Scrollbar widens on hover | Bring the cursor near the right edge: the bar widens on a spring, and its track appears with it |
+//! | Dragging the thumb | Drag the bar directly: the content follows instantly, with no animation |
+//! | Full keyboard support + focus ring | Tab to the list, then ↑ ↓ PageUp/PageDown Home/End; the focus ring is visible |
+//! | Scroll-to | The "Ke atas"/"Tengah"/"Ke bawah" buttons |
+//! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
+//! | AccessKit nodes | VoiceOver says "scroll view" along with its position as a percentage |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: scrolling **ends up in the same place**, only the glide goes away |
 //!
-//! Yang **tidak** ada di berkas ini: `Scene` yang disusun tangan, aritmetika
-//! tata letak, dan angka warna. Semuanya token (§2.6, §2.7).
+//! What is **absent** from this file: hand-assembled `Scene`s, layout
+//! arithmetic, and color numbers. Everything is a token (§2.6, §2.7).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -33,38 +32,39 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{button, button_variant, scroll_view, text, ButtonVariant, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Scroll view";
-/// Nama daftar bagi screen reader — sekaligus jangkar yang dicari uji.
+/// The list's name for screen readers — and the anchor the tests look for.
 pub const NAMA_DAFTAR: &str = "Daftar transaksi";
-/// Banyak baris di dalam daftar.
+/// How many rows are in the list.
 pub const BARIS: usize = 40;
 
-/// Tombol scroll-to.
+/// The scroll-to-top button.
 pub const TOMBOL_ATAS: &str = "Ke atas";
-/// Tombol scroll-to ke tengah.
+/// The scroll-to-middle button.
 pub const TOMBOL_TENGAH: &str = "Tengah";
-/// Tombol scroll-to ke dasar.
+/// The scroll-to-bottom button.
 pub const TOMBOL_BAWAH: &str = "Ke bawah";
 
-/// Tinggi jendela daftar, dalam **langkah skala spacing** (§2.6) — bukan angka
-/// bebas.
+/// The list viewport's height, in **spacing-scale steps** (§2.6) — not a free
+/// number.
 const TINGGI_LANGKAH: f32 = 90.0;
-/// Lebar maksimum daftar, dalam langkah skala spacing.
+/// The list's maximum width, in spacing-scale steps.
 const LEBAR_LANGKAH: f32 = 150.0;
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
-    // Posisi yang **dimiliki aplikasi**: hanya tombol scroll-to yang menulisnya.
-    // Roda mouse dan trackpad tidak menyentuhnya sama sekali — posisi guliran
-    // sehari-hari milik node, dan itulah yang mencegah bug "controlled
-    // component" yang melempar pengguna kembali ke atas tiap ada signal
-    // berubah.
+    // The position **owned by the application**: only the scroll-to buttons
+    // write it. The mouse wheel and trackpad never touch it — the day-to-day
+    // scroll position belongs to the node, and that is what prevents the
+    // "controlled component" bug that throws the user back to the top every
+    // time a signal changes.
     let tujuan = use_signal(|| 0.0f32);
 
     column([
@@ -108,8 +108,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Jendela daftar: **satu-satunya tempat `tujuan` dibaca**, jadi menekan tombol
-/// scroll-to hanya membangun ulang bagian ini (§2.5).
+/// The list viewport: **the only place `tujuan` is read**, so pressing a
+/// scroll-to button rebuilds just this section (§2.5).
 fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
     let fonts = fonts.clone();
     let theme = *t;
@@ -117,8 +117,8 @@ fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let isi = column((0..BARIS).map(|i| baris(&fonts, &t, i)));
 
-        // Sumbu guliran **wajib** terbatas (aturan Flutter yang sama):
-        // pembatasnya di sini, bukan di dalam wadahnya.
+        // The scroll axis **must** be bounded (the same rule as Flutter's):
+        // the bound lives here, not inside the container.
         constrained(
             BoxConstraints::new(
                 0.0,
@@ -137,8 +137,7 @@ fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
     })
 }
 
-/// Satu baris daftar — berpita selang-seling supaya guliran benar-benar
-/// terlihat bergerak.
+/// One list row — striped so that scrolling is visibly moving.
 fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
     let genap = i % 2 == 0;
     let latar = if genap {
@@ -165,11 +164,11 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
         .into()
 }
 
-/// Tiga tombol scroll-to.
+/// The three scroll-to buttons.
 ///
-/// Nilai yang ditulis adalah **posisi absolut**; wadahnya menjepitnya sendiri
-/// ke guliran maksimum, jadi halaman ini tidak perlu tahu setinggi apa isinya
-/// setelah teks di-layout.
+/// The value written is an **absolute position**; the container clamps it to
+/// the maximum scroll itself, so this page need not know how tall the content
+/// turns out to be once the text is laid out.
 fn kendali(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
     row([
         View::from(
@@ -178,7 +177,7 @@ fn kendali(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
         ),
         View::from(
             button_variant(fonts, t, TOMBOL_TENGAH, ButtonVariant::Secondary)
-                // Setengah tinggi isi; sisanya dijepit wadahnya.
+                // Half the content height; the container clamps the rest.
                 .on_press(move || tujuan.set(BARIS as f32 * 24.0)),
         ),
         View::from(button(fonts, t, TOMBOL_BAWAH).on_press(move || tujuan.set(f32::MAX))),
@@ -210,14 +209,14 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app_with`**.
+    /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         headless_app(theme, move |cx| halaman(cx, &untuk_view))
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Satu frame lengkap termasuk detak animasi — urutan yang sama dengan
+    /// One complete frame, animation tick included — the same order as the
     /// shell (`silka_platform::run_app_with`).
     fn frame(ui: &mut AppRuntime, waktu: Instant) -> Dirty {
         let dirty = ui.animate_at(waktu, silka_widgets::advance);
@@ -225,12 +224,12 @@ mod tests {
         dirty
     }
 
-    /// Jalankan frame sampai aplikasi benar-benar **idle** — bukan sekadar
-    /// sampai spring berhenti.
+    /// Pump frames until the app is genuinely **idle** — not merely until the
+    /// springs stop.
     ///
-    /// Bedanya penting: setelah guliran settle masih ada hitung mundur
-    /// auto-hide scrollbar yang meminta frame, dan janji "render hanya saat
-    /// dirty" (§3.5) baru terbukti kalau *itu* pun berakhir.
+    /// The difference matters: after scrolling settles there is still the
+    /// scrollbar's auto-hide countdown asking for frames, and the "render only
+    /// when dirty" promise (§3.5) is only proven once *that* ends too.
     fn selesaikan(ui: &mut AppRuntime) {
         let mut waktu = Instant::now();
         for _ in 0..600 {
@@ -315,10 +314,10 @@ mod tests {
         roda(&mut ui, tengah, -3.0);
         assert!(!ui.is_idle(), "guliran menjadwalkan frame");
 
-        // Dua frame: yang pertama ber-`dt` nol (jam animasi baru dinyalakan,
-        // lihat `AnimationDriver::begin_frame`), yang kedua benar-benar
-        // memajukan. Sudah bergerak, belum sampai — inilah bedanya spring dan
-        // lompatan.
+        // Two frames: the first has a `dt` of zero (the animation clock has
+        // only just started, see `AnimationDriver::begin_frame`), the second
+        // actually advances. Moving but not yet arrived — that is the
+        // difference between a spring and a jump.
         let waktu = Instant::now();
         frame(&mut ui, waktu);
         frame(&mut ui, waktu + Duration::from_millis(16));
@@ -330,7 +329,7 @@ mod tests {
         assert!(gulir_node(&ui).offset() > 0.0);
         assert_eq!(gulir_node(&ui).offset(), gulir_node(&ui).target());
 
-        // Yang dibacakan screen reader ikut berubah bersama pikselnya.
+        // What a screen reader announces changes along with the pixels.
         let persen = ui
             .access_tree()
             .find_label(NAMA_DAFTAR)
@@ -368,7 +367,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         ui.frame();
 
-        // Tab sampai daftarnya yang terfokus, lalu End membawanya ke dasar.
+        // Tab until the list holds focus, then End takes it to the bottom.
         let id = *nodes(ui.tree()).first().expect("ada scroll_view");
         for _ in 0..8 {
             if ui.router().focus().focused() == Some(id) {
@@ -404,8 +403,8 @@ mod tests {
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 
-                // Latar daftar dan bentuk sudutnya datang dari token, dan
-                // bentuk itu berbeda antar preset (squircle vs arc).
+                // The list's background and corner shape come from tokens, and
+                // that shape differs between presets (squircle vs arc).
                 let latar = ui
                     .scene()
                     .commands()
@@ -432,7 +431,7 @@ mod tests {
         ui.frame();
         let tengah = kotak(&ui, NAMA_DAFTAR).center();
 
-        // Jari menarik ke bawah melewati ujung atas: isinya melar.
+        // A finger drags downward past the top edge: the content stretches.
         let mut router_time = 0u64;
         for phase in [
             ScrollPhase::Began,
@@ -455,7 +454,7 @@ mod tests {
             gulir_node(&ui)
         );
 
-        // Jari diangkat → pantulan spring, lalu benar-benar berhenti.
+        // The finger lifts → the spring bounces, then genuinely stops.
         ui.dispatch(&Event::Scroll(ScrollEvent {
             id: PointerId::MOUSE,
             position: tengah,
@@ -486,7 +485,8 @@ mod tests {
         }
         assert!(gulir_node(&ui).bar_opacity() > 0.0, "bar harus muncul");
 
-        // Diam cukup lama: bar memudar sendiri dan halaman kembali idle.
+        // Left alone long enough: the bar fades on its own and the page
+        // returns to idle.
         for _ in 0..200 {
             waktu += Duration::from_millis(16);
             frame(&mut ui, waktu);
@@ -497,9 +497,9 @@ mod tests {
 
     #[test]
     fn router_tidak_pernah_menunjuk_node_mati_setelah_rebuild() {
-        // Menekan tombol scroll-to membangun ulang komponen daftar; kalau
-        // identitas node-nya tidak bertahan, fokus dan posisi guliran akan
-        // hilang bersamanya.
+        // Pressing a scroll-to button rebuilds the list component; if the
+        // node's identity did not survive, focus and scroll position would go
+        // with it.
         let f = fonts();
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         ui.frame();

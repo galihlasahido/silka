@@ -1,22 +1,22 @@
-//! [`TableState`] — apa yang harus bertahan lintas rebuild sebuah tabel.
+//! [`TableState`] — what has to survive a table's rebuilds.
 //!
-//! Enam hal, dan tidak satu pun boleh hidup di dalam view: posisi guliran,
-//! baris terpilih, urutan kolom, lebar hasil resize, kolom pengurut, dan sel
-//! aktif. Semuanya berubah **saat pengguna sedang menyentuhnya**, dan view
-//! dibangun ulang setiap kali ada signal lain berubah.
+//! Six things, and not one of them may live inside the view: the scroll offset,
+//! the selected rows, the column order, the resized widths, the sort column,
+//! and the active cell. All of them change **while the user is touching
+//! them**, and the view is rebuilt every time any other signal changes.
 //!
-//! ## Guliran menumpang `ListState`, bukan menirunya
+//! ## Scrolling rides on `ListState` instead of imitating it
 //!
-//! Kanal guliran tabel **adalah** [`ListState`] — objek yang sama dengan yang
-//! dipakai [`list`](mod@crate::list), lengkap dengan [`ListScroll`] dan
-//! `scroll_to`-nya. Itu bukan kebetulan: `KOMPONEN.md` aturan urutan #4
-//! melarang menumbuhkan sistem virtualisasi kedua, dan jahitan
-//! "guliran → jendela baris" hanya benar kalau tabel dan daftar menulis ke
-//! kanal yang bentuknya sama persis ([`crate::list::sync_virtual`]).
+//! A table's scroll channel **is** a [`ListState`] — the same object
+//! [`list`](mod@crate::list) uses, [`ListScroll`], `scroll_to` and all. That is
+//! no accident: `KOMPONEN.md` ordering rule #4 forbids growing a second
+//! virtualization system, and the "scroll → row window" stitching is only
+//! correct if the table and the list write to channels of exactly the same
+//! shape ([`crate::list::sync_virtual`]).
 //!
-//! Yang **tidak** dipakai dari `ListState` cuma satu: seleksi barisnya, karena
-//! seleksi tabel berupa [`Selection`] (jamak, berjangkar) alih-alih satu
-//! `Option<usize>`.
+//! Exactly one thing from `ListState` goes unused: its row selection, because a
+//! table's selection is a [`Selection`] (multiple, anchored) rather than a
+//! single `Option<usize>`.
 
 use std::rc::Rc;
 
@@ -27,26 +27,26 @@ use crate::list::{use_list_state, ListMetrics, ListScroll, ListState};
 use super::column::SortBy;
 use super::selection::Selection;
 
-/// Keadaan sebuah tabel: guliran, seleksi, kolom, dan sel aktif.
+/// A table's state: scrolling, selection, columns, and the active cell.
 ///
-/// `Copy` dan seukuran beberapa ID — boleh masuk ke closure `move` sebanyak
-/// yang diperlukan, persis seperti [`Signal`] (§2.5).
+/// `Copy` and the size of a handful of IDs — pass it into as many `move`
+/// closures as you need, exactly like a [`Signal`] (§2.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TableState {
     scroll: ListState,
     selection: Signal<Selection>,
-    /// Urutan tampil kolom sebagai daftar indeks data; kosong = urutan asli.
+    /// Column display order as a list of data indices; empty = original order.
     order: Signal<Rc<Vec<usize>>>,
-    /// Lebar hasil resize per kolom **data**; kosong = ikut kebijakan kolom.
+    /// Resized width per **data** column; empty = follow the column policy.
     widths: Signal<Rc<Vec<Option<f32>>>>,
     sort: Signal<Option<SortBy>>,
-    /// Kolom aktif untuk navigasi antar sel, sebagai indeks **tampil**.
+    /// The active column for cell-to-cell navigation, as a **display** index.
     active: Signal<usize>,
 }
 
 impl TableState {
-    /// State baru di dalam sebuah runtime — bentuk yang dipakai uji dan
-    /// aplikasi yang memegang state-nya sendiri di tingkat aplikasi.
+    /// New state inside a runtime — the form used by tests and by applications
+    /// that own their state at the application level.
     pub fn new(runtime: &Runtime) -> Self {
         Self {
             scroll: ListState::new(runtime),
@@ -58,29 +58,29 @@ impl TableState {
         }
     }
 
-    // -- guliran ----------------------------------------------------------
+    // -- scrolling --------------------------------------------------------
 
-    /// Kanal guliran tabel ini — objek yang sama dengan milik `list`.
+    /// This table's scroll channel — the same object `list` uses.
     pub fn scroll_state(&self) -> ListState {
         self.scroll
     }
 
-    /// Keadaan guliran saat ini — **melacak** bila dipanggil saat build.
+    /// The current scroll state — **tracks** when called during a build.
     pub fn scroll(&self) -> ListScroll {
         self.scroll.scroll()
     }
 
-    /// Keadaan guliran **tanpa** berlangganan.
+    /// The scroll state **without** subscribing.
     pub fn peek_scroll(&self) -> ListScroll {
         self.scroll.peek_scroll()
     }
 
-    /// Gulir ke posisi tertentu, lewat spring milik `scroll_view`.
+    /// Scroll to a given offset, through `scroll_view`'s spring.
     pub fn scroll_to(&self, offset: f32) {
         self.scroll.scroll_to(offset);
     }
 
-    /// Gulir sampai baris `index` berada di tepi atas.
+    /// Scroll until row `index` sits at the top edge.
     pub fn scroll_to_row(&self, index: usize, count: usize) {
         let s = self.scroll.peek_scroll();
         let m = ListMetrics {
@@ -93,42 +93,42 @@ impl TableState {
         self.scroll_to(m.scroll_to_item(index));
     }
 
-    // -- seleksi ----------------------------------------------------------
+    // -- selection --------------------------------------------------------
 
-    /// Baris-baris yang terpilih — **melacak** bila dipanggil saat build.
+    /// The selected rows — **tracks** when called during a build.
     pub fn selection(&self) -> Selection {
         self.selection.get()
     }
 
-    /// Seleksi **tanpa** berlangganan.
+    /// The selection **without** subscribing.
     pub fn peek_selection(&self) -> Selection {
         self.selection.peek()
     }
 
-    /// Ganti seluruh seleksi.
+    /// Replace the entire selection.
     pub fn set_selection(&self, selection: Selection) {
         if self.selection.is_alive() {
             self.selection.set_if_changed(selection);
         }
     }
 
-    /// Pilih tepat satu baris.
+    /// Select exactly one row.
     pub fn select_row(&self, index: usize) {
         self.set_selection(Selection::single(index));
     }
 
-    /// Lepaskan seluruh seleksi.
+    /// Drop the entire selection.
     pub fn clear_selection(&self) {
         self.set_selection(Selection::default());
     }
 
-    // -- kolom ------------------------------------------------------------
+    // -- columns ----------------------------------------------------------
 
-    /// Urutan tampil kolom untuk tabel dengan `count` kolom — **melacak**.
+    /// The column display order for a table with `count` columns — **tracks**.
     ///
-    /// Urutan yang tersimpan dibuang begitu jumlah kolomnya berubah: sebuah
-    /// urutan yang menunjuk kolom yang sudah tidak ada bukan sesuatu yang
-    /// bisa diperbaiki dengan menebak.
+    /// The stored order is discarded as soon as the column count changes: an
+    /// order that points at columns which no longer exist is not something
+    /// guesswork can repair.
     pub fn order(&self, count: usize) -> Vec<usize> {
         let tersimpan = self.order.get();
         if tersimpan.len() == count && tersimpan.iter().all(|i| *i < count) {
@@ -138,19 +138,19 @@ impl TableState {
         }
     }
 
-    /// Setel urutan tampil kolom.
+    /// Set the column display order.
     pub fn set_order(&self, order: Vec<usize>) {
         if self.order.is_alive() {
             self.order.set_if_changed(Rc::new(order));
         }
     }
 
-    /// Lebar hasil resize kolom data ke-`column`, bila ada — **melacak**.
+    /// The resized width of data column `column`, if any — **tracks**.
     pub fn width_of(&self, column: usize) -> Option<f32> {
         self.widths.get().get(column).copied().flatten()
     }
 
-    /// Setel (atau lepas, dengan `None`) lebar hasil resize sebuah kolom.
+    /// Set (or clear, with `None`) a column's resized width.
     pub fn set_width(&self, column: usize, width: Option<f32>) {
         if !self.widths.is_alive() {
             return;
@@ -167,52 +167,53 @@ impl TableState {
         self.widths.set(Rc::new(baru));
     }
 
-    /// Kembalikan semua kolom ke lebar bawaannya.
+    /// Return every column to its default width.
     pub fn reset_widths(&self) {
         if self.widths.is_alive() {
             self.widths.set_if_changed(Rc::new(Vec::new()));
         }
     }
 
-    // -- pengurutan -------------------------------------------------------
+    // -- sorting ----------------------------------------------------------
 
-    /// Kolom pengurut yang berlaku — **melacak** bila dipanggil saat build.
+    /// The sort column in effect — **tracks** when called during a build.
     ///
-    /// Inilah cara idiomatis sebuah aplikasi mengurutkan datanya: baca di
-    /// dalam `component`, urutkan barisnya, dan tabel akan dibangun ulang
-    /// sendiri setiap kali judul kolom diklik (§2.5).
+    /// This is the idiomatic way for an application to sort its data: read it
+    /// inside the `component`, sort the rows, and the table rebuilds itself
+    /// every time a column header is clicked (§2.5).
     pub fn sort(&self) -> Option<SortBy> {
         self.sort.get()
     }
 
-    /// Setel kolom pengurut.
+    /// Set the sort column.
     pub fn set_sort(&self, sort: Option<SortBy>) {
         if self.sort.is_alive() {
             self.sort.set_if_changed(sort);
         }
     }
 
-    // -- sel aktif --------------------------------------------------------
+    // -- active cell ------------------------------------------------------
 
-    /// Kolom aktif (indeks **tampil**) untuk navigasi antar sel — **melacak**.
+    /// The active column (a **display** index) for cell-to-cell navigation —
+    /// **tracks**.
     pub fn active_column(&self) -> usize {
         self.active.get()
     }
 
-    /// Setel kolom aktif.
+    /// Set the active column.
     pub fn set_active_column(&self, column: usize) {
         if self.active.is_alive() {
             self.active.set_if_changed(column);
         }
     }
 
-    // -- infrastruktur ----------------------------------------------------
+    // -- infrastructure ---------------------------------------------------
 
-    /// Benar bila seluruh signal masih hidup (scope pemiliknya belum dibuang).
+    /// True while every signal is still alive (the owning scope has not been
+    /// dropped).
     ///
-    /// Node render bisa hidup sesaat lebih lama daripada scope yang
-    /// membangunnya; menulis ke signal mati adalah panik, jadi setiap
-    /// penulisan lewat penjaga ini.
+    /// A render node can outlive the scope that built it by a moment; writing
+    /// to a dead signal panics, so every write goes through this guard.
     pub fn is_alive(&self) -> bool {
         self.scroll.is_alive()
             && self.selection.is_alive()
@@ -222,15 +223,15 @@ impl TableState {
             && self.active.is_alive()
     }
 
-    /// Kunci identitas komponen tabel ini, diturunkan dari identitas state-nya.
+    /// This table's component identity key, derived from its state's identity.
     pub(super) fn component_key(&self) -> String {
         format!("table:{}", self.selection.id().index())
     }
 }
 
-/// State sebuah tabel milik komponen yang sedang dibangun (§2.5).
+/// The table state owned by the component currently being built (§2.5).
 ///
-/// Hook: dipanggil sekali per build, tidak boleh di dalam `if`/`loop`.
+/// A hook: called once per build, never inside an `if`/`loop`.
 ///
 /// ```ignore
 /// let tabel = use_table_state();
@@ -259,7 +260,7 @@ mod tests {
         assert_eq!(s.order(3), vec![0, 1, 2]);
         s.set_order(vec![2, 0, 1]);
         assert_eq!(s.order(3), vec![2, 0, 1]);
-        // Kolom bertambah: urutan lama tidak lagi berarti apa-apa.
+        // A column was added: the old order no longer means anything.
         assert_eq!(s.order(4), vec![0, 1, 2, 3]);
     }
 
@@ -323,9 +324,9 @@ mod tests {
         s.scroll_state().publish_content(44.0 * 1000.0, 44.0, 32.0);
         s.scroll_state().publish_view(0.0, 440.0);
         s.scroll_to_row(10, 1000);
-        // Baris ke-10 mulai di `header + 10 × extent`; supaya ia berhenti
-        // **di bawah** header yang menempel, guliran harus sebesar itu
-        // dikurangi tinggi headernya sendiri.
+        // Row 10 starts at `header + 10 × extent`; for it to come to rest
+        // **below** the sticky header, the scroll offset has to be that minus
+        // the header's own height.
         assert_eq!(
             s.scroll_state().take_request(),
             Some(32.0 + 44.0 * 10.0 - 32.0)

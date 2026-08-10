@@ -1,23 +1,23 @@
-//! Bentuk view daftar: `list(...)` gaya Dart + props yang di-diff ke
+//! The list's view shape: Dart-style `list(...)` plus the props diffed into
 //! [`ListBody`].
 //!
-//! Di sinilah virtualisasi benar-benar terjadi, dan tempatnya memang harus di
-//! sini: yang mahal bukan **menggambar** seratus ribu baris — clip sudah
-//! memotongnya — melainkan **membangunnya**. Jendela baris dihitung dari posisi
-//! guliran yang dibaca dari [`ListState`], sebuah signal, sehingga guliran
-//! menandai komponen daftar dirty dan rebuild-nya membangun jendela baru pada
-//! frame yang sama (§2.5). Tidak ada satu frame pun jeda, dan tidak ada satu
-//! baris pun di luar layar yang pernah menjadi node.
+//! This is where virtualization actually happens, and here is exactly where it
+//! belongs: what costs is not **painting** a hundred thousand rows — the clip
+//! already trims those — but **building** them. The row window is computed
+//! from the scroll position read out of [`ListState`], a signal, so scrolling
+//! marks the list component dirty and its rebuild constructs the new window in
+//! the same frame (§2.5). Not one frame of lag, and not one off-screen row
+//! ever becomes a node.
 //!
-//! Bentuk pohon yang dihasilkan:
+//! The tree this produces:
 //!
 //! ```text
-//! component("list:…")          ← scope sendiri: guliran hanya membangun ulang ini
+//! component("list:…")          ← its own scope: scrolling rebuilds only this
 //!   scroll_view                ← momentum, rubber band, scrollbar, Page/Home/End
-//!     ListBody                 ← setinggi SELURUH isi, berisi jendela saja
+//!     ListBody                 ← as tall as the WHOLE content, holds the window
 //!       ListRow(first)  …  ListRow(first+n)
 //!       [empty]
-//!       [header]               ← terakhir supaya tergambar paling atas
+//!       [header]               ← last, so it paints on top
 //! ```
 
 use std::rc::Rc;
@@ -38,30 +38,30 @@ use super::geometry::ListMetrics;
 use super::node::{ListBody, ListRowBox, ListStyle, RowAction};
 use super::state::ListState;
 
-/// Tinggi viewport yang diasumsikan **sebelum layout pertama**.
+/// The viewport height assumed **before the first layout**.
 ///
-/// Sebelum daftar pernah di-layout tidak ada yang tahu setinggi apa ia akan
-/// jadi — sementara jendela baris harus sudah ditentukan saat build. Menebak
-/// **terlalu besar** itu murah (beberapa baris ekstra dibangun lalu dibuang di
-/// frame berikutnya); menebak terlalu kecil berarti daftar tampak separuh
-/// kosong selama satu frame. Layout pertama menerbitkan tinggi yang
-/// sebenarnya, dan tebakan ini tidak pernah dipakai lagi selama daftar hidup.
+/// Before a list has ever been laid out nobody knows how tall it will end up —
+/// yet the row window must already be decided at build time. Guessing **too
+/// big** is cheap (a few extra rows get built and thrown away next frame);
+/// guessing too small means the list looks half empty for a frame. The first
+/// layout publishes the real height, and this guess is never used again for
+/// the rest of the list's life.
 pub const VIEWPORT_HINT: f32 = 1600.0;
 
-/// Berapa baris cadangan dibangun di luar viewport, di atas dan di bawah.
+/// How many spare rows are built outside the viewport, above and below.
 ///
-/// Gunanya bukan estetika: guliran bergerak di antara dua frame, dan cadangan
-/// inilah yang membuat tepi daftar tidak pernah terlihat kosong sesaat.
+/// Not for looks: scrolling moves between two frames, and this reserve is what
+/// keeps the edges of the list from ever flashing empty.
 pub const DEFAULT_OVERSCAN: usize = 3;
 
-/// Tinggi baris bawaan — sekaligus hit target minimum HIG.
+/// The default row height — which is also the HIG minimum hit target.
 pub const DEFAULT_ROW_EXTENT: f32 = MIN_HIT_TARGET;
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
-/// Props isi daftar — bentuk view dari [`ListBody`].
+/// Props for the list content — the view shape of [`ListBody`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ListProps {
     pub(super) metrics: ListMetrics,
@@ -92,15 +92,15 @@ impl ViewNode for ListProps {
         let mut dirty = Dirty::NONE;
 
         if n.metrics != self.metrics {
-            // Tinggi baris/header/jumlah data: apa pun di sini menggeser setiap
-            // baris **dan** mengubah tinggi yang dilaporkan ke wadah gulir.
+            // Row/header height and data count: anything here shifts every row
+            // **and** changes the height reported to the scroll container.
             let geser = n.metrics.count != self.metrics.count
                 || n.metrics.extent != self.metrics.extent
                 || n.metrics.header != self.metrics.header
                 || n.metrics.sticky != self.metrics.sticky
-                // Empty state mengisi tinggi jendela, jadi jendela yang berubah
-                // ukuran memang mengubah layout — untuk daftar berisi, tinggi
-                // jendela tidak menyentuh apa pun di dalam node ini.
+                // The empty state fills the viewport height, so a resized
+                // viewport really does change layout — for a non-empty list
+                // the viewport height touches nothing inside this node.
                 || (self.has_empty && n.metrics.viewport != self.metrics.viewport);
             n.metrics = self.metrics;
             if geser {
@@ -109,9 +109,9 @@ impl ViewNode for ListProps {
         }
         if n.offset != self.offset {
             n.offset = self.offset;
-            // Guliran hanya memindahkan sesuatu **di dalam** node ini kalau ada
-            // header yang menempel; selebihnya wadah gulir yang menggeser, dan
-            // memaksa layout di sini cuma pekerjaan sia-sia tiap frame.
+            // Scrolling only moves something **inside** this node when there
+            // is a sticky header; otherwise the scroll container does the
+            // shifting, and forcing layout here is wasted work every frame.
             if self.has_header && self.metrics.sticky {
                 dirty |= Dirty::LAYOUT | Dirty::PAINT;
             }
@@ -130,8 +130,8 @@ impl ViewNode for ListProps {
             n.selectable = self.selectable;
             dirty |= Dirty::PAINT;
         }
-        // Seleksi yang datang dari aplikasi (bukan dari node ini sendiri)
-        // memindahkan sorotan **dengan animasi** — sama seperti panah keyboard.
+        // A selection coming from the app (not from this node itself) moves
+        // the highlight **with animation** — just like the arrow keys do.
         if n.selected() != self.selected && n.pilih(self.selected, true) {
             dirty |= Dirty::PAINT;
         }
@@ -148,15 +148,15 @@ impl ViewNode for ListProps {
         if n.spring() != self.spring {
             n.set_spring(self.spring);
         }
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (pola yang sama dengan
-        // `InteractiveProps`).
+        // Callbacks are always replaced without comparison: the closure is
+        // rebuilt on every rebuild and captures fresh values (the same pattern
+        // as `InteractiveProps`).
         n.on_activate.clone_from(&self.on_activate);
         dirty
     }
 }
 
-/// Props satu baris.
+/// Props for a single row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ListRowProps {
     index: usize,
@@ -192,12 +192,12 @@ impl ViewNode for ListRowProps {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Builder daftar tervirtualisasi.
+/// Builder for a virtualized list.
 ///
-/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena `list()` bukan
-/// satu node melainkan **satu komponen berisi wadah gulir**: ia harus masuk
-/// scope sendiri supaya guliran hanya membangun ulang daftarnya, bukan seluruh
-/// halaman (§2.5).
+/// Its own type rather than [`silka_core::view::Builder`], because `list()` is
+/// not one node but **a component wrapping a scroll container**: it needs its
+/// own scope so that scrolling rebuilds just the list and not the whole page
+/// (§2.5).
 pub struct ListBuilder {
     key: Option<Key>,
     theme: Theme,
@@ -221,10 +221,10 @@ pub struct ListBuilder {
     spring: Spring,
 }
 
-/// Daftar tervirtualisasi — komponen `list` (`KOMPONEN.md` Tier 1).
+/// A virtualized list — the `list` component (`KOMPONEN.md` Tier 1).
 ///
-/// `item` dipanggil **hanya** untuk baris yang benar-benar terlihat, jadi
-/// `count` boleh ratusan ribu:
+/// `item` is called **only** for rows that are actually visible, so `count`
+/// may run into the hundreds of thousands:
 ///
 /// ```ignore
 /// let daftar = use_list_state();
@@ -235,8 +235,8 @@ pub struct ListBuilder {
 ///     .on_activate(move |i| buka(i))
 /// ```
 ///
-/// `theme` adalah sumber seluruh nilainya (§2.6, §2.7); `state` yang membuat
-/// posisi guliran dan seleksi bertahan lintas rebuild
+/// `theme` is the source of every value it uses (§2.6, §2.7); `state` is what
+/// makes the scroll position and selection survive across rebuilds
 /// ([`super::use_list_state`]).
 pub fn list<F>(theme: &Theme, state: ListState, count: usize, item: F) -> ListBuilder
 where
@@ -261,9 +261,9 @@ where
             decoration: Decoration::NONE,
             row_corners: theme.corners(theme.radius.sm),
             selection: theme.color.selection,
-            // Seleksi yang kehilangan fokus **tidak hilang**, ia meredup —
-            // kebiasaan macOS, dan satu-satunya cara pengguna tahu di mana ia
-            // tadi berada setelah menekan Tab.
+            // A selection that loses focus **does not disappear**, it dims —
+            // the macOS habit, and the only way a user can tell where they
+            // were after pressing Tab.
             selection_idle: theme.color.surface_pressed,
             hover: theme.color.surface_hover,
             pressed: theme.color.surface_pressed,
@@ -283,36 +283,35 @@ where
 }
 
 impl ListBuilder {
-    /// Kunci identitas komponen daftar ini di antara saudara-saudaranya.
+    /// The identity key of this list component among its siblings.
     ///
-    /// Tanpa ini kuncinya diturunkan dari identitas [`ListState`], jadi dua
-    /// daftar bersaudara tidak pernah bertabrakan walau penulisnya lupa.
+    /// Without it the key is derived from the identity of [`ListState`], so
+    /// two sibling lists never collide even when the author forgets.
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Tinggi satu baris, poin logis.
+    /// The height of one row, in logical points.
     ///
-    /// Seragam untuk semua baris — itulah yang membuat "baris mana yang
-    /// terlihat" bisa dijawab tanpa menyentuh data. Untuk daftar yang bisa
-    /// dipilih atau diaktifkan, nilainya **dinaikkan** ke [`MIN_HIT_TARGET`]
-    /// bila lebih kecil (HIG); daftar tampilan murni
-    /// ([`ListBuilder::selectable`] `false`) bebas memakai baris serapat apa
-    /// pun.
+    /// Uniform across all rows — that is what lets "which rows are visible" be
+    /// answered without touching the data. For a list that can be selected or
+    /// activated, the value is **raised** to [`MIN_HIT_TARGET`] when it is
+    /// smaller (HIG); a display-only list ([`ListBuilder::selectable`]
+    /// `false`) is free to pack its rows as tightly as it likes.
     pub fn item_extent(mut self, extent: f32) -> Self {
         self.extent = extent.max(1.0);
         self
     }
 
-    /// Baris cadangan di luar viewport, di atas dan di bawah.
+    /// Spare rows outside the viewport, above and below.
     pub fn overscan(mut self, rows: usize) -> Self {
         self.overscan = rows;
         self
     }
 
-    /// Header setinggi `extent` yang **menempel** di tepi atas saat isinya
-    /// tergulir lewat.
+    /// A header `extent` tall that **sticks** to the top edge while the
+    /// content scrolls past it.
     pub fn sticky_header<F>(mut self, extent: f32, header: F) -> Self
     where
         F: Fn() -> View + 'static,
@@ -323,7 +322,7 @@ impl ListBuilder {
         self
     }
 
-    /// Header yang ikut tergulir keluar bersama isinya.
+    /// A header that scrolls away together with the content.
     pub fn header<F>(mut self, extent: f32, header: F) -> Self
     where
         F: Fn() -> View + 'static,
@@ -334,7 +333,7 @@ impl ListBuilder {
         self
     }
 
-    /// Apa yang ditampilkan saat daftar kosong.
+    /// What to show while the list is empty.
     pub fn empty<F>(mut self, empty: F) -> Self
     where
         F: Fn() -> View + 'static,
@@ -343,15 +342,15 @@ impl ListBuilder {
         self
     }
 
-    /// Baris bisa dipilih (bawaan) — panah menggerakkan seleksi, bukan
-    /// guliran.
+    /// Rows can be selected (the default) — arrows move the selection, not
+    /// the scroll.
     pub fn selectable(mut self, selectable: bool) -> Self {
         self.selectable = selectable;
         self
     }
 
-    /// Apa yang dijalankan saat sebuah baris **diaktifkan**: ketuk-ganda, atau
-    /// Enter/Space pada baris terpilih.
+    /// What runs when a row is **activated**: a double tap, or Enter/Space on
+    /// the selected row.
     pub fn on_activate<F>(mut self, f: F) -> Self
     where
         F: Fn(usize) + 'static,
@@ -360,71 +359,71 @@ impl ListBuilder {
         self
     }
 
-    /// Nama daftar yang dibacakan screen reader (§3.8).
+    /// The list's name as read out by a screen reader (§3.8).
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Berapa poin satu "baris" roda mouse; bawaannya satu baris daftar.
+    /// How many points one mouse-wheel "line" is; defaults to one list row.
     pub fn line_height(mut self, points: f32) -> Self {
         self.line_height = Some(points.max(1.0));
         self
     }
 
-    /// Garis pemisah antar baris (token `separator`).
+    /// Separator lines between rows (token `separator`).
     pub fn separators(mut self, width: f32) -> Self {
         self.style.separator_width = width.max(0.0);
         self
     }
 
-    /// Warna latar daftar — **selalu** token theme.
+    /// The list's background color — **always** a theme token.
     pub fn background(mut self, color: Color) -> Self {
         self.container.background = color;
         self
     }
 
-    /// Bentuk sudut daftar — sekaligus bentuk area sentuhnya (§3.6).
+    /// The list's corner shape — and with it the shape of its touch area (§3.6).
     pub fn corners(mut self, corners: Corners) -> Self {
         self.container.corners = corners;
         self
     }
 
-    /// Bentuk sudut sorotan baris.
+    /// The corner shape of the row highlight.
     pub fn row_corners(mut self, corners: Corners) -> Self {
         self.style.row_corners = corners;
         self
     }
 
-    /// Border setebal `width` berwarna `color`.
+    /// A border `width` thick in `color`.
     pub fn border(mut self, width: f32, color: Color) -> Self {
         self.container.border_width = width.max(0.0);
         self.container.border_color = color;
         self
     }
 
-    /// Bayangan ganda ala HIG.
+    /// The HIG-style double shadow.
     pub fn shadow(mut self, shadows: ShadowPair) -> Self {
         self.container.shadows = shadows;
         self
     }
 
-    /// Kapan scrollbar terlihat.
+    /// When the scrollbar is visible.
     pub fn scrollbar(mut self, scrollbar: Scrollbar) -> Self {
         self.scrollbar = scrollbar;
         self
     }
 
-    /// Spring yang menjalankan sorotan seleksi dan hover.
+    /// The spring that drives the selection and hover highlights.
     ///
-    /// Guliran punya springnya sendiri di [`scroll_view`](mod@crate::scroll_view) — daftar tidak
-    /// pernah punya pendapat tentang fisika guliran.
+    /// Scrolling has its own spring in [`scroll_view`](mod@crate::scroll_view) — a list never
+    /// holds an opinion about scroll physics.
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Tinggi baris yang benar-benar dipakai, setelah aturan hit target HIG.
+    /// The row height actually used, after the HIG hit target rule.
     pub fn extent_final(&self) -> f32 {
         if self.interaktif() {
             self.extent.max(MIN_HIT_TARGET)
@@ -437,7 +436,7 @@ impl ListBuilder {
         self.selectable || self.on_activate.is_some()
     }
 
-    /// Ukuran-ukuran daftar terhadap keadaan guliran terakhir yang diterbitkan.
+    /// The list metrics against the last published scroll state.
     fn metrics(&self, viewport: f32) -> ListMetrics {
         ListMetrics {
             count: self.count,
@@ -456,17 +455,17 @@ impl ListBuilder {
         }
     }
 
-    /// Bangun isi daftar untuk posisi guliran saat ini.
+    /// Build the list content for the current scroll position.
     ///
-    /// Dipanggil ulang setiap kali [`ListState`] berubah — yaitu setiap kali
-    /// daftar digulir atau seleksinya berpindah. Inilah satu-satunya tempat
-    /// `item` dipanggil, dan ia hanya dipanggil untuk baris di dalam jendela.
+    /// Re-run every time [`ListState`] changes — that is, every time the list
+    /// scrolls or its selection moves. This is the one and only place `item`
+    /// is called, and it is called only for rows inside the window.
     fn isi(&self) -> View {
         let scroll = self.state.scroll();
         let selected = self.state.selected();
-        // Dibaca **hanya** supaya komponen ini berlangganan: `scroll_to` dari
-        // sebuah event handler harus menjadwalkan frame, dan frame itulah yang
-        // menjalankan `sync` — pihak yang benar-benar menggulir.
+        // Read **only** so this component subscribes: a `scroll_to` from an
+        // event handler has to schedule a frame, and that frame is what runs
+        // `sync` — the party that actually scrolls.
         let _ = self.state.pending_scroll();
         let metrics = self.metrics(scroll.viewport);
         let range = metrics.visible_range(scroll.offset, self.overscan);
@@ -485,8 +484,8 @@ impl ListBuilder {
                     .into(),
             );
         }
-        // Header dan empty state punya kunci teks sendiri supaya keduanya tidak
-        // pernah tertukar saat daftar berpindah dari kosong ke berisi.
+        // The header and the empty state get their own text keys so the two
+        // are never mixed up as the list goes from empty to populated.
         if self.count == 0 {
             if let Some(kosong) = &self.empty {
                 children.push(bungkus(kosong(), "list:empty"));
@@ -526,9 +525,9 @@ impl ListBuilder {
             .scrollbar(self.scrollbar)
             .bar_style(self.bar)
             .line_height(self.line_height.unwrap_or(metrics.extent))
-            // Tepat **satu** perhentian Tab: daftar yang bisa dipilih menaruhnya
-            // di isinya (panah = seleksi), daftar tampilan murni di wadah
-            // gulirnya (panah = guliran).
+            // Exactly **one** Tab stop: a selectable list puts it on the
+            // content (arrows = selection), a display-only list puts it on the
+            // scroll container (arrows = scrolling).
             .focusable(!self.selectable);
         if let Some(label) = &self.label {
             wadah = wadah.label(label.clone());
@@ -537,12 +536,12 @@ impl ListBuilder {
     }
 }
 
-/// Beri kunci pada sebuah view yang datang dari aplikasi.
+/// Give a key to a view that came from the application.
 ///
-/// Pembungkusnya sengaja node **struktural** (padding nol), bukan
-/// [`ListRowProps`]: header dan empty state bukan baris daftar, dan
-/// mengumumkannya sebagai `ListItem` akan membuat screen reader membacakan
-/// judul kolom sebagai salah satu isinya.
+/// The wrapper is deliberately a **structural** node (zero padding) rather
+/// than [`ListRowProps`]: the header and the empty state are not list rows,
+/// and announcing them as `ListItem` would make a screen reader read the
+/// column titles out as one of the list's entries.
 fn bungkus(view: View, key: &str) -> View {
     pad(Insets::ZERO, view).key(Key::text(key)).into()
 }

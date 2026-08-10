@@ -1,73 +1,73 @@
-//! Token warna **semantik**: peran, bukan warna.
+//! **Semantic** color tokens: roles, not colors.
 //!
-//! Widget menyebut `surface`/`accent`/`separator`; preset dan appearance yang
-//! mengisinya dari [`crate::palette`]. Karena itu satu widget yang benar di
-//! Cupertino otomatis benar di Tailwind, terang maupun gelap (§2.7).
+//! Widgets name `surface`/`accent`/`separator`; the preset and appearance fill
+//! them in from [`crate::palette`]. That is why a widget that looks right under
+//! Cupertino is automatically right under Tailwind, light or dark (§2.7).
 
 use silka_paint::Color;
 
-/// Token warna semantik lengkap.
+/// The complete set of semantic color tokens.
 ///
-/// Semua field wajib diisi preset — tidak ada `Option`, tidak ada fallback
-/// diam-diam. Kalau sebuah preset "tidak punya" warna untuk sebuah peran, ia
-/// harus memilih dengan sadar warna mana yang dipinjam.
+/// Every field must be filled in by the preset — no `Option`, no silent
+/// fallback. If a preset "has no" color for some role, it has to make a
+/// deliberate choice about which color to borrow.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ColorTokens {
-    /// Latar window — inilah yang dipakai sebagai clear color surface.
+    /// Window background — this is what the surface clear color uses.
     pub background: Color,
-    /// Permukaan konten di atas latar (kartu, panel).
+    /// Content surface sitting on the background (cards, panels).
     pub surface: Color,
-    /// Permukaan yang terangkat (popover, sheet, menu).
+    /// A raised surface (popovers, sheets, menus).
     pub surface_elevated: Color,
-    /// Permukaan yang "cekung" (dasar scroll area, well, input).
+    /// A "recessed" surface (scroll-area floor, wells, inputs).
     pub surface_sunken: Color,
-    /// Permukaan saat kursor di atasnya.
+    /// Surface under the cursor.
     pub surface_hover: Color,
-    /// Permukaan saat sedang ditekan.
+    /// Surface while pressed.
     pub surface_pressed: Color,
-    /// Garis pemisah tipis (list, toolbar).
+    /// Thin separator line (lists, toolbars).
     pub separator: Color,
-    /// Garis batas kontrol (input, tombol sekunder) — lebih tegas dari
+    /// Control outline (inputs, secondary buttons) — firmer than
     /// [`ColorTokens::separator`].
     pub border: Color,
-    /// Teks utama.
+    /// Primary text.
     pub label: Color,
-    /// Teks sekunder (keterangan).
+    /// Secondary text (supporting copy).
     pub secondary_label: Color,
-    /// Teks tersier (placeholder, hint).
+    /// Tertiary text (placeholders, hints).
     pub tertiary_label: Color,
-    /// Teks kontrol non-aktif.
+    /// Text on a disabled control.
     pub disabled_label: Color,
-    /// Warna aksen/aksi utama.
+    /// Accent / primary-action color.
     pub accent: Color,
-    /// Aksen saat hover.
+    /// Accent on hover.
     pub accent_hover: Color,
-    /// Aksen saat ditekan.
+    /// Accent while pressed.
     pub accent_pressed: Color,
-    /// Aksen versi lembut untuk latar (badge, baris terpilih, chip).
+    /// Soft accent for backgrounds (badges, selected rows, chips).
     pub accent_muted: Color,
-    /// Konten di atas warna aksen.
+    /// Content drawn on top of the accent color.
     pub on_accent: Color,
-    /// Warna aksi destruktif.
+    /// Destructive-action color.
     pub destructive: Color,
-    /// Destruktif saat hover.
+    /// Destructive on hover.
     pub destructive_hover: Color,
-    /// Konten di atas warna destruktif.
+    /// Content drawn on top of the destructive color.
     pub on_destructive: Color,
-    /// Status berhasil.
+    /// Success state.
     pub success: Color,
-    /// Status peringatan.
+    /// Warning state.
     pub warning: Color,
-    /// Cincin fokus keyboard.
+    /// Keyboard focus ring.
     pub focus_ring: Color,
-    /// Latar seleksi teks.
+    /// Text-selection background.
     pub selection: Color,
-    /// Peredup di belakang modal (dialog, sheet, drawer).
+    /// The dimmer behind a modal (dialogs, sheets, drawers).
     pub scrim: Color,
 }
 
 impl ColorTokens {
-    /// Nilai satu token warna.
+    /// The value of one color token.
     pub fn get(&self, token: ColorToken) -> Color {
         match token {
             ColorToken::Background => self.background,
@@ -98,8 +98,8 @@ impl ColorTokens {
         }
     }
 
-    /// Terapkan sebuah fungsi ke setiap token — jalur untuk preset brand
-    /// kustom yang ingin, misalnya, menggeser seluruh palet.
+    /// Apply a function to every token — the path for a custom brand preset
+    /// that wants to, say, shift the whole palette.
     pub fn map(self, mut f: impl FnMut(ColorToken, Color) -> Color) -> Self {
         let mut out = self;
         for token in ColorToken::ALL {
@@ -108,7 +108,7 @@ impl ColorTokens {
         out
     }
 
-    /// Ganti nilai satu token.
+    /// Replace the value of one token.
     pub fn set(&mut self, token: ColorToken, color: Color) {
         let slot = match token {
             ColorToken::Background => &mut self.background,
@@ -141,10 +141,10 @@ impl ColorTokens {
     }
 }
 
-/// Nama token warna — bentuk yang dipakai utility styling.
+/// The name of a color token — the form styling utilities take.
 ///
-/// `div().bg(ColorToken::Surface)` tidak memuat warna apa pun; warnanya baru
-/// lahir saat di-resolve terhadap theme aktif ([`crate::Token`]).
+/// `div().bg(ColorToken::Surface)` carries no color at all; the color only
+/// comes into being when resolved against the active theme ([`crate::Token`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ColorToken {
     /// [`ColorTokens::background`].
@@ -200,7 +200,8 @@ pub enum ColorToken {
 }
 
 impl ColorToken {
-    /// Semua token warna — dipakai uji kelengkapan preset dan gallery app.
+    /// Every color token — used by the preset-completeness tests and the
+    /// gallery app.
     pub const ALL: [ColorToken; 25] = [
         ColorToken::Background,
         ColorToken::Surface,
@@ -229,7 +230,7 @@ impl ColorToken {
         ColorToken::Scrim,
     ];
 
-    /// Nama token dalam bentuk yang dibaca manusia (gallery, debug, docs).
+    /// The token name in human-readable form (gallery, debug, docs).
     pub const fn name(self) -> &'static str {
         match self {
             ColorToken::Background => "background",
@@ -312,15 +313,15 @@ mod tests {
         for token in ColorToken::ALL {
             assert_eq!(semua_hitam.get(token), Color::BLACK, "{}", token.name());
         }
-        // Identitas tetap identitas.
+        // The identity stays the identity.
         assert_eq!(asal.map(|_, c| c), asal);
     }
 
     #[test]
     fn tidak_ada_token_yang_lupa_diisi_preset() {
-        // "Lupa diisi" biasanya kelihatan sebagai warna transparan penuh atau
-        // magenta debug. Semua token harus warna sungguhan (kecuali scrim yang
-        // memang semi-transparan menurut definisinya).
+        // "Forgot to fill it in" usually shows up as a fully transparent color
+        // or as debug magenta. Every token must be a real color (except the
+        // scrim, which is semi-transparent by definition).
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);

@@ -1,45 +1,46 @@
-//! Bayangan sebagai **parameter perintah gambar** — termasuk resep "shadow
-//! ganda" ala HIG (REKOMENDASI §3.6).
+//! Shadows as **draw-command parameters** — including the HIG-style "double
+//! shadow" recipe (REKOMENDASI §3.6).
 //!
-//! HIG tidak memakai satu bayangan, melainkan dua yang bertumpuk:
+//! The HIG does not use a single shadow, but two stacked ones:
 //!
-//! - **ambient** — sangat lembut, nyaris tanpa offset; menyatakan bahwa objek
-//!   ada di ruang yang sama dengan latarnya;
-//! - **key** — lebih pekat dan lebih rapat, dengan offset ke bawah; menyatakan
-//!   ketinggian objek terhadap sumber cahaya.
+//! - **ambient** — very soft, with barely any offset; it says the object shares
+//!   the same space as its background;
+//! - **key** — denser and tighter, offset downwards; it says how high the
+//!   object sits relative to the light source.
 //!
-//! Keduanya murah dengan SDF: masing-masing hanya satu instance quad yang
-//! di-blur di shader, memakai **geometri sudut yang sama** dengan kotak yang
-//! dibayangi — jadi bayangan kotak squircle ikut squircle, bukan arc
-//! (§2.7: bentuk sudut adalah parameter, bukan konstanta).
+//! Both are cheap with an SDF: each is just one quad instance blurred in the
+//! shader, using the **same corner geometry** as the box being shadowed — so
+//! the shadow of a squircle box is itself a squircle, not an arc (§2.7: corner
+//! shape is a parameter, not a constant).
 //!
-//! Preset Tailwind/shadcn kebetulan juga dua lapis (`shadow-md` = dua
-//! `box-shadow` bertumpuk), sehingga satu kosakata melayani kedua preset.
+//! The Tailwind/shadcn preset happens to be two-layered as well (`shadow-md` =
+//! two stacked `box-shadow`s), so one vocabulary serves both presets.
 
 use crate::color::Color;
 use crate::corner::{CornerRadii, Corners};
 use crate::geometry::{Point, Rect};
 
-/// Satu lapis bayangan.
+/// A single shadow layer.
 ///
-/// Konvensi `blur` mengikuti CSS `box-shadow`: ia adalah **diameter** sebaran,
-/// sedangkan gaussian di shader memakai sigma = `blur / 2` ([`Shadow::sigma`]).
-/// Dengan begitu angka token bisa disalin apa adanya dari palet Tailwind
-/// maupun dari spesifikasi desainer.
+/// The `blur` convention follows CSS `box-shadow`: it is the **diameter** of
+/// the spread, while the gaussian in the shader uses sigma = `blur / 2`
+/// ([`Shadow::sigma`]). That way token values can be copied verbatim from the
+/// Tailwind palette or from a designer's spec.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Shadow {
-    /// Warna bayangan (alpha kecil; token, bukan literal).
+    /// Shadow color (low alpha; a token, not a literal).
     pub color: Color,
-    /// Pergeseran dari kotak aslinya, poin logis.
+    /// Displacement from the original box, in logical points.
     pub offset: Point,
-    /// Diameter blur, poin logis. 0 = tepi tajam.
+    /// Blur diameter, in logical points. 0 = a hard edge.
     pub blur: f32,
-    /// Pemuaian bentuk sebelum di-blur (boleh negatif untuk mengecilkan).
+    /// How much the shape is expanded before blurring (may be negative to
+    /// shrink it).
     pub spread: f32,
 }
 
 impl Shadow {
-    /// Bayangan yang tidak terlihat sama sekali.
+    /// A shadow that is not visible at all.
     pub const NONE: Shadow = Shadow {
         color: Color::TRANSPARENT,
         offset: Point::ZERO,
@@ -47,7 +48,7 @@ impl Shadow {
         spread: 0.0,
     };
 
-    /// Bayangan dengan warna dan blur tertentu, tanpa offset dan spread.
+    /// A shadow with a given color and blur, without offset or spread.
     pub const fn new(color: Color, blur: f32) -> Self {
         Self {
             color,
@@ -57,30 +58,31 @@ impl Shadow {
         }
     }
 
-    /// Setel pergeseran (positif `dy` = turun, arah cahaya HIG).
+    /// Sets the displacement (positive `dy` = downwards, the HIG light
+    /// direction).
     pub const fn offset(mut self, dx: f32, dy: f32) -> Self {
         self.offset = Point::new(dx, dy);
         self
     }
 
-    /// Setel pemuaian bentuk.
+    /// Sets how much the shape is expanded.
     pub const fn spread(mut self, spread: f32) -> Self {
         self.spread = spread;
         self
     }
 
-    /// Sigma gaussian yang dipakai shader (= `blur / 2`, konvensi CSS).
+    /// The gaussian sigma used by the shader (= `blur / 2`, the CSS convention).
     pub fn sigma(self) -> f32 {
         (self.blur * 0.5).max(0.0)
     }
 
-    /// Benar bila lapis ini menyumbang piksel sama sekali.
+    /// True when this layer contributes any pixels at all.
     pub fn is_visible(self) -> bool {
         self.color.a > 0.0
     }
 
-    /// Bentuk yang sebenarnya digambar: kotak asal digeser `offset` dan
-    /// dimuaikan `spread` di setiap sisi.
+    /// The shape that actually gets drawn: the source rect displaced by
+    /// `offset` and expanded by `spread` on every side.
     pub fn shape(self, rect: Rect) -> Rect {
         Rect::new(
             rect.origin.x + self.offset.x - self.spread,
@@ -90,8 +92,8 @@ impl Shadow {
         )
     }
 
-    /// Sudut bentuk bayangan: radius ikut tumbuh bersama `spread` supaya
-    /// lengkungnya tetap sejajar dengan kotak aslinya.
+    /// The corners of the shadow shape: the radii grow along with `spread` so
+    /// the curve stays parallel to the original box.
     pub fn shape_corners(self, corners: Corners) -> Corners {
         let grow = |r: f32| (r + self.spread).max(0.0);
         Corners::new(
@@ -105,8 +107,8 @@ impl Shadow {
         )
     }
 
-    /// Kotak pembatas termasuk ekor gaussian (3σ) — dipakai dirty region dan
-    /// culling, bukan oleh shader.
+    /// The bounding rect including the gaussian tail (3σ) — used by dirty
+    /// regions and culling, not by the shader.
     pub fn bounds(self, rect: Rect) -> Rect {
         let shape = self.shape(rect);
         let margin = self.sigma() * 3.0;
@@ -119,39 +121,39 @@ impl Shadow {
     }
 }
 
-/// Resep bayangan lengkap satu tingkat elevasi: **ambient + key**.
+/// The complete shadow recipe for one elevation level: **ambient + key**.
 ///
-/// Inilah bentuk yang disimpan token theme (`theme.shadow.md`), sehingga
-/// widget cukup menyebut elevasinya dan tidak pernah menulis angka blur.
+/// This is the form theme tokens store (`theme.shadow.md`), so a widget only
+/// has to name its elevation and never writes a blur value itself.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShadowPair {
-    /// Lapis lembut dan lebar.
+    /// The soft, wide layer.
     pub ambient: Shadow,
-    /// Lapis pekat dan rapat, dengan offset.
+    /// The dense, tight, offset layer.
     pub key: Shadow,
 }
 
 impl ShadowPair {
-    /// Tanpa bayangan sama sekali (elevasi 0).
+    /// No shadow at all (elevation 0).
     pub const NONE: ShadowPair = ShadowPair {
         ambient: Shadow::NONE,
         key: Shadow::NONE,
     };
 
-    /// Pasangan baru.
+    /// A new pair.
     pub const fn new(ambient: Shadow, key: Shadow) -> Self {
         Self { ambient, key }
     }
 
-    /// Lapisan urut dari yang paling belakang.
+    /// The layers ordered back to front.
     ///
-    /// Ambient digambar lebih dulu karena ia yang paling lebar; key menumpuk
-    /// di atasnya untuk memberi arah cahaya.
+    /// Ambient is drawn first because it is the widest; key stacks on top of it
+    /// to give the light a direction.
     pub fn layers(self) -> [Shadow; 2] {
         [self.ambient, self.key]
     }
 
-    /// Benar bila ada lapis yang benar-benar terlihat.
+    /// True when any layer is actually visible.
     pub fn is_visible(self) -> bool {
         self.ambient.is_visible() || self.key.is_visible()
     }
@@ -170,7 +172,7 @@ mod tests {
     #[test]
     fn sigma_setengah_blur() {
         assert_eq!(Shadow::new(Color::BLACK, 24.0).sigma(), 12.0);
-        // Blur negatif tidak boleh membalik gaussian.
+        // A negative blur must not invert the gaussian.
         assert_eq!(Shadow::new(Color::BLACK, -4.0).sigma(), 0.0);
     }
 
@@ -203,7 +205,7 @@ mod tests {
         assert_eq!(s.radii.top_left, 14.0);
         assert_eq!(s.style, CornerStyle::squircle());
 
-        // Spread negatif besar tidak boleh membuat radius negatif.
+        // A large negative spread must not produce negative radii.
         let s = Shadow::new(Color::BLACK, 0.0)
             .spread(-40.0)
             .shape_corners(c);
@@ -214,7 +216,7 @@ mod tests {
     fn bounds_menyertakan_ekor_gaussian() {
         let s = Shadow::new(Color::BLACK, 20.0).offset(0.0, 4.0);
         let b = s.bounds(kotak());
-        // sigma = 10 → margin 30 di setiap sisi, di atas bentuk yang digeser.
+        // sigma = 10 → a 30 margin on every side, on top of the displaced shape.
         assert_eq!(b.origin, Point::new(-10.0, -6.0));
         assert_eq!(b.size, Size::new(160.0, 120.0));
     }

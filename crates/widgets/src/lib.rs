@@ -1,18 +1,18 @@
 //! # silka-widgets
 //!
-//! Katalog komponen (lihat `KOMPONEN.md`) sekaligus **permukaan API publik**
-//! framework. Inilah kontrak yang harus dibekukan lebih awal; internal boleh
-//! berubah sesuka hati (REKOMENDASI §4 "Kestabilan").
+//! The component catalogue (see `KOMPONEN.md`) and at the same time the
+//! framework's **public API surface**. This is the contract that has to be
+//! frozen early; internals may change at will (REKOMENDASI §4 "Kestabilan").
 //!
-//! Dua aturan bentuk API yang MENGIKAT:
+//! Two BINDING rules for the shape of the API:
 //!
-//! 1. **Gaya Dart** (§2.5) — fungsi konstruktor + method chaining, nesting
-//!    identik dengan Flutter; properti opsional pindah ke method chain.
-//!    Macro DSL ala `rsx!` ditolak sebagai fondasi.
-//! 2. **Styling utility ala Tailwind sebagai method chain** (§2.6) — tanpa
-//!    CSS, tanpa parser, tanpa cascade. Nilai selalu resolve lewat token
-//!    `silka-theme`, dan utility interaktif (`hover`/`pressed`/`focused`)
-//!    bertransisi lewat spring, bukan lompat.
+//! 1. **Dart style** (§2.5) — constructor functions plus method chaining,
+//!    nesting identical to Flutter; optional properties move into the method
+//!    chain. An `rsx!`-style DSL macro is rejected as the foundation.
+//! 2. **Tailwind-style utility styling as a method chain** (§2.6) — no CSS,
+//!    no parser, no cascade. Values always resolve through `silka-theme`
+//!    tokens, and interactive utilities (`hover`/`pressed`/`focused`)
+//!    transition on a spring instead of jumping.
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -31,114 +31,120 @@
 //! .spacing(t.space(3.0));
 //! ```
 //!
-//! ## Yang sudah ada
+//! ## What already exists
 //!
-//! - [`text`] (Tier 0) — daun teks yang **mengukur dirinya sendiri** lewat
-//!   `silka-text` dan menggambar glyph dari atlas; wrap mengikuti lebar yang
-//!   turun dari box constraints, dan isinya adalah nama node a11y.
-//! - [`button`] (Tier 2) — kontrol lengkap di atas token: varian
-//!   primary/secondary/ghost/destructive/link, state hover/press/focus/
-//!   disabled/loading yang **seluruhnya bertransisi lewat spring**, focus ring
-//!   yang tumbuh, Space/Enter, node AccessKit, dan hit target ≥ 44pt.
-//! - [`checkbox`] (Tier 2) — kotak centang **tiga-nilai** (termasuk
-//!   indeterminate): goresan centangnya benar-benar *ditarik* lewat spring
-//!   ([`check_dots`]), labelnya ikut bisa diklik dan sekaligus menjadi nama
-//!   a11y, Space mengaktifkan, dan hit target ≥ 44pt walau kotaknya 16pt.
-//! - [`switch`] / [`toggle`] (Tier 2) — sakelar on/off yang **bisa diseret**,
-//!   bukan cuma diklik: thumb mengikuti jari 1:1, kecepatan jari diserahkan ke
-//!   spring saat dilepas (handoff §3.5), warna lintasan menyeberang tepat di
-//!   tengah, Space + panah kiri/kanan, node AccessKit dengan keadaan
-//!   on/off, dan hit target ≥ 44pt walau lintasannya 32pt/24pt.
-//! - [`slider`] / [`range_slider`] (Tier 2) — penggeser nilai: drag yang
-//!   melekat pada jari, klik di track, **snap ke step**, keyboard penuh
-//!   (panah/Home/End/PageUp), varian range dua thumb, node AccessKit dengan
-//!   nilai + aksi increment/decrement, dan pita sentuh ≥ 44pt di sekeliling
-//!   track yang setipis 4pt.
-//! - [`tabs`](mod@tabs) (Tier 3) — deretan tab dengan tiga varian
-//!   (segmented/underline/enclosed) di atas **satu** mesin: indikator yang
-//!   meluncur lewat spring yang bisa di-retarget, satu perhentian Tab untuk
-//!   seluruh deretan (panah/Home/End di dalamnya, melewati tab yang mati,
-//!   dicerminkan di RTL), cincin fokus yang ikut meluncur, dan node AccessKit
-//!   `TabList`/`Tab` lengkap dengan keadaan terpilih.
-//! - [`select`] (Tier 2) — pop-up button macOS / Select shadcn: popup yang
-//!   **menumpang sistem overlay** (berjangkar ke pemicu, auto-flip di tepi
-//!   layar), keyboard penuh di pemicu yang tetap memegang fokus
-//!   (Space/Enter/panah/Home/End/Esc) plus **typeahead** ala menu native,
-//!   daftar panjang dengan jendela yang mengikuti sorotan, node AccessKit
-//!   `Button` bernilai + `Menu`/`MenuItem` bertanda, dan hit target ≥ 44pt di
-//!   kotaknya maupun setiap barisnya.
-//! - [`scroll_view`](mod@scroll_view) (Tier 1) — wadah bergulir dengan
-//!   **rubber band ala macOS**, pantulan yang mewarisi kecepatan ekor inersia
-//!   OS (momentum tetap milik OS, INTEGRASI-NATIVE §3), scrollbar overlay yang
-//!   melebar saat di-hover dan memudar sendiri saat diam, seret thumb, navigasi
-//!   keyboard penuh + focus ring, `scroll_to`/`scroll_into_view`, dan aksi
-//!   AccessKit `SCROLL` yang benar-benar bekerja.
-//! - [`list`](mod@list) (Tier 1) — daftar **tervirtualisasi**: `item` hanya
-//!   dipanggil untuk baris yang benar-benar terlihat, jadi seratus ribu baris
-//!   tetap menjadi belasan node. Ia tinggal **di dalam**
-//!   [`scroll_view`](mod@scroll_view) — momentum, rubber band, dan scrollbar
-//!   tidak ditulis dua kali — dan menambahkan yang memang milik daftar: sticky
-//!   header, seleksi yang sorotannya *meluncur* lewat spring, ↑/↓/Page/Home/End
-//!   yang menggerakkan seleksi sambil menggulirkan barisnya ke layar, dan node
-//!   AccessKit `List`/`ListItem` beserta keadaan terpilihnya.
-//! - [`table`](mod@table) (Tier 5) — tabel **tervirtualisasi** yang menumpang
-//!   infrastruktur `list` alih-alih menumbuhkan yang kedua
-//!   (`KOMPONEN.md` aturan urutan #4): jendela barisnya dihitung
-//!   [`ListMetrics`] yang sama, guliran dan rubber band-nya milik
-//!   [`scroll_view`](mod@scroll_view), dan jahitan di antara keduanya adalah
-//!   [`list::sync_virtual`] yang sama. Yang ditambahkannya adalah yang memang
-//!   tidak ada di daftar: sort per kolom, resize dan reorder kolom lewat seret
-//!   di header, seleksi jamak berjangkar (⇧ merentang, ⌘ memungut, ⌘A
-//!   semuanya) yang disimpan sebagai **rentang** sehingga seratus ribu baris
-//!   terpilih tetap satu entri, navigasi keyboard antar **sel** dengan cincin
-//!   fokus yang mengelilingi sel aktif, sel kustom (widget apa pun di dalam
-//!   sel), sticky header, empty state, dan node AccessKit `Table`/`Row`/`Cell`.
-//! - [`text_field`] (Tier 2, **komponen tersulit di seluruh katalog**) — kolom
-//!   teks satu baris: caret dan seleksi **per grapheme cluster** (UAX #29),
-//!   klik ganda per kata, klik tripel seluruh isi, drag-select, undo/redo yang
-//!   menggabungkan ketikan beruntun, guliran horizontal yang menjaga caret
-//!   terlihat, dan **preedit IME dirender inline bergaris bawah** — dengan
-//!   jalur tombol normal ditahan selama komposisi, sehingga aplikasi tidak
-//!   pernah menerima huruf setengah jadi (§3.3, §3.8). Model editingnya hidup
-//!   di [`silka_text::edit`], geometrinya di [`silka_text::TextLayout`].
-//! - [`advance`] (infrastruktur) — satu detak untuk seluruh pohon: di sinilah
-//!   spring setiap widget dimajukan, sekali per frame, dan dari sinilah
-//!   jawaban "masih adakah yang bergerak" datang.
-//! - [`Fonts`] — pegangan bersama ke mesin teks aplikasi, satu atlas untuk
-//!   seluruh aplikasi.
-//! - [`dialog`](mod@dialog) / [`alert`] (Tier 4) — modal berbackdrop di atas
-//!   [`overlay`](mod@overlay): judul, pesan, dan barisan tombol yang
-//!   **urutannya mengikuti konvensi OS** ([`ButtonOrder`]), dengan Return
-//!   menjalankan tombol default dan Esc menjalankan aksi batal.
-//! - [`overlay`](mod@overlay) (Tier 4, **infrastruktur**) — layer di atas
-//!   konten, penempatan berjangkar dengan auto-flip di tepi, backdrop, dismiss
-//!   (klik luar/Esc), dan transisi spring yang bisa di-retarget. Dibangun
-//!   sekali persis seperti yang diperintahkan `KOMPONEN.md` aturan #3: dialog,
-//!   sheet, popover, tooltip, menu, dan toast nanti **menumpang** modul ini —
-//!   masing-masing tinggal memilih [`Placement`] dan [`Barrier`], tidak satu
-//!   pun boleh menghitung posisinya sendiri.
+//! - [`text`] (Tier 0) — a text leaf that **measures itself** through
+//!   `silka-text` and draws glyphs from the atlas; wrapping follows the width
+//!   handed down by the box constraints, and its content is the a11y node name.
+//! - [`button`] (Tier 2) — a complete control built on tokens:
+//!   primary/secondary/ghost/destructive/link variants, hover/press/focus/
+//!   disabled/loading states that **all transition on springs**, a focus ring
+//!   that grows, Space/Enter, an AccessKit node, and a hit target ≥ 44pt.
+//! - [`checkbox`] (Tier 2) — a **tri-state** checkbox (indeterminate
+//!   included): the check mark is genuinely *drawn* by a spring
+//!   ([`check_dots`]), the label is clickable too and doubles as the a11y
+//!   name, Space activates, and the hit target is ≥ 44pt even though the box
+//!   is 16pt.
+//! - [`switch`] / [`toggle`] (Tier 2) — an on/off switch you can **drag**, not
+//!   merely click: the thumb tracks the finger 1:1, the finger's velocity is
+//!   handed to the spring on release (handoff §3.5), the track color crosses
+//!   over exactly at the midpoint, Space plus left/right arrows, an AccessKit
+//!   node carrying the on/off state, and a hit target ≥ 44pt even though the
+//!   track is 32pt/24pt.
+//! - [`slider`] / [`range_slider`] (Tier 2) — value sliders: dragging that
+//!   sticks to the finger, click-on-track, **snapping to steps**, full
+//!   keyboard support (arrows/Home/End/PageUp), a two-thumb range variant, an
+//!   AccessKit node with the value plus increment/decrement actions, and a
+//!   ≥ 44pt touch band around a track only 4pt thick.
+//! - [`tabs`](mod@tabs) (Tier 3) — a row of tabs with three variants
+//!   (segmented/underline/enclosed) over **one** engine: an indicator that
+//!   glides on a retargetable spring, a single Tab stop for the whole row
+//!   (arrows/Home/End inside it, skipping disabled tabs, mirrored in RTL), a
+//!   focus ring that glides along, and AccessKit `TabList`/`Tab` nodes
+//!   complete with the selected state.
+//! - [`select`] (Tier 2) — a macOS pop-up button / shadcn Select: a popup that
+//!   **rides the overlay system** (anchored to the trigger, auto-flipping at
+//!   the screen edge), full keyboard support on the trigger, which keeps focus
+//!   (Space/Enter/arrows/Home/End/Esc), plus native-menu-style **typeahead**,
+//!   long lists with a window that follows the highlight, an AccessKit
+//!   `Button` carrying a value plus marked `Menu`/`MenuItem` nodes, and a hit
+//!   target ≥ 44pt on both the box and every row.
+//! - [`scroll_view`](mod@scroll_view) (Tier 1) — a scrolling container with
+//!   **macOS-style rubber banding**, a bounce that inherits the velocity of
+//!   the OS inertia tail (momentum stays the OS's job, INTEGRASI-NATIVE §3),
+//!   overlay scrollbars that widen on hover and fade out on their own when
+//!   idle, thumb dragging, full keyboard navigation plus a focus ring,
+//!   `scroll_to`/`scroll_into_view`, and an AccessKit `SCROLL` action that
+//!   genuinely works.
+//! - [`list`](mod@list) (Tier 1) — a **virtualized** list: `item` is called
+//!   only for rows that are actually visible, so a hundred thousand rows still
+//!   come out as a dozen-odd nodes. It lives **inside**
+//!   [`scroll_view`](mod@scroll_view) — momentum, rubber banding, and
+//!   scrollbars are not written twice — and adds what genuinely belongs to a
+//!   list: sticky headers, a selection whose highlight *glides* on a spring,
+//!   ↑/↓/Page/Home/End that move the selection while scrolling its row into
+//!   view, and AccessKit `List`/`ListItem` nodes along with their selected
+//!   state.
+//! - [`table`](mod@table) (Tier 5) — a **virtualized** table that rides the
+//!   `list` infrastructure instead of growing a second one
+//!   (`KOMPONEN.md` ordering rule #4): its row window is computed by the same
+//!   [`ListMetrics`], its scrolling and rubber banding belong to
+//!   [`scroll_view`](mod@scroll_view), and the seam between the two is the
+//!   same [`list::sync_virtual`]. What it adds is precisely what a list does
+//!   not have: per-column sorting, column resize and reorder by dragging in
+//!   the header, anchored multiple selection (⇧ extends, ⌘ picks, ⌘A takes
+//!   everything) stored as **ranges** so a hundred thousand selected rows are
+//!   still a single entry, keyboard navigation between **cells** with a focus
+//!   ring around the active cell, custom cells (any widget inside a cell),
+//!   sticky headers, an empty state, and AccessKit `Table`/`Row`/`Cell` nodes.
+//! - [`text_field`] (Tier 2, **the hardest component in the whole catalogue**)
+//!   — a single-line text field: caret and selection **per grapheme cluster**
+//!   (UAX #29), double-click by word, triple-click for the whole content,
+//!   drag-select, undo/redo that coalesces consecutive typing, horizontal
+//!   scrolling that keeps the caret visible, and **IME preedit rendered inline
+//!   with an underline** — with the normal key path held back during
+//!   composition, so the application never receives half-finished letters
+//!   (§3.3, §3.8). Its editing model lives in [`silka_text::edit`], its
+//!   geometry in [`silka_text::TextLayout`].
+//! - [`advance`] (infrastructure) — one tick for the whole tree: this is where
+//!   every widget's springs are advanced, once per frame, and where the answer
+//!   to "is anything still moving?" comes from.
+//! - [`Fonts`] — the shared handle to the application's text engine, one atlas
+//!   for the whole application.
+//! - [`dialog`](mod@dialog) / [`alert`] (Tier 4) — a backdropped modal on top
+//!   of [`overlay`](mod@overlay): a title, a message, and a button row whose
+//!   **order follows OS convention** ([`ButtonOrder`]), with Return running
+//!   the default button and Esc running the cancel action.
+//! - [`overlay`](mod@overlay) (Tier 4, **infrastructure**) — a layer above the
+//!   content, anchored placement with auto-flip at the edges, a backdrop,
+//!   dismissal (outside click/Esc), and retargetable spring transitions. Built
+//!   exactly once, precisely as `KOMPONEN.md` rule #3 demands: dialog, sheet,
+//!   popover, tooltip, menu, and toast will all **ride** this module — each
+//!   one merely picks a [`Placement`] and a [`Barrier`], and not one of them
+//!   may compute its own position.
 //!
-//! Utang teknis yang disadari dan sengaja tidak disembunyikan: `Fonts` masih
-//! diserahkan eksplisit ke tiap konstruktor karena belum ada context ambient
-//! untuk titipan tingkat aplikasi, dan "scale-on-press" digambar sebagai
-//! kempisnya kotak latar (lapisan paint belum punya perintah transform, §3.2)
-//! sehingga label di dalamnya tidak ikut mengecil. Untuk overlay,
-//! yang belum ada adalah **fokus otomatis** ke panel yang baru terbuka:
-//! [`overlay::topmost`] menyediakan nodenya, tapi belum ada kait "baru saja
-//! terbuka" di siklus frame yang memanggilnya.
+//! Technical debt we are aware of and deliberately do not hide: `Fonts` is
+//! still passed explicitly to every constructor because there is no ambient
+//! context yet for application-level dependencies, and "scale-on-press" is
+//! drawn as the background box deflating (the paint layer has no transform
+//! command yet, §3.2), so the label inside it does not shrink along with it.
+//! For overlays, what is missing is **automatic focus** on a freshly opened
+//! panel: [`overlay::topmost`] provides the node, but there is no "just
+//! opened" hook in the frame cycle that calls it.
 //!
-//! Urutan pengerjaan mengikuti tier di `KOMPONEN.md`: Tier 0 (primitif) dan
-//! Tier 1 (layout) sampai benar-benar solid dulu, `text_field` dimulai paling
-//! awal di Tier 2 karena memaksa stack text/IME/a11y matang, dan overlay
-//! system dibangun sekali untuk dialog/popover/tooltip/menu/toast.
+//! The order of work follows the tiers in `KOMPONEN.md`: Tier 0 (primitives)
+//! and Tier 1 (layout) until they are genuinely solid first, `text_field`
+//! started earliest in Tier 2 because it forces the text/IME/a11y stack to
+//! mature, and the overlay system built once for
+//! dialog/popover/tooltip/menu/toast.
 //!
-//! **Definition of Done setiap komponen** (KOMPONEN.md): benar di kedua
-//! preset, semua state interaktif bertransisi spring, navigasi keyboard penuh
-//! plus focus ring, **node AccessKit** (role/name/actions), dark mode, hit
-//! target minimal 44pt, dan menghormati reduced-motion.
+//! **Definition of Done for every component** (KOMPONEN.md): correct in both
+//! presets, every interactive state transitions on a spring, full keyboard
+//! navigation plus a focus ring, an **AccessKit node** (role/name/actions),
+//! dark mode, a minimum 44pt hit target, and respect for reduced-motion.
 //!
-//! Kode di crate ini **tidak boleh menyentuh tipe wgpu** — hanya perintah
-//! gambar `silka-paint` (§3.2, §5 failure mode #7).
+//! Code in this crate **must not touch wgpu types** — only `silka-paint`
+//! drawing commands (§3.2, §5 failure mode #7).
 
 #![warn(missing_docs)]
 

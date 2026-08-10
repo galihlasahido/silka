@@ -1,39 +1,39 @@
-//! **Taffy sebagai widget flex/grid, di dalam protokol box constraints**
+//! **Taffy as the flex/grid widget, inside the box-constraints protocol**
 //! (REKOMENDASI §3.4).
 //!
-//! Ini satu-satunya modul di seluruh workspace yang boleh menyebut `taffy::`.
-//! Di luar sini semua orang berbicara dalam [`ContainerStyle`]/[`ItemStyle`]
-//! ([`super::style`]) — aturan yang sama seperti wgpu di `silka-paint` (§3.2)
-//! dan cosmic-text di `silka-text` (§3.3): mesin boleh diganti, kontrak widget
-//! tidak ikut berubah.
+//! This is the only module in the whole workspace allowed to mention `taffy::`.
+//! Outside it everyone speaks [`ContainerStyle`]/[`ItemStyle`]
+//! ([`super::style`]) — the same rule as wgpu in `silka-paint` (§3.2) and
+//! cosmic-text in `silka-text` (§3.3): the engine may be swapped, the widget
+//! contract does not change with it.
 //!
-//! ## Bagaimana dua protokol layout disambungkan
+//! ## How the two layout protocols are joined
 //!
-//! Framework ini memakai **box constraints ala Flutter** sebagai protokol
-//! native ("constraints turun, ukuran naik, induk menentukan posisi"), sementara
-//! Taffy memakai model CSS (`known_dimensions` + `available_space` + measure
-//! function). Sambungannya tiga langkah, dan semuanya di [`TaffyBox::layout`]:
+//! This framework uses **Flutter-style box constraints** as its native protocol
+//! ("constraints go down, sizes come up, the parent sets the position"), while
+//! Taffy uses the CSS model (`known_dimensions` + `available_space` + a measure
+//! function). The join takes three steps, all of them in [`TaffyBox::layout`]:
 //!
-//! 1. **Turun** — [`BoxConstraints`] wadah diterjemahkan menjadi
-//!    `size`/`min_size`/`max_size` node akar Taffy plus `available_space`.
-//! 2. **Daun diukur lewat measure function** — setiap kali Taffy bertanya
-//!    "seberapa besar anak ini?", pertanyaannya diterjemahkan kembali menjadi
-//!    `BoxConstraints` dan dijawab oleh mesin layout kita sendiri. Di sinilah
-//!    **text measurement masuk**: node teks adalah daun biasa yang mengukur
-//!    dirinya lewat `silka-text` ([`super::MeasuredBox`]).
-//! 3. **Naik + penempatan** — hasil Taffy dipakai untuk melayout ulang setiap
-//!    anak dengan constraints tight sebesar kotak yang ia dapat, lalu
-//!    menempatkannya. Induk tetap yang menentukan posisi.
+//! 1. **Down** — the container's [`BoxConstraints`] are translated into the
+//!    Taffy root node's `size`/`min_size`/`max_size` plus `available_space`.
+//! 2. **Leaves are measured through the measure function** — every time Taffy
+//!    asks "how big is this child?", the question is translated back into
+//!    `BoxConstraints` and answered by our own layout engine. This is where
+//!    **text measurement enters**: a text node is an ordinary leaf that measures
+//!    itself through `silka-text` ([`super::MeasuredBox`]).
+//! 3. **Up + placement** — Taffy's results are used to relayout every child with
+//!    tight constraints matching the box it was given, and then to place it. The
+//!    parent still decides the position.
 //!
-//! ## Kenapa anak tidak menjadi relayout boundary
+//! ## Why the children do not become relayout boundaries
 //!
-//! Constraints tight biasanya berarti "ukuranmu sudah dipaksa induk, perubahan
-//! di dalammu tidak mungkin mengubah siapa pun" — itu penanda relayout boundary
-//! (§3.4). Di sini justru sebaliknya: angka tight itu **berasal dari pengukuran
-//! anak itu sendiri**. Kalau isinya berubah, hasil ukurnya berubah, dan seluruh
-//! flex/grid wajib dihitung ulang. Karena itu langkah 2 dan 3 memakai
-//! [`super::LayoutCtx::layout_child_measured`], yang sengaja **tidak**
-//! menjadikan anak boundary meski constraints-nya tight.
+//! Tight constraints usually mean "your size is already forced by the parent,
+//! nothing inside you can change anyone" — the marker of a relayout boundary
+//! (§3.4). Here the opposite is true: those tight numbers **came from measuring
+//! that very child**. If its content changes, the measurement changes and the
+//! whole flex/grid has to be recomputed. That is why steps 2 and 3 use
+//! [`super::LayoutCtx::layout_child_measured`], which deliberately does **not**
+//! make the child a boundary even under tight constraints.
 
 use silka_paint::{Insets, Point, Size};
 
@@ -58,34 +58,35 @@ use super::style::{
 };
 
 // ---------------------------------------------------------------------------
-// Wadah
+// The container
 // ---------------------------------------------------------------------------
 
-/// Wadah **flex atau grid** — node render di balik `row()`, `column()`, dan
-/// `grid()`.
+/// A **flex or grid** container — the render node behind `row()`, `column()`,
+/// and `grid()`.
 ///
-/// Menyimpan pohon Taffy kecil miliknya sendiri (satu akar + satu slot per
-/// anak). Pohon itu adalah cache: identitas yang berlaku tetap [`NodeId`] arena
-/// kita, dan pohon Taffy dibangun ulang begitu daftar anak berubah.
+/// It keeps a small Taffy tree of its own (one root + one slot per child). That
+/// tree is a cache: the authoritative identity is still our arena's [`NodeId`],
+/// and the Taffy tree is rebuilt as soon as the child list changes.
 pub struct TaffyBox {
-    /// Gaya wadah — satu-satunya bagian yang di-diff lapisan view.
+    /// The container style — the only part the view layer diffs.
     pub style: ContainerStyle,
-    /// Latar, sudut, border, bayangan wadah ini (token, bukan literal).
+    /// This container's background, corners, border, shadows (tokens, not
+    /// literals).
     pub decoration: Decoration,
     taffy: TaffyTree<usize>,
     root: TaffyNodeId,
-    /// Anak-anak versi arena kita, dalam urutan yang sama dengan `slots`.
+    /// Our arena's children, in the same order as `slots`.
     kids: Vec<NodeId>,
-    /// Slot Taffy yang mewakili tiap anak.
+    /// The Taffy slot standing in for each child.
     slots: Vec<TaffyNodeId>,
 }
 
 impl TaffyBox {
-    /// Wadah baru dengan gaya `style`.
+    /// A new container with the style `style`.
     pub fn new(style: ContainerStyle) -> Self {
         let mut taffy: TaffyTree<usize> = TaffyTree::new();
-        // Kita bekerja dalam poin logis pecahan; pembulatan ke piksel adalah
-        // urusan renderer yang tahu scale factor, bukan urusan layout.
+        // We work in fractional logical points; rounding to pixels is the job of
+        // the renderer, which knows the scale factor — not of layout.
         taffy.disable_rounding();
         let root = taffy
             .new_leaf(TaffyStyle::DEFAULT)
@@ -100,15 +101,17 @@ impl TaffyBox {
         }
     }
 
-    /// Jumlah anak yang tercermin di pohon Taffy — untuk test dan inspector.
+    /// How many children are mirrored in the Taffy tree — for tests and the
+    /// inspector.
     pub fn slot_count(&self) -> usize {
         self.slots.len()
     }
 
-    /// Samakan pohon Taffy dengan daftar anak arena.
+    /// Bring the Taffy tree in line with the arena's child list.
     ///
-    /// Struktur pohon hanya berubah lewat view-diff, jadi ini murni reaksi:
-    /// selama daftar anaknya sama, pohon Taffy (beserta cache-nya) dipertahankan.
+    /// The tree structure only changes through the view-diff, so this is purely
+    /// reactive: as long as the child list is the same, the Taffy tree (and its
+    /// caches) are kept.
     fn sync(&mut self, kids: &[NodeId]) {
         if self.kids == kids {
             return;
@@ -134,7 +137,8 @@ impl TaffyBox {
         self.kids.extend_from_slice(kids);
     }
 
-    /// Buang cache Taffy untuk seluruh slot (dan, lewat leluhurnya, akar).
+    /// Drop the Taffy cache for every slot (and, through their ancestor, the
+    /// root).
     fn invalidate_taffy_cache(&mut self) {
         let root = self.root;
         let _ = self.taffy.mark_dirty(root);
@@ -167,7 +171,8 @@ impl RenderNode for TaffyBox {
         let kids: Vec<NodeId> = ctx.children().to_vec();
         self.sync(&kids);
 
-        // 1. Gaya turun: item dulu (butuh `ctx`), lalu wadah.
+        // 1. Styles go down: the items first (they need `ctx`), then the
+        //    container.
         for (i, anak) in kids.iter().enumerate() {
             let gaya = item_style(&ctx.child_layout_style(*anak), rtl);
             let slot = self.slots[i];
@@ -177,16 +182,16 @@ impl RenderNode for TaffyBox {
         let root = self.root;
         self.set_style_if_changed(root, gaya_wadah);
 
-        // Taffy punya cache-nya sendiri, dan cache itu **tidak tahu apa-apa**
-        // tentang isi anak kita — ukuran anak datang dari measure function,
-        // bukan dari `Style`. Kalau tidak dibatalkan, sebuah teks yang berubah
-        // menghasilkan layout lama yang terlihat benar sampai ada yang
-        // kebetulan mengubah gaya wadah. Membatalkannya di sini tidak boros:
-        // kita hanya sampai ke titik ini ketika mesin layout kita sendiri
-        // (cache + relayout boundary) sudah memutuskan ada yang perlu dihitung.
+        // Taffy has a cache of its own, and that cache **knows nothing** about
+        // our children's content — a child's size comes from the measure
+        // function, not from its `Style`. Left alone, a piece of text that
+        // changed would produce a stale layout that looks correct right up until
+        // someone happens to change the container style. Invalidating here is not
+        // wasteful: we only reach this point once our own layout engine (cache +
+        // relayout boundaries) has decided something needs computing.
         self.invalidate_taffy_cache();
 
-        // 2. Hitung, dengan daun diukur lewat protokol box constraints kita.
+        // 2. Compute, with leaves measured through our box-constraints protocol.
         let ruang = TaffySize {
             width: available(constraints.max_width),
             height: available(constraints.max_height),
@@ -216,7 +221,7 @@ impl RenderNode for TaffyBox {
                 .expect("pohon taffy yang dirakit sendiri selalu valid");
         }
 
-        // 3. Ukuran naik + induk menempatkan.
+        // 3. Sizes come up + the parent places.
         for (i, anak) in kids.iter().enumerate() {
             let hasil = *self
                 .taffy
@@ -236,9 +241,9 @@ impl RenderNode for TaffyBox {
 
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.decorate(&self.decoration);
-        // Anak digambar dalam urutan arena — urutan yang sama yang dipakai
-        // Taffy dan a11y. Wadah flex tidak menggambar apa pun di antaranya:
-        // `spacing` adalah ruang kosong, bukan objek.
+        // Children are drawn in arena order — the same order Taffy and a11y use.
+        // A flex container draws nothing between them: `spacing` is empty space,
+        // not an object.
         ctx.paint_children();
     }
 
@@ -257,20 +262,20 @@ impl core::fmt::Debug for TaffyBox {
 }
 
 // ---------------------------------------------------------------------------
-// Item
+// Items
 // ---------------------------------------------------------------------------
 
-/// Pembawa [`ItemStyle`] untuk satu anak — padanan `Expanded`/`Flexible`
-/// Flutter.
+/// The carrier of an [`ItemStyle`] for a single child — the equivalent of
+/// Flutter's `Expanded`/`Flexible`.
 ///
-/// Node ini tidak menggambar apa pun dan tidak mengubah constraints; ia hanya
-/// membuat gaya item bisa dibaca induknya lewat
-/// [`RenderNode::layout_style`]. Itu sebabnya gaya item **tidak** disimpan di
-/// wadah: anak boleh berpindah, dibuat, dan dibuang oleh view-diff tanpa wadah
-/// perlu tahu apa-apa.
+/// This node draws nothing and does not alter constraints; all it does is make
+/// the item style readable by its parent through [`RenderNode::layout_style`].
+/// That is why item styles are **not** stored in the container: children may be
+/// moved, created, and dropped by the view-diff without the container needing to
+/// know anything.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct LayoutItem {
-    /// Gaya yang dibaca wadah flex/grid di atasnya.
+    /// The style read by the flex/grid container above it.
     pub style: ItemStyle,
 }
 
@@ -280,8 +285,8 @@ impl RenderNode for LayoutItem {
     }
 
     fn access(&self, node: &mut AccessNode) {
-        // Murni pembawa gaya layout: tidak ada apa pun yang perlu dibacakan,
-        // jadi node ini disaring keluar dan anaknya naik menggantikannya.
+        // A pure layout-style carrier: there is nothing to announce, so this node
+        // is filtered out and its child takes its place.
         node.role = AccessRole::Container;
     }
 
@@ -290,9 +295,9 @@ impl RenderNode for LayoutItem {
             return constraints.smallest();
         }
         let anak = ctx.child(0);
-        // `measured`, bukan `layout_child`: constraints yang kita teruskan
-        // berasal dari pengukuran anak ini juga, jadi ia tidak boleh menahan
-        // rambatan dirty (lihat catatan modul).
+        // `measured`, not `layout_child`: the constraints we pass down were
+        // derived from measuring this same child, so it must not hold back dirty
+        // propagation (see the module notes).
         let ukuran = ctx.layout_child_measured(anak, constraints);
         ctx.place_child(anak, Point::ZERO);
         constraints.constrain(ukuran)
@@ -300,7 +305,7 @@ impl RenderNode for LayoutItem {
 }
 
 // ---------------------------------------------------------------------------
-// Jembatan gaya: kosakata kita -> kosakata Taffy
+// The style bridge: our vocabulary -> Taffy's
 // ---------------------------------------------------------------------------
 
 fn available(max: f32) -> AvailableSpace {
@@ -311,13 +316,13 @@ fn available(max: f32) -> AvailableSpace {
     }
 }
 
-/// Terjemahkan pertanyaan Taffy ("berapa ukuranmu?") menjadi box constraints.
+/// Translate Taffy's question ("how big are you?") into box constraints.
 ///
-/// `MinContent` menjadi batas nol: itulah arti "sesempit mungkin" bagi daun
-/// yang bisa memenggal baris (teks). Daun yang tidak bisa mengecil akan
-/// melaporkan nol sebagai min-content-nya — tidak masalah karena
-/// [`ItemStyle::DEFAULT`] memakai `shrink = 0`, jadi ukuran itu tidak pernah
-/// dipakai untuk mengempiskan siapa pun di jalur flex.
+/// `MinContent` becomes a bound of zero: that is what "as narrow as possible"
+/// means for a leaf that can break lines (text). A leaf that cannot shrink will
+/// report zero as its min-content — which is fine, because
+/// [`ItemStyle::DEFAULT`] uses `shrink = 0`, so that size is never used to
+/// collapse anyone along the flex path.
 fn leaf_constraints(
     diketahui: TaffySize<Option<f32>>,
     tersedia: TaffySize<AvailableSpace>,
@@ -396,11 +401,11 @@ fn align_content(a: MainAlign) -> AlignContent {
     }
 }
 
-/// Satu track grid dalam kosakata Taffy.
+/// One grid track in Taffy's vocabulary.
 ///
-/// `GridTemplateComponent` tidak punya parameter tipe bawaan, dan tipe string
-/// yang dipakai Taffy dengan `std` adalah `String` — dinamai sekali di sini
-/// supaya tidak berserakan.
+/// `GridTemplateComponent` has no default type parameter, and the string type
+/// Taffy uses with `std` is `String` — named once here so it does not end up
+/// scattered around.
 type TaffyTrack = GridTemplateComponent<String>;
 
 fn min_track(t: TrackMin) -> MinTrackSizingFunction {
@@ -434,7 +439,7 @@ fn track(t: &Track) -> TaffyTrack {
 fn placement(l: GridLine) -> GridPlacement {
     match l {
         GridLine::Auto => GridPlacement::Auto,
-        // `taffy::GridLine` tidak publik; jalur resminya adalah trait helper.
+        // `taffy::GridLine` is not public; the official path is the helper trait.
         GridLine::Line(n) => GridPlacement::from_line_index(n),
         GridLine::Span(n) => GridPlacement::from_span(n),
     }
@@ -453,8 +458,9 @@ fn container_style(s: &ContainerStyle, c: BoxConstraints, rtl: bool) -> TaffySty
     TaffyStyle {
         display: if grid { Display::Grid } else { Display::Flex },
         direction: direction(rtl),
-        // Sumbu yang sudah dipaksa induk diberikan sebagai ukuran pasti;
-        // sisanya `auto` supaya wadah menyusut ke isinya (rasa Flutter).
+        // An axis already forced by the parent is handed over as a definite size;
+        // the rest is `auto` so the container shrinks to its content (the Flutter
+        // feel).
         size: TaffySize {
             width: if c.has_tight_width() {
                 Dimension::length(c.min_width)
@@ -497,9 +503,9 @@ fn container_style(s: &ContainerStyle, c: BoxConstraints, rtl: bool) -> TaffySty
         } else {
             None
         },
-        // Grid dengan perataan bawaan sengaja dibiarkan `None` agar track
-        // tetap boleh meregang seperti CSS `normal`; menyetel `Start` di sana
-        // diam-diam mematikan `stretch`.
+        // A grid with default alignment is deliberately left as `None` so tracks
+        // are still free to stretch like CSS `normal`; setting `Start` there
+        // silently kills `stretch`.
         justify_content: if grid && s.main == MainAlign::Start {
             None
         } else {
@@ -632,8 +638,8 @@ mod tests {
     fn penempatan_grid_dipetakan_lewat_helper_resmi() {
         assert_eq!(placement(GridLine::Auto), GridPlacement::Auto);
         assert_eq!(placement(GridLine::Span(2)), GridPlacement::Span(2));
-        // `GridPlacement::Line` membungkus tipe privat Taffy; yang penting
-        // hasilnya bukan Auto dan bukan Span.
+        // `GridPlacement::Line` wraps a private Taffy type; what matters is that
+        // the result is neither Auto nor Span.
         assert!(matches!(
             placement(GridLine::Line(2)),
             GridPlacement::Line(_)

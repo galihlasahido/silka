@@ -1,42 +1,44 @@
-//! **Box constraints ala Flutter** — protokol layout native framework
+//! **Flutter-style box constraints** — the framework's native layout protocol
 //! (REKOMENDASI §3.4).
 //!
-//! Aturannya cuma tiga kalimat, dan seluruh sistem layout berdiri di atasnya:
+//! The rules are three sentences long, and the whole layout system stands on
+//! them:
 //!
-//! 1. **Constraints turun** — induk memberi anak batas (min/max lebar & tinggi).
-//! 2. **Ukuran naik** — anak memilih ukurannya sendiri **di dalam** batas itu.
-//! 3. **Induk yang menentukan posisi** — anak tidak pernah tahu di mana ia
-//!    diletakkan (lihat [`crate::tree::LayoutCtx::place_child`]).
+//! 1. **Constraints go down** — the parent gives the child bounds (min/max width
+//!    & height).
+//! 2. **Sizes come up** — the child picks its own size **within** those bounds.
+//! 3. **The parent sets the position** — a child never knows where it was placed
+//!    (see [`crate::tree::LayoutCtx::place_child`]).
 //!
-//! Konsekuensinya: satu pass, tanpa negosiasi bolak-balik, dan ukuran sebuah
-//! node **hanya** fungsi dari constraints + isinya. Itulah yang membuat cache
-//! layout dan *relayout boundary* (§3.4) sah secara logika.
+//! The consequences: a single pass, no back-and-forth negotiation, and a node's
+//! size is **purely** a function of its constraints plus its content. That is
+//! what makes the layout cache and *relayout boundaries* (§3.4) logically sound.
 //!
 //! ```
 //! use silka_core::tree::BoxConstraints;
 //! use silka_paint::Size;
 //!
-//! // Induk memberi ruang maksimal 200×100, minimal 0.
+//! // The parent offers at most 200×100, at least 0.
 //! let c = BoxConstraints::loose(Size::new(200.0, 100.0));
-//! // Anak minta 320×40 → dipotong ke batas yang diberikan.
+//! // The child asks for 320×40 → clamped to the bounds it was given.
 //! assert_eq!(c.constrain(Size::new(320.0, 40.0)), Size::new(200.0, 40.0));
 //! ```
 
 use silka_paint::{Insets, Size};
 
-/// Batas ukuran yang diturunkan induk ke anak.
+/// The size bounds a parent passes down to a child.
 ///
-/// Semua satuan poin logis. `max_*` boleh tak hingga (mis. isi scroll view di
-/// sumbu gulirnya); `min_*` tidak pernah tak hingga.
+/// All units are logical points. `max_*` may be infinite (e.g. the content of a
+/// scroll view along its scroll axis); `min_*` never is.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxConstraints {
-    /// Lebar minimum yang wajib dipenuhi.
+    /// The minimum width that must be honoured.
     pub min_width: f32,
-    /// Lebar maksimum yang boleh dipakai (boleh `f32::INFINITY`).
+    /// The maximum width that may be used (may be `f32::INFINITY`).
     pub max_width: f32,
-    /// Tinggi minimum yang wajib dipenuhi.
+    /// The minimum height that must be honoured.
     pub min_height: f32,
-    /// Tinggi maksimum yang boleh dipakai (boleh `f32::INFINITY`).
+    /// The maximum height that may be used (may be `f32::INFINITY`).
     pub max_height: f32,
 }
 
@@ -47,11 +49,11 @@ impl Default for BoxConstraints {
 }
 
 impl BoxConstraints {
-    /// Tanpa batas atas sama sekali — anak bebas sebesar apa pun.
+    /// No upper bound at all — the child may be any size.
     ///
-    /// Node yang memilih ukurannya dari `max_*` (mis. [`crate::tree::Viewport`])
-    /// **tidak boleh** menerima ini tanpa penjaga; ukuran tak hingga adalah bug
-    /// layout, bukan ukuran.
+    /// A node that derives its size from `max_*` (e.g. [`crate::tree::Viewport`])
+    /// **must not** accept this without a guard; an infinite size is a layout
+    /// bug, not a size.
     pub const UNBOUNDED: Self = Self {
         min_width: 0.0,
         max_width: f32::INFINITY,
@@ -59,7 +61,7 @@ impl BoxConstraints {
         max_height: f32::INFINITY,
     };
 
-    /// Constraints mentah.
+    /// Raw constraints.
     pub const fn new(min_width: f32, max_width: f32, min_height: f32, max_height: f32) -> Self {
         Self {
             min_width,
@@ -69,7 +71,7 @@ impl BoxConstraints {
         }
     }
 
-    /// Satu-satunya ukuran yang diizinkan — `min == max` di kedua sumbu.
+    /// Exactly one permitted size — `min == max` on both axes.
     pub fn tight(size: Size) -> Self {
         Self {
             min_width: size.width.max(0.0),
@@ -79,7 +81,7 @@ impl BoxConstraints {
         }
     }
 
-    /// Batas atas saja; anak boleh mengecil sampai nol.
+    /// An upper bound only; the child may shrink all the way to zero.
     pub fn loose(size: Size) -> Self {
         Self {
             min_width: 0.0,
@@ -89,8 +91,8 @@ impl BoxConstraints {
         }
     }
 
-    /// Lebar terikat, tinggi bebas — bentuk yang dipakai teks dan scroll
-    /// vertikal.
+    /// Bounded width, free height — the shape used by text and vertical
+    /// scrolling.
     pub fn width(max_width: f32) -> Self {
         Self {
             min_width: 0.0,
@@ -100,12 +102,12 @@ impl BoxConstraints {
         }
     }
 
-    /// Versi yang aman dipakai dan dibandingkan: NaN dinolkan, nilai negatif
-    /// dinolkan, dan `max` tidak pernah lebih kecil dari `min`.
+    /// The variant that is safe to use and to compare: NaN becomes zero,
+    /// negatives become zero, and `max` is never smaller than `min`.
     ///
-    /// Dipanggil otomatis oleh mesin layout sebelum constraints dipakai atau
-    /// disimpan sebagai kunci cache — dengan begitu perbandingan `==` untuk
-    /// memutuskan "layout boleh dilewati" tidak pernah gagal karena NaN.
+    /// Called automatically by the layout engine before constraints are used or
+    /// stored as a cache key — that way the `==` comparison deciding "layout may
+    /// be skipped" never fails because of NaN.
     pub fn normalized(self) -> Self {
         fn sane(v: f32) -> f32 {
             if v.is_nan() {
@@ -124,7 +126,7 @@ impl BoxConstraints {
         }
     }
 
-    /// Ukuran terdekat dengan `size` yang memenuhi constraints ini.
+    /// The size closest to `size` that satisfies these constraints.
     pub fn constrain(self, size: Size) -> Size {
         Size::new(
             self.constrain_width(size.width),
@@ -132,58 +134,59 @@ impl BoxConstraints {
         )
     }
 
-    /// Lebar terdekat dengan `width` yang memenuhi constraints ini.
+    /// The width closest to `width` that satisfies these constraints.
     pub fn constrain_width(self, width: f32) -> f32 {
         let w = if width.is_nan() { 0.0 } else { width };
         w.clamp(self.min_width, self.max_width.max(self.min_width))
     }
 
-    /// Tinggi terdekat dengan `height` yang memenuhi constraints ini.
+    /// The height closest to `height` that satisfies these constraints.
     pub fn constrain_height(self, height: f32) -> f32 {
         let h = if height.is_nan() { 0.0 } else { height };
         h.clamp(self.min_height, self.max_height.max(self.min_height))
     }
 
-    /// Ukuran terkecil yang memenuhi constraints ini.
+    /// The smallest size that satisfies these constraints.
     pub fn smallest(self) -> Size {
         Size::new(self.min_width, self.min_height)
     }
 
-    /// Ukuran terbesar yang memenuhi constraints ini (bisa tak hingga).
+    /// The largest size that satisfies these constraints (may be infinite).
     pub fn biggest(self) -> Size {
         Size::new(self.max_width, self.max_height)
     }
 
-    /// Benar bila hanya ada satu ukuran yang mungkin.
+    /// True when only one size is possible.
     ///
-    /// Ini penanda **relayout boundary** yang paling sering muncul: kalau
-    /// ukuran anak sudah dipaksa induk, perubahan di dalam anak tidak mungkin
-    /// mengubah ukuran induk.
+    /// This is the most common marker of a **relayout boundary**: if the parent
+    /// has already forced the child's size, nothing inside the child can change
+    /// the parent's size.
     pub fn is_tight(self) -> bool {
         self.has_tight_width() && self.has_tight_height()
     }
 
-    /// Benar bila lebar sudah dipaksa.
+    /// True when the width is already forced.
     pub fn has_tight_width(self) -> bool {
         self.min_width >= self.max_width
     }
 
-    /// Benar bila tinggi sudah dipaksa.
+    /// True when the height is already forced.
     pub fn has_tight_height(self) -> bool {
         self.min_height >= self.max_height
     }
 
-    /// Benar bila lebar punya batas atas berhingga.
+    /// True when the width has a finite upper bound.
     pub fn has_bounded_width(self) -> bool {
         self.max_width.is_finite()
     }
 
-    /// Benar bila tinggi punya batas atas berhingga.
+    /// True when the height has a finite upper bound.
     pub fn has_bounded_height(self) -> bool {
         self.max_height.is_finite()
     }
 
-    /// Constraints untuk isi setelah dikurangi `insets` — tidak pernah negatif.
+    /// The constraints for the content once `insets` are subtracted — never
+    /// negative.
     pub fn deflate(self, insets: Insets) -> Self {
         let h = insets.horizontal();
         let v = insets.vertical();
@@ -196,7 +199,7 @@ impl BoxConstraints {
         .normalized()
     }
 
-    /// Versi yang minimumnya dilepas (anak boleh mengecil).
+    /// The variant with the minimums released (the child may shrink).
     pub fn loosen(self) -> Self {
         Self {
             min_width: 0.0,
@@ -206,10 +209,10 @@ impl BoxConstraints {
         }
     }
 
-    /// Versi diri sendiri yang dipaksa tetap berada di dalam `outer`.
+    /// This constraint forced to stay inside `outer`.
     ///
-    /// Inilah cara `constrained_box` bekerja: permintaan widget (`self`)
-    /// dihormati hanya sejauh induk (`outer`) mengizinkan.
+    /// This is how `constrained_box` works: the widget's request (`self`) is
+    /// honoured only as far as the parent (`outer`) permits.
     pub fn enforce(self, outer: Self) -> Self {
         Self {
             min_width: self.min_width.clamp(outer.min_width, outer.max_width),
@@ -220,7 +223,8 @@ impl BoxConstraints {
         .normalized()
     }
 
-    /// Versi yang sumbunya dipaksa ke nilai tertentu (bila diberikan).
+    /// The variant with the given axes pinned to an exact value (where
+    /// supplied).
     pub fn tighten(self, width: Option<f32>, height: Option<f32>) -> Self {
         let mut c = self;
         if let Some(w) = width {
@@ -236,7 +240,8 @@ impl BoxConstraints {
         c
     }
 
-    /// Versi dengan tinggi tanpa batas — dipakai isi scroll view vertikal.
+    /// The variant with unbounded height — used for the content of a vertical
+    /// scroll view.
     pub fn with_unbounded_height(self) -> Self {
         Self {
             min_height: 0.0,
@@ -245,7 +250,8 @@ impl BoxConstraints {
         }
     }
 
-    /// Versi dengan lebar tanpa batas — dipakai isi scroll view horizontal.
+    /// The variant with unbounded width — used for the content of a horizontal
+    /// scroll view.
     pub fn with_unbounded_width(self) -> Self {
         Self {
             min_width: 0.0,
@@ -254,7 +260,7 @@ impl BoxConstraints {
         }
     }
 
-    /// Benar bila `size` sah menurut constraints ini.
+    /// True when `size` is valid under these constraints.
     pub fn is_satisfied_by(self, size: Size) -> bool {
         size.width >= self.min_width
             && size.width <= self.max_width
@@ -339,7 +345,8 @@ mod tests {
         let c = BoxConstraints::new(-5.0, f32::NAN, 30.0, 10.0).normalized();
         assert_eq!(c.min_width, 0.0);
         assert_eq!(c.max_width, 0.0);
-        // max lebih kecil dari min: min yang menang, bukan constraints terbalik.
+        // max smaller than min: min wins, rather than producing inverted
+        // constraints.
         assert_eq!(c.min_height, 30.0);
         assert_eq!(c.max_height, 30.0);
     }

@@ -1,12 +1,13 @@
-//! Uji `text_field` — seluruhnya lewat **lapisan input**, bukan dengan
-//! memanggil method internal.
+//! `text_field` tests — every one of them through the **input layer**, never by
+//! calling internal methods.
 //!
-//! Alasannya sama dengan alasan uji `button` mengklik lewat koordinat dari
-//! pohon aksesibilitas: yang harus terbukti bukan "fungsi ini mengembalikan
-//! nilai itu", melainkan "pengguna yang mengetik/mengklik/mengarang komposisi
-//! IME mendapat hasil yang benar". Semua yang murni Unicode (grapheme, kata,
-//! undo, preedit) sudah diuji di `silka_text::edit`; di sini yang diuji adalah
-//! sambungannya ke pohon, geometri, token, a11y, dan spring.
+//! The reasoning is the same as for the `button` tests clicking via coordinates
+//! taken from the accessibility tree: what has to be proven is not "this
+//! function returns that value" but "a user who types, clicks, or builds up an
+//! IME composition gets the right result". Everything purely Unicode
+//! (graphemes, words, undo, preedit) is already tested in `silka_text::edit`;
+//! what is tested here is the wiring into the tree, the geometry, the tokens,
+//! a11y, and the springs.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -29,10 +30,10 @@ use crate::fonts::Fonts;
 
 const RUANG: Size = Size::new(320.0, 200.0);
 
-/// Emoji keluarga ZWJ: satu grapheme, 25 byte.
+/// ZWJ family emoji: one grapheme, 25 bytes.
 const KELUARGA: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
 
-/// Satu kolom teks di dalam pohon, lengkap dengan penyalur input.
+/// A single text field inside a tree, wired up to an input router.
 struct Uji {
     tree: RenderTree,
     router: InputRouter,
@@ -92,7 +93,8 @@ impl Uji {
         self.router.dispatch(&mut self.tree, &Event::Ime(e))
     }
 
-    /// Tekan di `x` (koordinat lokal = global, kolomnya di pojok pohon).
+    /// Press at `x` (local == global coordinates: the field sits at the tree's
+    /// corner).
     fn tekan(&mut self, x: f32) {
         let y = self.ukuran().height / 2.0;
         let t = self.maju(300);
@@ -130,8 +132,9 @@ impl Uji {
         self.lepas(x);
     }
 
-    /// Klik beruntun **tanpa jeda**: router yang menghitung ganda/tripel-nya,
-    /// dari ambang milik framework — bukan dari angka yang ditulis di sini.
+    /// Rapid-fire clicks **with no pause**: the router is what counts them as
+    /// double/triple, using the framework's own thresholds — not a number
+    /// written down here.
     fn klik_beruntun(&mut self, x: f32, kali: u32) {
         let y = self.ukuran().height / 2.0;
         for _ in 0..kali {
@@ -165,7 +168,7 @@ impl Uji {
             .sum()
     }
 
-    /// Layout ulang seperti yang dilakukan siklus frame setelah ada yang kotor.
+    /// Re-layout the way the frame cycle does once something is marked dirty.
     fn tata(&mut self) {
         self.tree.layout(BoxConstraints::loose(RUANG));
     }
@@ -179,7 +182,7 @@ fn tema() -> Theme {
     Theme::cupertino(Appearance::Dark)
 }
 
-/// Pencatat `on_change`: berapa kali dipanggil dan dengan apa.
+/// An `on_change` recorder: how many times it fired, and with what.
 #[derive(Default, Clone)]
 struct Catatan(Rc<RefCell<Vec<String>>>);
 
@@ -199,7 +202,7 @@ impl Catatan {
 }
 
 // ---------------------------------------------------------------------------
-// Bentuk & aksesibilitas
+// Shape & accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -236,7 +239,7 @@ fn dibacakan_screen_reader_sebagai_kolom_teks_berisi_nilainya() {
         e.node.actions.contains(AccessActions::SET_VALUE),
         "dikte suara harus bisa mengisi kolom"
     );
-    // Kotaknya datang dari hasil layout, bukan dari widget.
+    // The bounds come from the layout result, not from the widget.
     assert_eq!(e.bounds.size, u.ukuran());
 }
 
@@ -251,7 +254,7 @@ fn kolom_mati_dibacakan_tapi_tidak_bisa_dipakai() {
     assert!(!e.node.actions.contains(AccessActions::FOCUS));
     assert!(!e.node.actions.contains(AccessActions::SET_VALUE));
 
-    // Klik tidak memberi fokus, ketikan tidak masuk.
+    // Clicking grants no focus, and keystrokes go nowhere.
     u.klik(20.0);
     u.ketik("x");
     assert_eq!(u.teks(), "beku");
@@ -275,7 +278,7 @@ fn placeholder_tampil_saat_kosong_lalu_menghilang_saat_diketik() {
 }
 
 // ---------------------------------------------------------------------------
-// Mengetik
+// Typing
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -290,7 +293,7 @@ fn mengetik_lewat_lapisan_input_mengisi_kolom_dan_melapor_sekali_per_huruf() {
     assert_eq!(catatan.jumlah(), 4);
     assert_eq!(catatan.terakhir().as_deref(), Some("halo"));
 
-    // Spasi adalah tombol bernama, bukan karakter — dan tetap menghasilkan teks.
+    // Space is a named key, not a character — and it still produces text.
     u.tombol(KeyCode::Named(NamedKey::Space), Modifiers::NONE);
     assert_eq!(u.teks(), "halo ");
 }
@@ -378,7 +381,7 @@ fn tab_tidak_ditelan_kolom_teks() {
     u.fokus();
     let r = u.tombol(KeyCode::Named(NamedKey::Tab), Modifiers::NONE);
     assert_eq!(u.teks(), "", "Tab bukan karakter");
-    // Router yang memakainya untuk navigasi fokus — dan itu memang benar.
+    // The router is what uses it for focus navigation — and rightly so.
     assert!(r.handled);
 }
 
@@ -393,7 +396,7 @@ fn escape_dibiarkan_menggelembung_ke_overlay() {
 }
 
 // ---------------------------------------------------------------------------
-// Caret, seleksi, dan penunjuk
+// Caret, selection, and pointer
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -403,11 +406,11 @@ fn klik_menaruh_caret_di_tempat_yang_diklik() {
     let mut u = Uji::baru(text_field(&f, &t, "satu dua tiga"));
     u.fokus();
 
-    // Klik jauh di kanan teks = caret di akhir.
+    // Clicking far to the right of the text = caret at the end.
     u.klik(RUANG.width - 4.0);
     assert_eq!(u.kolom().selection().range(), 13..13);
 
-    // Klik di pangkal teks = caret di awal.
+    // Clicking at the start of the text = caret at the beginning.
     u.klik(1.0);
     assert_eq!(u.kolom().selection().range(), 0..0);
     assert!(u.kolom().selection().is_collapsed());
@@ -420,8 +423,8 @@ fn klik_ganda_menyeleksi_kata_klik_tripel_seluruh_isi() {
     let mut u = Uji::baru(text_field(&f, &t, "satu dua tiga"));
     u.fokus();
 
-    // Titik di **tengah** kata "dua" (indeks 5..8): diambil dari dua posisi
-    // caret sungguhan, bukan dari angka yang ditebak.
+    // A point in the **middle** of the word "dua" (indices 5..8): derived from
+    // two real caret positions, not from a guessed number.
     u.klik(1.0);
     let caret_x = |u: &mut Uji, n: usize| {
         u.tombol(KeyCode::Named(NamedKey::Home), Modifiers::NONE);
@@ -461,12 +464,12 @@ fn seret_menyeleksi_rentang_dan_kotak_sorotnya_digambar() {
     assert_eq!(seleksi.anchor, 0);
     assert!(!u.kolom().selection_rects().is_empty());
     u.lepas(60.0);
-    // Sorotan memudar bersama transisi fokus; transisinya diselesaikan dulu
-    // supaya yang dibandingkan adalah warna tokennya, bukan warna di tengah
-    // animasi.
+    // The highlight fades along with the focus transition; the transition is
+    // settled first so what gets compared is the token color, not a color
+    // caught mid-animation.
     crate::settle(&mut u.tree);
 
-    // Sorotan benar-benar sampai ke perintah gambar, di bawah teks.
+    // The highlight really does reach the draw commands, underneath the text.
     let scene = u.scene();
     let kuas: Vec<_> = scene
         .commands()
@@ -526,7 +529,7 @@ fn caret_selalu_terlihat_walau_isinya_lebih_panjang_dari_kolom() {
     let panjang = "kalimat yang jauh lebih panjang daripada lebar kolomnya sendiri, sungguh";
     let mut u = Uji::baru(text_field(&f, &t, panjang));
     u.fokus();
-    // Caret ke ujung kanan: isinya harus tergulir, bukan caretnya yang hilang.
+    // Caret to the far right: the contents must scroll, not the caret vanish.
     u.tombol(KeyCode::Named(NamedKey::End), Modifiers::NONE);
     let kotak = u.kolom().caret_rect();
     assert!(u.kolom().scroll() > 0.0, "isi harus tergulir");
@@ -535,7 +538,7 @@ fn caret_selalu_terlihat_walau_isinya_lebih_panjang_dari_kolom() {
         "caret keluar kolom: {kotak:?}"
     );
 
-    // Kembali ke awal: guliran pulang, caret di pangkal.
+    // Back to the start: the scroll comes home, the caret sits at the front.
     u.tombol(KeyCode::Named(NamedKey::Home), Modifiers::NONE);
     assert_eq!(u.kolom().scroll(), 0.0);
 }
@@ -597,7 +600,7 @@ fn preedit_dirender_inline_tapi_tidak_pernah_dilaporkan_ke_aplikasi() {
         "preedit wajib bergaris bawah (§3.8)"
     );
 
-    // Commit memindahkannya menjadi isi sungguhan, sekali lapor.
+    // Commit turns it into real contents, reported exactly once.
     u.ime(ImeEvent::Commit("に".into()));
     u.tata();
     assert!(!u.kolom().is_composing());
@@ -621,7 +624,7 @@ fn selama_komposisi_jalur_tombol_normal_ditahan() {
         cursor: None,
     });
 
-    // Huruf dan panah yang datang saat komposisi berjalan milik IME, bukan kita.
+    // Letters and arrows arriving mid-composition belong to the IME, not us.
     u.ketik("x");
     u.tombol(KeyCode::Named(NamedKey::Backspace), Modifiers::NONE);
     assert_eq!(u.teks(), "");
@@ -666,9 +669,9 @@ fn area_kandidat_ime_mengikuti_caret() {
         "kolom di pojok = lokal == global"
     );
 
-    // Caret pindah → areanya ikut pindah. Area yang **tidak** berubah tidak
-    // menghasilkan permintaan sama sekali, jadi caretnya dipindahkan dulu ke
-    // pangkal: shell tidak pernah dibangunkan untuk kabar yang sama.
+    // Caret moves → its area moves with it. An area that does **not** change
+    // produces no request at all, so the caret is moved to the front first: the
+    // shell is never woken for news it already has.
     u.klik(1.0);
     let area = u.kolom().caret_rect();
     let r = u.tombol(KeyCode::Named(NamedKey::End), Modifiers::NONE);
@@ -678,13 +681,13 @@ fn area_kandidat_ime_mengikuti_caret() {
     };
     assert!(baru.min_x() > area.min_x());
 
-    // Kehilangan fokus mematikan IME.
+    // Losing focus switches the IME off.
     let r = u.router.focus_node(&mut u.tree, None);
     assert_eq!(r.ime, Some(ImeRequest::Disable));
 }
 
 // ---------------------------------------------------------------------------
-// Token, preset, dark mode
+// Tokens, presets, dark mode
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -771,7 +774,7 @@ fn dark_mode_mengganti_seluruh_warna_tanpa_menyentuh_geometri() {
 }
 
 // ---------------------------------------------------------------------------
-// Spring & reduced-motion
+// Springs & reduced-motion
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -781,7 +784,7 @@ fn cincin_fokus_tumbuh_lewat_spring_bukan_melompat() {
     let mut u = Uji::baru(text_field(&f, &t, "isi"));
     let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
 
-    // Kolom diam tidak meminta satu frame pun.
+    // A field at rest asks for not a single frame.
     assert_eq!(crate::advance(&mut u.tree, &tick), Dirty::NONE);
 
     u.fokus();
@@ -800,12 +803,12 @@ fn cincin_fokus_tumbuh_lewat_spring_bukan_melompat() {
         frame > 1,
         "transisi selesai dalam satu frame = itu lompatan"
     );
-    // Setelah settle, GPU boleh tidur lagi.
+    // Once settled, the GPU is allowed back to sleep.
     assert_eq!(crate::advance(&mut u.tree, &tick), Dirty::NONE);
     assert!(tebal_cincin(&mut u, t.color.focus_ring) > 0.0);
 }
 
-/// Tebal cincin fokus yang benar-benar digambar frame ini.
+/// The focus-ring thickness actually drawn this frame.
 fn tebal_cincin(u: &mut Uji, warna: silka_paint::Color) -> f32 {
     u.scene()
         .commands()
@@ -832,8 +835,8 @@ fn reduced_motion_tetap_menjelaskan_tapi_tanpa_pantulan() {
         frame += 1;
         assert!(frame < 600);
     }
-    // Gerakan tetap terjadi (fokus adalah informasi, bukan hiasan), dan
-    // berakhir di tempat yang sama dengan gerakan penuh.
+    // The motion still happens (focus is information, not decoration), and it
+    // ends up in the same place full motion would.
     assert!(frame > 0);
     assert!(tebal_cincin(&mut u, t.color.focus_ring) > 0.0);
 }
@@ -850,7 +853,7 @@ fn settle_menyelesaikan_semuanya_seketika() {
 }
 
 // ---------------------------------------------------------------------------
-// Diffing: nilai terkendali tanpa melempar caret
+// Diffing: a controlled value without throwing the caret around
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -862,8 +865,9 @@ fn rebuild_dengan_nilai_props_yang_sama_tidak_melempar_caret() {
     u.klik(1.0);
     assert_eq!(u.kolom().selection().range(), 0..0);
 
-    // Rebuild karena signal lain berubah: props-nya sama, jadi isi dan caret
-    // kolom tidak boleh disentuh sama sekali (bug "controlled component").
+    // A rebuild caused by some other signal: the props are identical, so the
+    // field's contents and caret must not be touched at all (the "controlled
+    // component" bug).
     let stat = reconcile(&mut u.tree, text_field(&f, &t, "halo").placeholder("beda"));
     assert_eq!(stat.created, 0, "node yang sama, hanya props-nya berganti");
     assert_eq!(u.kolom().selection().range(), 0..0);
@@ -888,8 +892,8 @@ fn mengetik_lalu_rebuild_dengan_nilai_lama_dari_props_tidak_membatalkan_ketikan(
     let mut u = Uji::baru(text_field(&f, &t, ""));
     u.fokus();
     u.ketik("kete");
-    // Aplikasi yang **tidak** menyambungkan `on_change` tetap mendapat kolom
-    // yang bisa diketik: props yang tidak berubah tidak pernah menimpa isi.
+    // An app that does **not** wire up `on_change` still gets a typable field:
+    // props that never change never overwrite the contents.
     reconcile(&mut u.tree, text_field(&f, &t, ""));
     assert_eq!(u.teks(), "kete");
 }
@@ -906,7 +910,7 @@ fn nilai_yang_dikirim_balik_lewat_on_change_tidak_menggerakkan_caret() {
     let mut u = Uji::baru(text_field(&f, &t, "").on_change(tulis));
     u.fokus();
     u.ketik("ab");
-    // Siklus lengkap: signal berubah → rebuild dengan nilai baru.
+    // The full round trip: the signal changes → rebuild with the new value.
     let isi = nilai.borrow().clone();
     reconcile(&mut u.tree, text_field(&f, &t, isi.clone()));
     u.tata();
@@ -918,7 +922,7 @@ fn nilai_yang_dikirim_balik_lewat_on_change_tidak_menggerakkan_caret() {
         "caret harus tetap di ujung ketikan"
     );
 
-    // Dan mengetik lagi menyambung, bukan mengulang dari awal.
+    // And typing again continues from there instead of starting over.
     u.ketik("c");
     assert_eq!(u.teks(), "abc");
 }
@@ -943,7 +947,7 @@ fn kotak_seleksi_dan_caret_ikut_bergeser_saat_isi_tergulir() {
 }
 
 // ---------------------------------------------------------------------------
-// Teknologi bantu
+// Assistive technology
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -971,7 +975,7 @@ fn dikte_suara_mengisi_kolom_lewat_aksi_set_value() {
         Some("Ubud"),
         "dikte suara adalah pengguna yang mengetik: aplikasi wajib diberi tahu"
     );
-    // Nilai yang sama tidak menghasilkan kabar kedua.
+    // The same value produces no second notification.
     assert!(!apply_access_action(&mut u.tree, &permintaan));
     assert_eq!(catatan.jumlah(), 1);
 }

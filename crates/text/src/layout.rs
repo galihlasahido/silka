@@ -1,32 +1,33 @@
-//! Hasil layout sepotong teks: baris, baseline, dan glyph yang sudah dishape.
+//! The layout of a piece of text: lines, baselines, and shaped glyphs.
 //!
-//! [`TextLayout`] adalah bentuk antara antara "ukur" dan "gambar". Ia menyimpan
-//! hasil shaping supaya frame berikutnya tidak perlu mengulang pekerjaan
-//! termahal di seluruh framework, dan supaya rasterisasi bisa memakai origin
-//! yang berbeda-beda (scroll, animasi) tanpa shaping ulang — itu yang membuat
-//! **subpixel positioning** tetap benar saat teks digeser.
+//! [`TextLayout`] is the intermediate form between "measure" and "draw". It
+//! keeps the shaping result so the next frame need not redo the most expensive
+//! work in the whole framework, and so rasterization can use different origins
+//! (scrolling, animation) without reshaping — which is what keeps **subpixel
+//! positioning** correct as text moves.
 
 use silka_paint::{Point, Rect, Size};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::measure::{TextConstraints, TextMeasure};
 
-/// Metrik satu baris hasil layout, poin logis relatif tepi atas blok teks.
+/// Metrics for one laid-out line, in logical points relative to the top edge of
+/// the text block.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LineMetrics {
-    /// Jarak tepi atas blok ke tepi atas baris.
+    /// Distance from the block's top edge to the line's top edge.
     pub top: f32,
-    /// Jarak tepi atas blok ke baseline baris.
+    /// Distance from the block's top edge to the line's baseline.
     pub baseline: f32,
-    /// Tinggi baris.
+    /// The line height.
     pub height: f32,
-    /// Lebar isi baris.
+    /// The width of the line's content.
     pub width: f32,
-    /// Benar bila arah paragraf baris ini kanan-ke-kiri (§9.8).
+    /// True when this line's paragraph direction is right-to-left (§9.8).
     pub rtl: bool,
 }
 
-/// Teks yang sudah dishape dan siap dirasterisasi.
+/// Text that has been shaped and is ready to rasterize.
 pub struct TextLayout {
     pub(crate) buffer: cosmic_text::Buffer,
     pub(crate) max_lines: Option<usize>,
@@ -45,32 +46,32 @@ impl std::fmt::Debug for TextLayout {
 }
 
 impl TextLayout {
-    /// Hasil pengukuran layout ini.
+    /// This layout's measurement.
     pub fn measure(&self) -> TextMeasure {
         self.measure
     }
 
-    /// Ukuran akhir setelah dijepit constraints.
+    /// The final size after clamping to the constraints.
     pub fn size(&self) -> Size {
         self.measure.size
     }
 
-    /// Jumlah baris yang dilayout.
+    /// How many lines were laid out.
     pub fn line_count(&self) -> usize {
         self.measure.line_count
     }
 
-    /// Jumlah glyph yang akan digambar (termasuk yang tanpa piksel).
+    /// How many glyphs will be drawn (including those without pixels).
     pub fn glyph_count(&self) -> usize {
         self.glyph_count
     }
 
-    /// Benar bila ada konten yang tidak muat — sinyal untuk ellipsis/clip.
+    /// True when some content did not fit — the signal for ellipsis/clipping.
     pub fn overflowed(&self) -> bool {
         self.measure.overflowed
     }
 
-    /// Metrik per baris — dipakai caret, seleksi, dan `align_baseline`.
+    /// Per-line metrics — used by the caret, selection, and `align_baseline`.
     pub fn lines(&self) -> Vec<LineMetrics> {
         self.buffer
             .layout_runs()
@@ -87,29 +88,32 @@ impl TextLayout {
 }
 
 // ---------------------------------------------------------------------------
-// Geometri caret & seleksi
+// Caret & selection geometry
 // ---------------------------------------------------------------------------
 
-/// Tempat caret berdiri, poin logis relatif tepi kiri-atas blok teks.
+/// Where the caret stands, in logical points relative to the top-left corner of
+/// the text block.
 ///
-/// Tingginya adalah tinggi **baris**, bukan tinggi glyph: caret di baris kosong
-/// tetap setinggi baris, dan caret di sebelah huruf kecil tidak menyusut.
+/// Its height is the **line** height, not the glyph height: a caret on an empty
+/// line is still a full line tall, and a caret next to a lowercase letter does
+/// not shrink.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Caret {
-    /// Jarak dari tepi kiri blok.
+    /// Distance from the block's left edge.
     pub x: f32,
-    /// Tepi atas baris tempat caret berada.
+    /// The top edge of the line the caret sits on.
     pub top: f32,
-    /// Tinggi baris.
+    /// The line height.
     pub height: f32,
-    /// Indeks baris paragraf (bukan baris visual hasil wrap).
+    /// The paragraph line index (not the visual line produced by wrapping).
     pub line: usize,
-    /// Benar bila baris itu kanan-ke-kiri (§9.8).
+    /// True when that line is right-to-left (§9.8).
     pub rtl: bool,
 }
 
 impl TextLayout {
-    /// Indeks byte awal tiap [`cosmic_text::BufferLine`] di dalam teks sumber.
+    /// The starting byte index of each [`cosmic_text::BufferLine`] within the
+    /// source text.
     fn awal_baris(&self) -> Vec<usize> {
         let mut out = Vec::with_capacity(self.buffer.lines.len());
         let mut jalan = 0usize;
@@ -120,7 +124,7 @@ impl TextLayout {
         out
     }
 
-    /// Panjang teks sumber dalam byte.
+    /// The length of the source text in bytes.
     fn panjang(&self) -> usize {
         self.buffer.lines.iter().enumerate().fold(0, |n, (i, l)| {
             let ekor = if i + 1 == self.buffer.lines.len() {
@@ -132,16 +136,17 @@ impl TextLayout {
         })
     }
 
-    /// Batas jumlah baris yang benar-benar dilayout.
+    /// The limit on how many lines are actually laid out.
     fn batas(&self) -> usize {
         self.max_lines.unwrap_or(usize::MAX)
     }
 
-    /// **Hit-test**: titik (koordinat lokal blok) → indeks byte di teks sumber.
+    /// **Hit-test**: a point (block-local coordinates) → a byte index in the
+    /// source text.
     ///
-    /// Inilah yang dipakai klik dan drag-select. Pembagiannya per **grapheme
-    /// cluster**, bukan per glyph: satu emoji ZWJ tidak pernah bisa diklik jadi
-    /// setengah (§3.3).
+    /// This is what clicking and drag-select use. It splits per **grapheme
+    /// cluster**, not per glyph: a ZWJ emoji can never be clicked in half
+    /// (§3.3).
     pub fn hit(&self, point: Point) -> usize {
         let awal = self.awal_baris();
         match self.buffer.hit(point.x, point.y) {
@@ -150,17 +155,17 @@ impl TextLayout {
                 let panjang_baris = self.buffer.lines.get(c.line).map_or(0, |l| l.text().len());
                 dasar + c.index.min(panjang_baris)
             }
-            // Di atas baris pertama = awal teks; di bawah baris terakhir = akhir.
+            // Above the first line = start of text; below the last = the end.
             None if point.y < 0.0 => 0,
             None => self.panjang(),
         }
     }
 
-    /// Geometri caret pada `index` (indeks byte di teks sumber).
+    /// Caret geometry at `index` (a byte index in the source text).
     pub fn caret(&self, index: usize) -> Caret {
         let awal = self.awal_baris();
         let index = index.min(self.panjang());
-        // Baris paragraf yang memuat indeks ini.
+        // The paragraph line containing this index.
         let mut baris = 0usize;
         for (i, mulai) in awal.iter().enumerate() {
             if *mulai > index {
@@ -195,12 +200,11 @@ impl TextLayout {
         terakhir
     }
 
-    /// Kotak-kotak sorot untuk rentang byte `range`, koordinat lokal blok.
+    /// Highlight rects for the byte range `range`, in block-local coordinates.
     ///
-    /// Satu kotak per potongan yang benar-benar bersebelahan secara **visual** —
-    /// bukan satu kotak per baris — supaya seleksi yang melintasi teks bidi
-    /// (Arab di tengah kalimat Latin) tidak menyorot bagian yang tidak
-    /// terseleksi (§9.8).
+    /// One rect per run that is genuinely contiguous **visually** — not one rect
+    /// per line — so a selection crossing bidi text (Arabic inside a Latin
+    /// sentence) never highlights parts that are not selected (§9.8).
     pub fn selection_rects(&self, range: core::ops::Range<usize>) -> Vec<Rect> {
         if range.is_empty() {
             return Vec::new();
@@ -232,10 +236,11 @@ impl TextLayout {
     }
 }
 
-/// Posisi x caret di dalam satu baris visual, bila indeksnya memang di sana.
+/// The caret's x position within one visual line, if the index does live there.
 ///
-/// Mengikuti aturan cosmic-text: caret berdiri di **tepi logis** glyph, jadi di
-/// teks kanan-ke-kiri ia muncul di sisi kanan glyph berikutnya.
+/// This follows cosmic-text's rule: the caret sits at the glyph's **logical
+/// edge**, so in right-to-left text it appears on the right side of the next
+/// glyph.
 fn x_caret(run: &cosmic_text::LayoutRun<'_>, index: usize) -> Option<f32> {
     for glyph in run.glyphs {
         if index == glyph.start {
@@ -246,8 +251,8 @@ fn x_caret(run: &cosmic_text::LayoutRun<'_>, index: usize) -> Option<f32> {
             });
         }
         if index > glyph.start && index < glyph.end {
-            // Di dalam satu cluster (satu glyph mewakili beberapa byte): bagi
-            // rata per grapheme, sama seperti yang dilakukan cosmic-text.
+            // Inside one cluster (a single glyph standing for several bytes):
+            // split it evenly per grapheme, just as cosmic-text does.
             let cluster = &run.text[glyph.start..glyph.end];
             let total = cluster.grapheme_indices(true).count().max(1);
             let sebelum = cluster
@@ -269,16 +274,16 @@ fn x_caret(run: &cosmic_text::LayoutRun<'_>, index: usize) -> Option<f32> {
             glyph.x + glyph.w
         }),
         Some(_) => None,
-        // Baris kosong: caret di pangkal baris.
+        // Empty line: the caret sits at the start of the line.
         None if index == 0 => Some(0.0),
         None => None,
     }
 }
 
-/// Ukur buffer yang sudah dishape.
+/// Measure a buffer that has already been shaped.
 ///
-/// `max_lines` dipotong di sini (cosmic-text sendiri tidak punya konsep itu),
-/// dan pemotongan apa pun menandai hasilnya `overflowed`.
+/// `max_lines` is applied here (cosmic-text has no such concept of its own), and
+/// any truncation marks the result as `overflowed`.
 pub(crate) fn ukur(
     buffer: &cosmic_text::Buffer,
     constraints: TextConstraints,
@@ -311,7 +316,7 @@ pub(crate) fn ukur(
     }
 
     if baris == 0 {
-        // Teks kosong tetap setinggi satu baris supaya caret punya tempat.
+        // Empty text is still one line tall so the caret has somewhere to live.
         height = line_height;
     }
 
@@ -340,7 +345,7 @@ mod tests {
     use crate::{TextConstraints, TextEngine, TextStyle};
     use silka_paint::Point;
 
-    /// "é" sebagai e + combining acute: satu grapheme, dua char.
+    /// "é" as e + combining acute: one grapheme, two chars.
     const AKSEN: &str = "cafe\u{301}";
 
     fn layout(teks: &str) -> (TextEngine, super::TextLayout) {
@@ -364,7 +369,7 @@ mod tests {
             x = c.x;
         }
         assert_eq!(l.caret(0).x, 0.0, "caret di awal menempel tepi kiri");
-        // Caret di akhir berada di ujung kanan teks.
+        // The caret at the end sits at the right edge of the text.
         assert!((l.caret(4).x - l.size().width).abs() < 2.0);
     }
 
@@ -379,11 +384,11 @@ mod tests {
     #[test]
     fn hit_test_mengembalikan_indeks_di_batas_grapheme() {
         let (_e, l) = layout(AKSEN);
-        // Klik jauh di kanan = akhir teks; jauh di kiri = awal.
+        // Clicking far right = end of the text; far left = the beginning.
         assert_eq!(l.hit(Point::new(1000.0, 4.0)), AKSEN.len());
         assert_eq!(l.hit(Point::new(-50.0, 4.0)), 0);
 
-        // Klik tepat di tengah "é" tidak pernah membelah graphemenya.
+        // Clicking dead centre of "é" never splits its grapheme.
         let kiri = l.caret(3).x;
         let kanan = l.caret(AKSEN.len()).x;
         let indeks = l.hit(Point::new((kiri + kanan) / 2.0, 4.0));
@@ -398,8 +403,8 @@ mod tests {
         let (_e, l) = layout("Halo dunia");
         for i in [0usize, 1, 4, 5, 10] {
             let c = l.caret(i);
-            // Setengah piksel ke kanan dari caret harus mendarat di indeks yang
-            // sama: inilah yang membuat klik terasa "tepat".
+            // Half a pixel to the right of the caret must land on the same
+            // index: this is what makes clicking feel "exact".
             let balik = l.hit(Point::new(c.x + 0.5, c.top + c.height / 2.0));
             assert_eq!(balik, i, "caret {i} -> x {} -> {balik}", c.x);
         }
@@ -417,7 +422,7 @@ mod tests {
 
         let sebagian = l.selection_rects(0..4);
         assert!(sebagian[0].size.width < semua[0].size.width);
-        // Tepi kanan seleksi berimpit dengan caret di ujungnya.
+        // The selection's right edge coincides with the caret at its end.
         assert!((sebagian[0].max_x() - l.caret(4).x).abs() < 2.0);
     }
 
@@ -435,7 +440,7 @@ mod tests {
         assert_eq!(bawah.line, 1);
         assert!(bawah.top > atas.top);
         assert_eq!(bawah.x, 0.0);
-        // Hit-test di baris kedua mengembalikan indeks global, bukan lokal.
+        // Hit-testing the second line returns a global index, not a local one.
         let indeks = l.hit(Point::new(1000.0, bawah.top + bawah.height / 2.0));
         assert_eq!(indeks, 8);
     }

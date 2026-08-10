@@ -1,12 +1,12 @@
-//! Dua preset first-party (§2.7).
+//! The two first-party presets (§2.7).
 //!
-//! Preset adalah **satu-satunya** tempat token semantik bertemu angka. Widget
-//! tidak pernah menyebut modul ini; ia menyebut [`crate::Theme`], dan theme
-//! dibangun dari `(Preset, Appearance)`.
+//! A preset is the **only** place semantic tokens meet numbers. Widgets never
+//! name this module; they name [`crate::Theme`], and a theme is built from
+//! `(Preset, Appearance)`.
 //!
-//! Preset ketiga (brand kustom) tidak perlu file baru: mulai dari salah satu
-//! preset ini lalu ganti tokennya lewat `Theme::with_colors`/`with_radius`/
-//! `with_typography` (§2.7 — "tinggal isi token").
+//! A third preset (a custom brand) needs no new file: start from one of these
+//! presets and swap its tokens via `Theme::with_colors`/`with_radius`/
+//! `with_typography` (§2.7 — "just fill in the tokens").
 
 pub mod cupertino;
 pub mod tailwind;

@@ -1,24 +1,22 @@
-//! Satu tab: sorotan hover/press bertransisi **spring**, plus node AccessKit
-//! ber-peran [`AccessRole::Tab`].
+//! A single tab: hover/press highlights that transition by **spring**, plus an
+//! AccessKit node with the [`AccessRole::Tab`] role.
 //!
-//! Kenapa bukan [`silka_core::tree::Interactive`] yang dipakai ulang, padahal
-//! `button` memakainya? Karena tiga hal yang berbeda secara kontrak, bukan
-//! secara selera:
+//! Why not reuse [`silka_core::tree::Interactive`], the way `button` does?
+//! Because of three differences of contract, not of taste:
 //!
-//! 1. **Tab bukan tujuan Tab.** Satu deretan tab adalah **satu** perhentian
-//!    keyboard (`FocusPolicy` deretan, bukan tiap tabnya) — kebiasaan
-//!    `NSSegmentedControl` sekaligus pola "roving tabindex" ARIA. `Interactive`
-//!    selalu focusable.
-//! 2. **Tab punya keadaan terpilih**, yang harus muncul di pohon a11y sebagai
-//!    [`AccessToggled`] — `Interactive` tidak punya konsep itu.
-//! 3. **Transisinya spring** (`KOMPONEN.md` DoD), bukan lompatan warna seperti
-//!    `Interactive` hari ini.
+//! 1. **A tab is not a Tab stop.** A tab row is **one** keyboard stop (the
+//!    `FocusPolicy` belongs to the row, not to each tab) — the
+//!    `NSSegmentedControl` habit and the ARIA "roving tabindex" pattern at
+//!    once. `Interactive` is always focusable.
+//! 2. **A tab has selected state**, which must surface in the a11y tree as
+//!    [`AccessToggled`] — `Interactive` has no such concept.
+//! 3. **Its transitions are springs** (`KOMPONEN.md` DoD), not the color jumps
+//!    `Interactive` does today.
 //!
-//! Yang **tidak** dilakukan node ini: menggambar keadaan terpilih. Latar tab
-//! aktif adalah indikator milik deretan ([`super::list::TabListBox`]) yang
-//! bergerak dengan satu spring — kalau tiap tab menggambar latarnya sendiri,
-//! yang terlihat adalah dua kotak menyala bergantian, bukan satu thumb yang
-//! meluncur.
+//! What this node does **not** do: paint the selected state. The active tab's
+//! background is the row's indicator ([`super::list::TabListBox`]), moved by a
+//! single spring — if each tab painted its own background, you would see two
+//! rectangles alternately lighting up rather than one thumb gliding across.
 
 use silka_core::access::{AccessNode, AccessRole, AccessToggled};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick, Tolerance};
@@ -31,48 +29,50 @@ use silka_core::view::ViewNode;
 use silka_core::Callback;
 use silka_paint::{Color, Corners, Point, Quad, Size};
 
-/// Node render satu tab.
+/// Render node for a single tab.
 pub struct TabBox {
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub label: String,
-    /// Posisinya di dalam deretan — argumen yang diberikan ke `on_select`.
+    /// Its position within the row — the argument handed to `on_select`.
     pub index: usize,
-    /// Sedang menjadi tab aktif.
+    /// Currently the active tab.
     pub selected: bool,
-    /// Tidak bisa dipilih (tetap dibacakan sebagai dimmed).
+    /// Cannot be selected (still announced, as dimmed).
     pub disabled: bool,
-    /// Bentuk sudut sorotan — **sama** dengan bentuk hit-test (§3.6).
+    /// Corner shape of the highlight — **identical** to the hit-test shape
+    /// (§3.6).
     pub corners: Corners,
-    /// Sorotan hover (token `surface_hover`).
+    /// Hover highlight (token `surface_hover`).
     pub hover: Color,
-    /// Sorotan tekan (token `surface_pressed`).
+    /// Pressed highlight (token `surface_pressed`).
     pub pressed_color: Color,
-    /// Apa yang dijalankan saat tab ini dipilih pengguna.
+    /// What runs when the user selects this tab.
     pub on_press: Option<Callback>,
 
     hovered: bool,
     pressed: bool,
-    /// Warna sorotan yang sedang berlaku — inilah yang di-spring.
+    /// The highlight color currently in effect — this is what gets sprung.
     tint: SpringValue<Color>,
-    /// Benar begitu ada yang pernah memanggil [`TabBox::advance`].
+    /// True as soon as anything has called [`TabBox::advance`].
     ///
-    /// Lihat [`super`]: tanpa penggerak frame, transisi dijalankan sebagai
-    /// lompatan alih-alih membeku di tengah jalan.
+    /// See [`super`]: without a frame driver, transitions run as jumps instead
+    /// of freezing halfway.
     driven: bool,
 }
 
 impl TabBox {
-    /// Warna sorotan yang seharusnya berlaku untuk keadaan sekarang.
+    /// The highlight color that should apply to the current state.
     ///
-    /// Keadaan diam bukan [`Color::TRANSPARENT`] melainkan warna hover dengan
-    /// alpha nol: yang memudar hanya alpha-nya, sehingga sorotan tidak pernah
-    /// terlihat "menghitam dulu" di tengah transisi.
+    /// The resting state is not [`Color::TRANSPARENT`] but the hover color at
+    /// zero alpha: only the alpha fades, so the highlight never appears to
+    /// "darken first" mid-transition.
     fn target_tint(&self) -> Color {
         if self.disabled {
             return self.hover.with_alpha(0.0);
         }
-        // `pressed` bertahan saat penunjuk ditangkap keluar kotak; tampilan
-        // "ditekan" hanya berlaku selama penunjuknya masih di dalam (AppKit).
+        // `pressed` survives while the captured pointer wanders outside the
+        // box; the "pressed" look only applies while it is still inside
+        // (AppKit).
         if self.pressed && self.hovered {
             self.pressed_color
         } else if self.hovered {
@@ -82,7 +82,7 @@ impl TabBox {
         }
     }
 
-    /// Arahkan sorotan ke keadaan sekarang.
+    /// Aim the highlight at the current state.
     fn arahkan(&mut self) {
         let target = self.target_tint();
         if self.driven {
@@ -92,30 +92,30 @@ impl TabBox {
         }
     }
 
-    /// Warna sorotan yang digambar frame ini.
+    /// The highlight color painted this frame.
     pub fn tint(&self) -> Color {
         self.tint.position()
     }
 
-    /// Benar bila sorotannya masih bergerak.
+    /// True while the highlight is still moving.
     pub fn is_animating(&self) -> bool {
         self.tint.is_animating()
     }
 
-    /// Penunjuk sedang di atas tab ini.
+    /// The pointer is over this tab.
     pub fn is_hovered(&self) -> bool {
         self.hovered
     }
 
-    /// Tab ini sedang ditekan.
+    /// This tab is being pressed.
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
 
-    /// Majukan sorotan satu frame; benar bila warnanya berubah.
+    /// Advance the highlight by one frame; true if its color changed.
     pub fn advance(&mut self, tick: &Tick) -> bool {
-        // Ditandai walau tidak ada yang bergerak: yang penting diketahui adalah
-        // "ada penggerak frame di aplikasi ini", bukan "sedang ada animasi".
+        // Recorded even when nothing is moving: what matters is knowing "this
+        // app has a frame driver", not "an animation is running right now".
         self.driven = true;
         if !self.tint.is_animating() {
             return false;
@@ -125,14 +125,15 @@ impl TabBox {
         self.tint.position() != sebelum
     }
 
-    /// Selesaikan transisi seketika (uji dan snapshot).
+    /// Finish the transition instantly (tests and snapshots).
     pub fn settle(&mut self) {
         self.tint.settle();
     }
 
-    /// Jalankan `on_press` — dipisah agar callback disalin keluar dulu, persis
-    /// [`silka_core::tree::Interactive`]: ia hampir selalu menulis signal, dan
-    /// tulisan signal tidak boleh berjalan sambil node ini dipinjam `&mut`.
+    /// Run `on_press` — split out so the callback is copied out first, exactly
+    /// like [`silka_core::tree::Interactive`]: it almost always writes a
+    /// signal, and a signal write must not run while this node is borrowed
+    /// `&mut`.
     fn pilih(&mut self) {
         if self.disabled {
             return;
@@ -174,8 +175,8 @@ impl RenderNode for TabBox {
         node.role = AccessRole::Tab;
         node.label = Some(self.label.clone());
         node.disabled = self.disabled;
-        // Kosakata a11y kita mengenal on/off/mixed; untuk sebuah tab itulah
-        // yang dibaca screen reader sebagai "terpilih".
+        // Our a11y vocabulary knows on/off/mixed; for a tab that is exactly
+        // what a screen reader reads out as "selected".
         node.toggled = Some(AccessToggled::from(self.selected));
         if !self.disabled {
             node.actions |= silka_core::access::AccessActions::CLICK;
@@ -187,13 +188,13 @@ impl RenderNode for TabBox {
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Tab yang dimatikan tetap menyerap penunjuk: klik di atasnya tidak
-        // boleh menembus ke deretan di belakangnya dan memilih yang lain.
+        // A disabled tab still swallows the pointer: a click on it must not
+        // fall through to the row behind and select something else.
         HitBehavior::Opaque
     }
 
-    /// **Satu deretan = satu perhentian Tab.** Fokusnya dipegang
-    /// [`super::list::TabListBox`]; panah kiri/kanan yang memindahkan pilihan.
+    /// **One row = one Tab stop.** Focus is held by
+    /// [`super::list::TabListBox`]; left/right arrows move the selection.
     fn focus_policy(&self) -> FocusPolicy {
         FocusPolicy::NONE
     }
@@ -235,11 +236,11 @@ impl RenderNode for TabBox {
                 ctx.capture_pointer();
                 ctx.request_paint();
                 ctx.request_animation();
-                // **Sengaja tidak ditandai handled**: fokus harus mendarat di
-                // deretan, bukan di tab (lihat `focus_policy`), dan satu-satunya
-                // cara deretan mendapatkannya adalah membiarkan Down
-                // menggelembung ke leluhur. Penunjuknya tetap milik tab ini —
-                // capture tidak ada hubungannya dengan `handled`.
+                // **Deliberately not marked handled**: focus has to land on the
+                // row, not on the tab (see `focus_policy`), and the only way
+                // the row can get it is by letting Down bubble up to the
+                // ancestor. The pointer still belongs to this tab — capture has
+                // nothing to do with `handled`.
             }
             PointerPhase::Up if p.button == Some(PointerButton::Primary) => {
                 let di_dalam = self.corners.contains(ctx.size(), ctx.local());
@@ -254,7 +255,7 @@ impl RenderNode for TabBox {
                     self.pilih();
                 }
             }
-            // Dibatalkan OS ≠ dilepas: tidak ada pemilihan.
+            // Cancelled by the OS is not a release: nothing gets selected.
             PointerPhase::Cancel if self.pressed => {
                 self.pressed = false;
                 self.arahkan();
@@ -282,7 +283,7 @@ impl core::fmt::Debug for TabBox {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props satu tab — bentuk view dari [`TabBox`].
+/// Props for a single tab — the view form of [`TabBox`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct TabProps {
     pub(super) label: String,
@@ -313,9 +314,9 @@ impl ViewNode for TabProps {
             tint: SpringValue::new(diam)
                 .with_spring(self.spring)
                 .with_tolerance(Tolerance::COLOR)
-                // Sorotan hover tidak menjelaskan apa pun — di bawah
-                // reduced-motion ia hilang sepenuhnya, bukan sekadar kehilangan
-                // pantulannya ([`MotionRole`]).
+                // The hover highlight explains nothing — under reduced-motion
+                // it disappears entirely, rather than merely losing its bounce
+                // ([`MotionRole`]).
                 .decorative(),
             driven: false,
         })
@@ -351,8 +352,8 @@ impl ViewNode for TabProps {
         if n.disabled != self.disabled {
             n.disabled = self.disabled;
             if self.disabled {
-                // Tab yang baru saja dimatikan tidak boleh membeku dalam
-                // keadaan ditekan: penunjuknya tidak akan datang lagi.
+                // A tab that was just disabled must not freeze in the pressed
+                // state: its pointer events will never arrive again.
                 n.pressed = false;
                 n.hovered = false;
             }
@@ -362,14 +363,15 @@ impl ViewNode for TabProps {
         if n.tint.spring() != self.spring {
             n.tint.set_spring(self.spring);
         }
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (lihat `InteractiveProps`).
+        // The callback is always replaced without comparison: the closure is
+        // rebuilt on every rebuild and captures fresh values (see
+        // `InteractiveProps`).
         n.on_press.clone_from(&self.on_press);
         dirty
     }
 }
 
-/// Peran gerakan sorotan tab terhadap reduced-motion.
+/// Motion role of the tab highlight with respect to reduced-motion.
 ///
-/// Konstanta agar uji bisa menyebutnya tanpa membongkar isi node.
+/// A constant so tests can refer to it without prying into the node's innards.
 pub const TAB_TINT_MOTION: MotionRole = MotionRole::Decorative;

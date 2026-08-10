@@ -1,12 +1,12 @@
-//! Mesin runtime signals: arena scope, arena signal, dependency tracking,
-//! dirty marking, dan batching.
+//! The signals runtime engine: scope arena, signal arena, dependency tracking,
+//! dirty marking, and batching.
 //!
-//! Modul ini adalah **detail implementasi**. Yang dilihat penulis widget hanya
-//! [`super::use_signal`], [`super::scope`], dan [`super::Signal`].
+//! This module is an **implementation detail**. All a widget author ever sees
+//! is [`super::use_signal`], [`super::scope`], and [`super::Signal`].
 //!
-//! Dua arena, keduanya ber-ID bergenerasi (`index` + `generation`) persis
-//! seperti render tree dan AccessKit (REKOMENDASI §2): ID yang sudah mati tidak
-//! pernah tertukar dengan penghuni baru di slot yang sama.
+//! Two arenas, both using generational IDs (`index` + `generation`) exactly
+//! like the render tree and AccessKit (REKOMENDASI §2): a dead ID is never
+//! confused with the new occupant of the same slot.
 
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
@@ -17,14 +17,14 @@ use std::rc::{Rc, Weak};
 use super::Key;
 use crate::scheduler::Dirty;
 
-/// Alasan dirty yang dikirim ke scheduler saat sebuah signal berubah.
+/// The dirty reason sent to the scheduler when a signal changes.
 ///
-/// Perubahan signal berarti komponen dibangun ulang → view-diff → ukuran bisa
-/// berubah, tampilan pasti berubah. Karena itu keduanya, bukan `PAINT` saja.
+/// A signal change means a component is rebuilt → view diff → sizes may change
+/// and the visuals certainly do. Hence both flags, not just `PAINT`.
 pub const SIGNAL_DIRTY: Dirty = Dirty::LAYOUT.union(Dirty::PAINT);
 
 // ---------------------------------------------------------------------------
-// Thread-local: daftar runtime + tumpukan build
+// Thread-local: runtime registry + build stack
 // ---------------------------------------------------------------------------
 
 thread_local! {
@@ -33,11 +33,11 @@ thread_local! {
 
 #[derive(Default)]
 struct Tls {
-    /// Runtime hidup di thread ini. Disimpan sebagai `Weak` supaya runtime
-    /// tetap mati saat handle terakhirnya di-drop (tidak ada kebocoran).
+    /// Runtimes alive on this thread. Held as `Weak` so a runtime really dies
+    /// when its last handle is dropped (no leaks).
     runtimes: Vec<(RuntimeId, Weak<RuntimeInner>)>,
-    /// Tumpukan scope yang sedang dibangun. `None` = pembatas
-    /// [`super::untracked`]: pembacaan di atasnya tidak berlangganan apa pun.
+    /// The stack of scopes currently building. `None` marks an
+    /// [`super::untracked`] barrier: reads above it subscribe to nothing.
     building: Vec<Option<(RuntimeId, ScopeId)>>,
     next_runtime: u32,
 }
@@ -51,7 +51,7 @@ fn alloc_runtime_id() -> RuntimeId {
     })
 }
 
-/// Scope yang sedang dibangun di thread ini, bila ada.
+/// The scope currently being built on this thread, if any.
 pub(crate) fn current_build() -> Option<(RuntimeId, ScopeId)> {
     TLS.with(|t| t.borrow().building.last().copied().flatten())
 }
@@ -67,14 +67,14 @@ fn runtime_by_id(id: RuntimeId) -> Option<Runtime> {
     Some(Runtime { inner })
 }
 
-/// Runtime pemilik `id`; panik bila runtime-nya sudah mati.
+/// The runtime that owns `id`; panics if that runtime is already dead.
 pub(crate) fn runtime_of(id: SignalId) -> Runtime {
     runtime_by_id(id.rt).unwrap_or_else(|| {
         panic!("signal {id:?} dipakai setelah runtime-nya mati (atau di thread lain)")
     })
 }
 
-/// Penjaga tumpukan build — memastikan tumpukan tetap benar walau body panik.
+/// Build-stack guard — keeps the stack correct even if the body panics.
 struct BuildGuard;
 
 impl BuildGuard {
@@ -92,24 +92,24 @@ impl Drop for BuildGuard {
     }
 }
 
-/// Jalankan `f` tanpa berlangganan apa pun (pembatas untracked).
+/// Run `f` without subscribing to anything (the untracked barrier).
 pub(crate) fn run_untracked<R>(f: impl FnOnce() -> R) -> R {
     let _g = BuildGuard::push(None);
     f()
 }
 
 // ---------------------------------------------------------------------------
-// ID
+// IDs
 // ---------------------------------------------------------------------------
 
-/// Identitas satu runtime di dalam thread-nya.
+/// The identity of one runtime within its thread.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct RuntimeId(u32);
 
-/// Identitas satu scope komponen di arena runtime.
+/// The identity of one component scope in the runtime arena.
 ///
-/// Bergenerasi: setelah scope-nya mati, ID lama tidak akan pernah cocok lagi
-/// dengan scope baru yang menempati slot yang sama.
+/// Generational: once a scope dies, its old ID never matches a new scope that
+/// takes over the same slot.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScopeId {
     rt: RuntimeId,
@@ -118,12 +118,12 @@ pub struct ScopeId {
 }
 
 impl ScopeId {
-    /// Nomor slot arena (stabil hanya selama scope hidup).
+    /// The arena slot number (stable only while the scope is alive).
     pub fn index(self) -> u32 {
         self.index
     }
 
-    /// Generasi slot — pembeda antara penghuni lama dan baru.
+    /// The slot generation — what tells the old occupant from the new one.
     pub fn generation(self) -> u32 {
         self.generation
     }
@@ -135,7 +135,8 @@ impl fmt::Debug for ScopeId {
     }
 }
 
-/// Identitas satu signal di arena runtime (bergenerasi, sama seperti [`ScopeId`]).
+/// The identity of one signal in the runtime arena (generational, like
+/// [`ScopeId`]).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SignalId {
     rt: RuntimeId,
@@ -144,12 +145,12 @@ pub struct SignalId {
 }
 
 impl SignalId {
-    /// Nomor slot arena.
+    /// The arena slot number.
     pub fn index(self) -> u32 {
         self.index
     }
 
-    /// Generasi slot.
+    /// The slot generation.
     pub fn generation(self) -> u32 {
         self.generation
     }
@@ -162,7 +163,7 @@ impl fmt::Debug for SignalId {
 }
 
 // ---------------------------------------------------------------------------
-// Slot arena
+// Arena slots
 // ---------------------------------------------------------------------------
 
 struct Hook {
@@ -176,20 +177,20 @@ struct ScopeSlot {
     parent: Option<ScopeId>,
     depth: u32,
     key: Key,
-    /// Anak-anak dalam urutan kunjungan build terakhir.
+    /// Children in the order the last build visited them.
     children: Vec<ScopeId>,
-    /// State milik scope ini (`use_signal`), diakses per urutan pemanggilan.
+    /// State owned by this scope (`use_signal`), addressed by call order.
     hooks: Vec<Hook>,
     hook_cursor: usize,
-    /// Signal yang dibaca pada build terakhir — inilah dependency tracking.
+    /// Signals read during the last build — this is the dependency tracking.
     deps: Vec<SignalId>,
     dirty: bool,
     building: bool,
-    /// Anak dari build sebelumnya yang belum dicocokkan (rekonsiliasi kunci).
+    /// Children from the previous build not yet matched (key reconciliation).
     old_children: HashMap<Key, ScopeId>,
-    /// Anak yang sudah dikunjungi pada build yang sedang berjalan.
+    /// Children already visited by the build in progress.
     new_children: Vec<ScopeId>,
-    /// Kunci yang sudah dipakai pada build ini — pendeteksi kunci ganda.
+    /// Keys already used in this build — the duplicate-key detector.
     seen_keys: HashSet<Key>,
 }
 
@@ -217,11 +218,11 @@ impl ScopeSlot {
 struct SignalSlot {
     generation: u32,
     alive: bool,
-    /// `None` saat nilainya sedang dipinjam keluar (lihat [`ValueGuard`]).
+    /// `None` while the value is borrowed out (see [`ValueGuard`]).
     value: Option<Box<dyn Any>>,
-    /// Scope yang membaca signal ini pada build terakhirnya.
+    /// Scopes that read this signal during their last build.
     subscribers: Vec<ScopeId>,
-    /// Scope pemilik bila lahir dari `use_signal`; `None` bila milik runtime.
+    /// The owning scope if it came from `use_signal`; `None` if runtime-owned.
     owner: Option<ScopeId>,
 }
 
@@ -332,7 +333,7 @@ impl State {
         }
     }
 
-    /// Bebaskan satu signal dan lepaskan seluruh langganannya.
+    /// Free one signal and drop every subscription to it.
     fn free_signal(&mut self, id: SignalId) {
         let Some(slot) = self.signal_mut(id) else {
             return;
@@ -351,7 +352,7 @@ impl State {
         }
     }
 
-    /// Bebaskan satu scope beserta seluruh subtree, hook, dan langganannya.
+    /// Free one scope along with its whole subtree, hooks, and subscriptions.
     fn free_scope(&mut self, id: ScopeId) {
         let Some(slot) = self.scope_mut(id) else {
             return;
@@ -389,7 +390,7 @@ impl State {
 // RuntimeInner
 // ---------------------------------------------------------------------------
 
-/// Pemberitahu "ada yang dirty" milik platform ([`Runtime::on_wake`]).
+/// The platform's "something is dirty" notifier ([`Runtime::on_wake`]).
 type Waker = Rc<dyn Fn(Dirty)>;
 
 struct RuntimeInner {
@@ -408,12 +409,12 @@ impl Drop for RuntimeInner {
     }
 }
 
-/// Nilai signal yang dipinjam keluar dari arena; dikembalikan saat di-drop.
+/// A signal value borrowed out of the arena; returned when the guard drops.
 ///
-/// Trik ini melepaskan `RefCell` arena sebelum closure pengguna berjalan,
-/// sehingga membaca signal lain di dalam `with(...)` tidak memanikkan borrow
-/// checker runtime. Akses **rekursif ke signal yang sama** tetap terlarang dan
-/// dilaporkan dengan pesan yang jelas, bukan `already borrowed`.
+/// The trick releases the arena's `RefCell` before the user closure runs, so
+/// reading another signal inside `with(...)` does not trip the runtime borrow
+/// checker. **Recursive access to the same signal** stays forbidden and is
+/// reported with a clear message rather than `already borrowed`.
 struct ValueGuard<'a> {
     inner: &'a RuntimeInner,
     id: SignalId,
@@ -435,21 +436,21 @@ impl Drop for ValueGuard<'_> {
 // Runtime
 // ---------------------------------------------------------------------------
 
-/// Runtime signals: pemilik seluruh state komponen.
+/// The signals runtime: owner of all component state.
 ///
-/// Satu runtime per window/aplikasi. Handle-nya murah di-clone (`Rc` di
-/// dalamnya) dan **tidak** `Send`: signals adalah barang UI thread.
+/// One runtime per window/application. The handle is cheap to clone (an `Rc`
+/// inside) and is **not** `Send`: signals are a UI-thread affair.
 ///
-/// Runtime mendaftarkan dirinya ke thread saat dibuat dan mencabut pendaftaran
-/// saat handle terakhirnya di-drop. Itulah yang membuat [`super::Signal`] bisa
-/// `Copy` tanpa membawa pointer apa pun — persis pola Dioxus.
+/// A runtime registers itself with the thread when created and deregisters when
+/// its last handle drops. That is what lets [`super::Signal`] be `Copy` without
+/// carrying any pointer — exactly the Dioxus pattern.
 #[derive(Clone)]
 pub struct Runtime {
     inner: Rc<RuntimeInner>,
 }
 
 impl Runtime {
-    /// Runtime baru beserta scope akarnya.
+    /// A new runtime along with its root scope.
     pub fn new() -> Self {
         let id = alloc_runtime_id();
         let mut state = State {
@@ -474,42 +475,42 @@ impl Runtime {
         Self { inner }
     }
 
-    /// Runtime yang scope-nya sedang dibangun di thread ini, bila ada.
+    /// The runtime whose scope is currently building on this thread, if any.
     pub fn current() -> Option<Runtime> {
         current_build().and_then(|(rt, _)| runtime_by_id(rt))
     }
 
-    /// Identitas runtime ini.
+    /// This runtime's identity.
     pub fn id(&self) -> RuntimeId {
         self.inner.id
     }
 
-    /// Scope akar.
+    /// The root scope.
     pub fn root(&self) -> ScopeId {
         self.inner.root
     }
 
-    /// Pasang pemberitahu "ada yang dirty".
+    /// Install the "something is dirty" notifier.
     ///
-    /// Dipanggil **sekali per flush** (satu kali per batch, bukan sekali per
-    /// tulisan) dengan alasan [`SIGNAL_DIRTY`]. Sambungkan langsung ke
+    /// Called **once per flush** (once per batch, not once per write) with the
+    /// reason [`SIGNAL_DIRTY`]. Wire it straight to
     /// [`crate::scheduler::FrameScheduler::request`].
     pub fn on_wake(&self, f: impl Fn(Dirty) + 'static) {
         *self.inner.wake.borrow_mut() = Some(Rc::new(f));
     }
 
-    // -- membangun ---------------------------------------------------------
+    // -- building ----------------------------------------------------------
 
-    /// Bangun (atau bangun ulang) scope akar.
+    /// Build (or rebuild) the root scope.
     pub fn build_root<R>(&self, body: impl FnOnce() -> R) -> R {
         self.run_scope(self.inner.root, body)
             .expect("scope akar selalu hidup")
     }
 
-    /// Bangun ulang satu scope saja — inilah "rebuild per-komponen".
+    /// Rebuild a single scope — this is the "per-component rebuild".
     ///
-    /// `None` bila scope sudah mati (mis. terhapus dari list sebelum
-    /// sempat dilayani).
+    /// `None` if the scope is already dead (e.g. removed from a list before it
+    /// could be serviced).
     pub fn rebuild<R>(&self, id: ScopeId, body: impl FnOnce() -> R) -> Option<R> {
         self.run_scope(id, body)
     }
@@ -539,8 +540,8 @@ impl Runtime {
         slot.new_children.clear();
         slot.seen_keys.clear();
 
-        // Langganan lama dilepas: komponen yang berhenti membaca sebuah signal
-        // harus benar-benar berhenti dibangunkan olehnya.
+        // Old subscriptions are dropped: a component that stops reading a
+        // signal must really stop being woken by it.
         for d in deps {
             if let Some(sig) = st.signal_mut(d) {
                 sig.subscribers.retain(|s| *s != id);
@@ -580,7 +581,7 @@ impl Runtime {
         );
     }
 
-    /// Cocokkan (atau buat) anak ber-`key` di bawah scope yang sedang dibangun.
+    /// Match (or create) the child keyed `key` under the scope being built.
     pub(crate) fn reconcile_child(&self, parent: ScopeId, key: Key) -> ScopeId {
         let mut st = self.inner.state.borrow_mut();
         let slot = st
@@ -608,7 +609,7 @@ impl Runtime {
 
     // -- hooks -------------------------------------------------------------
 
-    /// Implementasi [`super::use_signal`].
+    /// The implementation behind [`super::use_signal`].
     pub(crate) fn use_signal_hook<T: 'static>(
         &self,
         scope: ScopeId,
@@ -634,8 +635,8 @@ impl Runtime {
             }
             cursor
         };
-        // `init` boleh membaca signal lain / memanggil runtime, jadi arena
-        // tidak boleh dalam keadaan terpinjam saat ia berjalan.
+        // `init` may read other signals or call into the runtime, so the arena
+        // must not be borrowed while it runs.
         let value = init();
         let mut st = self.inner.state.borrow_mut();
         let id = st.alloc_signal(self.inner.id, Box::new(value), Some(scope));
@@ -654,17 +655,18 @@ impl Runtime {
         id
     }
 
-    /// Signal milik runtime (bukan milik scope) — hidup selama runtime hidup.
+    /// A runtime-owned signal (not owned by a scope) — alive as long as the
+    /// runtime is.
     ///
-    /// Dipakai untuk state tingkat aplikasi dan untuk pengujian; state lokal
-    /// komponen memakai [`super::use_signal`].
+    /// Used for application-level state and for testing; component-local state
+    /// uses [`super::use_signal`].
     pub fn signal<T: 'static>(&self, value: T) -> super::Signal<T> {
         let mut st = self.inner.state.borrow_mut();
         let id = st.alloc_signal(self.inner.id, Box::new(value), None);
         super::Signal::from_id(id)
     }
 
-    // -- nilai signal ------------------------------------------------------
+    // -- signal values -----------------------------------------------------
 
     fn take_value(&self, id: SignalId) -> ValueGuard<'_> {
         let mut st = self.inner.state.borrow_mut();
@@ -728,7 +730,7 @@ impl Runtime {
         old
     }
 
-    /// Catat bahwa scope yang sedang dibangun membaca `id`.
+    /// Record that the scope currently building read `id`.
     pub(crate) fn track(&self, id: SignalId) {
         let Some((rt, scope)) = current_build() else {
             return;
@@ -762,7 +764,7 @@ impl Runtime {
 
     // -- dirty & batching ---------------------------------------------------
 
-    /// Tandai semua pembaca `id` sebagai dirty, lalu bangunkan (sekali).
+    /// Mark every reader of `id` dirty, then wake (once).
     pub(crate) fn notify(&self, id: SignalId) {
         let flush = {
             let mut st = self.inner.state.borrow_mut();
@@ -808,11 +810,11 @@ impl Runtime {
         }
     }
 
-    /// Kelompokkan banyak tulisan menjadi **satu** pembangunan renderer.
+    /// Group many writes into **one** renderer wake-up.
     ///
-    /// Nilai signal berubah seketika (tidak ada transaksi); yang ditunda hanya
-    /// pemberitahuan ke scheduler. Batch boleh bersarang — flush terjadi saat
-    /// batch terluar selesai.
+    /// Signal values change immediately (there is no transaction); only the
+    /// notification to the scheduler is deferred. Batches may nest — the flush
+    /// happens when the outermost one finishes.
     pub fn batch<R>(&self, f: impl FnOnce() -> R) -> R {
         struct Guard<'a>(&'a Runtime);
         impl Drop for Guard<'_> {
@@ -832,27 +834,27 @@ impl Runtime {
         f()
     }
 
-    /// Benar bila sedang berada di dalam [`Runtime::batch`].
+    /// True while inside a [`Runtime::batch`].
     pub fn is_batching(&self) -> bool {
         self.inner.state.borrow().batch_depth > 0
     }
 
-    /// Ambil daftar scope yang harus dibangun ulang.
+    /// Take the list of scopes that must be rebuilt.
     ///
-    /// Hasilnya sudah **diurutkan dari akar ke daun** dan **dipangkas**:
-    /// keturunan dari scope yang juga dirty dibuang, karena membangun ulang
-    /// leluhurnya sudah membangun ulang subtree-nya (§2.5). Semua tanda dirty
-    /// dibersihkan — pemanggil wajib benar-benar membangun ulang hasilnya.
+    /// The result is already **sorted root-to-leaf** and **pruned**: descendants
+    /// of a scope that is itself dirty are dropped, because rebuilding the
+    /// ancestor already rebuilds its subtree (§2.5). All dirty marks are
+    /// cleared — the caller must actually rebuild what it gets back.
     ///
-    /// Konsekuensi kontrak pemangkasan: **membangun ulang sebuah scope harus
-    /// memasuki kembali setiap anak yang dipertahankannya** (lewat [`super::scope`]).
-    /// Selama itu dipenuhi, memoisasi anak boleh ditambahkan nanti — tapi anak
-    /// yang di-memo tidak boleh dilewati saat leluhurnya dirty.
+    /// A consequence of the pruning contract: **rebuilding a scope must re-enter
+    /// every child it keeps** (via [`super::scope`]). As long as that holds,
+    /// child memoization can be added later — but a memoized child must not be
+    /// skipped while its ancestor is dirty.
     ///
-    /// Jebakan yang harus diketahui: menulis signal yang dibaca oleh scope yang
-    /// sedang dibangun akan menandai scope itu dirty lagi, dan frame berikutnya
-    /// akan terus dijadwalkan. Itu terlihat jelas di log frame sebagai animasi
-    /// yang tidak pernah selesai — bukan hang diam-diam.
+    /// A pitfall worth knowing: writing a signal that is read by the scope
+    /// currently building marks that scope dirty again, and the next frame keeps
+    /// getting scheduled. That shows up plainly in the frame log as an animation
+    /// that never settles — not as a silent hang.
     pub fn drain_dirty(&self) -> Vec<ScopeId> {
         let mut st = self.inner.state.borrow_mut();
         let mut kandidat = std::mem::take(&mut st.dirty);
@@ -880,29 +882,29 @@ impl Runtime {
         keluar
     }
 
-    // -- introspeksi (dipakai view layer, devtools, dan test) --------------
+    // -- introspection (used by the view layer, devtools, and tests) --------
 
-    /// Benar bila scope masih hidup.
+    /// True while the scope is alive.
     pub fn is_scope_alive(&self, id: ScopeId) -> bool {
         self.inner.state.borrow().scope(id).is_some()
     }
 
-    /// Benar bila signal masih hidup.
+    /// True while the signal is alive.
     pub fn is_signal_alive(&self, id: SignalId) -> bool {
         self.inner.state.borrow().signal(id).is_some()
     }
 
-    /// Benar bila scope menunggu dibangun ulang.
+    /// True when the scope is waiting to be rebuilt.
     pub fn is_dirty(&self, id: ScopeId) -> bool {
         self.inner.state.borrow().scope(id).is_some_and(|s| s.dirty)
     }
 
-    /// Berapa scope yang menunggu dibangun ulang (sebelum pemangkasan).
+    /// How many scopes are waiting to be rebuilt (before pruning).
     pub fn dirty_len(&self) -> usize {
         self.inner.state.borrow().dirty.len()
     }
 
-    /// Anak-anak scope dalam urutan build terakhir.
+    /// A scope's children, in last-build order.
     pub fn children(&self, id: ScopeId) -> Vec<ScopeId> {
         self.inner
             .state
@@ -912,32 +914,32 @@ impl Runtime {
             .unwrap_or_default()
     }
 
-    /// Induk scope (`None` untuk akar atau scope mati).
+    /// A scope's parent (`None` for the root or a dead scope).
     pub fn parent(&self, id: ScopeId) -> Option<ScopeId> {
         self.inner.state.borrow().scope(id).and_then(|s| s.parent)
     }
 
-    /// Kedalaman scope; akar = 0.
+    /// A scope's depth; the root is 0.
     pub fn depth(&self, id: ScopeId) -> Option<u32> {
         self.inner.state.borrow().scope(id).map(|s| s.depth)
     }
 
-    /// Kunci identitas scope.
+    /// A scope's identity key.
     pub fn key(&self, id: ScopeId) -> Option<Key> {
         self.inner.state.borrow().scope(id).map(|s| s.key.clone())
     }
 
-    /// Jumlah scope hidup (termasuk akar).
+    /// The number of live scopes (including the root).
     pub fn live_scopes(&self) -> usize {
         self.inner.state.borrow().live_scopes
     }
 
-    /// Jumlah signal hidup.
+    /// The number of live signals.
     pub fn live_signals(&self) -> usize {
         self.inner.state.borrow().live_signals
     }
 
-    /// Berapa scope yang berlangganan sebuah signal.
+    /// How many scopes are subscribed to a signal.
     pub fn subscriber_count(&self, id: SignalId) -> usize {
         self.inner
             .state
@@ -947,13 +949,13 @@ impl Runtime {
             .unwrap_or(0)
     }
 
-    /// Scope pemilik sebuah signal; `None` bila signal milik runtime
-    /// ([`Runtime::signal`]) atau signal-nya sudah mati.
+    /// The scope that owns a signal; `None` when the signal is runtime-owned
+    /// ([`Runtime::signal`]) or already dead.
     pub fn signal_owner(&self, id: SignalId) -> Option<ScopeId> {
         self.inner.state.borrow().signal(id).and_then(|s| s.owner)
     }
 
-    /// Berapa signal yang dibaca sebuah scope pada build terakhirnya.
+    /// How many signals a scope read during its last build.
     pub fn dependency_count(&self, id: ScopeId) -> usize {
         self.inner
             .state
@@ -963,7 +965,7 @@ impl Runtime {
             .unwrap_or(0)
     }
 
-    /// Jumlah `use_signal` yang dimiliki sebuah scope.
+    /// How many `use_signal` hooks a scope owns.
     pub fn hook_count(&self, id: ScopeId) -> usize {
         self.inner
             .state

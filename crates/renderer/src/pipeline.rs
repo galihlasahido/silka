@@ -1,10 +1,10 @@
-//! Pipeline SDF: satu shader, satu draw call, semua kotak UI.
+//! The SDF pipeline: one shader, one draw call, every UI box.
 //!
-//! **Semua varian dikompilasi di build time** (pelajaran Impeller, §3.2):
-//! sumber WGSL masuk ke binary lewat [`include_str!`], modulnya dibuat sekali
-//! saat device dibuat, dan perbedaan antar bentuk (arc vs squircle, ada/tidak
-//! border, kotak vs bayangan) adalah **data instance** — bukan varian shader.
-//! Tidak ada satu pun jalur kode yang merakit sumber shader saat runtime.
+//! **Every variant is compiled at build time** (the Impeller lesson, §3.2): the
+//! WGSL source goes into the binary via [`include_str!`], the module is created
+//! once when the device is created, and the differences between shapes (arc vs
+//! squircle, border or not, box vs shadow) are **instance data** — not shader
+//! variants. Not a single code path assembles shader source at runtime.
 
 use silka_paint::{GlyphSource, Size};
 
@@ -12,10 +12,11 @@ use crate::atlas::GlyphAtlasGpu;
 use crate::geometry::SurfaceGeometry;
 use crate::instance::{as_bytes, DrawList, QuadInstance};
 
-/// Sumber shader, ditanam ke binary saat kompilasi Rust.
+/// The shader source, embedded into the binary when Rust is compiled.
 const SDF_WGSL: &str = include_str!("shaders/sdf.wgsl");
 
-/// Isi uniform `Globals` di `sdf.wgsl`: viewport (poin logis) + padding.
+/// The contents of the `Globals` uniform in `sdf.wgsl`: viewport (logical
+/// points) + padding.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 struct Globals {
@@ -23,8 +24,8 @@ struct Globals {
     reserved: [f32; 2],
 }
 
-/// Jumlah instance awal yang dialokasikan; tumbuh dua kali lipat sesuai
-/// kebutuhan dan tidak pernah menyusut, agar frame steady-state bebas alokasi.
+/// The initial instance count allocated; it doubles as needed and never shrinks,
+/// so the steady-state frame is allocation-free.
 const KAPASITAS_AWAL: usize = 256;
 
 #[derive(Debug)]
@@ -35,27 +36,27 @@ pub(crate) struct SdfPipeline {
     bind_group: wgpu::BindGroup,
     instances: wgpu::Buffer,
     kapasitas: usize,
-    /// Atlas glyph di GPU — satu-satunya resource bertekstur pipeline ini.
+    /// The glyph atlas on the GPU — this pipeline's only textured resource.
     atlas: GlyphAtlasGpu,
-    /// Revisi atlas yang sedang dirujuk `bind_group`.
+    /// The atlas revision `bind_group` currently refers to.
     atlas_revision: u64,
 }
 
 impl SdfPipeline {
-    /// Bangun pipeline untuk satu format target.
+    /// Build the pipeline for one target format.
     ///
-    /// Dipanggil sekali per surface; biayanya (kompilasi WGSL → MSL/SPIR-V oleh
-    /// naga) dibayar di muka saat window dibuat, bukan saat frame pertama.
+    /// Called once per surface; its cost (naga compiling WGSL → MSL/SPIR-V) is
+    /// paid up front when the window is created, not on the first frame.
     pub(crate) fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("silka.sdf.wgsl"),
             source: wgpu::ShaderSource::Wgsl(SDF_WGSL.into()),
         });
 
-        // Satu bind group untuk seluruh frame: uniform viewport + kedua atlas
-        // glyph + sampler. Karena semuanya konstan sepanjang frame, tidak ada
-        // pergantian bind group di tengah render pass — syarat agar seluruh
-        // scene (kotak, bayangan, dan teks) muat dalam satu draw call.
+        // One bind group for the whole frame: the viewport uniform + both glyph
+        // atlases + the sampler. Since all of it is constant for the frame,
+        // there is no bind group switch mid render pass — a requirement for the
+        // whole scene (boxes, shadows, and text) to fit in a single draw call.
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("silka.sdf.bind.layout"),
             entries: &[
@@ -114,7 +115,7 @@ impl SdfPipeline {
             immediate_size: 0,
         });
 
-        // Lima vec4 berurutan — cerminan persis `QuadInstance`.
+        // Five consecutive vec4 — an exact mirror of `QuadInstance`.
         let atribut = wgpu::vertex_attr_array![
             0 => Float32x4,
             1 => Float32x4,
@@ -137,12 +138,12 @@ impl SdfPipeline {
                 }],
             },
             primitive: wgpu::PrimitiveState {
-                // Empat titik per instance; tidak ada vertex buffer geometri.
+                // Four points per instance; no geometry vertex buffer.
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                // UI tidak punya sisi belakang — culling hanya akan membuat
-                // kotak menghilang saat matriks proyeksi berubah tanda.
+                // A UI has no back faces — culling would only make boxes
+                // disappear when the projection matrix flips sign.
                 cull_mode: None,
                 unclipped_depth: false,
                 polygon_mode: wgpu::PolygonMode::Fill,
@@ -156,9 +157,9 @@ impl SdfPipeline {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    // Shader menulis warna PREMULTIPLIED (lihat `premultiply`
-                    // di sdf.wgsl) — inilah blending yang benar untuk tepi
-                    // anti-alias dan bayangan bertumpuk.
+                    // The shader writes PREMULTIPLIED color (see `premultiply`
+                    // in sdf.wgsl) — this is the correct blending for
+                    // anti-aliased edges and stacked shadows.
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::One,
@@ -193,11 +194,11 @@ impl SdfPipeline {
         }
     }
 
-    /// Unggah viewport, atlas glyph, dan instance frame ini.
+    /// Upload the viewport, the glyph atlas, and this frame's instances.
     ///
-    /// Atlas disinkronkan **sebelum** draw dan hanya sebesar kotak yang
-    /// berubah; bind group dirakit ulang hanya kalau teksturnya benar-benar
-    /// diganti (atlas tumbuh).
+    /// The atlas is synced **before** drawing and only for the rect that
+    /// changed; the bind group is rebuilt only when the texture itself was
+    /// actually replaced (the atlas grew).
     pub(crate) fn prepare(
         &mut self,
         device: &wgpu::Device,
@@ -218,8 +219,8 @@ impl SdfPipeline {
             viewport: [viewport.width.max(1.0), viewport.height.max(1.0)],
             reserved: [0.0, 0.0],
         };
-        // SAFETY: `Globals` adalah `repr(C)` berisi `f32` saja — sama alasannya
-        // dengan `instance::as_bytes`.
+        // SAFETY: `Globals` is `repr(C)` holding only `f32` — the same reason as
+        // in `instance::as_bytes`.
         let bytes = unsafe {
             core::slice::from_raw_parts(
                 (&globals as *const Globals) as *const u8,
@@ -238,25 +239,26 @@ impl SdfPipeline {
         queue.write_buffer(&self.instances, 0, as_bytes(instances));
     }
 
-    /// Rekam draw call untuk `list` — satu per batch clip.
+    /// Record the draw calls for `list` — one per clip batch.
     ///
-    /// `list` harus yang sama dengan yang diberikan ke [`SdfPipeline::prepare`]
-    /// pada frame ini.
+    /// `list` must be the same one handed to [`SdfPipeline::prepare`] for this
+    /// frame.
     ///
-    /// Scissor rect adalah **state render pass**, bukan parameter draw: ia
-    /// hanya disetel ulang ketika kotaknya benar-benar berubah, sehingga scene
-    /// tanpa clip tetap satu `draw` tanpa satu pun `set_scissor_rect`. Batch
-    /// yang kotaknya menyusut jadi nol (viewport di luar surface, clip terbalik)
-    /// **dilewati seluruhnya** — menggambarnya tanpa potong akan membocorkan
-    /// isi scroll view ke seluruh window.
+    /// The scissor rect is **render pass state**, not a draw parameter: it is
+    /// only reset when the rect genuinely changes, so a scene without clipping
+    /// stays one `draw` with not a single `set_scissor_rect`. A batch whose rect
+    /// collapses to zero (a viewport outside the surface, an inverted clip) is
+    /// **skipped entirely** — drawing it unclipped would spill a scroll view's
+    /// contents across the whole window.
     pub(crate) fn draw(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         list: &DrawList,
         geometry: SurfaceGeometry,
     ) {
-        // Keadaan awal render pass = seluruh attachment; ukurannya sama dengan
-        // geometri surface, karena attachment-lah yang dikonfigurasi darinya.
+        // A render pass starts out covering the whole attachment; its size
+        // matches the surface geometry, since the attachment is configured
+        // from it.
         let Some(penuh) = geometry.full_scissor() else {
             return;
         };
@@ -268,8 +270,8 @@ impl SdfPipeline {
                 None => penuh,
                 Some(rect) => match geometry.scissor(rect) {
                     Some(s) => s,
-                    // Seluruhnya di luar surface: tidak ada piksel yang bisa
-                    // lolos, jadi tidak ada gunanya merekam apa pun.
+                    // Entirely outside the surface: no pixel can get through,
+                    // so there is no point recording anything.
                     None => continue,
                 },
             };
@@ -330,8 +332,8 @@ fn buat_buffer_instance(device: &wgpu::Device, kapasitas: usize) -> wgpu::Buffer
     })
 }
 
-/// Kapasitas berikutnya: berlipat ganda sampai cukup, supaya frame yang
-/// tumbuh perlahan tidak mengalokasi buffer setiap frame.
+/// The next capacity: double until it is enough, so a frame that grows slowly
+/// does not allocate a buffer every frame.
 fn tumbuhkan(kapasitas: usize, dibutuhkan: usize) -> usize {
     let mut baru = kapasitas.max(1);
     while baru < dibutuhkan {
@@ -346,7 +348,7 @@ mod tests {
 
     #[test]
     fn uniform_globals_kelipatan_enam_belas_byte() {
-        // Syarat alignment uniform buffer WebGPU.
+        // A WebGPU uniform buffer alignment requirement.
         assert_eq!(core::mem::size_of::<Globals>() % 16, 0);
     }
 
@@ -360,9 +362,9 @@ mod tests {
 
     #[test]
     fn sumber_shader_ditanam_saat_kompilasi() {
-        // Bukan sekadar uji sepele: ini yang menjaga janji "tanpa shader
-        // runtime". Kalau suatu saat sumber shader dibaca dari file/dirakit
-        // dari string, konstanta ini yang harus dihapus lebih dulu.
+        // Not a trivial test: this is what upholds the "no runtime shaders"
+        // promise. If the shader source is ever read from a file or assembled
+        // from strings, this constant is the first thing that has to go.
         assert!(SDF_WGSL.contains("fn vs_main"));
         assert!(SDF_WGSL.contains("fn fs_main"));
     }
@@ -384,9 +386,9 @@ mod tests {
 
     #[test]
     fn shader_hanya_butuh_kapabilitas_downlevel() {
-        // Validasi tanpa satu pun `Capabilities` di atas sudah membuktikan
-        // shader tidak memakai fitur opsional — syarat agar jalur GL/Linux
-        // lama tetap terbuka (§3.2).
+        // Validating with no `Capabilities` at all above already proves the
+        // shader uses no optional features — the requirement for keeping the
+        // older GL/Linux path open (§3.2).
         let modul = naga::front::wgsl::parse_str(SDF_WGSL).unwrap();
         assert_eq!(modul.entry_points.len(), 2, "hanya vs_main + fs_main");
     }

@@ -1,28 +1,28 @@
-//! `measure(text, constraints)` — jembatan teks ke sistem layout.
+//! `measure(text, constraints)` — the bridge from text to the layout system.
 //!
-//! Protokol layout framework adalah **box constraints ala Flutter**
-//! ("constraints turun, ukuran naik", REKOMENDASI §3.4). Teks adalah leaf node:
-//! ia menerima [`TextConstraints`] dan mengembalikan [`TextMeasure`]. Bentuk
-//! yang sama dipakai Taffy lewat measure function-nya, jadi satu implementasi
-//! melayani dua pemakai.
+//! The framework's layout protocol is **Flutter-style box constraints**
+//! ("constraints go down, sizes come up", REKOMENDASI §3.4). Text is a leaf
+//! node: it takes [`TextConstraints`] and returns [`TextMeasure`]. Taffy uses
+//! the same shape through its measure function, so one implementation serves
+//! both callers.
 
 use silka_paint::Size;
 
 use crate::style::canonical_bits;
 
-/// Batas ruang untuk sepotong teks, dalam poin logis.
+/// The space budget for a piece of text, in logical points.
 ///
-/// `max_width`/`max_height` boleh [`f32::INFINITY`] — artinya "seukuran
-/// konten" (intrinsic sizing).
+/// `max_width`/`max_height` may be [`f32::INFINITY`] — meaning "size to the
+/// content" (intrinsic sizing).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextConstraints {
-    /// Lebar minimum.
+    /// Minimum width.
     pub min_width: f32,
-    /// Lebar maksimum (boleh tak hingga).
+    /// Maximum width (may be infinite).
     pub max_width: f32,
-    /// Tinggi minimum.
+    /// Minimum height.
     pub min_height: f32,
-    /// Tinggi maksimum (boleh tak hingga).
+    /// Maximum height (may be infinite).
     pub max_height: f32,
 }
 
@@ -33,7 +33,7 @@ impl Default for TextConstraints {
 }
 
 impl TextConstraints {
-    /// Tanpa batas sama sekali — hasilnya ukuran alami teks.
+    /// No bounds at all — the result is the text's natural size.
     pub const UNBOUNDED: TextConstraints = TextConstraints {
         min_width: 0.0,
         max_width: f32::INFINITY,
@@ -41,7 +41,7 @@ impl TextConstraints {
         max_height: f32::INFINITY,
     };
 
-    /// Longgar: maksimum `size`, minimum nol.
+    /// Loose: at most `size`, at least zero.
     pub fn loose(size: Size) -> Self {
         Self {
             min_width: 0.0,
@@ -51,7 +51,7 @@ impl TextConstraints {
         }
     }
 
-    /// Ketat: ukuran dipaksa persis `size`.
+    /// Tight: the size is forced to exactly `size`.
     pub fn tight(size: Size) -> Self {
         Self {
             min_width: size.width,
@@ -61,7 +61,7 @@ impl TextConstraints {
         }
     }
 
-    /// Lebar dibatasi, tinggi bebas — kasus paling umum untuk paragraf.
+    /// Bounded width, free height — the most common case for paragraphs.
     pub fn width(max_width: f32) -> Self {
         Self {
             max_width,
@@ -69,29 +69,29 @@ impl TextConstraints {
         }
     }
 
-    /// Salin dengan lebar maksimum berbeda.
+    /// A copy with a different maximum width.
     pub fn with_max_width(mut self, max_width: f32) -> Self {
         self.max_width = max_width;
         self
     }
 
-    /// Salin dengan tinggi maksimum berbeda.
+    /// A copy with a different maximum height.
     pub fn with_max_height(mut self, max_height: f32) -> Self {
         self.max_height = max_height;
         self
     }
 
-    /// Benar bila lebar punya batas atas (teks perlu di-wrap).
+    /// True when the width has an upper bound (the text needs wrapping).
     pub fn has_bounded_width(&self) -> bool {
         self.max_width.is_finite()
     }
 
-    /// Benar bila tinggi punya batas atas.
+    /// True when the height has an upper bound.
     pub fn has_bounded_height(&self) -> bool {
         self.max_height.is_finite()
     }
 
-    /// Versi yang sudah dirapikan: tidak negatif, dan `min <= max`.
+    /// A tidied-up version: never negative, and `min <= max`.
     pub fn normalized(self) -> Self {
         let max_width = if self.max_width.is_nan() {
             f32::INFINITY
@@ -111,7 +111,7 @@ impl TextConstraints {
         }
     }
 
-    /// Jepit sebuah ukuran ke dalam batas ini.
+    /// Clamp a size into these bounds.
     pub fn constrain(&self, size: Size) -> Size {
         let c = self.normalized();
         Size::new(
@@ -120,7 +120,7 @@ impl TextConstraints {
         )
     }
 
-    /// Kunci hash untuk cache measure.
+    /// Hash key for the measure cache.
     pub(crate) fn key(&self) -> ConstraintsKey {
         let c = self.normalized();
         ConstraintsKey {
@@ -140,29 +140,31 @@ pub(crate) struct ConstraintsKey {
     max_height: u32,
 }
 
-/// Hasil pengukuran sepotong teks, poin logis.
+/// The measurement of a piece of text, in logical points.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextMeasure {
-    /// Ukuran akhir setelah dijepit ke constraints — inilah yang naik ke parent.
+    /// The final size after clamping to the constraints — this is what goes up
+    /// to the parent.
     pub size: Size,
-    /// Ukuran alami konten sebelum dijepit; dipakai mendeteksi overflow dan
-    /// menghitung scroll extent.
+    /// The content's natural size before clamping; used to detect overflow and
+    /// to compute scroll extents.
     pub content_size: Size,
-    /// Jumlah baris yang benar-benar dilayout (sudah menghormati `max_lines`).
+    /// How many lines were actually laid out (already honouring `max_lines`).
     pub line_count: usize,
-    /// Tinggi satu baris.
+    /// The height of one line.
     pub line_height: f32,
-    /// Jarak dari tepi atas ke baseline baris pertama — dipakai `align_baseline`.
+    /// Distance from the top edge to the first line's baseline — used by
+    /// `align_baseline`.
     pub first_baseline: f32,
-    /// Jarak dari tepi atas ke baseline baris terakhir.
+    /// Distance from the top edge to the last line's baseline.
     pub last_baseline: f32,
-    /// Benar bila ada konten yang tidak muat (baris dibuang `max_lines`, atau
-    /// konten lebih besar dari constraints) — sinyal untuk ellipsis/clip.
+    /// True when some content did not fit (lines dropped by `max_lines`, or
+    /// content larger than the constraints) — the signal for ellipsis/clipping.
     pub overflowed: bool,
 }
 
 impl TextMeasure {
-    /// Pengukuran teks kosong dengan tinggi satu baris.
+    /// The measurement of empty text, one line tall.
     pub fn empty(line_height: f32, baseline: f32) -> Self {
         Self {
             size: Size::new(0.0, line_height),
@@ -175,12 +177,12 @@ impl TextMeasure {
         }
     }
 
-    /// Lebar hasil ukur.
+    /// The measured width.
     pub fn width(&self) -> f32 {
         self.size.width
     }
 
-    /// Tinggi hasil ukur.
+    /// The measured height.
     pub fn height(&self) -> f32 {
         self.size.height
     }
@@ -231,7 +233,7 @@ mod tests {
         .normalized();
         assert_eq!(c.min_width, 0.0);
         assert!(c.max_width.is_infinite());
-        // min tidak boleh melampaui max.
+        // min must never exceed max.
         assert_eq!(c.min_height, 40.0);
     }
 

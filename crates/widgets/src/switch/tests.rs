@@ -1,10 +1,10 @@
-//! Uji `switch` — seluruh logika non-visualnya, tanpa GPU.
+//! `switch` tests — all of its non-visual logic, without a GPU.
 //!
-//! Yang dibuktikan di sini adalah Definition of Done `KOMPONEN.md` satu per
-//! satu: geometri benar di kedua preset, spring yang bisa di-retarget dan
-//! menerima handoff kecepatan jari, seretan yang benar-benar menggerakkan thumb,
-//! keyboard penuh + focus ring, node AccessKit, hit target 44pt, dark mode, dan
-//! reduced-motion.
+//! What gets proven here is the `KOMPONEN.md` Definition of Done one item at
+//! a time: correct geometry in both presets, springs that can be retargeted
+//! and that accept a handoff of the finger's velocity, dragging that really
+//! does move the thumb, full keyboard + focus ring, the AccessKit node, the
+//! 44pt hit target, dark mode, and reduced-motion.
 
 use super::*;
 
@@ -21,7 +21,7 @@ use silka_paint::{Command, Scene};
 use silka_theme::{Appearance, Preset};
 
 const RUANG: Size = Size::new(400.0, 200.0);
-/// 120 Hz — datang dari display link, bukan dari konstanta 16,6 ms (§3.5).
+/// 120 Hz — comes from the display link, not from a 16.6 ms constant (§3.5).
 const FRAME: Duration = Duration::from_micros(8_333);
 
 fn tema() -> Theme {
@@ -39,7 +39,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
     tree
 }
 
-/// Bangun ulang pohon dari view baru — meniru satu frame `AppRuntime`.
+/// Rebuild the tree from a new view — mimics one `AppRuntime` frame.
 fn frame(tree: &mut RenderTree, view: impl Into<View>) {
     reconcile(tree, view);
     tree.layout(BoxConstraints::loose(RUANG));
@@ -53,7 +53,7 @@ fn node(tree: &RenderTree) -> &SwitchNode {
     tree.node_ref::<SwitchNode>(id(tree)).expect("SwitchNode")
 }
 
-/// Majukan seluruh spring pohon sampai berhenti; kembalikan jumlah frame.
+/// Advance every spring in the tree until it stops; returns the frame count.
 fn sampai_diam(tree: &mut RenderTree) -> u32 {
     let mut n = 0;
     while crate::is_animating(tree) {
@@ -65,7 +65,7 @@ fn sampai_diam(tree: &mut RenderTree) -> u32 {
     n
 }
 
-/// Titik global di dalam lintasan, `x` poin dari tepi kiri node.
+/// A global point inside the track, `x` points from the node's left edge.
 fn titik(tree: &RenderTree, x: f32) -> Point {
     let b = tree.bounds(id(tree));
     Point::new(b.origin.x + x, b.origin.y + b.size.height * 0.5)
@@ -85,7 +85,7 @@ fn pointer(
     router.dispatch(tree, &Event::Pointer(e));
 }
 
-/// Satu ketukan penuh di atas lintasan.
+/// One full tap on the track.
 fn ketuk(router: &mut InputRouter, tree: &mut RenderTree) {
     let p = titik(tree, 10.0);
     pointer(router, tree, PointerPhase::Move, p, Duration::ZERO);
@@ -124,7 +124,7 @@ fn quads(tree: &mut RenderTree, theme: &Theme) -> Vec<silka_paint::Quad> {
 }
 
 // ---------------------------------------------------------------------------
-// Geometri & token
+// Geometry & tokens
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -136,9 +136,9 @@ fn ukuran_lintasan_berbeda_tiap_preset_tapi_selalu_kelipatan_skala() {
     assert_eq!(tailwind.track, Size::new(44.0, 24.0), "shadcn w-11 h-6");
 
     for s in [cupertino, tailwind] {
-        // travel = lebar - tinggi: inset dan garis tengah thumb saling
-        // meniadakan, jadi lintasan yang lebih tebal tidak memendekkan
-        // perjalanan thumb.
+        // travel = width - height: the inset and the thumb's diameter cancel
+        // each other out, so a thicker track does not shorten the thumb's
+        // journey.
         assert_eq!(s.travel(), s.track.width - s.track.height);
         assert_eq!(s.thumb_size(), s.track.height - s.inset * 2.0);
         assert!(s.thumb_size() > 0.0 && s.travel() > 0.0);
@@ -155,7 +155,7 @@ fn hit_target_minimal_44pt_walau_lintasannya_lebih_kecil() {
             ukuran.height >= MIN_HIT_TARGET && ukuran.width >= MIN_HIT_TARGET,
             "{preset:?}: hit target cuma {ukuran:?}"
         );
-        // …dan lintasan yang digambar tetap seukuran token, di tengah kotak itu.
+        // …and the drawn track stays token-sized, centered inside that box.
         let track = node(&tree).track_rect();
         assert_eq!(track.size, SwitchStyle::from_theme(&t).track);
         assert!((track.center().y - ukuran.height * 0.5).abs() < 1e-3);
@@ -169,7 +169,7 @@ fn berlabel_pun_barisnya_tetap_setinggi_hit_target() {
     let tree = pohon(switch(&f, &t, "Mode pesawat"));
     let ukuran = tree.size(id(&tree));
     assert!(ukuran.height >= MIN_HIT_TARGET, "{ukuran:?}");
-    // Label memperlebar barisnya, jadi mengkliknya ikut mengaktifkan sakelar.
+    // The label widens the row, so clicking it activates the switch too.
     assert!(
         ukuran.width > SwitchStyle::from_theme(&t).track.width + 8.0,
         "{ukuran:?}"
@@ -186,12 +186,12 @@ fn thumb_bergerak_dari_tepi_ke_tepi_tanpa_keluar_lintasan() {
     assert_eq!(mati.origin.x, s.inset);
     assert!((nyala.max_x() - (track.max_x() - s.inset)).abs() < 1e-3);
     assert_eq!(nyala.origin.x - mati.origin.x, s.travel());
-    // Nilai di luar 0..1 dijepit, bukan menggeser thumb keluar kotak.
+    // Values outside 0..1 are clamped rather than pushing the thumb out.
     assert_eq!(s.thumb_rect(track, 5.0, 0.0), nyala);
     assert_eq!(s.thumb_rect(track, -5.0, 0.0), mati);
 
-    // Pelebaran tekan tumbuh menjauhi sisi yang ditempati — tidak pernah
-    // menonjol keluar lintasan.
+    // The press stretch grows away from the side it occupies — it never
+    // sticks out of the track.
     let melar_kiri = s.thumb_rect(track, 0.0, 6.0);
     let melar_kanan = s.thumb_rect(track, 1.0, 6.0);
     assert_eq!(melar_kiri.origin.x, mati.origin.x);
@@ -221,13 +221,13 @@ fn warna_selalu_datang_dari_token_di_kedua_preset_dan_kedua_appearance() {
             assert_eq!(s.thumb_for(false), t.color.on_accent);
             assert_eq!(s.pill.style, t.radius.style, "geometri sudut ikut preset");
 
-            // Dimatikan: turunan token yang sama, dipudarkan ke arah latar —
-            // bukan warna abu-abu baru yang lahir di lapisan widget.
+            // Disabled: the same token derivation faded toward the
+            // background — not some new grey born in the widget layer.
             assert_eq!(
                 s.track_for(true, true, false, false),
                 t.color.accent.lerp(t.color.background, REDUP)
             );
-            // Hover pada kontrol mati tidak menghasilkan apa-apa.
+            // Hovering a disabled control produces nothing at all.
             assert_eq!(
                 s.track_for(true, true, true, true),
                 s.track_for(true, true, false, false)
@@ -246,15 +246,15 @@ fn lintasan_dan_thumb_tergambar_sebagai_pil() {
     assert_eq!(q[0].background, t.color.accent);
     assert_eq!(q[1].background, t.color.on_accent);
     for kotak in &q {
-        // Pil: radius = separuh sisi terpendek, bukan angka lepas.
+        // Pill: radius = half the shortest side, not a loose number.
         assert!(
             (kotak.corners.radii.max() - kotak.rect.size.min_side() * 0.5).abs() < 1e-3,
             "{kotak:?}"
         );
         assert_eq!(kotak.corners.style, t.radius.style);
     }
-    // Thumb berada di dalam lintasan, menempel di sisi kanan karena
-    // sakelarnya nyala.
+    // The thumb sits inside the track, hugging the right-hand side because
+    // the switch is on.
     assert!(q[1].rect.center().x > q[0].rect.center().x);
     assert!((q[1].rect.max_x() - (q[0].rect.max_x() - s_inset(&t))).abs() < 1e-3);
 }
@@ -299,7 +299,7 @@ fn dibalik_di_tengah_jalan_membawa_posisinya_bukan_memulai_ulang() {
         "harus di tengah jalan: {tengah}"
     );
 
-    // Dibalik lagi sebelum sampai: posisinya tidak boleh melompat.
+    // Flipped again before it arrives: its position must not jump.
     frame(&mut tree, switch_only(&t).label("Wi-Fi").on(false));
     assert!((node(&tree).fraction() - tengah).abs() < 1e-6);
     sampai_diam(&mut tree);
@@ -360,7 +360,7 @@ fn reduced_motion_membuang_pantulan_bukan_gerakannya() {
         redam <= 1.0 + 1e-4,
         "reduced-motion tidak boleh memantul: {redam}"
     );
-    // Gerakan yang *menjelaskan* tetap ada — yang hilang cuma pantulannya.
+    // Motion that *explains* is still there — only the bounce is gone.
     assert!(frame_redam > 1 && frame_penuh > 1);
     assert_eq!(akhir, 1.0, "tetap sampai ke tujuan");
 }
@@ -373,8 +373,8 @@ fn gerakan_dekoratif_hilang_sepenuhnya_saat_reduced_motion() {
         &mut tree,
         switch_only(&t).label("Wi-Fi").on(true).decorative(),
     );
-    // Satu tick reduced-motion cukup: gerakan hiasan tidak dijalankan sama
-    // sekali, ia langsung berada di tujuannya.
+    // One reduced-motion tick is enough: decorative motion is not run at all,
+    // it lands straight on its destination.
     crate::advance(&mut tree, &Tick::manual(FRAME, Motion::Reduced));
     assert_eq!(node(&tree).fraction(), 1.0);
     assert!(!crate::is_animating(&tree));
@@ -393,10 +393,10 @@ fn settle_menyelesaikan_semuanya_seketika() {
 }
 
 // ---------------------------------------------------------------------------
-// Ketukan & seretan
+// Taps & drags
 // ---------------------------------------------------------------------------
 
-/// Aplikasi tiruan: memegang nilainya, seperti signal di aplikasi sungguhan.
+/// A mock application: it holds the value, like a signal in a real app.
 fn ui(t: &Theme, nilai: &Rc<Cell<bool>>) -> impl Into<View> {
     let tulis = nilai.clone();
     switch_only(t)
@@ -416,7 +416,7 @@ fn ketukan_membalik_nilai_lewat_lapisan_input() {
     assert!(nilai.get(), "ketukan pertama menyalakan");
     assert_eq!(node(&tree).activations(), 1);
 
-    // Nilai barunya kembali lewat rebuild — bukan ditebak node.
+    // The new value comes back on rebuild — it is not guessed by the node.
     frame(&mut tree, ui(&t, &nilai));
     assert!(node(&tree).is_on());
     sampai_diam(&mut tree);
@@ -429,7 +429,7 @@ fn ketukan_membalik_nilai_lewat_lapisan_input() {
 #[test]
 fn node_tidak_pernah_mendahului_aplikasi() {
     let t = tema();
-    // Aplikasi yang **menolak** perubahan: nilainya tidak pernah ikut berubah.
+    // An application that **refuses** the change: the value never follows.
     let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false).on_change(|_| {}));
     let mut router = InputRouter::new();
     ketuk(&mut router, &mut tree);
@@ -492,12 +492,12 @@ fn seretan_menggerakkan_thumb_sebelum_nilainya_berubah() {
         );
     }
 
-    // Thumb sudah mengikuti jari; nilainya belum berubah.
+    // The thumb already follows the finger; the value has not changed yet.
     assert!(node(&tree).is_dragging());
     assert!(node(&tree).fraction() > 0.9, "{}", node(&tree).fraction());
     assert!(!nilai.get());
-    // Warna lintasan sudah menyeberang bersama thumb — bukan menunggu jari
-    // diangkat.
+    // The track color has already crossed over with the thumb — it does not
+    // wait for the finger to lift.
     assert!(node(&tree).visual_on());
 
     let akhir = Point::new(awal.x + travel, awal.y);
@@ -552,7 +552,7 @@ fn seretan_yang_kembali_ke_asal_tidak_mengubah_nilai() {
         0,
         "tidak ada permintaan sama sekali"
     );
-    // Thumb tetap pulang dengan spring, bukan lompat.
+    // The thumb still comes home on a spring, it does not jump.
     assert!(crate::is_animating(&tree));
     sampai_diam(&mut tree);
     assert_eq!(node(&tree).fraction(), 0.0);
@@ -566,7 +566,7 @@ fn lemparan_mengalahkan_posisi() {
     let mut router = InputRouter::new();
     let travel = SwitchStyle::from_theme(&t).travel();
 
-    // Baru sepertiga jalan, tapi dilempar kencang ke kanan dalam 8 ms.
+    // Only a third of the way along, but flung hard right within 8 ms.
     let awal = titik(&tree, 8.0);
     pointer(
         &mut router,
@@ -661,7 +661,7 @@ fn dibatalkan_os_bukan_dilepas() {
 }
 
 // ---------------------------------------------------------------------------
-// Keyboard & fokus
+// Keyboard & focus
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -671,7 +671,7 @@ fn keyboard_menutup_seluruh_kontrak() {
     let mut tree = pohon(ui(&t, &nilai));
     let mut router = InputRouter::new();
 
-    // Tab mendaratkan fokus di sakelar — keyboard bukan warga kelas dua.
+    // Tab lands focus on the switch — the keyboard is not a second-class citizen.
     router.move_focus(&mut tree, FocusDirection::Next);
     assert_eq!(router.focus().focused(), Some(id(&tree)));
     assert!(node(&tree).is_focused());
@@ -684,7 +684,7 @@ fn keyboard_menutup_seluruh_kontrak() {
     assert!(!nilai.get());
     frame(&mut tree, ui(&t, &nilai));
 
-    // Panah menyetel nilai eksplisit, bukan membalik.
+    // The arrows set an explicit value, they do not flip it.
     tombol(&mut router, &mut tree, NamedKey::ArrowRight);
     assert!(nilai.get());
     frame(&mut tree, ui(&t, &nilai));
@@ -724,7 +724,7 @@ fn cincin_fokus_tumbuh_dengan_spring_lalu_hilang() {
     let q = quads(&mut tree, &t);
     assert_eq!(q.len(), 3, "cincin fokus digambar");
     assert_eq!(q[0].border_color, t.color.focus_ring);
-    // Digambar **di luar** lintasan supaya tidak menutupi isinya.
+    // Drawn **outside** the track so it never covers its contents.
     assert!(q[0].rect.size.width > q[1].rect.size.width);
 
     router.focus_node(&mut tree, None);
@@ -737,8 +737,8 @@ fn tekanan_melebarkan_thumb_lalu_mengembalikannya() {
     let t = tema();
     let mut tree = pohon(switch_only(&t).label("Wi-Fi"));
     let mut router = InputRouter::new();
-    // Thumb selalu perintah gambar **terakhir** — cincin fokus yang muncul
-    // saat ditekan menyisip di depan lintasan, bukan di belakang thumb.
+    // The thumb is always the **last** draw command — the focus ring that
+    // appears on press slots in before the track, not behind the thumb.
     let lebar = |tree: &mut RenderTree| {
         let q = quads(tree, &t);
         q.last().expect("thumb tergambar").rect.size.width
@@ -801,13 +801,13 @@ fn sakelar_mati_tidak_bisa_diklik_difokuskan_maupun_ditembus() {
     router.move_focus(&mut tree, FocusDirection::Next);
     assert_ne!(router.focus().focused(), Some(id(&tree)));
 
-    // Tetap menyerap penunjuk: kliknya tidak boleh tembus ke baris di belakang.
+    // Still absorbs the pointer: its clicks must not reach the row behind it.
     assert_eq!(node(&tree).hit_behavior(), HitBehavior::Opaque);
     assert!(node(&tree).cursor().is_none());
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -836,7 +836,7 @@ fn node_accesskit_menyebut_peran_nama_dan_keadaan() {
         "kotak yang dibacakan = kotak yang bisa disentuh"
     );
 
-    // Namanya dibacakan **sekali**, walau labelnya juga digambar sebagai teks.
+    // Its name is announced **once**, even though the label is drawn as text too.
     let jumlah = a11y
         .entries()
         .iter()
@@ -849,7 +849,7 @@ fn node_accesskit_menyebut_peran_nama_dan_keadaan() {
         a11y.dump()
     );
 
-    // Keadaannya ikut berubah bagi screen reader, bukan cuma bagi mata.
+    // Its state changes for the screen reader too, not just for the eye.
     let mut router = InputRouter::new();
     ketuk(&mut router, &mut tree);
     let tulis = nilai.clone();

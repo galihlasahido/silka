@@ -1,14 +1,15 @@
-//! **Signals + rebuild per-komponen** — model state framework (REKOMENDASI §2.5).
+//! **Signals + per-component rebuild** — the state model of the framework
+//! (REKOMENDASI §2.5).
 //!
-//! Keputusan yang mengikat: state lokal komponen memakai [`use_signal`]; setiap
-//! pembacaan signal **selama build** mendaftarkan komponen itu sebagai pembaca;
-//! setiap tulisan menandai para pembacanya *dirty* → subtree kecil itu dibangun
-//! ulang → di-diff. Ini pola Dioxus 0.7, dan mental model-nya paling dekat
-//! dengan `setState` Flutter.
+//! The binding decision: component-local state uses [`use_signal`]; every read
+//! of a signal **during build** registers that component as a reader, and every
+//! write marks its readers *dirty* → that small subtree is rebuilt → diffed.
+//! This is the Dioxus 0.7 pattern, and its mental model is closest to Flutter's
+//! `setState`.
 //!
-//! Harga yang diterima sadar (dan disediakan di sini): **scheduler
-//! dirty-marking + scope tracking** di internal framework, dan **disiplin
-//! key/identity di list dinamis**.
+//! The price is paid knowingly (and provided here): a **dirty-marking scheduler
+//! plus scope tracking** inside the framework, and **key/identity discipline in
+//! dynamic lists**.
 //!
 //! ```
 //! use silka_core::signals::{use_signal, Runtime};
@@ -16,40 +17,39 @@
 //! let rt = Runtime::new();
 //! let count = rt.signal(0i32);
 //!
-//! // Komponen membaca signal saat dibangun → ia berlangganan.
+//! // A component that reads a signal while building subscribes to it.
 //! rt.build_root(|| {
 //!     let _teks = format!("Nilai: {}", count.get());
 //! });
 //! assert!(!rt.is_dirty(rt.root()));
 //!
-//! // Tulisan dari event handler menandai pembacanya dirty.
+//! // A write from an event handler marks its readers dirty.
 //! count.set(1);
 //! assert_eq!(rt.drain_dirty(), vec![rt.root()]);
 //! ```
 //!
-//! ## Aturan main
+//! ## Ground rules
 //!
-//! - **Membaca melacak, menulis menandai.** [`Signal::get`]/[`Signal::with`]
-//!   berlangganan bila dipanggil saat build; di luar build (event handler,
-//!   hasil async) mereka hanya membaca. [`Signal::peek`] tidak pernah
-//!   berlangganan.
-//! - **Langganan dibangun ulang tiap build.** Komponen yang berhenti membaca
-//!   sebuah signal berhenti dibangunkan olehnya — tidak ada langganan basi.
-//! - **Hook tidak boleh kondisional.** `use_signal` dicocokkan per urutan
-//!   pemanggilan; berubah urutan/jumlahnya = panik dengan pesan jelas, bukan
-//!   state yang tertukar diam-diam.
-//! - **Anak wajib punya kunci.** [`scope`] dan [`list`] memakai [`Key`] sebagai
-//!   identitas; kunci yang sama = state yang sama walau posisinya bergeser.
-//! - **Batching itu tentang bangun-tidurnya renderer**, bukan tentang nilai:
-//!   nilai berubah seketika, [`Runtime::batch`] hanya menyatukan pemberitahuan
-//!   ke scheduler menjadi satu.
+//! - **Reads track, writes mark.** [`Signal::get`]/[`Signal::with`] subscribe
+//!   when called during a build; outside a build (event handlers, async
+//!   results) they only read. [`Signal::peek`] never subscribes.
+//! - **Subscriptions are rebuilt on every build.** A component that stops
+//!   reading a signal stops being woken by it — no stale subscriptions.
+//! - **Hooks must not be conditional.** `use_signal` is matched by call order;
+//!   changing that order or count panics with a clear message instead of
+//!   silently swapping state around.
+//! - **Children must have keys.** [`scope`] and [`list`] use [`Key`] as
+//!   identity; the same key means the same state even when the position moves.
+//! - **Batching is about waking the renderer**, not about values: values change
+//!   immediately, [`Runtime::batch`] only coalesces the notifications to the
+//!   scheduler into one.
 //!
-//! ## Sambungan ke scheduler
+//! ## Hooking up the scheduler
 //!
-//! [`Runtime::on_wake`] dipanggil sekali per flush dengan [`SIGNAL_DIRTY`].
-//! Sambungkan ke [`crate::scheduler::FrameScheduler::request`] dan render tetap
-//! **hanya saat dirty** (§3.5) — signal yang tidak dibaca siapa pun tidak
-//! membangunkan GPU sama sekali.
+//! [`Runtime::on_wake`] is called once per flush with [`SIGNAL_DIRTY`]. Wire it
+//! to [`crate::scheduler::FrameScheduler::request`] and rendering stays
+//! **dirty-driven only** (§3.5) — a signal nobody reads never wakes the GPU at
+//! all.
 
 mod runtime;
 #[cfg(test)]
@@ -65,28 +65,29 @@ pub use runtime::{Runtime, RuntimeId, ScopeId, SignalId, SIGNAL_DIRTY};
 // Key
 // ---------------------------------------------------------------------------
 
-/// Identitas sebuah scope di antara saudara-saudaranya.
+/// The identity of a scope among its siblings.
 ///
-/// Inilah "disiplin key" §2.5: pada list dinamis, kunci — bukan posisi — yang
-/// menentukan state milik siapa. Menggeser, menyisipkan, atau menukar item
-/// tidak memindahkan state selama kuncinya ikut.
+/// This is the "key discipline" of §2.5: in a dynamic list it is the key — not
+/// the position — that decides whose state is whose. Moving, inserting, or
+/// swapping items does not move state around as long as the keys travel with
+/// them.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Key {
-    /// Kunci scope akar; tidak pernah dibuat pengguna.
+    /// The root scope's key; never constructed by users.
     Root,
-    /// Kunci numerik (id baris database, indeks, enum diskriminan).
+    /// A numeric key (database row id, index, enum discriminant).
     Num(i64),
-    /// Kunci teks (uuid, nama slot, path).
+    /// A textual key (uuid, slot name, path).
     Text(Box<str>),
 }
 
 impl Key {
-    /// Kunci numerik.
+    /// A numeric key.
     pub fn num(n: impl Into<i64>) -> Self {
         Key::Num(n.into())
     }
 
-    /// Kunci teks.
+    /// A textual key.
     pub fn text(s: impl AsRef<str>) -> Self {
         Key::Text(s.as_ref().into())
     }
@@ -145,11 +146,11 @@ impl From<&String> for Key {
 // Signal
 // ---------------------------------------------------------------------------
 
-/// Nilai reaktif milik runtime.
+/// A reactive value owned by the runtime.
 ///
-/// `Signal` hanyalah ID — `Copy`, seukuran tiga `u32`, dan boleh masuk ke
-/// closure `move` sebanyak yang diperlukan. Itulah yang membuat gaya penulisan
-/// §2.5 mungkin:
+/// A `Signal` is just an ID — `Copy`, the size of three `u32`s, and free to be
+/// captured by as many `move` closures as needed. That is what makes the §2.5
+/// writing style possible:
 ///
 /// ```ignore
 /// let count = use_signal(|| 0);
@@ -159,9 +160,9 @@ impl From<&String> for Key {
 /// ))
 /// ```
 ///
-/// Signal terikat ke thread runtime-nya (UI thread) dan sengaja **bukan**
-/// `Send`: hasil async kembali lewat scheduler, bukan lewat signal lintas
-/// thread.
+/// A signal is bound to its runtime's thread (the UI thread) and is
+/// deliberately **not** `Send`: async results come back through the scheduler,
+/// not through cross-thread signals.
 pub struct Signal<T: 'static> {
     id: SignalId,
     marker: PhantomData<*const T>,
@@ -175,27 +176,27 @@ impl<T: 'static> Signal<T> {
         }
     }
 
-    /// Identitas signal ini.
+    /// This signal's identity.
     pub fn id(&self) -> SignalId {
         self.id
     }
 
-    /// Benar bila signal masih hidup (scope pemiliknya belum dibuang).
+    /// True while the signal is alive (its owning scope has not been dropped).
     pub fn is_alive(&self) -> bool {
         runtime_of(self.id).is_signal_alive(self.id)
     }
 
-    /// Baca lewat referensi — **melacak** bila dipanggil saat build.
+    /// Read by reference — **tracks** when called during a build.
     ///
-    /// Closure tidak boleh membaca atau menulis signal yang sama (akses
-    /// rekursif dilaporkan sebagai panik yang jelas).
+    /// The closure must not read or write the same signal (recursive access is
+    /// reported as a clear panic).
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let rt = runtime_of(self.id);
         rt.track(self.id);
         rt.with_value(self.id, f)
     }
 
-    /// Baca salinan nilainya — **melacak** bila dipanggil saat build.
+    /// Read a copy of the value — **tracks** when called during a build.
     pub fn get(&self) -> T
     where
         T: Clone,
@@ -203,12 +204,12 @@ impl<T: 'static> Signal<T> {
         self.with(|v| v.clone())
     }
 
-    /// Baca lewat referensi **tanpa** melacak.
+    /// Read by reference **without** tracking.
     pub fn peek_with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         runtime_of(self.id).with_value(self.id, f)
     }
 
-    /// Baca salinan nilainya **tanpa** melacak.
+    /// Read a copy of the value **without** tracking.
     pub fn peek(&self) -> T
     where
         T: Clone,
@@ -216,27 +217,27 @@ impl<T: 'static> Signal<T> {
         self.peek_with(|v| v.clone())
     }
 
-    /// Tulis nilai baru dan tandai seluruh pembacanya dirty.
+    /// Write a new value and mark every reader dirty.
     pub fn set(&self, value: T) {
         let _ = self.replace(value);
     }
 
-    /// Tulis nilai baru dan kembalikan yang lama.
+    /// Write a new value and return the old one.
     pub fn replace(&self, value: T) -> T {
         runtime_of(self.id).replace_value(self.id, value)
     }
 
-    /// Ubah di tempat; **selalu** menandai dirty (runtime tidak bisa tahu
-    /// apakah closure benar-benar mengubah sesuatu).
+    /// Mutate in place; **always** marks dirty (the runtime cannot tell whether
+    /// the closure actually changed anything).
     pub fn update<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
         runtime_of(self.id).update_value(self.id, f)
     }
 
-    /// Tulis hanya bila nilainya benar-benar berbeda.
+    /// Write only if the value actually differs.
     ///
-    /// Mengembalikan `true` bila ada perubahan (dan renderer dibangunkan).
-    /// Inilah bentuk yang dipakai saat sumbernya berisik — mis. hasil polling
-    /// yang sering mengirim nilai yang sama.
+    /// Returns `true` when something changed (and the renderer was woken). This
+    /// is the form to use when the source is noisy — e.g. a poll that keeps
+    /// delivering the same value.
     pub fn set_if_changed(&self, value: T) -> bool
     where
         T: PartialEq,
@@ -278,17 +279,17 @@ impl<T: 'static> fmt::Debug for Signal<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Hook & scope
+// Hooks & scopes
 // ---------------------------------------------------------------------------
 
-/// State lokal komponen (§2.5) — dibuat sekali, bertahan lintas rebuild.
+/// Component-local state (§2.5) — created once, kept across rebuilds.
 ///
-/// `init` hanya dijalankan pada build pertama scope ini. Pada build berikutnya
-/// hook yang sama dikenali dari **urutan pemanggilannya**, jadi `use_signal`
-/// tidak boleh berada di dalam `if`/`loop` — pelanggaran dilaporkan sebagai
-/// panik, bukan state yang tertukar.
+/// `init` runs only on this scope's first build. On later builds the same hook
+/// is recognised by **call order**, so `use_signal` must not sit inside an
+/// `if`/`loop` — a violation is reported as a panic rather than as state that
+/// silently swaps places.
 ///
-/// Panik bila dipanggil di luar build komponen.
+/// Panics when called outside a component build.
 pub fn use_signal<T: 'static>(init: impl FnOnce() -> T) -> Signal<T> {
     let (rt_id, scope) = current_build()
         .expect("use_signal hanya boleh dipanggil saat komponen dibangun (di dalam build_root/scope/rebuild)");
@@ -297,14 +298,14 @@ pub fn use_signal<T: 'static>(init: impl FnOnce() -> T) -> Signal<T> {
     Signal::from_id(rt.use_signal_hook::<T>(scope, init))
 }
 
-/// Bangun satu komponen anak dengan identitas `key`.
+/// Build one child component with the identity `key`.
 ///
-/// Kunci yang sama pada build berikutnya = scope yang sama = state yang sama,
-/// walau urutannya berubah. Kunci yang hilang = scope-nya dibuang beserta
-/// seluruh subtree, hook, dan langganannya.
+/// The same key on the next build means the same scope, hence the same state,
+/// even if the order changed. A key that disappears means its scope is dropped
+/// along with the whole subtree, its hooks, and its subscriptions.
 ///
-/// Panik bila dipanggil di luar build, atau bila `key` sudah dipakai saudara
-/// lain pada build yang sama.
+/// Panics when called outside a build, or when `key` is already used by another
+/// sibling in the same build.
 pub fn scope<R>(key: impl Into<Key>, body: impl FnOnce() -> R) -> R {
     let (_, parent) =
         current_build().expect("scope() hanya boleh dipanggil saat komponen dibangun");
@@ -314,10 +315,10 @@ pub fn scope<R>(key: impl Into<Key>, body: impl FnOnce() -> R) -> R {
         .expect("scope anak baru saja dibuat, tidak mungkin mati")
 }
 
-/// Bangun satu komponen anak per item, dengan kunci dari `key`.
+/// Build one child component per item, keyed by `key`.
 ///
-/// Bentuk ringkas dari [`scope`] untuk list dinamis. Menukar urutan item
-/// memindahkan scope-nya, bukan state-nya.
+/// A shorthand for [`scope`] over dynamic lists. Reordering items moves their
+/// scopes, not their state.
 ///
 /// ```
 /// use silka_core::signals::{list, use_signal, Key, Runtime};
@@ -330,7 +331,7 @@ pub fn scope<R>(key: impl Into<Key>, body: impl FnOnce() -> R) -> R {
 /// });
 /// let awal = rt.children(rt.root());
 ///
-/// // Item ditukar urutannya: scope-nya ikut pindah, identitasnya tetap.
+/// // The items are reordered: their scopes move with them, identity is kept.
 /// baris.swap(0, 2);
 /// rt.build_root(|| {
 ///     list(baris.iter().copied(), |id| Key::num(*id), |id| use_signal(|| *id))
@@ -352,15 +353,15 @@ where
         .collect()
 }
 
-/// Jalankan `f` tanpa melacak pembacaan signal apa pun.
+/// Run `f` without tracking any signal reads.
 ///
-/// Dipakai saat komponen perlu *melihat* nilai tanpa ingin dibangun ulang
-/// ketika nilai itu berubah.
+/// Used when a component needs to *look at* a value without wanting to be
+/// rebuilt when that value changes.
 pub fn untracked<R>(f: impl FnOnce() -> R) -> R {
     run_untracked(f)
 }
 
-/// Scope yang sedang dibangun di thread ini, bila ada.
+/// The scope currently being built on this thread, if any.
 pub fn current_scope() -> Option<ScopeId> {
     current_build().map(|(_, scope)| scope)
 }

@@ -1,9 +1,10 @@
-//! Unit test pass paint: isi [`Scene`] yang dihasilkan render tree.
+//! Unit tests for the paint pass: the contents of the [`Scene`] the render tree
+//! produces.
 //!
-//! Yang diperiksa di sini bukan piksel (itu urusan test rasterisasi
-//! `silka-renderer`), melainkan **kontraknya**: berapa perintah yang keluar,
-//! urutannya, koordinat absolutnya setelah padding/flex, dan apakah clip
-//! viewport benar-benar membuang isi yang tergulir keluar.
+//! What is checked here is not pixels (that is the job of the `silka-renderer`
+//! rasterization tests) but **the contract**: how many commands come out, in
+//! what order, at what absolute coordinates after padding/flex, and whether the
+//! viewport clip really does drop content that has scrolled out of view.
 
 use std::any::TypeId;
 
@@ -29,7 +30,7 @@ fn anak(tree: &RenderTree, id: NodeId, i: usize) -> NodeId {
     tree.children(id)[i]
 }
 
-/// Kotak-kotak di scene, urut, beserta warnanya.
+/// The quads in the scene, in order, along with their colours.
 fn kotak(scene: &silka_paint::Scene) -> Vec<(Rect, Color)> {
     scene
         .commands()
@@ -42,7 +43,7 @@ fn kotak(scene: &silka_paint::Scene) -> Vec<(Rect, Color)> {
 }
 
 // ---------------------------------------------------------------------------
-// Koordinat absolut
+// Absolute coordinates
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -62,9 +63,9 @@ fn padding_menggeser_gambar_anak_ke_koordinat_absolut() {
     assert_eq!(
         kotak(&scene),
         vec![
-            // Induk menutupi seluruh kotaknya, termasuk area jarak.
+            // The parent covers its whole box, padded area included.
             (Rect::new(0.0, 0.0, 120.0, 40.0), HIJAU),
-            // Anak digeser sebesar insets — node itu sendiri menggambar di (0,0).
+            // The child is offset by the insets — the node itself draws at (0,0).
             (Rect::new(10.0, 10.0, 100.0, 20.0), MERAH),
         ]
     );
@@ -118,14 +119,14 @@ fn flex_menempatkan_gambar_anak_sesuai_hasil_layout() {
         kotak(&scene),
         vec![
             (Rect::new(10.0, 10.0, 40.0, 20.0), MERAH),
-            // 10 (padding) + 20 (anak pertama) + 8 (spacing).
+            // 10 (padding) + 20 (first child) + 8 (spacing).
             (Rect::new(10.0, 38.0, 40.0, 20.0), HIJAU),
         ]
     );
 }
 
 // ---------------------------------------------------------------------------
-// Dekorasi
+// Decoration
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -166,7 +167,8 @@ fn bayangan_ganda_digambar_sebelum_kotaknya() {
     match scene.commands() {
         [Command::Shadow(ambient), Command::Shadow(key), Command::Quad(q)] => {
             assert!(ambient.blur > key.blur, "ambient adalah lapis paling lebar");
-            // Bentuk sudut ikut mengalir ke bayangan — squircle tetap squircle.
+            // The corner shape flows into the shadow too — a squircle stays a
+            // squircle.
             assert_eq!(ambient.corners.style, CornerStyle::squircle());
             assert_eq!(q.rect, Rect::new(0.0, 0.0, 80.0, 40.0));
             assert_eq!(q.corners.style, CornerStyle::squircle());
@@ -203,10 +205,10 @@ fn warna_latar_frame_datang_dari_pemanggil() {
 }
 
 // ---------------------------------------------------------------------------
-// Koordinat lokal: node tidak pernah tahu posisinya sendiri
+// Local coordinates: a node never knows its own position
 // ---------------------------------------------------------------------------
 
-/// Node uji yang menggambar dalam koordinat lokal murni.
+/// A test node that draws in purely local coordinates.
 struct Penanda;
 
 impl RenderNode for Penanda {
@@ -235,8 +237,8 @@ impl RenderNode for Penanda {
 fn node_menggambar_lokal_dan_ctx_menaikkannya_ke_absolut() {
     let mut tree = RenderTree::new();
     reconcile(&mut tree, pad(Insets::all(20.0), fixed(30.0, 30.0)));
-    // Ganti daunnya dengan node uji: yang diuji adalah terjemahan koordinat,
-    // bukan lapisan view.
+    // Swap the leaf for a test node: what is under test is the coordinate
+    // translation, not the view layer.
     let padding = anak(&tree, tree.root(), 0);
     let daun = anak(&tree, padding, 0);
     tree.remove_subtree(daun);
@@ -254,11 +256,11 @@ fn node_menggambar_lokal_dan_ctx_menaikkannya_ke_absolut() {
 }
 
 // ---------------------------------------------------------------------------
-// Clip viewport
+// Viewport clipping
 // ---------------------------------------------------------------------------
 
-/// Viewport 100×100 berisi tiga baris setinggi 60 — total 180, jadi selalu ada
-/// yang tergulir keluar.
+/// A 100×100 viewport holding three 60-tall rows — 180 in total, so something
+/// is always scrolled out of view.
 fn pohon_gulir(scroll: f32) -> View {
     constrained(
         BoxConstraints::tight(Size::new(100.0, 100.0)),
@@ -302,7 +304,7 @@ fn menggulir_membuang_baris_yang_keluar_di_kedua_ujung() {
     tree.layout(window(400.0, 400.0));
     let scene = tree.paint();
 
-    // Baris pertama berakhir di y = -10: seluruhnya di atas viewport.
+    // The first row ends at y = -10: entirely above the viewport.
     assert_eq!(
         kotak(&scene),
         vec![
@@ -316,7 +318,7 @@ fn menggulir_membuang_baris_yang_keluar_di_kedua_ujung() {
 #[test]
 fn clip_tanpa_isi_tidak_meninggalkan_pasangan_kosong() {
     let mut tree = RenderTree::new();
-    // Isi tanpa latar: tidak ada satu perintah pun di dalam viewport.
+    // Content with no background: not a single command inside the viewport.
     reconcile(
         &mut tree,
         constrained(
@@ -359,8 +361,8 @@ fn clip_viewport_beririsan_dengan_clip_di_atasnya() {
         clips,
         vec![
             Rect::new(0.0, 0.0, 100.0, 40.0),
-            // Viewport dalam setinggi 100, tapi induknya hanya memberi 40:
-            // kotak yang dikirim ke backend sudah merupakan irisannya.
+            // The inner viewport is 100 tall, but its parent only grants 40:
+            // the rect sent to the backend is already the intersection.
             Rect::new(0.0, 0.0, 100.0, 40.0),
         ]
     );
@@ -369,8 +371,9 @@ fn clip_viewport_beririsan_dengan_clip_di_atasnya() {
 #[test]
 fn viewport_di_luar_clip_leluhur_tidak_menggambar_apa_pun() {
     let mut tree = RenderTree::new();
-    // Viewport luar 100×100; isinya spacer 200 lalu viewport dalam berisi kotak
-    // merah. Viewport dalam mendarat di y = 200, seluruhnya di bawah clip luar.
+    // The outer viewport is 100×100; its content is a 200 spacer followed by an
+    // inner viewport holding a red quad. The inner viewport lands at y = 200,
+    // entirely below the outer clip.
     let isi: [View; 2] = [
         fixed(100.0, 200.0).into(),
         constrained(
@@ -389,8 +392,8 @@ fn viewport_di_luar_clip_leluhur_tidak_menggambar_apa_pun() {
     tree.layout(window(400.0, 400.0));
     let scene = tree.paint();
 
-    // Irisan clip yang kosong berarti "tidak ada yang terlihat", bukan "tanpa
-    // batas": isi viewport dalam tidak boleh lolos ke scene sama sekali.
+    // An empty clip intersection means "nothing is visible", not "unbounded":
+    // the inner viewport's content must not reach the scene at all.
     assert_eq!(
         kotak(&scene),
         vec![],
@@ -404,7 +407,7 @@ fn viewport_di_luar_clip_leluhur_tidak_menggambar_apa_pun() {
 }
 
 // ---------------------------------------------------------------------------
-// Melewati subtree bersih
+// Skipping clean subtrees
 // ---------------------------------------------------------------------------
 
 fn pohon_dengan_gulir() -> View {
@@ -415,7 +418,7 @@ fn pohon_dengan_gulir() -> View {
     .into()
 }
 
-/// `(pohon, id saudara, id viewport)`.
+/// `(tree, sibling id, viewport id)`.
 fn siapkan_gulir() -> (RenderTree, NodeId, NodeId) {
     let mut tree = RenderTree::new();
     reconcile(&mut tree, pohon_dengan_gulir());
@@ -433,8 +436,8 @@ fn subtree_bersih_dilewati_dan_hasilnya_tetap_sama() {
     let pertama = tree.paint();
     assert_eq!(tree.paint_count(view), 1);
 
-    // Tidak ada yang berubah: viewport tidak menjalankan gambarnya lagi, tapi
-    // perintahnya tetap muncul di scene.
+    // Nothing changed: the viewport does not run its drawing again, yet its
+    // commands still show up in the scene.
     let kedua = tree.paint();
     assert_eq!(tree.paint_count(view), 1, "subtree bersih harus dilewati");
     assert_eq!(kotak(&pertama), kotak(&kedua));
@@ -520,7 +523,7 @@ fn paint_into_memakai_ulang_buffer_scene() {
 }
 
 // ---------------------------------------------------------------------------
-// Bentuk sentuh = bentuk gambar
+// Touch shape = drawn shape
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -540,7 +543,7 @@ fn sudut_yang_digambar_sama_dengan_yang_diuji_hit_test() {
         HitShape::Rounded(c) => assert_eq!(c, sudut),
         lain => panic!("sudut melengkung wajib diuji sebagai squircle: {lain:?}"),
     }
-    // Dan itu memang bentuk yang dikirim ke shader.
+    // And that really is the shape sent to the shader.
     match &tree.paint().commands()[0] {
         Command::Quad(q) => assert_eq!(q.corners, sudut),
         lain => panic!("bukan kotak: {lain:?}"),
@@ -558,15 +561,15 @@ fn kotak_di_luar_layar_dibuang_sebelum_sampai_ke_gpu() {
         ),
     );
     tree.layout(window(400.0, 400.0));
-    // Guliran melewati ujung isi: tidak ada satu pun baris yang menyentuh
-    // viewport, jadi tidak ada perintah sama sekali.
+    // The scroll offset runs past the end of the content: no row touches the
+    // viewport, so there are no commands at all.
     let scene = tree.paint();
     assert!(kotak(&scene).is_empty(), "{scene:?}");
 }
 
 #[test]
 fn glyph_di_luar_clip_dibuang_satu_per_satu() {
-    // Run dengan dua glyph: satu di dalam viewport, satu jauh di bawahnya.
+    // A run with two glyphs: one inside the viewport, one far below it.
     struct Teks;
     impl RenderNode for Teks {
         fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, c: BoxConstraints) -> Size {
@@ -626,8 +629,8 @@ fn clip_dilaporkan_ke_node_dalam_koordinat_lokalnya() {
             c.constrain(Size::new(100.0, 400.0))
         }
         fn paint(&self, ctx: &mut PaintCtx<'_>) {
-            // Node berada di y = -50 (tergulir), viewport 0..100 absolut, jadi
-            // secara lokal batasnya 50..150.
+            // The node sits at y = -50 (scrolled), the viewport spans 0..100
+            // in absolute terms, so locally the bounds are 50..150.
             assert_eq!(ctx.clip(), Some(Rect::new(0.0, 50.0, 100.0, 100.0)));
             assert!(ctx.is_visible(Rect::new(0.0, 60.0, 10.0, 10.0)));
             assert!(!ctx.is_visible(Rect::new(0.0, 0.0, 10.0, 10.0)));
@@ -681,8 +684,8 @@ fn offset_absolut_sama_dengan_bounds_a11y() {
     let kolom = anak(&tree, padding, 0);
     let kedua = anak(&tree, kolom, 1);
 
-    // Apa yang dibacakan screen reader dan apa yang digambar tidak boleh
-    // berbeda — keduanya datang dari hasil layout yang sama.
+    // What a screen reader announces and what gets drawn must not disagree —
+    // both come from the same layout results.
     assert_eq!(tree.bounds(kedua), Rect::new(12.0, 30.0, 40.0, 20.0));
     assert_eq!(kotak(&tree.paint())[0].0, tree.bounds(kedua));
     assert_eq!(tree.global_offset(kedua), Point::new(12.0, 30.0));

@@ -1,38 +1,40 @@
-//! Halaman demo: **select / dropdown** (`KOMPONEN.md` Tier 2).
+//! Demo page: **select / dropdown** (`KOMPONEN.md` Tier 2).
 //!
-//! Yang diperiksa mata di halaman ini, satu per satu Definition of Done:
+//! What the eye checks on this page, one Definition of Done item at a time:
 //!
-//! - **Benar di kedua preset**: sudut kotak dan panel squircle di Cupertino,
-//!   arc di Tailwind (`--preset tailwind`); seluruh warnanya token, jadi dark
-//!   mode OS yang berubah di tengah jalan langsung ikut.
-//! - **Transisi spring**: arahkan kursor ke kotaknya — latarnya *menuju* warna
-//!   hover, tidak melompat. Buka lalu segera tutup: segitiga penunjuknya
-//!   berbalik arah membawa kecepatannya, dan panelnya menyembul dari jangkar
-//!   (transisi milik sistem overlay yang sama yang dipakai dialog).
-//! - **Keyboard penuh + focus ring**: Tab sampai ke kotaknya (cincin fokus
-//!   tumbuh lewat spring), Space/Enter/panah membuka, panah menyusuri,
-//!   Home/End melompat, Enter memilih, Esc menutup tanpa mengubah apa pun.
-//!   Mengetik huruf melompat ke pilihan yang cocok — typeahead ala menu native,
-//!   dan jawaban kami untuk "search/filter" selama `text_field` belum jadi
-//!   kotak pencarian di dalam popup.
-//! - **Hit target ≥ 44pt**: kotaknya **dan** setiap baris popup.
-//! - **Daftar panjang**: pilihan negara memuat 20 baris dengan jendela 6 baris
-//!   — gulirnya mengikuti sorotan keyboard seminimal mungkin, bukan melompat
-//!   ke tengah.
-//! - **Keadaan mati**: kotak ketiga meredup ke arah latar halaman, tidak bisa
-//!   dibuka, dan tidak ikut urutan Tab — tapi tetap dibacakan screen reader
-//!   sebagai dimmed.
+//! - **Correct in both presets**: the box and panel corners are squircles in
+//!   Cupertino, arcs in Tailwind (`--preset tailwind`); every color is a token,
+//!   so a change in OS dark mode mid-session follows immediately.
+//! - **Spring transitions**: hover the box — its background *moves toward* the
+//!   hover color, it does not jump. Open it and immediately close it: the
+//!   disclosure triangle reverses carrying its velocity, and the panel emerges
+//!   from its anchor (a transition owned by the same overlay system dialogs
+//!   use).
+//! - **Full keyboard support + focus ring**: Tab reaches the box (the focus
+//!   ring grows on a spring), Space/Enter/arrows open it, arrows walk the list,
+//!   Home/End jump, Enter selects, Esc closes without changing anything. Typing
+//!   letters jumps to the matching option — native-menu-style typeahead, and
+//!   our answer to "search/filter" until `text_field` becomes a search box
+//!   inside the popup.
+//! - **Hit target ≥ 44pt**: the box **and** every popup row.
+//! - **A long list**: the country picker holds 20 rows in a 6-row window — its
+//!   scrolling follows the keyboard highlight as little as possible, rather
+//!   than jumping to the middle.
+//! - **The disabled state**: the third box dims toward the page background,
+//!   cannot be opened, and is skipped by Tab — but a screen reader still
+//!   announces it as dimmed.
 //!
 //! ```text
 //! cargo run -p silka-gallery -- --page pilihan
 //! cargo run -p silka-gallery -- --page pilihan --preset tailwind --appearance light
 //! ```
 //!
-//! Batas yang jujur disebut karena terlihat langsung: **fokus belum berpindah
-//! otomatis** ke panel yang baru terbuka (lubang yang sudah dicatat
-//! `silka_widgets::overlay`). Di select itu justru tidak terasa — pemicunya
-//! memang yang memegang keyboard selama popup terbuka, persis pop-up button
-//! macOS — tapi artinya screen reader belum "masuk" ke menunya sendiri.
+//! A limitation named honestly because it shows up immediately: **focus does
+//! not move automatically** to a freshly opened panel (a gap already recorded
+//! in `silka_widgets::overlay`). On a select that barely registers — the
+//! trigger is meant to own the keyboard while the popup is open, exactly like a
+//! macOS pop-up button — but it does mean a screen reader has not yet "entered"
+//! the menu itself.
 
 use silka_core::access::AccessRole;
 use silka_core::app::{BuildCtx, ScaleFactor};
@@ -44,26 +46,27 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{overlay_layer, select, text, Fonts, Select, SelectState};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Select";
 
-/// Nama kontrol mata uang — dipakai juga uji untuk mencarinya di pohon a11y.
+/// The currency control's name — also used by the tests to find it in the
+/// a11y tree.
 pub const LABEL_MATA_UANG: &str = "Mata uang";
-/// Nama kontrol negara.
+/// The country control's name.
 pub const LABEL_NEGARA: &str = "Negara";
-/// Nama kontrol yang sengaja dimatikan.
+/// The name of the deliberately disabled control.
 pub const LABEL_MATI: &str = "Periode (terkunci)";
 
-/// Pilihan mata uang.
+/// The currency options.
 pub const MATA_UANG: [&str; 5] = ["Rupiah", "Dolar AS", "Euro", "Yen", "Dolar Singapura"];
 
-/// Pilihan periode untuk kontrol yang dimatikan.
+/// The period options for the disabled control.
 pub const PERIODE: [&str; 3] = ["Harian", "Bulanan", "Tahunan"];
 
-/// Berapa baris negara yang terlihat sebelum popup mulai bisa digulir.
+/// How many country rows are visible before the popup becomes scrollable.
 pub const NEGARA_TERLIHAT: usize = 6;
 
-/// Daftar negara — sengaja lebih panjang dari jendelanya.
+/// The country list — deliberately longer than its window.
 pub fn negara() -> Vec<String> {
     [
         "Indonesia",
@@ -92,17 +95,18 @@ pub fn negara() -> Vec<String> {
     .collect()
 }
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya; ukuran logis di
-    // bawah ini tidak ikut berubah (§3.3).
+    // Text is rasterized at the real screen resolution; the logical sizes
+    // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
-    // Satu signal per select: seluruh aturannya (sorotan yang dijepit, gulir
-    // yang mengikuti, popup yang menutup setelah memilih) hidup di
-    // `SelectState::apply`, jadi halaman ini tidak menulis satu pun aturan.
+    // One signal per select: all of the rules (the clamped highlight, the
+    // scroll that follows it, the popup closing after a choice) live in
+    // `SelectState::apply`, so this page writes no rules at all.
     let mata_uang = use_signal(|| SelectState::with_selected(0));
     let negara_state = use_signal(SelectState::new);
     let periode = use_signal(|| SelectState::with_selected(1));
@@ -123,9 +127,9 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .key("periode")
         .bind(periode);
 
-    // Konten dulu, popup belakangan: urutan penulisan di sini **adalah** urutan
-    // tumpuk (`silka_widgets::overlay`), dan tidak satu pun panel menghitung
-    // posisinya sendiri.
+    // Content first, popups after: the order written here **is** the stacking
+    // order (`silka_widgets::overlay`), and not one panel computes its own
+    // position.
     overlay_layer(konten(
         fonts,
         &t,
@@ -142,8 +146,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Teks ringkasan pilihan sekarang — bukti bahwa yang diklik benar-benar
-/// mengubah nilai, bukan cuma menutup panel.
+/// The summary text of the current selection — proof that what was clicked
+/// really changes the value, not just closes the panel.
 pub fn ringkasan(mata_uang: &Select, negara: &Select) -> String {
     format!(
         "Terpilih: {} · {}",
@@ -152,12 +156,13 @@ pub fn ringkasan(mata_uang: &Select, negara: &Select) -> String {
     )
 }
 
-/// Konten di belakang layer overlay: judul, tiga baris form, dan ringkasan.
+/// The content behind the overlay layer: title, three form rows, and the
+/// summary.
 fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: String) -> View {
     let judul = text(fonts, JUDUL)
         .size(t.typography.body_size * 2.0)
         .weight(FontWeight::SEMIBOLD)
-        // Tracking negatif pada ukuran besar — kebiasaan SF (§3.6).
+        // Negative tracking at large sizes — an SF habit (§3.6).
         .tracking(-0.02)
         .color(t.color.label)
         .single_line();
@@ -196,11 +201,12 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
     .into()
 }
 
-/// Satu baris form: nama di kiri, kontrol di kanan — susunan Settings macOS.
+/// One form row: name on the left, control on the right — the macOS Settings
+/// arrangement.
 ///
-/// Lebar kolom nama dikunci lewat `constrained` supaya ketiga kontrolnya
-/// **sejajar**; itu tata letak Settings macOS, dan yang menghitungnya mesin
-/// layout, bukan aritmetika di halaman ini (§3.4).
+/// The name column's width is pinned via `constrained` so all three controls
+/// **line up**; that is the macOS Settings layout, and the layout engine is
+/// what computes it, not arithmetic on this page (§3.4).
 fn baris_form(fonts: &Fonts, t: &Theme, nama: &str, s: &Select) -> View {
     let lebar_nama = t.space(38.0);
     row([
@@ -210,7 +216,7 @@ fn baris_form(fonts: &Fonts, t: &Theme, nama: &str, s: &Select) -> View {
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
-                // Namanya sudah dibacakan dari node select-nya sendiri.
+                // The name is already announced from the select's own node.
                 .role(AccessRole::Container),
         )),
         s.trigger(),
@@ -234,12 +240,13 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
-    /// Jarak antar frame uji — 120 Hz, angka yang sama yang dilaporkan display
-    /// link ProMotion. **Jam palsu**, bukan `Instant::now()`: uji tidak boleh
-    /// bergantung pada secepat apa mesin CI menjalankan loop-nya (§9.5).
+    /// The gap between test frames — 120 Hz, the same number a ProMotion
+    /// display link reports. A **fake clock**, not `Instant::now()`: tests must
+    /// not depend on how fast the CI machine runs their loop (§9.5).
     const SEFRAME: Duration = Duration::from_millis(8);
 
-    /// Aplikasi headless + jam palsu, dirakit persis seperti `run_app_with`.
+    /// A headless app + fake clock, assembled exactly the way `run_app_with`
+    /// does it.
     struct Layar {
         ui: AppRuntime,
         jam: Instant,
@@ -257,18 +264,18 @@ mod tests {
             layar
         }
 
-        /// Satu frame lengkap: detak animasi dulu (§3.5), lalu rebuild →
-        /// layout → paint — urutan yang sama dengan shell.
+        /// One complete frame: the animation tick first (§3.5), then
+        /// rebuild → layout → paint — the same order as the shell.
         fn frame(&mut self) {
             self.jam += SEFRAME;
             self.ui.animate_at(self.jam, silka_widgets::advance);
             self.ui.frame();
         }
 
-        /// Jalankan sampai tidak ada lagi yang bergerak.
+        /// Pump frames until nothing is moving any more.
         ///
-        /// Batas iterasinya sengaja ada: animasi yang tidak pernah settle harus
-        /// menjadi kegagalan uji, bukan uji yang menggantung selamanya.
+        /// The iteration cap is deliberate: an animation that never settles
+        /// must become a test failure, not a test that hangs forever.
         fn diamkan(&mut self) {
             for _ in 0..600 {
                 self.frame();
@@ -291,14 +298,14 @@ mod tests {
                 .bounds
         }
 
-        /// Nilai yang dibacakan screen reader untuk sebuah kontrol.
+        /// The value a screen reader announces for a control.
         fn nilai(&self, label: &str) -> Option<String> {
             self.pohon()
                 .find_label(label)
                 .and_then(|e| e.node.value.clone())
         }
 
-        /// Berapa baris menu yang sedang terlihat teknologi bantu.
+        /// How many menu rows assistive technology can currently see.
         fn baris_menu(&self) -> usize {
             self.pohon()
                 .entries()
@@ -350,7 +357,7 @@ mod tests {
                 e.bounds.size
             );
         }
-        // Popup tertutup tidak ada sama sekali bagi teknologi bantu.
+        // A closed popup does not exist at all for assistive technology.
         assert_eq!(layar.baris_menu(), 0);
         assert_eq!(layar.nilai(LABEL_MATA_UANG).as_deref(), Some("Rupiah"));
         assert_eq!(layar.nilai(LABEL_NEGARA), None, "negara belum dipilih");
@@ -375,7 +382,7 @@ mod tests {
         layar.klik_label("Euro");
         assert_eq!(layar.nilai(LABEL_MATA_UANG).as_deref(), Some("Euro"));
         assert_eq!(layar.baris_menu(), 0, "memilih menutup popup");
-        // Ringkasan di layar ikut berubah — bukan cuma keadaan internal.
+        // The on-screen summary changes too — not just internal state.
         assert!(layar.pohon().entries().iter().any(|e| e
             .node
             .label
@@ -387,7 +394,7 @@ mod tests {
     fn keyboard_menyusuri_daftar_panjang_dan_memilih() {
         let mut layar = Layar::baru(Theme::tailwind(Appearance::Dark));
 
-        // Tab dua kali sampai ke kontrol negara, lalu Space membukanya.
+        // Tab twice to reach the country control, then Space opens it.
         layar.tekan(KeyCode::Named(NamedKey::Tab));
         layar.tekan(KeyCode::Named(NamedKey::Tab));
         layar.tekan(KeyCode::Named(NamedKey::Space));
@@ -397,7 +404,7 @@ mod tests {
             "seluruh baris ada di pohon a11y"
         );
 
-        // Turun melewati jendela yang terlihat, lalu pilih.
+        // Move down past the visible window, then choose.
         for _ in 0..8 {
             layar.tekan(KeyCode::Named(NamedKey::ArrowDown));
         }

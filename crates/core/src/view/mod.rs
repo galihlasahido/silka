@@ -1,19 +1,20 @@
-//! **View tree ringan → di-diff ke arena render tree** (REKOMENDASI §2).
+//! **A lightweight view tree → diffed into the arena render tree**
+//! (REKOMENDASI §2).
 //!
-//! View adalah struct sekali pakai: dibangun ulang setiap kali komponen
-//! rebuild (karena signal-nya berubah, §2.5), lalu **di-diff** terhadap render
-//! tree yang retained. Yang bertahan lintas rebuild adalah node render di arena
-//! beserta state layout-nya, bukan view-nya.
+//! A view is a single-use struct: rebuilt every time a component rebuilds
+//! (because one of its signals changed, §2.5), then **diffed** against the
+//! retained render tree. What survives across rebuilds is the render node in
+//! the arena together with its layout state, not the view.
 //!
-//! Aturan identitas — sama persis dengan aturan scope di [`crate::signals`]:
+//! The identity rules — exactly the scope rules from [`crate::signals`]:
 //!
-//! - **Tipe view sama + kunci sama = node yang sama**, diperbarui di tempat.
-//! - **Tipe berbeda = node diganti** beserta seluruh subtree-nya.
-//! - **Tanpa kunci = dicocokkan per posisi** di antara saudara tanpa kunci.
-//! - **Kunci hilang = node dibuang.**
+//! - **Same view type + same key = the same node**, updated in place.
+//! - **A different type = the node is replaced**, subtree and all.
+//! - **No key = matched by position** among the unkeyed siblings.
+//! - **A vanished key = the node is dropped.**
 //!
-//! Bentuk penulisannya mengikuti §2.5 (fungsi konstruktor + method chaining),
-//! sama seperti API publik yang nanti diekspor `silka-widgets`:
+//! The notation follows §2.5 (constructor functions + method chaining), just
+//! like the public API `silka-widgets` will eventually export:
 //!
 //! ```
 //! use silka_core::tree::{BoxConstraints, RenderTree};
@@ -29,12 +30,12 @@
 //!     ])
 //!     .spacing(12.0),
 //! );
-//! assert_eq!(stat.created, 3); // column + dua anak
+//! assert_eq!(stat.created, 3); // column + two children
 //! tree.layout(BoxConstraints::loose(Size::new(400.0, 400.0)));
 //! ```
 //!
-//! Yang **tidak** ada di sini: macro DSL ala `rsx!` (ditolak sebagai fondasi,
-//! §2.5) dan segala hal yang menyentuh tipe wgpu (§3.2).
+//! What is **not** here: an `rsx!`-style macro DSL (rejected as a foundation,
+//! §2.5) and anything that touches a wgpu type (§3.2).
 
 mod diff;
 mod interactive;
@@ -56,27 +57,27 @@ pub use primitives::{
     ViewportProps,
 };
 
-/// Deskripsi satu node: cara membuatnya, dan cara memperbarui yang sudah ada.
+/// Describes one node: how to create it, and how to update an existing one.
 ///
-/// Satu tipe `ViewNode` memetakan ke **tepat satu** tipe [`RenderNode`] —
-/// itulah yang membuat [`ViewNode::update`] boleh percaya pada downcast-nya
-/// (diffing sudah memastikan tipe view-nya cocok sebelum memanggil).
+/// One `ViewNode` type maps to **exactly one** [`RenderNode`] type — that is
+/// what lets [`ViewNode::update`] trust its downcast (diffing has already
+/// confirmed the view types match before calling).
 pub trait ViewNode: 'static {
-    /// Bangun node render baru dari props ini.
+    /// Build a fresh render node from these props.
     fn build(&self) -> Box<dyn RenderNode>;
 
-    /// Terapkan props ke node yang sudah ada.
+    /// Apply these props to an existing node.
     ///
-    /// Kembalikan alasan dirty: [`Dirty::LAYOUT`] bila ukuran bisa berubah,
-    /// [`Dirty::PAINT`] bila hanya tampilannya. [`Dirty::NONE`] berarti benar-
-    /// benar tidak ada yang berubah — dan itu berarti nol pekerjaan lanjutan.
+    /// Return the dirty reasons: [`Dirty::LAYOUT`] when the size may change,
+    /// [`Dirty::PAINT`] when only the appearance did. [`Dirty::NONE`] means
+    /// nothing changed at all — and that means zero follow-up work.
     fn update(&self, node: &mut dyn RenderNode) -> Dirty;
 }
 
-/// Satu simpul view tree: props + kunci + anak-anak.
+/// One node of the view tree: props + key + children.
 ///
-/// Ringan dan sekali pakai. Dibangun lewat fungsi konstruktor
-/// ([`column`], [`fixed`], …), bukan dengan mengisi field.
+/// Lightweight and single-use. Built through constructor functions
+/// ([`column`], [`fixed`], …), never by filling in fields.
 pub struct View {
     key: Option<Key>,
     type_id: TypeId,
@@ -85,7 +86,7 @@ pub struct View {
 }
 
 impl View {
-    /// View baru dari props.
+    /// A new view from props.
     pub fn new<V: ViewNode>(props: V) -> Self {
         Self {
             key: None,
@@ -95,12 +96,12 @@ impl View {
         }
     }
 
-    /// Kunci identitas view ini di antara saudara-saudaranya.
+    /// This view's identity key among its siblings.
     pub fn key(&self) -> Option<&Key> {
         self.key.as_ref()
     }
 
-    /// Anak-anak view ini.
+    /// This view's children.
     pub fn children(&self) -> &[View] {
         &self.children
     }
@@ -115,12 +116,12 @@ impl core::fmt::Debug for View {
     }
 }
 
-/// Builder bergaya Dart untuk sebuah view: props tipe `V` + kunci + anak.
+/// A Dart-style builder for a view: props of type `V` + key + children.
 ///
-/// Nesting-nya identik dengan Flutter; properti opsional pindah ke method
-/// chain (§2.5). Setiap primitif menambahkan method-nya sendiri lewat
-/// `impl Builder<PropsNya>` sehingga salah ketik = error compile, bukan
-/// properti yang diam-diam tidak berefek.
+/// The nesting is identical to Flutter's; optional properties move onto the
+/// method chain (§2.5). Every primitive adds its own methods through
+/// `impl Builder<ItsProps>`, so a typo is a compile error rather than a
+/// property that silently has no effect.
 pub struct Builder<V: ViewNode> {
     key: Option<Key>,
     props: V,
@@ -128,7 +129,7 @@ pub struct Builder<V: ViewNode> {
 }
 
 impl<V: ViewNode> Builder<V> {
-    /// Builder baru tanpa kunci dan tanpa anak.
+    /// A new builder with no key and no children.
     pub fn new(props: V) -> Self {
         Self {
             key: None,
@@ -137,25 +138,26 @@ impl<V: ViewNode> Builder<V> {
         }
     }
 
-    /// Beri kunci identitas — wajib untuk anak di list dinamis (§2.5).
+    /// Give it an identity key — required for children of a dynamic list
+    /// (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Tambahkan satu anak.
+    /// Add one child.
     pub fn child(mut self, child: impl Into<View>) -> Self {
         self.children.push(child.into());
         self
     }
 
-    /// Tambahkan banyak anak.
+    /// Add several children.
     pub fn children<C: Into<View>>(mut self, children: impl IntoIterator<Item = C>) -> Self {
         self.children.extend(children.into_iter().map(Into::into));
         self
     }
 
-    /// Ubah props di tempat — dipakai method chain milik tiap primitif.
+    /// Mutate the props in place — used by each primitive's method chain.
     pub fn map(mut self, f: impl FnOnce(&mut V)) -> Self {
         f(&mut self.props);
         self

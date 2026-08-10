@@ -1,65 +1,68 @@
-//! Pengepakan [`Scene`] menjadi data instance untuk shader SDF.
+//! Packing a [`Scene`] into instance data for the SDF shader.
 //!
-//! Semua keputusan geometri dan warna terjadi **di sini** — CPU, murni nilai,
-//! bisa diuji tanpa GPU sama sekali. Shader hanya mengeksekusi apa yang sudah
-//! diputuskan modul ini:
+//! Every geometry and color decision happens **here** — on the CPU, in plain
+//! values, testable without a GPU at all. The shader only executes what this
+//! module already decided:
 //!
-//! - radius per sudut sudah dikalikan faktor squircle dan dibatasi terhadap
-//!   ukuran kotak (§3.6: geometri sudut adalah parameter, bukan konstanta);
-//! - eksponen superellipse sudah diturunkan dari [`silka_paint::CornerStyle`];
-//! - warna sudah dipindahkan ke ruang yang benar untuk format target.
+//! - per-corner radii are already multiplied by the squircle factor and clamped
+//!   against the box size (§3.6: corner geometry is a parameter, not a
+//!   constant);
+//! - the superellipse exponent is already derived from
+//!   [`silka_paint::CornerStyle`];
+//! - colors are already moved into the right space for the target format.
 //!
-//! Konsekuensinya "shader menggambar squircle dengan benar" bisa diregresi-uji
-//! di CI tanpa GPU, dan satu-satunya yang tersisa untuk diuji secara visual
-//! adalah rasterisasinya sendiri.
+//! The upshot is that "the shader draws squircles correctly" can be
+//! regression-tested in CI without a GPU, and the only thing left to test
+//! visually is the rasterization itself.
 
 use silka_paint::{
     Color, Command, Corners, GlyphFormat, GlyphRun, GlyphSource, Quad, Rect, Scene, ShadowQuad,
     Size,
 };
 
-/// Jenis instance di `params.w` — harus sama dengan konstanta di `sdf.wgsl`.
+/// The instance kind in `params.w` — must match the constants in `sdf.wgsl`.
 const KIND_QUAD: f32 = 0.0;
 const KIND_SHADOW: f32 = 1.0;
 const KIND_GLYPH: f32 = 2.0;
 
-/// Pemilih atlas di `params.x` untuk instance glyph — cerminan `sdf.wgsl`.
+/// The atlas selector in `params.x` for glyph instances — mirrors `sdf.wgsl`.
 const ATLAS_MASK: f32 = 0.0;
 const ATLAS_COLOR: f32 = 1.0;
 
-/// Satu instance untuk shader SDF.
+/// One instance for the SDF shader.
 ///
-/// Tata letaknya adalah kontrak dengan `sdf.wgsl`: lima `vec4<f32>` berurutan,
-/// tanpa padding tersembunyi (semua field `f32`, `repr(C)`).
+/// Its layout is a contract with `sdf.wgsl`: five consecutive `vec4<f32>`, with
+/// no hidden padding (all fields are `f32`, `repr(C)`).
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub(crate) struct QuadInstance {
-    /// xy = pusat, zw = setengah ukuran, poin logis.
+    /// xy = center, zw = half size, in logical points.
     pub bounds: [f32; 4],
-    /// Radius kiri-atas, kanan-atas, kanan-bawah, kiri-bawah — sudah final.
+    /// Radii for top-left, top-right, bottom-right, bottom-left — already
+    /// final.
     ///
-    /// Pada instance **glyph** slot yang sama membawa kotak UV
-    /// `[u0, v0, u1, v1]`: bentuk sudut tidak berlaku untuk bitmap, jadi
-    /// tidak ada gunanya menambah field yang selalu nol untuk semua kotak
-    /// biasa (satu tata letak instance = satu pipeline = satu draw call).
+    /// On **glyph** instances the same slot carries the UV rect
+    /// `[u0, v0, u1, v1]`: corner shape does not apply to a bitmap, so there is
+    /// no point adding a field that would be zero for every ordinary box (one
+    /// instance layout = one pipeline = a single draw call).
     pub radii: [f32; 4],
-    /// Warna isi (atau warna bayangan / warna teks), straight alpha.
+    /// Fill color (or shadow color / text color), straight alpha.
     pub background: [f32; 4],
-    /// Warna border, straight alpha. Tidak dipakai instance glyph.
+    /// Border color, straight alpha. Unused by glyph instances.
     pub border: [f32; 4],
-    /// x = tebal border (glyph: pemilih atlas), y = eksponen superellipse,
-    /// z = sigma, w = jenis.
+    /// x = border width (glyph: atlas selector), y = superellipse exponent,
+    /// z = sigma, w = kind.
     pub params: [f32; 4],
 }
 
 impl QuadInstance {
-    /// Ukuran satu instance dalam byte (= `array_stride` vertex buffer).
+    /// The size of one instance in bytes (= the vertex buffer `array_stride`).
     pub const SIZE: usize = core::mem::size_of::<QuadInstance>();
 
-    /// Benar bila instance ini benar-benar bisa menghasilkan piksel.
+    /// True when this instance can actually produce pixels.
     ///
-    /// Dipakai untuk membuang perintah tak terlihat sebelum menyentuh GPU:
-    /// kotak berukuran nol, warna transparan penuh, border setebal nol.
+    /// Used to drop invisible commands before they touch the GPU: zero-sized
+    /// boxes, fully transparent colors, zero-width borders.
     fn is_visible(&self) -> bool {
         let punya_luas = self.bounds[2] > 0.0 && self.bounds[3] > 0.0;
         let isi = self.background[3] > 0.0;
@@ -68,16 +71,17 @@ impl QuadInstance {
     }
 }
 
-/// Ruang warna yang diharapkan target render.
+/// The color space the render target expects.
 ///
-/// Format `*Srgb` melakukan encoding balik di hardware, jadi shader harus
-/// menulis nilai **linear**. Ini titik konversi yang sama disiplinnya dengan
-/// `format::clear_color` — kalau dilewatkan, seluruh UI tampak "cuci".
+/// A `*Srgb` format does the encoding back in hardware, so the shader must
+/// write **linear** values. This is the same conversion point, held to the same
+/// discipline, as `format::clear_color` — skip it and the whole UI looks washed
+/// out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ColorSpace {
-    /// Target `*Srgb`: kirim nilai linear.
+    /// A `*Srgb` target: send linear values.
     Linear,
-    /// Target non-sRGB: kirim nilai apa adanya.
+    /// A non-sRGB target: send the values as they are.
     Srgb,
 }
 
@@ -90,55 +94,56 @@ impl ColorSpace {
     }
 }
 
-/// Rentang instance berurutan yang berbagi satu kotak potong.
+/// A consecutive range of instances sharing one clip rect.
 ///
-/// Satu batch = satu `set_scissor_rect` + satu `draw`. Batch baru dibuat
-/// **hanya** saat clip efektif berubah, sehingga scene tanpa clip tetap
-/// menjadi satu draw call seperti sebelumnya, dan scroll view menambah tepat
-/// dua batch (isi terpotong, lalu kembali ke luar), bukan satu per perintah.
+/// One batch = one `set_scissor_rect` + one `draw`. A new batch is created
+/// **only** when the effective clip changes, so a scene without clipping stays
+/// a single draw call as before, and a scroll view adds exactly two batches
+/// (the clipped content, then back outside) rather than one per command.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct InstanceBatch {
-    /// Kotak potong efektif dalam **poin logis absolut**; `None` = tanpa potong.
+    /// The effective clip rect in **absolute logical points**; `None` = no
+    /// clipping.
     pub clip: Option<Rect>,
-    /// Indeks instance pertama.
+    /// Index of the first instance.
     pub start: u32,
-    /// Indeks setelah instance terakhir.
+    /// Index one past the last instance.
     pub end: u32,
 }
 
-/// Seluruh isi satu frame: instance urut belakang→depan, dipecah menjadi batch
-/// per kotak potong.
+/// Everything in one frame: instances ordered back→front, split into batches by
+/// clip rect.
 ///
-/// Dipakai ulang antar frame (`clear` tidak melepas kapasitas) supaya frame
-/// steady-state tetap bebas alokasi (§3.5).
+/// Reused across frames (`clear` does not release capacity) so the steady-state
+/// frame stays allocation-free (§3.5).
 #[derive(Debug, Default)]
 pub(crate) struct DrawList {
     instances: Vec<QuadInstance>,
     batches: Vec<InstanceBatch>,
-    /// Tumpukan clip — **hanya untuk memulihkan**, tidak pernah untuk mengiris.
+    /// The clip stack — **only for restoring**, never for intersecting.
     ///
-    /// Irisan clip bersarang sudah diselesaikan `silka-core`: `PushClip`
-    /// membawa kotak yang sudah diiriskan dengan clip di luarnya (lihat
-    /// `child_clip` di `core::tree::paint`). Yang tetap dibutuhkan backend
-    /// hanyalah **ingatan** akan kotak induk, karena `PopClip` berarti
-    /// "kembali ke clip sebelumnya" dan kotak itu tidak dikirim ulang. Tanpa
-    /// tumpukan, dua scroll view bersarang akan meneruskan clip yang lebih
-    /// sempit ke saudara di luar viewport dalam.
+    /// Nested clip intersection is already resolved by `silka-core`: a
+    /// `PushClip` carries a rect already intersected with the clip outside it
+    /// (see `child_clip` in `core::tree::paint`). All the backend still needs
+    /// is the **memory** of the parent rect, because `PopClip` means "go back
+    /// to the previous clip" and that rect is not sent again. Without the
+    /// stack, two nested scroll views would leak the narrower clip onto
+    /// siblings outside the inner viewport.
     stack: Vec<Rect>,
 }
 
 impl DrawList {
-    /// Semua instance frame ini, urut gambar.
+    /// All instances in this frame, in draw order.
     pub(crate) fn instances(&self) -> &[QuadInstance] {
         &self.instances
     }
 
-    /// Batch frame ini, urut gambar.
+    /// This frame's batches, in draw order.
     pub(crate) fn batches(&self) -> &[InstanceBatch] {
         &self.batches
     }
 
-    /// Benar bila tidak ada satu instance pun untuk digambar.
+    /// True when there is not a single instance to draw.
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.instances.is_empty()
@@ -150,7 +155,7 @@ impl DrawList {
         self.stack.clear();
     }
 
-    /// Kotak potong yang sedang berlaku.
+    /// The clip rect currently in effect.
     fn clip(&self) -> Option<Rect> {
         self.stack.last().copied()
     }
@@ -161,20 +166,20 @@ impl DrawList {
 
     fn pop_clip(&mut self) {
         let ada = self.stack.pop().is_some();
-        // `Scene` menjamin pasangannya seimbang; kalau tidak, lebih baik frame
-        // tergambar tanpa potong daripada panik di tengah jalur render.
+        // `Scene` guarantees these are balanced; if they are not, a frame drawn
+        // unclipped beats panicking in the middle of the render path.
         debug_assert!(ada, "PopClip tanpa PushClip");
     }
 
-    /// Tambahkan satu instance ke batch yang sedang terbuka, buka batch baru
-    /// bila clip-nya berbeda.
+    /// Add one instance to the currently open batch, opening a new batch when
+    /// its clip differs.
     fn push(&mut self, instance: QuadInstance) {
         if !instance.is_visible() {
             return;
         }
         let clip = self.clip();
-        // Clip degenerate (viewport yang menyusut jadi nol) tidak bisa
-        // meloloskan satu piksel pun — instance-nya tidak perlu sampai ke GPU.
+        // A degenerate clip (a viewport collapsed to zero) cannot let a single
+        // pixel through — its instances need never reach the GPU.
         if clip.is_some_and(|c| c.size.is_empty()) {
             return;
         }
@@ -195,28 +200,28 @@ impl DrawList {
     }
 }
 
-/// Ubah seluruh perintah sebuah scene menjadi instance, urut belakang→depan.
+/// Turn all of a scene's commands into instances, ordered back→front.
 ///
-/// **Urutan adalah kontraknya**: instance dikeluarkan persis seurut perintah
-/// scene, dan seluruhnya digambar dalam satu draw call oleh satu pipeline —
-/// sehingga teks selalu berada di atas latar yang mendahuluinya, tidak pernah
-/// tertimpa (blending mengikuti urutan primitif di dalam draw call).
+/// **The order is the contract**: instances are emitted in exactly the scene's
+/// command order and all of them are drawn in a single draw call by a single
+/// pipeline — so text always lands above the background that precedes it and is
+/// never painted over (blending follows primitive order within a draw call).
 ///
-/// `scale_factor` dipakai untuk **menyetel kotak tujuan glyph ke grid piksel
-/// fisik**: bitmap glyph dirasterisasi pada resolusi layar (§3.3), jadi satu
-/// texel harus jatuh tepat pada satu piksel layar. Tanpa penyetelan ini teks
-/// di layar 2× akan lembek karena disampel di antara dua texel. Subpixel
-/// *positioning* tidak ikut hilang: ia sudah terkandung di dalam bitmap yang
-/// dipilih lapisan teks, bukan di posisi kotaknya.
+/// `scale_factor` is used to **snap glyph destination boxes to the physical
+/// pixel grid**: glyph bitmaps are rasterized at screen resolution (§3.3), so
+/// one texel must land exactly on one screen pixel. Without that snapping, text
+/// on a 2× display goes soft because it is sampled between two texels. Subpixel
+/// *positioning* is not lost along the way: it is already baked into the bitmap
+/// the text layer picked, not into the box position.
 ///
-/// [`Command::PushClip`]/[`Command::PopClip`] **tidak** menghasilkan instance:
-/// keduanya memecah daftar menjadi [`InstanceBatch`] yang nanti dipasang
-/// sebagai scissor rect GPU. Kotaknya dipakai apa adanya — irisan clip
-/// bersarang sudah dilakukan `silka-core` sebelum perintahnya dibuat.
+/// [`Command::PushClip`]/[`Command::PopClip`] produce **no** instances: they
+/// split the list into [`InstanceBatch`]es that later become GPU scissor rects.
+/// The rect is used as-is — nested clip intersection was already done by
+/// `silka-core` before the command was created.
 ///
-/// Perintah yang belum didukung backend ini dilewati **secara eksplisit**
-/// (lihat lengan `match` di bawah) supaya "belum ada" tidak pernah tersamar
-/// sebagai "sudah jalan" — `Command` sengaja `#[non_exhaustive]`.
+/// Commands this backend does not support yet are skipped **explicitly** (see
+/// the `match` arms below) so that "not implemented" never masquerades as
+/// "working" — `Command` is deliberately `#[non_exhaustive]`.
 pub(crate) fn fill_draw_list(
     scene: &Scene,
     space: ColorSpace,
@@ -233,16 +238,16 @@ pub(crate) fn fill_draw_list(
             Command::GlyphRun(r) => fill_glyph_run(r, space, scale_factor, glyphs, out),
             Command::PushClip(rect) => out.push_clip(*rect),
             Command::PopClip => out.pop_clip(),
-            // Kosakata `silka-paint` masih tumbuh (blur/material, layer
-            // offscreen). Perintah baru yang belum punya jalur di sini
-            // dilewatkan agar frame tetap tergambar — tapi ia HARUS muncul
-            // sebagai lengan bernama di atas begitu backend mendukungnya.
+            // The `silka-paint` vocabulary is still growing (blur/material,
+            // offscreen layers). New commands without a path here are skipped
+            // so the frame still draws — but each one MUST show up as a named
+            // arm above as soon as the backend supports it.
             lain => debug_assert!(false, "perintah gambar belum didukung backend: {lain:?}"),
         }
     }
 }
 
-/// Versi yang mengalokasi sendiri — dipakai test dan tooling headless.
+/// The self-allocating version — used by tests and headless tooling.
 #[cfg(test)]
 pub(crate) fn draw_list_from_scene(
     scene: &Scene,
@@ -255,10 +260,10 @@ pub(crate) fn draw_list_from_scene(
     out
 }
 
-/// Satu [`GlyphRun`] → satu instance quad bertekstur per glyph.
+/// One [`GlyphRun`] → one textured quad instance per glyph.
 ///
-/// Semua glyph run ini memakai warna yang sama (kontrak `GlyphRun`), jadi
-/// warnanya dikodekan sekali di sini, bukan per glyph.
+/// Every glyph in a run shares one color (the `GlyphRun` contract), so that
+/// color is encoded once here rather than per glyph.
 fn fill_glyph_run(
     run: &GlyphRun,
     space: ColorSpace,
@@ -278,8 +283,8 @@ fn fill_glyph_run(
     out.reserve(run.len());
 
     for glyph in &run.glyphs {
-        // Id yang sudah hangus (atlas dibangun ulang saat penuh) hilang untuk
-        // satu frame — jauh lebih baik daripada menggambar glyph yang salah.
+        // An id that has gone stale (the atlas was rebuilt when it filled up)
+        // is lost for one frame — far better than drawing the wrong glyph.
         let Some(letak) = glyphs.placement(glyph.image) else {
             continue;
         };
@@ -291,8 +296,8 @@ fn fill_glyph_run(
             continue;
         }
 
-        // Kotak tujuan dalam piksel FISIK, disetel ke grid piksel: lebar dan
-        // tingginya persis sebesar bitmap di atlas.
+        // The destination box in PHYSICAL pixels, snapped to the pixel grid:
+        // its width and height are exactly the bitmap's size in the atlas.
         let mut x0 = (glyph.bounds.min_x() * scale).round();
         let mut y0 = (glyph.bounds.min_y() * scale).round();
         let mut x1 = x0 + letak.region.width as f32;
@@ -300,10 +305,10 @@ fn fill_glyph_run(
 
         let [mut u0, mut v0, mut u1, mut v1] = letak.region.uv(ukuran_atlas);
 
-        // Clip run (truncation/ellipsis, scroll view) diselesaikan di CPU:
-        // kotak dipotong dan UV ikut dipotong secara proporsional. Dengan
-        // begitu tidak ada `discard` di shader dan tidak ada scissor rect per
-        // glyph yang akan memecah batch.
+        // Run clipping (truncation/ellipsis, scroll views) is resolved on the
+        // CPU: the box is cut and the UVs are cut proportionally with it. That
+        // way there is no `discard` in the shader and no per-glyph scissor rect
+        // to break up the batch.
         if let Some(clip) = run.clip {
             let (cx0, cy0) = (clip.min_x() * scale, clip.min_y() * scale);
             let (cx1, cy1) = (clip.max_x() * scale, clip.max_y() * scale);
@@ -328,7 +333,7 @@ fn fill_glyph_run(
             y1 = ny1;
         }
 
-        // Kembali ke poin logis: shader hanya mengenal satu ruang koordinat.
+        // Back to logical points: the shader knows only one coordinate space.
         let instance = QuadInstance {
             bounds: [
                 (x0 + x1) * 0.5 / scale,
@@ -344,9 +349,9 @@ fn fill_glyph_run(
                     GlyphFormat::Mask => ATLAS_MASK,
                     GlyphFormat::Color => ATLAS_COLOR,
                 },
-                // Eksponen 2 = jalur `length()` di shader: instance glyph tidak
-                // pernah memakai SDF, tapi nilainya tetap harus waras karena
-                // `fwidth` dihitung sebelum percabangan jenis.
+                // Exponent 2 = the `length()` path in the shader: glyph
+                // instances never use the SDF, but the value still has to be
+                // sane because `fwidth` is computed before the kind branch.
                 2.0,
                 0.0,
                 KIND_GLYPH,
@@ -397,12 +402,12 @@ fn bounds_of(rect: Rect) -> [f32; 4] {
     ]
 }
 
-/// Radius final per sudut: radius nominal × faktor squircle, dibatasi ke
-/// separuh sisi terpendek.
+/// The final radius per corner: the nominal radius × the squircle factor,
+/// clamped to half the shortest side.
 ///
-/// Faktor inilah yang membuat sudut Apple "mulai melengkung lebih awal"
-/// (≈1.528× radius nominal, §3.6). Karena ia dikalikan di sini, shader hanya
-/// menerima angka jadi dan tidak perlu tahu apa itu preset.
+/// This factor is what makes an Apple corner "start curving earlier" (≈1.528×
+/// the nominal radius, §3.6). Because it is applied here, the shader only
+/// receives finished numbers and never needs to know what a preset is.
 fn radii_of(corners: Corners, size: Size) -> [f32; 4] {
     let batas = (size.min_side() * 0.5).max(0.0);
     let faktor = corners.style.extent_factor();
@@ -415,16 +420,16 @@ fn radii_of(corners: Corners, size: Size) -> [f32; 4] {
     ]
 }
 
-/// Pandang slice instance sebagai byte mentah untuk diunggah ke GPU.
+/// View a slice of instances as raw bytes for upload to the GPU.
 ///
-/// `unsafe` di sini disengaja dan terkurung: [`QuadInstance`] adalah `repr(C)`
-/// berisi `f32` saja — tanpa padding, tanpa pointer, tanpa bit pattern tak
-/// valid — sehingga setiap byte-nya bisa dibaca. Ini satu-satunya alternatif
-/// selain menambah dependensi hanya untuk sebuah cast (REKOMENDASI §4:
-/// minimalkan `unsafe`, dan konsentrasikan di batas GPU).
+/// The `unsafe` here is deliberate and contained: [`QuadInstance`] is `repr(C)`
+/// holding only `f32` — no padding, no pointers, no invalid bit patterns — so
+/// every one of its bytes is readable. The only alternative is adding a
+/// dependency purely for a cast (REKOMENDASI §4: minimize `unsafe`, and
+/// concentrate it at the GPU boundary).
 pub(crate) fn as_bytes(instances: &[QuadInstance]) -> &[u8] {
-    // SAFETY: lihat dokumentasi di atas; panjangnya persis n * SIZE dan
-    // umurnya terikat ke slice asal.
+    // SAFETY: see the documentation above; the length is exactly n * SIZE and
+    // the lifetime is tied to the source slice.
     unsafe {
         core::slice::from_raw_parts(
             instances.as_ptr() as *const u8,
@@ -441,10 +446,10 @@ mod tests {
     };
     use std::collections::HashMap;
 
-    /// Atlas palsu: cukup untuk menguji seluruh aritmetika glyph tanpa font
-    /// dan tanpa GPU. Bukti bahwa jalur teks di renderer benar-benar hanya
-    /// berbicara lewat `GlyphSource` (§3.2) — kalau ia diam-diam butuh
-    /// `silka-text`, test ini tidak akan bisa ditulis.
+    /// A fake atlas: enough to exercise all the glyph arithmetic without fonts
+    /// and without a GPU. Proof that the renderer's text path really only talks
+    /// through `GlyphSource` (§3.2) — if it secretly needed `silka-text`, this
+    /// test could not be written.
     #[derive(Debug, Default)]
     struct AtlasPalsu {
         ukuran: u32,
@@ -559,7 +564,7 @@ mod tests {
     #[test]
     fn squircle_melebarkan_radius_dan_menaikkan_eksponen() {
         let i = instances(&scene_dengan(kartu(CornerStyle::squircle())));
-        // 16 × 1.528 — sudut Apple mulai melengkung lebih awal.
+        // 16 × 1.528 — an Apple corner starts curving earlier.
         assert!(
             (i[0].radii[0] - 16.0 * 1.528).abs() < 0.05,
             "{:?}",
@@ -570,8 +575,8 @@ mod tests {
 
     #[test]
     fn radius_tidak_pernah_melebihi_separuh_sisi_terpendek() {
-        // Token `radius_full` (9999) pada pil: harus jadi tepat setengah tinggi,
-        // baik di arc maupun setelah dikali faktor squircle.
+        // The `radius_full` token (9999) on a pill: it must come out as exactly
+        // half the height, both for arc and after the squircle factor.
         for style in [CornerStyle::Arc, CornerStyle::squircle()] {
             let pil = Quad::new(Rect::new(0.0, 0.0, 120.0, 32.0))
                 .background(Color::WHITE)
@@ -617,18 +622,18 @@ mod tests {
         let apa_adanya = apa_adanya.instances();
         assert!((linear[0].background[0] - 0.214_041).abs() < 1e-4);
         assert!((apa_adanya[0].background[0] - 0.5).abs() < 1e-6);
-        // Alpha tidak pernah ikut dilinearkan.
+        // Alpha is never linearized.
         assert_eq!(linear[0].background[3], 1.0);
     }
 
     #[test]
     fn perintah_tak_terlihat_tidak_pernah_sampai_ke_gpu() {
         let mut s = Scene::new(Color::BLACK);
-        // Kotak transparan tanpa border.
+        // A transparent box with no border.
         s.push(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0)));
-        // Kotak berukuran nol.
+        // A zero-sized box.
         s.push(Quad::new(Rect::new(0.0, 0.0, 0.0, 10.0)).background(Color::WHITE));
-        // Border setebal nol dengan warna terlihat.
+        // A zero-width border in a visible color.
         s.push(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0)).border(0.0, Color::WHITE));
         assert!(instances(&s).is_empty());
     }
@@ -651,14 +656,14 @@ mod tests {
         );
         let i = instances(&s);
         assert_eq!(i.len(), 3);
-        // Ambient: sigma 20, digeser 12 poin ke bawah.
+        // Ambient: sigma 20, shifted 12 points down.
         assert_eq!(i[0].params[2], 20.0);
         assert_eq!(i[0].params[3], KIND_SHADOW);
         assert_eq!(i[0].bounds[1], 90.0 + 12.0);
-        // Key: lebih rapat, lebih dekat.
+        // Key: tighter and closer.
         assert_eq!(i[1].params[2], 6.0);
         assert_eq!(i[1].bounds[1], 90.0 + 4.0);
-        // Kotaknya sendiri paling depan dan tanpa blur.
+        // The box itself is frontmost and unblurred.
         assert_eq!(i[2].params[2], 0.0);
         assert_eq!(i[2].params[3], KIND_QUAD);
     }
@@ -694,12 +699,12 @@ mod tests {
         assert!(instances(&Scene::new(Color::BLACK)).is_empty());
     }
 
-    // ---- Batch clip ------------------------------------------------------
+    // ---- Clip batches ----------------------------------------------------
 
     #[test]
     fn scene_tanpa_clip_tetap_satu_batch() {
-        // Regresi terhadap batching: menambahkan clip TIDAK boleh membuat UI
-        // biasa (yang tidak memotong apa pun) memakai lebih dari satu draw.
+        // A regression guard on batching: adding clip support must NOT make an
+        // ordinary UI (one that clips nothing) use more than one draw.
         let mut s = Scene::new(Color::BLACK);
         s.push(kotak(0.0, 0.0, 10.0, 10.0));
         s.push(kotak(20.0, 0.0, 10.0, 10.0));
@@ -750,11 +755,12 @@ mod tests {
 
     #[test]
     fn clip_bersarang_dipulihkan_ke_kotak_induk_setelah_pop() {
-        // Inti kenapa backend tetap butuh TUMPUKAN meski irisannya sudah
-        // dilakukan core: `PopClip` tidak membawa kotak induknya. Tanpa
-        // tumpukan, kotak ketiga akan ikut terpotong oleh viewport dalam.
+        // The heart of why the backend still needs a STACK even though core
+        // already did the intersecting: `PopClip` does not carry the parent
+        // rect. Without the stack, the third box would also be clipped by the
+        // inner viewport.
         let luar = Rect::new(0.0, 0.0, 100.0, 100.0);
-        let dalam = Rect::new(0.0, 0.0, 20.0, 20.0); // sudah = luar ∩ dalam
+        let dalam = Rect::new(0.0, 0.0, 20.0, 20.0); // already = outer ∩ inner
         let mut s = Scene::new(Color::BLACK);
         s.push(Command::PushClip(luar));
         s.push(kotak(0.0, 0.0, 200.0, 200.0));
@@ -773,8 +779,8 @@ mod tests {
 
     #[test]
     fn clip_yang_sama_berturut_turut_tidak_memecah_batch() {
-        // Dua scroll view bersaudara dengan viewport identik: batch-nya boleh
-        // menyatu, tapi HANYA karena kotaknya benar-benar sama.
+        // Two sibling scroll views with identical viewports: their batches may
+        // merge, but ONLY because the rects are genuinely the same.
         let clip = Rect::new(0.0, 0.0, 50.0, 50.0);
         let mut s = Scene::new(Color::BLACK);
         s.push(Command::PushClip(clip));
@@ -788,8 +794,8 @@ mod tests {
 
     #[test]
     fn clip_kosong_membuang_isinya_sebelum_menyentuh_gpu() {
-        // Viewport yang menyusut jadi nol: tidak ada satu piksel pun yang bisa
-        // lolos, jadi instance-nya tidak perlu diunggah sama sekali.
+        // A viewport collapsed to zero: not a single pixel can get through, so
+        // its instances need not be uploaded at all.
         let mut s = Scene::new(Color::BLACK);
         s.push(Command::PushClip(Rect::new(10.0, 10.0, 0.0, 30.0)));
         s.push(kotak(0.0, 0.0, 100.0, 100.0));
@@ -839,7 +845,7 @@ mod tests {
     fn instance_tak_terlihat_tidak_membuka_batch() {
         let mut s = Scene::new(Color::BLACK);
         s.push(Command::PushClip(Rect::new(0.0, 0.0, 50.0, 50.0)));
-        // Transparan: dibuang, jadi batch clip ini tidak pernah dibuka.
+        // Transparent: dropped, so this clip's batch is never opened.
         s.push(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0)));
         s.push(Command::PopClip);
         s.push(kotak(0.0, 0.0, 10.0, 10.0));
@@ -855,8 +861,8 @@ mod tests {
 
     #[test]
     fn daftar_dipakai_ulang_tanpa_menyisakan_clip_frame_sebelumnya() {
-        // Tumpukan clip harus ikut direset: kalau tidak, frame berikutnya
-        // mewarisi viewport frame lalu dan seluruh UI ikut terpotong.
+        // The clip stack must be reset too: otherwise the next frame inherits
+        // the previous frame's viewport and the whole UI gets clipped.
         let mut list = DrawList::default();
         let mut s = Scene::new(Color::BLACK);
         s.push(Command::PushClip(Rect::new(0.0, 0.0, 10.0, 10.0)));
@@ -881,7 +887,7 @@ mod tests {
         );
     }
 
-    // ---- Jalur glyph -----------------------------------------------------
+    // ---- Glyph path ------------------------------------------------------
 
     fn scene_teks(atlas: &mut AtlasPalsu, warna: Color) -> Scene {
         let id = atlas.taruh(1, AtlasRegion::new(8, 16, 6, 10));
@@ -901,9 +907,9 @@ mod tests {
         assert_eq!(i.len(), 1, "satu glyph = satu instance");
         assert_eq!(i[0].params[3], KIND_GLYPH);
         assert_eq!(i[0].params[0], ATLAS_MASK);
-        // Kotak tujuan: pusat (13, 25), setengah ukuran (3, 5).
+        // Destination box: center (13, 25), half size (3, 5).
         assert_eq!(i[0].bounds, [13.0, 25.0, 3.0, 5.0]);
-        // UV = kotak atlas dinormalkan terhadap sisi atlas 64 px.
+        // UV = the atlas rect normalized against the 64 px atlas side.
         assert_eq!(
             i[0].radii,
             [8.0 / 64.0, 16.0 / 64.0, 14.0 / 64.0, 26.0 / 64.0]
@@ -912,8 +918,8 @@ mod tests {
 
     #[test]
     fn warna_teks_datang_dari_run_bukan_dari_atlas() {
-        // Satu bitmap yang sama harus bisa dipakai untuk warna token apa pun —
-        // itulah alasan atlas mask hanya menyimpan cakupan.
+        // One and the same bitmap must serve any token color — that is exactly
+        // why the mask atlas stores only coverage.
         let mut atlas = AtlasPalsu::baru(64);
         let label = Color::hex(0xFF3B30);
         let s = scene_teks(&mut atlas, label);
@@ -934,9 +940,9 @@ mod tests {
 
     #[test]
     fn kotak_glyph_disetel_ke_grid_piksel_fisik_pada_layar_2x() {
-        // Kunci ketajaman di Retina: satu texel harus jatuh tepat pada satu
-        // piksel layar. Kotak logis 0,3 pt di scale 2 dibulatkan ke piksel
-        // fisik terdekat, dan lebarnya persis selebar bitmap di atlas.
+        // The key to crispness on Retina: one texel must land exactly on one
+        // screen pixel. A logical box at 0.3 pt on scale 2 is rounded to the
+        // nearest physical pixel, and its width is exactly the atlas bitmap's.
         let mut atlas = AtlasPalsu::baru(128);
         let id = atlas.taruh(2, AtlasRegion::new(0, 0, 13, 21));
         let mut run = GlyphRun::new(Color::WHITE);
@@ -952,10 +958,10 @@ mod tests {
             i[0].bounds[3],
         );
         let fisik = |v: f32| v * 2.0;
-        // Ukuran fisik = ukuran bitmap, persis.
+        // The physical size is the bitmap size, exactly.
         assert!((fisik(hw * 2.0) - 13.0).abs() < 1e-4, "{hw}");
         assert!((fisik(hh * 2.0) - 21.0).abs() < 1e-4, "{hh}");
-        // Tepi kiri/atas jatuh di piksel fisik bulat (round(10,3×2) = 21).
+        // The left/top edges land on whole physical pixels (round(10.3×2) = 21).
         let x0 = fisik(cx - hw);
         let y0 = fisik(cy - hh);
         assert!((x0 - 21.0).abs() < 1e-3, "{x0}");
@@ -979,7 +985,7 @@ mod tests {
 
     #[test]
     fn tanpa_sumber_atlas_teks_tidak_menghasilkan_piksel() {
-        // Kontrol negatif yang sama dengan uji rasterisasi headless.
+        // The same negative control as the headless rasterization tests.
         let mut atlas = AtlasPalsu::baru(64);
         let s = scene_teks(&mut atlas, Color::WHITE);
         assert!(draw_list_from_scene(&s, ColorSpace::Srgb, 1.0, &NoGlyphs).is_empty());
@@ -991,7 +997,7 @@ mod tests {
         let id = atlas.taruh(3, AtlasRegion::new(0, 0, 16, 16));
         let mut run = GlyphRun::new(Color::WHITE);
         run.push(Glyph::new(id, Rect::new(0.0, 0.0, 16.0, 16.0)));
-        // Setengah kanan dipotong.
+        // The right half is cut away.
         let run = run.clip(Rect::new(0.0, 0.0, 8.0, 16.0));
         let mut s = Scene::new(Color::BLACK);
         s.push(run);
@@ -999,7 +1005,7 @@ mod tests {
         let i = instances_teks(&s, 1.0, &atlas);
         assert_eq!(i.len(), 1);
         assert_eq!(i[0].bounds, [4.0, 8.0, 4.0, 8.0], "kotak ikut terpotong");
-        // UV horizontal ikut menyusut setengah; vertikal utuh.
+        // The horizontal UV shrinks by half; the vertical one stays whole.
         assert!(
             (i[0].radii[2] - 8.0 / 64.0).abs() < 1e-6,
             "{:?}",
@@ -1026,8 +1032,8 @@ mod tests {
 
     #[test]
     fn urutan_gambar_terjaga_antara_kotak_dan_teks() {
-        // Inilah yang membuat teks berada DI ATAS latarnya: instance keluar
-        // seurut perintah scene, dan semuanya satu draw call.
+        // This is what puts text ABOVE its background: instances come out in
+        // scene command order, and it is all one draw call.
         let mut atlas = AtlasPalsu::baru(64);
         let id = atlas.taruh(5, AtlasRegion::new(0, 0, 4, 4));
         let mut s = Scene::new(Color::BLACK);
@@ -1059,7 +1065,7 @@ mod tests {
         assert_eq!(i.len(), 2);
         assert!(i.iter().all(|x| x.params[3] == KIND_GLYPH));
         assert!(i[1].bounds[0] > i[0].bounds[0], "urut kiri ke kanan");
-        // Warna sama = satu batch: tidak ada apa pun yang memisahkan keduanya.
+        // Same color = one batch: nothing separates the two.
         assert_eq!(i[0].background, i[1].background);
     }
 

@@ -1,8 +1,9 @@
-//! Diffing view tree → render tree.
+//! Diffing the view tree → the render tree.
 //!
-//! Algoritmanya sengaja sesederhana mungkin dan **deterministik**: satu lintasan
-//! per tingkat, kunci untuk identitas, posisi untuk sisanya. Tidak ada heuristik
-//! pintar yang sulit dijelaskan saat state pindah ke baris yang salah.
+//! The algorithm is deliberately as simple as possible and **deterministic**:
+//! one pass per level, keys for identity, position for everything else. No
+//! clever heuristics that are hard to explain when state lands on the wrong
+//! row.
 
 use std::collections::HashMap;
 
@@ -12,28 +13,28 @@ use crate::tree::{keyed_children, NodeId, RenderTree};
 
 use super::View;
 
-/// Hitungan hasil satu kali diff — untuk test, inspector, dan debugging jank.
+/// The tally of one diff run — for tests, the inspector, and jank debugging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct DiffStats {
-    /// Node baru yang dibuat (termasuk seluruh keturunan subtree baru).
+    /// Nodes newly created (including every descendant of a new subtree).
     pub created: usize,
-    /// Node lama yang dipakai ulang di tempatnya.
+    /// Existing nodes reused in place.
     pub reused: usize,
-    /// Bagian dari `reused` yang props-nya benar-benar berubah.
+    /// The share of `reused` whose props actually changed.
     pub updated: usize,
-    /// Node yang diganti karena tipe view-nya berbeda.
+    /// Nodes replaced because their view type differed.
     pub replaced: usize,
-    /// Node yang dibuang (termasuk keturunannya).
+    /// Nodes dropped (descendants included).
     pub removed: usize,
-    /// Anak yang berpindah indeks di antara saudaranya.
+    /// Children whose index shifted among their siblings.
     pub moved: usize,
 }
 
 impl DiffStats {
-    /// Benar bila pohon sama sekali tidak berubah bentuk maupun props.
+    /// True when neither the tree's shape nor any props changed.
     ///
-    /// Inilah kondisi "tidak ada yang perlu dikerjakan": nol alokasi node, nol
-    /// relayout, dan renderer tidak perlu dibangunkan.
+    /// This is the "nothing to do" condition: zero node allocations, zero
+    /// relayouts, and no need to wake the renderer.
     pub fn is_noop(self) -> bool {
         self.created == 0
             && self.updated == 0
@@ -42,16 +43,16 @@ impl DiffStats {
             && self.moved == 0
     }
 
-    /// Benar bila bentuk pohon berubah (bukan sekadar props).
+    /// True when the tree's shape changed (not merely its props).
     pub fn structure_changed(self) -> bool {
         self.created > 0 || self.replaced > 0 || self.removed > 0 || self.moved > 0
     }
 
-    /// Gabungkan hasil diff lain ke dalam ini.
+    /// Merge another diff's result into this one.
     ///
-    /// Satu frame bisa mendiff **beberapa** subtree — satu per komponen yang
-    /// dibangun ulang (lihat [`crate::app::AppRuntime::frame`]); yang dilaporkan
-    /// ke luar tetap satu angka per kategori.
+    /// A single frame may diff **several** subtrees — one per rebuilt component
+    /// (see [`crate::app::AppRuntime::frame`]); what is reported outward is
+    /// still one number per category.
     pub fn merge(&mut self, other: DiffStats) {
         self.created += other.created;
         self.reused += other.reused;
@@ -62,36 +63,36 @@ impl DiffStats {
     }
 }
 
-/// Diff sebuah view menjadi **anak tunggal akar** render tree.
+/// Diff a view into the render tree's **single root child**.
 ///
-/// Inilah pintu masuk normal per rebuild: bangun view, panggil ini, lalu
-/// layout.
+/// This is the normal entry point per rebuild: build the view, call this, then
+/// lay out.
 pub fn reconcile(tree: &mut RenderTree, view: impl Into<View>) -> DiffStats {
     let view = view.into();
     let root = tree.root();
     reconcile_children(tree, root, std::slice::from_ref(&view))
 }
 
-/// Diff daftar view menjadi anak-anak `parent`.
+/// Diff a list of views into the children of `parent`.
 ///
-/// Dipakai langsung oleh komponen yang mengelola daftar anak sendiri
-/// (list tervirtualisasi, overlay layer).
+/// Used directly by components that manage their own child list (virtualized
+/// lists, overlay layers).
 pub fn reconcile_children(tree: &mut RenderTree, parent: NodeId, views: &[View]) -> DiffStats {
     let mut stats = DiffStats::default();
     diff_children(tree, parent, views, &mut stats);
     stats
 }
 
-/// Kunci wajib unik di antara saudara — pelanggarannya harus ketahuan **di
-/// sini**, bukan satu frame kemudian di dalam arena (§9.7).
+/// Keys must be unique among siblings — a violation has to surface **here**,
+/// not one frame later deep inside the arena (§9.7).
 ///
-/// Tanpa pemeriksaan ini, dari dua saudara berkunci sama hanya satu yang masuk
-/// peta pencocokan; yang lain tidak pernah dicocokkan maupun dibuang, lalu
-/// `set_children` meledak dengan pesan tentang jumlah anak yang tidak ada
-/// hubungannya dengan kesalahan penulisnya.
+/// Without this check, only one of two identically keyed siblings makes it into
+/// the match map; the other is never matched and never dropped, and then
+/// `set_children` blows up with a message about child counts that has nothing
+/// to do with the author's actual mistake.
 fn periksa_kunci_ganda(parent: NodeId, views: &[View]) {
-    // Nol atau satu kunci tidak mungkin ganda — jangan alokasi apa pun untuk
-    // daftar tanpa kunci, yang merupakan mayoritas.
+    // Zero or one key cannot collide — allocate nothing for unkeyed lists,
+    // which are the majority.
     if views.iter().filter(|v| v.key.is_some()).take(2).count() < 2 {
         return;
     }
@@ -125,7 +126,7 @@ fn diff_children(tree: &mut RenderTree, parent: NodeId, views: &[View], stats: &
         .copied()
         .filter(|id| tree.key(*id).is_none())
         .collect();
-    tanpa_kunci.reverse(); // agar `pop()` mengambil dari depan
+    tanpa_kunci.reverse(); // so `pop()` takes from the front
 
     let mut urutan = Vec::with_capacity(views.len());
 
@@ -152,7 +153,7 @@ fn diff_children(tree: &mut RenderTree, parent: NodeId, views: &[View], stats: &
                 id
             }
             Some(id) => {
-                // Tipe view berbeda → identitasnya memang bukan node yang sama.
+                // A different view type → this simply is not the same node.
                 stats.removed += tree.remove_subtree(id);
                 stats.replaced += 1;
                 buat(tree, parent, view, stats)
@@ -164,7 +165,7 @@ fn diff_children(tree: &mut RenderTree, parent: NodeId, views: &[View], stats: &
         urutan.push(id);
     }
 
-    // Sisa yang tidak dipakai ulang: kuncinya hilang dari view baru.
+    // Whatever was not reused: its key vanished from the new view.
     for (_, id) in berkunci {
         stats.removed += tree.remove_subtree(id);
     }
@@ -194,10 +195,10 @@ fn terapkan_dirty(tree: &mut RenderTree, id: NodeId, dirty: Dirty) {
     } else if dirty.contains(Dirty::PAINT) {
         tree.mark_needs_paint(id);
     }
-    // [`Dirty::ANIMATION`] tidak berbicara tentang geometri melainkan tentang
-    // **waktu**: props baru mengarahkan sebuah spring, dan spring itu baru akan
-    // bergerak di frame berikutnya. Tanpa baris ini alasan itu hilang di
-    // perjalanan dan dialog yang dibuka lewat signal membeku di frame pertama.
+    // [`Dirty::ANIMATION`] is not about geometry but about **time**: new props
+    // retargeted a spring, and that spring will only start moving on the next
+    // frame. Without this line the reason is lost in transit and a dialog
+    // opened through a signal freezes on its first frame.
     if dirty.contains(Dirty::ANIMATION) {
         tree.mark_dirty(Dirty::ANIMATION);
     }

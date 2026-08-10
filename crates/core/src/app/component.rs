@@ -1,16 +1,15 @@
-//! `component()` — satu-satunya tempat scope signals bertemu node render.
+//! `component()` — the one place where a signals scope meets a render node.
 //!
-//! Sebuah komponen adalah pasangan: **scope** di [`crate::signals`] (pemilik
-//! `use_signal` dan langganannya) dan **satu node jangkar** di
-//! [`crate::tree`] (tempat hasil build-nya di-diff). Node jangkarnya transparan
-//! — ia hanya meneruskan constraints ke satu anak — sehingga menambahkan
-//! komponen tidak mengubah hasil layout sama sekali.
+//! A component is a pair: a **scope** in [`crate::signals`] (owner of its
+//! `use_signal` state and its subscriptions) and **one anchor node** in
+//! [`crate::tree`] (where its build result is diffed). The anchor node is
+//! transparent — it merely forwards constraints to its single child — so adding
+//! a component does not change layout results at all.
 //!
-//! Kenapa jangkarnya perlu ada: `drain_dirty()` memberi `ScopeId`, dan
-//! rebuild per-komponen harus tahu **di bawah node mana** view barunya
-//! di-diff. Tanpa node itu, satu-satunya pilihan yang tersisa adalah mendiff
-//! seluruh pohon dari akar setiap kali sebuah signal berubah — persis yang
-//! ingin dihindari §2.5.
+//! Why the anchor has to exist: `drain_dirty()` hands back a `ScopeId`, and a
+//! per-component rebuild needs to know **under which node** its new view is
+//! diffed. Without that node the only option left is diffing the whole tree
+//! from the root on every signal change — precisely what §2.5 set out to avoid.
 
 use silka_paint::{Point, Size};
 
@@ -23,13 +22,13 @@ use crate::view::{View, ViewNode};
 use super::host::{current_host, BuildCtx, ComponentBuilder};
 
 // ---------------------------------------------------------------------------
-// Node render
+// Render node
 // ---------------------------------------------------------------------------
 
-/// Node jangkar sebuah komponen: transparan bagi layout, penanda bagi rebuild.
+/// A component's anchor node: transparent to layout, a marker for rebuilds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComponentBox {
-    /// Scope signals yang membangun isi node ini.
+    /// The signals scope that builds this node's contents.
     pub scope: ScopeId,
 }
 
@@ -43,19 +42,19 @@ impl RenderNode for ComponentBox {
             return constraints.smallest();
         }
         let child = ctx.child(0);
-        // `layout_child_measured`, bukan `layout_child`: node ini transparan,
-        // jadi ketatnya constraints yang lewat di sini **bukan** miliknya. Kalau
-        // ia menjadikan anaknya relayout boundary, perubahan di dalam komponen
-        // tidak akan pernah sampai ke wadah flex/grid di atasnya (lihat
-        // `LayoutCtx::layout_child_measured`).
+        // `layout_child_measured`, not `layout_child`: this node is
+        // transparent, so the tightness of the constraints passing through here
+        // is **not** its own. If it made its child a relayout boundary, changes
+        // inside the component would never reach the flex/grid container above
+        // it (see `LayoutCtx::layout_child_measured`).
         let size = ctx.layout_child_measured(child, constraints);
         ctx.place_child(child, Point::ZERO);
         size
     }
 
-    /// Murni struktural: teknologi bantu menyaringnya keluar dan anaknya naik
-    /// menggantikannya (§3.8). Batas komponen adalah urusan framework, bukan
-    /// sesuatu yang perlu dibacakan screen reader.
+    /// Purely structural: assistive technology filters it out and its child
+    /// takes its place (§3.8). Component boundaries are a framework concern,
+    /// not something a screen reader should announce.
     fn access(&self, node: &mut AccessNode) {
         node.role = AccessRole::Container;
     }
@@ -65,14 +64,14 @@ impl RenderNode for ComponentBox {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props node jangkar komponen.
+/// Props for a component's anchor node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComponentProps {
     scope: ScopeId,
 }
 
 impl ComponentProps {
-    /// Scope yang dijangkarkan props ini.
+    /// The scope these props anchor.
     pub fn scope(&self) -> ScopeId {
         self.scope
     }
@@ -90,17 +89,18 @@ impl ViewNode for ComponentProps {
         if n.scope == self.scope {
             return Dirty::NONE;
         }
-        // Kunci yang sama tapi scope berbeda berarti scope lama sudah mati dan
-        // digantikan penghuni baru — isinya wajib dianggap baru seluruhnya.
+        // The same key with a different scope means the old scope died and a
+        // new tenant took its place — the contents must be treated as entirely
+        // new.
         n.scope = self.scope;
         Dirty::LAYOUT | Dirty::PAINT
     }
 }
 
-/// Bangun satu komponen ber-`key` dan jadikan hasilnya sebuah [`View`].
+/// Build one `key`-identified component and turn the result into a [`View`].
 ///
-/// Inilah bentuk gaya Dart untuk "bagian UI yang punya state sendiri dan
-/// dibangun ulang sendiri" (§2.5):
+/// This is the Dart-style shape for "a piece of UI that owns its state and
+/// rebuilds on its own" (§2.5):
 ///
 /// ```
 /// use silka_core::app::{app, component};
@@ -121,18 +121,18 @@ impl ViewNode for ComponentProps {
 /// ui.frame();
 /// ```
 ///
-/// Tiga hal yang terjadi sekaligus, dan ketiganya wajib:
+/// Three things happen at once, and all three are required:
 ///
-/// 1. **Masuk scope** ([`crate::signals::scope`]) — `key` yang sama pada build
-///    berikutnya = scope yang sama = state yang sama, walau posisinya bergeser.
-/// 2. **Bangun isinya sekarang juga.** Ini yang memenuhi kontrak
-///    [`crate::signals::Runtime::drain_dirty`]: membangun ulang sebuah scope
-///    **memasuki kembali setiap anak yang dipertahankan**, sehingga
-///    pemangkasan keturunan pada daftar dirty tetap sah.
-/// 3. **Simpan closure-nya** di registry host, supaya frame berikutnya bisa
-///    membangun ulang komponen ini **saja**.
+/// 1. **Enter the scope** ([`crate::signals::scope`]) — the same `key` on the
+///    next build = the same scope = the same state, even if its position moved.
+/// 2. **Build the body right now.** This is what honors the
+///    [`crate::signals::Runtime::drain_dirty`] contract: rebuilding a scope
+///    **re-enters every retained child**, which keeps pruning descendants from
+///    the dirty list sound.
+/// 3. **Store the closure** in the host registry, so the next frame can rebuild
+///    **only** this component.
 ///
-/// Panik bila dipanggil di luar build sebuah [`crate::app::AppRuntime`].
+/// Panics when called outside the build of a [`crate::app::AppRuntime`].
 pub fn component<F>(key: impl Into<Key>, body: F) -> View
 where
     F: Fn(&BuildCtx) -> View + 'static,

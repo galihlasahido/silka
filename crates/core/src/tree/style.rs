@@ -1,140 +1,142 @@
-//! Kosakata gaya layout untuk wadah **flex/grid** (REKOMENDASI §3.4).
+//! The layout style vocabulary for **flex/grid** containers (REKOMENDASI §3.4).
 //!
-//! Tipe-tipe di modul ini **milik kita sendiri**. Taffy adalah mesin di
-//! belakangnya, tapi namanya tidak pernah bocor ke atas: pemetaan ke
-//! `taffy::Style` hidup di satu tempat saja ([`super::taffy_box`]). Aturannya
-//! sama persis dengan wgpu (§3.2) dan cosmic-text (§3.3) — kode widget
-//! berbicara dalam kosakata framework, sehingga mesin di bawahnya bisa diganti
-//! tanpa menyentuh satu pun widget.
+//! The types in this module are **our own**. Taffy is the engine behind them,
+//! but its name never leaks upwards: the mapping to `taffy::Style` lives in
+//! exactly one place ([`super::taffy_box`]). The rule is identical to wgpu
+//! (§3.2) and cosmic-text (§3.3) — widget code speaks the framework's
+//! vocabulary, so the engine underneath can be swapped without touching a single
+//! widget.
 //!
-//! Nilai spacing dikunci ke **skala 4pt** ([`SPACING_UNIT`]) sesuai disiplin
-//! token §2.6/§2.7: `gap_3()` berarti tiga langkah skala, bukan "12 piksel yang
-//! kebetulan enak dilihat".
+//! Spacing values are locked to the **4pt scale** ([`SPACING_UNIT`]) per the
+//! token discipline of §2.6/§2.7: `gap_3()` means three steps on the scale, not
+//! "12 pixels that happen to look nice".
 
 use silka_paint::Insets;
 
 use super::primitives::Axis;
 
-/// Satu langkah skala spacing, dalam poin logis.
+/// One step on the spacing scale, in logical points.
 ///
-/// Cermin dari `silka_theme::SpacingTokens::unit` — kedua preset (Cupertino
-/// dan Tailwind/shadcn) memakai 4pt (§2.7). `silka-core` tidak boleh
-/// bergantung pada crate theme (theme yang dibangun di atas core, bukan
-/// sebaliknya), jadi angkanya diulang di sini dan dijaga oleh unit test di
-/// `silka-widgets` saat lapisan itu menyambungkan keduanya.
+/// A mirror of `silka_theme::SpacingTokens::unit` — both presets (Cupertino and
+/// Tailwind/shadcn) use 4pt (§2.7). `silka-core` must not depend on the theme
+/// crate (the theme is built on top of core, not the other way round), so the
+/// number is repeated here and kept honest by a unit test in `silka-widgets`
+/// when that layer wires the two together.
 pub const SPACING_UNIT: f32 = 4.0;
 
-/// Algoritma yang dipakai sebuah wadah untuk menata anak-anaknya.
+/// The algorithm a container uses to arrange its children.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum LayoutMode {
-    /// Flexbox — `row()` dan `column()`.
+    /// Flexbox — `row()` and `column()`.
     #[default]
     Flex,
     /// CSS Grid — `grid()`.
     Grid,
 }
 
-/// Apakah anak-anak boleh pindah baris ketika kehabisan ruang.
+/// Whether children may move to a new line when they run out of room.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FlexWrap {
-    /// Tetap satu baris walau meluber (perilaku `Row`/`Column` Flutter).
+    /// Stay on one line even when overflowing (Flutter's `Row`/`Column`
+    /// behaviour).
     #[default]
     NoWrap,
-    /// Pindah ke baris berikutnya.
+    /// Move to the next line.
     Wrap,
-    /// Pindah baris dengan urutan baris terbalik.
+    /// Wrap with the line order reversed.
     WrapReverse,
 }
 
-/// Perataan/pembagian ruang pada sumbu utama.
+/// Alignment/space distribution along the main axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum MainAlign {
-    /// Menempel di awal sumbu.
+    /// Packed at the start of the axis.
     #[default]
     Start,
-    /// Di tengah.
+    /// Centred.
     Center,
-    /// Menempel di akhir sumbu.
+    /// Packed at the end of the axis.
     End,
-    /// Sisa ruang dibagi di antara anak; yang pertama dan terakhir menempel tepi.
+    /// The leftover space is split between the children; the first and last
+    /// touch the edges.
     SpaceBetween,
-    /// Sisa ruang dibagi rata termasuk setengah jarak di kedua tepi.
+    /// The leftover space is split evenly, including half a gap at each edge.
     SpaceAround,
-    /// Sisa ruang dibagi benar-benar rata, termasuk di kedua tepi.
+    /// The leftover space is split perfectly evenly, edges included.
     SpaceEvenly,
 }
 
-/// Perataan pada sumbu silang.
+/// Alignment along the cross axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CrossAlign {
-    /// Menempel di awal sumbu silang (kiri di LTR, kanan di RTL).
+    /// Packed at the start of the cross axis (left in LTR, right in RTL).
     #[default]
     Start,
-    /// Di tengah.
+    /// Centred.
     Center,
-    /// Menempel di akhir sumbu silang.
+    /// Packed at the end of the cross axis.
     End,
-    /// Dipaksa selebar/setinggi wadah.
+    /// Forced to the container's width/height.
     Stretch,
-    /// Baseline teks anak-anak disejajarkan.
+    /// The children's text baselines are aligned.
     Baseline,
 }
 
-/// Urutan pengisian sel grid untuk item yang tidak ditempatkan eksplisit.
+/// The cell-filling order for grid items that are not placed explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GridFlow {
-    /// Isi baris dulu, ke kanan.
+    /// Fill rows first, moving right.
     #[default]
     Row,
-    /// Isi kolom dulu, ke bawah.
+    /// Fill columns first, moving down.
     Column,
-    /// Seperti [`GridFlow::Row`], tapi lubang yang tertinggal ikut diisi.
+    /// Like [`GridFlow::Row`], but holes left behind get filled in too.
     RowDense,
-    /// Seperti [`GridFlow::Column`], tapi lubang yang tertinggal ikut diisi.
+    /// Like [`GridFlow::Column`], but holes left behind get filled in too.
     ColumnDense,
 }
 
-/// Batas bawah ukuran sebuah track grid.
+/// The lower size bound of a grid track.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrackMin {
-    /// Sebesar isi terkecil yang mungkin.
+    /// As small as the content can possibly be.
     Auto,
-    /// Ukuran tetap (poin logis).
+    /// A fixed size (logical points).
     Fixed(f32),
-    /// Persentase dari wadah (`0.0..=1.0`).
+    /// A percentage of the container (`0.0..=1.0`).
     Percent(f32),
-    /// Ukuran min-content isi.
+    /// The content's min-content size.
     MinContent,
-    /// Ukuran max-content isi.
+    /// The content's max-content size.
     MaxContent,
 }
 
-/// Batas atas ukuran sebuah track grid.
+/// The upper size bound of a grid track.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrackMax {
-    /// Sebesar isi.
+    /// As large as the content.
     Auto,
-    /// Ukuran tetap (poin logis).
+    /// A fixed size (logical points).
     Fixed(f32),
-    /// Persentase dari wadah (`0.0..=1.0`).
+    /// A percentage of the container (`0.0..=1.0`).
     Percent(f32),
-    /// Ukuran min-content isi.
+    /// The content's min-content size.
     MinContent,
-    /// Ukuran max-content isi.
+    /// The content's max-content size.
     MaxContent,
-    /// Bagian dari sisa ruang (satuan `fr` CSS).
+    /// A share of the leftover space (the CSS `fr` unit).
     Fraction(f32),
 }
 
-/// Ukuran satu track (baris atau kolom) grid.
+/// The size of one grid track (a row or a column).
 ///
-/// Bentuknya selalu `minmax(min, max)` seperti CSS; konstruktor pendek
-/// tersedia untuk kasus yang sering dipakai.
+/// Its shape is always `minmax(min, max)` as in CSS; short constructors are
+/// provided for the common cases.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Track {
-    /// Batas bawah.
+    /// The lower bound.
     pub min: TrackMin,
-    /// Batas atas.
+    /// The upper bound.
     pub max: TrackMax,
 }
 
@@ -145,13 +147,13 @@ impl Default for Track {
 }
 
 impl Track {
-    /// Sebesar isinya.
+    /// As large as its content.
     pub const AUTO: Track = Track {
         min: TrackMin::Auto,
         max: TrackMax::Auto,
     };
 
-    /// Lebar/tinggi tetap.
+    /// A fixed width/height.
     pub const fn fixed(v: f32) -> Track {
         Track {
             min: TrackMin::Fixed(v),
@@ -159,7 +161,7 @@ impl Track {
         }
     }
 
-    /// Persentase dari wadah (`0.0..=1.0`).
+    /// A percentage of the container (`0.0..=1.0`).
     pub const fn percent(v: f32) -> Track {
         Track {
             min: TrackMin::Percent(v),
@@ -167,7 +169,7 @@ impl Track {
         }
     }
 
-    /// Bagian dari sisa ruang — `fr(1.0)` = `minmax(auto, 1fr)` ala CSS.
+    /// A share of the leftover space — `fr(1.0)` is CSS `minmax(auto, 1fr)`.
     pub const fn fr(v: f32) -> Track {
         Track {
             min: TrackMin::Auto,
@@ -175,7 +177,7 @@ impl Track {
         }
     }
 
-    /// Sekecil mungkin tanpa memotong isi.
+    /// As small as possible without clipping the content.
     pub const fn min_content() -> Track {
         Track {
             min: TrackMin::MinContent,
@@ -183,7 +185,7 @@ impl Track {
         }
     }
 
-    /// Selebar isi tanpa pemenggalan baris.
+    /// As wide as the content with no line breaking.
     pub const fn max_content() -> Track {
         Track {
             min: TrackMin::MaxContent,
@@ -191,49 +193,49 @@ impl Track {
         }
     }
 
-    /// Bentuk umum `minmax(min, max)`.
+    /// The general `minmax(min, max)` form.
     pub const fn minmax(min: TrackMin, max: TrackMax) -> Track {
         Track { min, max }
     }
 }
 
-/// `count` buah track identik — padanan `repeat(count, track)` CSS.
+/// `count` identical tracks — the equivalent of CSS `repeat(count, track)`.
 ///
-/// Sengaja mengembalikan `Vec` biasa dan bukan tipe khusus: `repeat()` di sini
-/// hanyalah gula, dan grid yang dihasilkan tetap eksplisit.
+/// It deliberately returns a plain `Vec` rather than a dedicated type: `repeat()`
+/// here is only sugar, and the resulting grid stays explicit.
 pub fn repeat(count: usize, track: Track) -> Vec<Track> {
     vec![track; count]
 }
 
-/// Satu tepi penempatan item di grid.
+/// One placement edge of a grid item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum GridLine {
-    /// Ditempatkan otomatis mengikuti [`GridFlow`].
+    /// Placed automatically, following [`GridFlow`].
     #[default]
     Auto,
-    /// Garis ke-`n` (1 = garis pertama; negatif dihitung dari belakang).
+    /// Line number `n` (1 = the first line; negatives count from the end).
     Line(i16),
-    /// Membentang `n` track dari tepi lawannya.
+    /// Spans `n` tracks from the opposite edge.
     Span(u16),
 }
 
-/// Penempatan item pada satu sumbu grid (baris atau kolom).
+/// An item's placement along one grid axis (row or column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct GridSpan {
-    /// Tepi awal.
+    /// The start edge.
     pub start: GridLine,
-    /// Tepi akhir.
+    /// The end edge.
     pub end: GridLine,
 }
 
 impl GridSpan {
-    /// Penempatan otomatis.
+    /// Automatic placement.
     pub const AUTO: GridSpan = GridSpan {
         start: GridLine::Auto,
         end: GridLine::Auto,
     };
 
-    /// Mulai di garis `n`, selebar satu track.
+    /// Start at line `n`, one track wide.
     pub const fn line(n: i16) -> GridSpan {
         GridSpan {
             start: GridLine::Line(n),
@@ -241,7 +243,7 @@ impl GridSpan {
         }
     }
 
-    /// Membentang `n` track dari posisi otomatisnya.
+    /// Span `n` tracks from its automatic position.
     pub const fn span(n: u16) -> GridSpan {
         GridSpan {
             start: GridLine::Auto,
@@ -249,7 +251,7 @@ impl GridSpan {
         }
     }
 
-    /// Dari garis `start` sampai garis `end`.
+    /// From line `start` through to line `end`.
     pub const fn between(start: i16, end: i16) -> GridSpan {
         GridSpan {
             start: GridLine::Line(start),
@@ -258,38 +260,38 @@ impl GridSpan {
     }
 }
 
-/// Gaya sebuah **wadah** flex/grid.
+/// The style of a flex/grid **container**.
 ///
-/// Dipegang oleh [`super::TaffyBox`]; lapisan view menyalinnya apa adanya dari
-/// method chain bergaya Dart (`row()`/`column()`/`grid()`).
+/// Held by [`super::TaffyBox`]; the view layer copies it across verbatim from
+/// the Dart-flavoured method chain (`row()`/`column()`/`grid()`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainerStyle {
-    /// Flexbox atau Grid.
+    /// Flexbox or Grid.
     pub mode: LayoutMode,
-    /// Sumbu utama (hanya berarti untuk [`LayoutMode::Flex`]).
+    /// The main axis (meaningful only for [`LayoutMode::Flex`]).
     pub axis: Axis,
-    /// Balik urutan sumbu utama.
+    /// Reverse the main-axis order.
     pub reverse: bool,
-    /// Pindah baris saat kehabisan ruang.
+    /// Wrap onto a new line when space runs out.
     pub wrap: FlexWrap,
-    /// Pembagian ruang pada sumbu utama (flex) / sumbu inline (grid).
+    /// Space distribution along the main axis (flex) / the inline axis (grid).
     pub main: MainAlign,
-    /// Perataan anak pada sumbu silang.
+    /// Child alignment along the cross axis.
     pub cross: CrossAlign,
-    /// Pembagian ruang antar baris hasil `wrap` (flex) atau antar track pada
-    /// sumbu blok (grid). `None` = biarkan mesin memakai defaultnya (stretch).
+    /// Space distribution between wrapped lines (flex) or between tracks along
+    /// the block axis (grid). `None` = let the engine use its default (stretch).
     pub lines: Option<MainAlign>,
-    /// Jarak antar anak pada sumbu horizontal.
+    /// The gap between children along the horizontal axis.
     pub gap_x: f32,
-    /// Jarak antar anak pada sumbu vertikal.
+    /// The gap between children along the vertical axis.
     pub gap_y: f32,
-    /// Jarak di dalam tepi wadah.
+    /// Space inside the container's edges.
     pub padding: Insets,
-    /// Ukuran baris eksplisit (grid).
+    /// Explicit row sizes (grid).
     pub rows: Vec<Track>,
-    /// Ukuran kolom eksplisit (grid).
+    /// Explicit column sizes (grid).
     pub columns: Vec<Track>,
-    /// Urutan pengisian sel untuk item tanpa penempatan eksplisit.
+    /// The cell-filling order for items with no explicit placement.
     pub auto_flow: GridFlow,
 }
 
@@ -300,7 +302,7 @@ impl Default for ContainerStyle {
 }
 
 impl ContainerStyle {
-    /// Wadah flex pada `axis`.
+    /// A flex container along `axis`.
     pub fn flex(axis: Axis) -> Self {
         Self {
             mode: LayoutMode::Flex,
@@ -319,9 +321,9 @@ impl ContainerStyle {
         }
     }
 
-    /// Wadah grid.
+    /// A grid container.
     ///
-    /// Bawaannya `cross = Stretch` — sel grid mengisi penuh, seperti CSS.
+    /// Its default is `cross = Stretch` — grid cells fill completely, as in CSS.
     pub fn grid() -> Self {
         Self {
             mode: LayoutMode::Grid,
@@ -330,10 +332,10 @@ impl ContainerStyle {
         }
     }
 
-    /// Jarak antar anak **pada sumbu utama**.
+    /// The gap between children **along the main axis**.
     ///
-    /// Untuk grid (yang tidak punya sumbu utama tunggal) ini menyetel kedua
-    /// sumbu sekaligus — itulah arti "spacing" yang diharapkan penulis aplikasi.
+    /// For a grid (which has no single main axis) this sets both axes at once —
+    /// that is what an application author expects "spacing" to mean.
     pub fn set_spacing(&mut self, v: f32) {
         match (self.mode, self.axis) {
             (LayoutMode::Grid, _) => {
@@ -346,36 +348,39 @@ impl ContainerStyle {
     }
 }
 
-/// Gaya sebuah **item** di dalam wadah flex/grid.
+/// The style of an **item** inside a flex/grid container.
 ///
-/// Padanan `ParentData` Flutter (`Expanded`/`Flexible`): datanya milik anak,
-/// tapi yang membacanya adalah induk. Dibawa oleh [`super::LayoutItem`] dan
-/// diambil induk lewat [`super::LayoutCtx::child_layout_style`].
+/// The equivalent of Flutter's `ParentData` (`Expanded`/`Flexible`): the data
+/// belongs to the child, but the parent is what reads it. Carried by
+/// [`super::LayoutItem`] and picked up by the parent through
+/// [`super::LayoutCtx::child_layout_style`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ItemStyle {
-    /// Bagian sisa ruang yang diminta (0 = tidak ikut tumbuh).
+    /// The share of leftover space requested (0 = does not grow).
     pub grow: f32,
-    /// Kesediaan menyusut saat ruang kurang (0 = tidak pernah menyusut).
+    /// The willingness to shrink when space runs short (0 = never shrinks).
     pub shrink: f32,
-    /// Ukuran awal pada sumbu utama; `None` = ikut ukuran alami isi.
+    /// The initial size along the main axis; `None` = the content's natural
+    /// size.
     pub basis: Option<f32>,
-    /// Perataan sumbu silang khusus item ini; `None` = ikut wadah.
+    /// A cross-axis alignment just for this item; `None` = follow the container.
     pub align_self: Option<CrossAlign>,
-    /// Jarak di luar tepi item.
+    /// Space outside the item's edges.
     pub margin: Insets,
-    /// Penempatan pada sumbu baris grid.
+    /// Placement along the grid's row axis.
     pub row: GridSpan,
-    /// Penempatan pada sumbu kolom grid.
+    /// Placement along the grid's column axis.
     pub column: GridSpan,
 }
 
 impl ItemStyle {
-    /// Item biasa: tidak tumbuh, **tidak menyusut**, seukuran isinya.
+    /// An ordinary item: does not grow, **does not shrink**, sized to its
+    /// content.
     ///
-    /// `shrink = 0` sengaja berbeda dari CSS (yang memakai 1). Alasannya rasa
-    /// Flutter: anak sebuah `Row` mempertahankan ukuran alaminya dan meluber
-    /// bila tidak muat, bukan diam-diam mengempis sampai tidak terbaca. Yang
-    /// mau perilaku CSS tinggal memanggil `.shrink(1.0)`.
+    /// `shrink = 0` deliberately differs from CSS (which uses 1). The reason is
+    /// the Flutter feel: a child of a `Row` keeps its natural size and overflows
+    /// when it does not fit, rather than quietly collapsing until it is
+    /// unreadable. Anyone who wants CSS behaviour just calls `.shrink(1.0)`.
     pub const DEFAULT: ItemStyle = ItemStyle {
         grow: 0.0,
         shrink: 0.0,

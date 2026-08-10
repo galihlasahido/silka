@@ -1,15 +1,14 @@
-//! Satu overlay: panel + backdrop + dismiss + transisi spring.
+//! A single overlay: panel + backdrop + dismiss + spring transition.
 //!
-//! [`OverlayEntry`] adalah node render yang **memenuhi seluruh layer**, dengan
-//! panelnya sebagai satu-satunya anak yang ditempatkan lewat [`super::place`].
-//! Bentuk itu dipilih dengan sengaja, karena ia menyelesaikan tiga hal
-//! sekaligus dengan satu node:
+//! [`OverlayEntry`] is a render node that **fills the entire layer**, with its
+//! panel as the only child, positioned via [`super::place`]. That shape is a
+//! deliberate choice, because a single node then settles three things at once:
 //!
-//! 1. **Backdrop** tinggal sebuah quad seukuran node ini (token `scrim`).
-//! 2. **Klik di luar** = klik yang mendarat di node ini tapi di luar kotak
-//!    panel — tidak perlu menebak-nebak koordinat global.
-//! 3. **Penghalang penunjuk** ([`Barrier`]) cukup soal
-//!    [`RenderNode::hit_behavior`]: `Opaque` menyerap, `Ignore` meneruskan.
+//! 1. **The backdrop** is just a quad the size of this node (the `scrim` token).
+//! 2. **An outside click** is a click that lands on this node but outside the
+//!    panel rect — no guessing at global coordinates required.
+//! 3. **The pointer barrier** ([`Barrier`]) is merely a matter of
+//!    [`RenderNode::hit_behavior`]: `Opaque` absorbs, `Ignore` passes through.
 
 use silka_core::access::{AccessNode, AccessRole};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
@@ -28,47 +27,47 @@ use super::placement::{Anchor, Placed, Placement, PlacementMode};
 // Barrier
 // ---------------------------------------------------------------------------
 
-/// Bagaimana area **di luar panel** memperlakukan penunjuk, keyboard, dan
-/// teknologi bantu.
+/// How the area **outside the panel** treats the pointer, the keyboard, and
+/// assistive technology.
 ///
-/// Inilah satu-satunya sumbu yang membedakan dialog dari tooltip; sisanya
-/// (penempatan, transisi, dismiss) sama persis untuk keduanya.
+/// This is the only axis that separates a dialog from a tooltip; everything
+/// else (placement, transition, dismissal) is identical for both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Barrier {
-    /// **Modal**: penunjuk terhalang, konten di belakang menjadi inert —
-    /// tidak bisa di-Tab dan tidak dibacakan screen reader. Dialog, alert,
-    /// sheet.
+    /// **Modal**: the pointer is blocked and the content behind goes inert —
+    /// it cannot be tabbed to and is not read out by screen readers. Dialogs,
+    /// alerts, sheets.
     #[default]
     Modal,
-    /// **Light dismiss**: klik di luar panel ditangkap untuk menutup, tapi
-    /// konten di belakang tetap hidup bagi keyboard dan screen reader.
-    /// Popover, menu, combo box.
+    /// **Light dismiss**: clicks outside the panel are captured to dismiss it,
+    /// but the content behind stays alive for the keyboard and screen readers.
+    /// Popovers, menus, combo boxes.
     Light,
-    /// Hanya panelnya yang menerima penunjuk; sisanya tembus ke konten.
-    /// Toast, drawer non-modal.
+    /// Only the panel receives the pointer; everything else passes through to
+    /// the content. Toasts, non-modal drawers.
     Panel,
-    /// Tidak menerima penunjuk sama sekali — tooltip tidak boleh "menangkap"
-    /// mouse yang lewat di bawahnya.
+    /// Receives no pointer input at all — a tooltip must never "catch" the
+    /// mouse passing beneath it.
     None,
 }
 
 impl Barrier {
-    /// Benar bila konten di belakang harus dimatikan (fokus + a11y).
+    /// True if the content behind has to be disabled (focus + a11y).
     pub fn is_modal(self) -> bool {
         matches!(self, Barrier::Modal)
     }
 
-    /// Benar bila area di luar panel menyerap penunjuk.
+    /// True if the area outside the panel absorbs the pointer.
     pub fn blocks_pointer(self) -> bool {
         matches!(self, Barrier::Modal | Barrier::Light)
     }
 
-    /// Peran node ini dalam navigasi fokus saat overlay terlihat.
+    /// This node's role in focus navigation while the overlay is visible.
     pub fn focus_policy(self) -> FocusPolicy {
         match self {
-            // Perangkap fokus **dan** bisa dituju sendiri: dialog yang baru
-            // terbuka harus punya tempat mendarat walau isinya belum ada satu
-            // pun kontrol yang focusable.
+            // A focus trap **and** a focus target itself: a freshly opened
+            // dialog needs somewhere to land even when it contains no focusable
+            // control at all.
             Barrier::Modal => FocusPolicy {
                 focusable: true,
                 scope: true,
@@ -84,31 +83,31 @@ impl Barrier {
 // Dismiss
 // ---------------------------------------------------------------------------
 
-/// Cara-cara sebuah overlay boleh ditutup pengguna, sebagai bitset.
+/// The ways a user is allowed to dismiss an overlay, as a bitset.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Dismiss(u8);
 
 impl Dismiss {
-    /// Tidak bisa ditutup pengguna (harus lewat tombol di dalam panel).
+    /// Not user-dismissable (it must go through a button inside the panel).
     pub const NONE: Self = Self(0);
-    /// Klik/ketuk di luar panel.
+    /// A click/tap outside the panel.
     pub const OUTSIDE: Self = Self(1 << 0);
-    /// Tombol Esc.
+    /// The Esc key.
     pub const ESCAPE: Self = Self(1 << 1);
-    /// Keduanya — bawaan HIG untuk popover dan dialog non-destruktif.
+    /// Both — the HIG default for popovers and non-destructive dialogs.
     pub const ALL: Self = Self(0b11);
 
-    /// Benar bila tidak satu pun cara diizinkan.
+    /// True if no way of dismissing is permitted.
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
 
-    /// Benar bila seluruh cara `other` termasuk di sini.
+    /// True if every way in `other` is included here.
     pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 
-    /// Gabungan dua himpunan.
+    /// The union of two sets.
     pub const fn union(self, other: Self) -> Self {
         Self(self.0 | other.0)
     }
@@ -141,37 +140,37 @@ impl core::fmt::Debug for Dismiss {
 // Node
 // ---------------------------------------------------------------------------
 
-/// Node render satu overlay.
+/// The render node of a single overlay.
 pub struct OverlayEntry {
-    /// Terbuka atau sedang menutup.
+    /// Open, or currently dismissing.
     pub open: bool,
-    /// Titik tambat (koordinat lokal layer).
+    /// The anchor point (layer-local coordinates).
     pub anchor: Anchor,
-    /// Resep penempatan.
+    /// The placement recipe.
     pub placement: Placement,
-    /// Warna peredup di belakang panel — token `scrim`, `None` = tanpa
+    /// The scrim color behind the panel — the `scrim` token, `None` = no
     /// backdrop.
     pub backdrop: Option<Color>,
-    /// Perlakuan terhadap area di luar panel.
+    /// How the area outside the panel behaves.
     pub barrier: Barrier,
-    /// Cara-cara yang diizinkan untuk menutup.
+    /// The ways this overlay may be dismissed.
     pub dismiss: Dismiss,
-    /// Apa yang dijalankan saat pengguna menutup overlay ini.
+    /// What runs when the user dismisses this overlay.
     pub on_dismiss: Option<Callback>,
-    /// Peran a11y panel (Dialog/Menu/Tooltip).
+    /// The panel's a11y role (Dialog/Menu/Tooltip).
     pub role: AccessRole,
-    /// Nama yang dibacakan screen reader.
+    /// The name read out by screen readers.
     pub label: Option<String>,
-    /// Jarak tempuh transisi masuk; `None` = bawaan mode penempatan.
+    /// Enter-transition travel distance; `None` = the placement mode's default.
     pub travel: Option<f32>,
 
-    /// Kemajuan transisi: 0 = tertutup, 1 = terbuka.
+    /// Transition progress: 0 = closed, 1 = open.
     progress: SpringValue<f32>,
-    /// Hasil penempatan terakhir — dipakai transisi dan uji.
+    /// The last placement result — used by the transition and by tests.
     placed: Placed,
-    /// Kotak panel pada koordinat lokal node ini, hasil layout terakhir.
+    /// The panel rect in this node's local coordinates, from the last layout.
     panel: Rect,
-    /// Penunjuk ditekan di luar panel; pelepasannya baru menutup overlay.
+    /// The pointer went down outside the panel; only its release dismisses.
     press_outside: bool,
 }
 
@@ -203,50 +202,50 @@ impl Default for OverlayEntry {
 }
 
 impl OverlayEntry {
-    /// Kemajuan transisi saat ini (0..1).
+    /// The current transition progress (0..1).
     pub fn progress(&self) -> f32 {
         self.progress.position()
     }
 
-    /// Spring yang menjalankan transisinya.
+    /// The spring driving its transition.
     pub fn spring(&self) -> Spring {
         self.progress.spring()
     }
 
-    /// Ganti spring tanpa mengganggu gerakan yang sedang berjalan.
+    /// Swap the spring without disturbing the motion already in flight.
     pub fn set_spring(&mut self, spring: Spring) {
         self.progress.set_spring(spring);
     }
 
-    /// Benar bila transisinya masih bergerak dan frame berikutnya dibutuhkan.
+    /// True while the transition is still moving and another frame is needed.
     pub fn is_animating(&self) -> bool {
         self.progress.is_animating()
     }
 
-    /// Benar bila overlay masih menyumbang piksel — terbuka, **atau** sedang
-    /// menutup.
+    /// True while the overlay still contributes pixels — open, **or** on its
+    /// way out.
     ///
-    /// Selama transisi keluar berlangsung node tetap ada di pohon: itulah yang
-    /// membuat "hilangnya" sebuah dialog bisa dianimasikan sama halusnya dengan
-    /// kemunculannya, tanpa aplikasi harus menahan-nahan struktur view-nya.
+    /// The node stays in the tree for the duration of the exit transition: that
+    /// is what lets a dialog's disappearance be animated just as smoothly as
+    /// its arrival, without the app having to hold on to its view structure.
     pub fn is_visible(&self) -> bool {
         self.open || self.progress.position() > 0.0
     }
 
-    /// Hasil penempatan terakhir.
+    /// The last placement result.
     pub fn placed(&self) -> Placed {
         self.placed
     }
 
-    /// Kotak panel pada koordinat lokal node ini (hasil layout terakhir).
+    /// The panel rect in this node's local coordinates (from the last layout).
     pub fn panel_rect(&self) -> Rect {
         self.panel
     }
 
-    /// Arahkan transisi ke keadaan `open`.
+    /// Retarget the transition towards the `open` state.
     ///
-    /// Retarget, bukan animasi baru: dialog yang ditutup di tengah animasi
-    /// buka berbalik arah membawa kecepatannya (§3.5).
+    /// A retarget, not a new animation: a dialog dismissed mid-open-animation
+    /// reverses direction carrying its velocity (§3.5).
     pub fn set_open(&mut self, open: bool) {
         if self.open == open {
             return;
@@ -255,10 +254,10 @@ impl OverlayEntry {
         self.progress.set_target(if open { 1.0 } else { 0.0 });
     }
 
-    /// Majukan transisi satu frame; benar bila posisinya berubah.
+    /// Advance the transition by one frame; true if its position changed.
     ///
-    /// Dipanggil [`super::advance`], yang menjadi satu-satunya tempat seluruh
-    /// overlay sebuah pohon dimajukan bersama-sama.
+    /// Called by [`super::advance`], the single place where every overlay in a
+    /// tree is stepped forward together.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         if !self.progress.is_animating() {
             return false;
@@ -268,17 +267,16 @@ impl OverlayEntry {
         self.progress.position() != sebelum
     }
 
-    /// Selesaikan transisi seketika (tanpa animasi).
+    /// Finish the transition instantly (no animation).
     pub fn settle(&mut self) {
         self.progress.settle();
     }
 
-    /// Jalankan `on_dismiss` bila `cara` memang diizinkan; benar bila jadi
-    /// ditutup.
+    /// Run `on_dismiss` if `cara` is actually permitted; true if it dismissed.
     ///
-    /// Callback disalin keluar dulu — ia hampir selalu menulis signal, dan
-    /// tulisan signal boleh memicu apa saja; yang tidak boleh adalah ia
-    /// berjalan sambil node ini masih dipinjam `&mut` (pola yang sama dengan
+    /// The callback is cloned out first — it almost always writes a signal, and
+    /// a signal write may trigger anything; what it must not do is run while
+    /// this node is still borrowed `&mut` (the same pattern as
     /// [`silka_core::tree::Interactive`]).
     pub fn request_dismiss(&mut self, cara: Dismiss) -> bool {
         if !self.dismiss.contains(cara) {
@@ -294,14 +292,14 @@ impl OverlayEntry {
 
 impl RenderNode for OverlayEntry {
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
-        // Overlay selalu **memenuhi layer**: backdrop, penghalang penunjuk,
-        // dan "di luar panel" semuanya butuh kotak yang sama besarnya.
+        // An overlay always **fills the layer**: the backdrop, the pointer
+        // barrier, and "outside the panel" all need a rect of the same size.
         //
-        // [`super::overlay_layer`] selalu memberi constraints tight, jadi
-        // "memenuhi" tidak ambigu di jalur normal. Tapi overlay yang dipasang
-        // langsung di tempat lain bisa menerima sumbu tak terbatas, dan
-        // "memenuhi tak hingga" tidak berarti apa-apa — sumbu itu jatuh ke
-        // ukuran panelnya sendiri, bukan ke `f32::INFINITY`.
+        // [`super::overlay_layer`] always hands down tight constraints, so
+        // "fills" is unambiguous on the normal path. But an overlay mounted
+        // directly somewhere else may receive an unbounded axis, and "filling
+        // infinity" means nothing — such an axis falls back to the panel's own
+        // size rather than to `f32::INFINITY`.
         let terbesar = constraints.biggest();
         if ctx.child_count() == 0 {
             self.panel = Rect::default();
@@ -319,7 +317,7 @@ impl RenderNode for OverlayEntry {
             ));
         }
         let panel = ctx.child(0);
-        // Panel mengukur dirinya sendiri, dibatasi ukuran layer.
+        // The panel measures itself, bounded by the size of the layer.
         let ukuran = ctx.layout_child(panel, constraints.loosen());
         let size = constraints.constrain(Size::new(
             if terbesar.width.is_finite() {
@@ -354,15 +352,15 @@ impl RenderNode for OverlayEntry {
         size
     }
 
-    /// Ukurannya ditentukan layer sepenuhnya, jadi isi panel setinggi apa pun
-    /// tidak pernah membuat window di-layout ulang.
+    /// Its size is decided entirely by the layer, so panel content of any
+    /// height never forces the window to be laid out again.
     fn is_relayout_boundary(&self) -> bool {
         true
     }
 
-    /// Panel yang sedang menyembul dari tepi dipotong di tepi itu — tanpa ini
-    /// sheet "masuk dari luar layar" justru terlihat menggantung di luar
-    /// window.
+    /// A panel emerging from an edge is clipped at that edge — without this, a
+    /// sheet "sliding in from off-screen" would instead appear to dangle
+    /// outside the window.
     fn clips_children(&self) -> bool {
         true
     }
@@ -373,8 +371,8 @@ impl RenderNode for OverlayEntry {
         }
         let p = self.progress.position().clamp(0.0, 1.0);
         if let Some(scrim) = self.backdrop {
-            // Peredup ikut memudar bersama transisi — satu-satunya "fade" yang
-            // bisa dijanjikan tanpa layer offscreen (§3.6).
+            // The scrim fades along with the transition — the only "fade" that
+            // can be promised without an offscreen layer (§3.6).
             let warna = scrim.with_alpha(scrim.a * p);
             if warna.a > 0.0 {
                 ctx.quad(Quad::new(ctx.local_bounds()).background(warna));
@@ -386,8 +384,9 @@ impl RenderNode for OverlayEntry {
     fn access(&self, node: &mut AccessNode) {
         node.role = self.role;
         node.label.clone_from(&self.label);
-        // Overlay tertutup tidak ada bagi screen reader — beserta seluruh
-        // isinya, walau node-nya masih di pohon menunggu transisi keluar.
+        // A closed overlay does not exist for screen readers — nor does any of
+        // its content, even while the node lingers in the tree waiting out its
+        // exit transition.
         node.hidden = !self.is_visible();
     }
 
@@ -404,7 +403,7 @@ impl RenderNode for OverlayEntry {
 
     fn focus_policy(&self) -> FocusPolicy {
         if !self.is_visible() {
-            // Isi overlay tertutup tidak boleh bisa di-Tab.
+            // The contents of a closed overlay must not be reachable by Tab.
             return FocusPolicy::NONE.skip_subtree();
         }
         self.barrier.focus_policy()
@@ -423,9 +422,9 @@ impl RenderNode for OverlayEntry {
                         ctx.handled();
                     }
                     PointerPhase::Up if p.button == Some(PointerButton::Primary) => {
-                        // Tekan **dan** lepas sama-sama di luar panel: aturan
-                        // yang sama dengan tombol AppKit, dan yang mencegah
-                        // drag dari dalam panel ke luar menutup overlay.
+                        // Press **and** release both outside the panel: the
+                        // same rule AppKit buttons follow, and the one that
+                        // stops a drag out of the panel from dismissing it.
                         let tutup = self.press_outside && di_luar;
                         self.press_outside = false;
                         if tutup {
@@ -437,9 +436,9 @@ impl RenderNode for OverlayEntry {
                     _ => {}
                 }
             }
-            // Esc hanya ditandai handled kalau overlay ini memang punya
-            // penerimanya: alert tanpa `on_dismiss` harus **membiarkan** Esc
-            // menggelembung, bukan menelannya diam-diam.
+            // Esc is only marked handled when this overlay actually has a
+            // receiver for it: an alert without `on_dismiss` must **let** Esc
+            // bubble on rather than silently swallow it.
             Event::Key(k)
                 if k.is_pressed()
                     && k.code.is(NamedKey::Escape)
@@ -471,7 +470,7 @@ impl core::fmt::Debug for OverlayEntry {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props satu overlay — bentuk view dari [`OverlayEntry`].
+/// The props of one overlay — the view form of [`OverlayEntry`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct OverlayProps {
     pub(super) open: bool,
@@ -513,8 +512,8 @@ impl OverlayProps {
         if self.motion == MotionRole::Decorative {
             v = v.decorative();
         }
-        // Overlay yang lahir dalam keadaan terbuka tetap **beranimasi masuk**:
-        // itu perbedaan antara dialog yang muncul dan dialog yang mengagetkan.
+        // An overlay born in the open state still **animates in**: that is the
+        // difference between a dialog that appears and one that startles you.
         if self.open {
             v.set_target(1.0);
         }
@@ -548,7 +547,7 @@ impl ViewNode for OverlayProps {
 
         if n.open != self.open {
             n.set_open(self.open);
-            // Transisi butuh layout (panel bergeser) **dan** frame berikutnya.
+            // The transition needs layout (the panel moves) **and** a next frame.
             dirty |= Dirty::LAYOUT | Dirty::PAINT | Dirty::ANIMATION;
         }
         if n.anchor != self.anchor || n.placement != self.placement || n.travel != self.travel {
@@ -580,16 +579,17 @@ impl ViewNode for OverlayProps {
         if n.progress.spring() != self.spring {
             n.progress.set_spring(self.spring);
         }
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (lihat `InteractiveProps`).
+        // The callback is always replaced without comparison: the closure is
+        // rebuilt on every rebuild and captures fresh values (see
+        // `InteractiveProps`).
         n.on_dismiss.clone_from(&self.on_dismiss);
         dirty
     }
 }
 
-/// Satu overlay berisi `panel` — dialog, popover, tooltip, menu, atau toast.
+/// One overlay holding `panel` — a dialog, popover, tooltip, menu, or toast.
 ///
-/// Konstruktor gaya Dart (§2.5); seluruh sifatnya pindah ke method chain.
+/// A Dart-style constructor (§2.5); every property moves into the method chain.
 ///
 /// ```
 /// # use silka_core::signals::Runtime;
@@ -618,12 +618,12 @@ pub fn overlay(panel: impl Into<View>) -> OverlayBuilder {
     }
 }
 
-/// Builder satu overlay.
+/// The builder for a single overlay.
 ///
-/// Tipe sendiri, bukan [`silka_core::view::Builder`], karena lapisan layer
-/// perlu **membaca** `open`/`barrier` sebelum pohon dirakit: hanya dengan
-/// begitu ia tahu apakah konten di belakang harus dimatikan (lihat
-/// [`super::overlay_layer`]).
+/// A type of its own rather than [`silka_core::view::Builder`], because the
+/// overlay layer needs to **read** `open`/`barrier` before the tree is
+/// assembled: only then does it know whether the content behind must be
+/// disabled (see [`super::overlay_layer`]).
 pub struct OverlayBuilder {
     pub(super) key: Option<silka_core::signals::Key>,
     pub(super) props: OverlayProps,
@@ -631,94 +631,94 @@ pub struct OverlayBuilder {
 }
 
 impl OverlayBuilder {
-    /// Kunci identitas — wajib untuk overlay yang datang dari daftar dinamis
-    /// (tumpukan toast).
+    /// The identity key — required for overlays that come from a dynamic list
+    /// (a stack of toasts).
     pub fn key(mut self, key: impl Into<silka_core::signals::Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Terbuka atau tertutup. Perubahannya **memicu transisi**, bukan lompatan.
+    /// Open or closed. Changing it **starts a transition**, never a jump.
     pub fn open(mut self, open: bool) -> Self {
         self.props.open = open;
         self
     }
 
-    /// Titik tambat (koordinat lokal layer) — lihat [`super::anchor_rect`].
+    /// The anchor point (layer-local coordinates) — see [`super::anchor_rect`].
     pub fn anchor(mut self, anchor: Anchor) -> Self {
         self.props.anchor = anchor;
         self
     }
 
-    /// Resep penempatan.
+    /// The placement recipe.
     pub fn placement(mut self, placement: Placement) -> Self {
         self.props.placement = placement;
         self
     }
 
-    /// Warna peredup di belakang panel — **selalu** token `scrim`.
+    /// The scrim color behind the panel — **always** the `scrim` token.
     pub fn backdrop(mut self, color: Color) -> Self {
         self.props.backdrop = Some(color);
         self
     }
 
-    /// Tanpa peredup.
+    /// No scrim.
     pub fn no_backdrop(mut self) -> Self {
         self.props.backdrop = None;
         self
     }
 
-    /// Perlakuan area di luar panel.
+    /// How the area outside the panel behaves.
     pub fn barrier(mut self, barrier: Barrier) -> Self {
         self.props.barrier = barrier;
         self
     }
 
-    /// Cara-cara yang diizinkan untuk menutup.
+    /// The ways this overlay may be dismissed.
     pub fn dismiss(mut self, dismiss: Dismiss) -> Self {
         self.props.dismiss = dismiss;
         self
     }
 
-    /// Apa yang dijalankan saat pengguna menutup overlay ini.
+    /// What runs when the user dismisses this overlay.
     pub fn on_dismiss(mut self, f: impl Fn() + 'static) -> Self {
         self.props.on_dismiss = Some(Callback::new(f));
         self
     }
 
-    /// Peran a11y panel (bawaan [`AccessRole::Dialog`]).
+    /// The panel's a11y role (defaults to [`AccessRole::Dialog`]).
     pub fn role(mut self, role: AccessRole) -> Self {
         self.props.role = role;
         self
     }
 
-    /// Nama yang dibacakan screen reader saat overlay terbuka.
+    /// The name read out by screen readers when the overlay opens.
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.props.label = Some(label.into());
         self
     }
 
-    /// Jarak tempuh transisi masuk, poin logis (token spacing).
+    /// Enter-transition travel distance, in logical points (spacing token).
     pub fn travel(mut self, travel: f32) -> Self {
         self.props.travel = Some(travel.max(0.0));
         self
     }
 
-    /// Spring yang menjalankan transisinya (`smooth`/`snappy`/`bouncy`).
+    /// The spring driving its transition (`smooth`/`snappy`/`bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.props.spring = spring;
         self
     }
 
-    /// Tandai gerakannya **dekoratif**: reduced-motion mematikannya sepenuhnya
-    /// alih-alih sekadar membuang pantulannya
+    /// Mark the motion **decorative**: reduced-motion removes it entirely
+    /// instead of merely dropping its bounce
     /// ([`silka_core::animation::Motion`]).
     pub fn decorative(mut self) -> Self {
         self.props.motion = MotionRole::Decorative;
         self
     }
 
-    /// Benar bila overlay ini modal dan sedang terbuka.
+    /// True if this overlay is modal and currently open.
     pub(super) fn blocks_content(&self) -> bool {
         self.props.open && self.props.barrier.is_modal()
     }

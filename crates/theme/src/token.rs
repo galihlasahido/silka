@@ -1,29 +1,29 @@
-//! Resolusi token: satu jalur, lewat theme aktif.
+//! Token resolution: one path, through the active theme.
 //!
-//! Kontrak §2.7 berbunyi "utility tidak pernah hard-code angka — selalu resolve
-//! lewat token theme aktif". [`Token`] adalah bentuk teknis janji itu: sebuah
-//! nilai yang **belum** punya arti sampai bertemu [`Theme`].
+//! The §2.7 contract reads "utilities never hard-code numbers — always resolve
+//! through the active theme's tokens". [`Token`] is the technical shape of that
+//! promise: a value that has **no** meaning until it meets a [`Theme`].
 //!
 //! ```
 //! use silka_theme::{Appearance, ColorToken, RadiusToken, ShadowToken, SpaceToken, Theme};
 //!
-//! // Bentuk yang dipakai utility styling: token, bukan angka.
+//! // The shape styling utilities take: tokens, not numbers.
 //! let cupertino = Theme::cupertino(Appearance::Dark);
 //! let tailwind = Theme::tailwind(Appearance::Dark);
 //!
-//! // Nilai yang sama-sama "rounded_lg", dua geometri berbeda.
+//! // The very same "rounded_lg", two different geometries.
 //! assert_ne!(
 //!     cupertino.resolve(RadiusToken::Lg).style,
 //!     tailwind.resolve(RadiusToken::Lg).style,
 //! );
-//! // …dan token lain resolve lewat pintu yang sama.
+//! // …and every other token resolves through the same door.
 //! let _ = cupertino.resolve(ColorToken::Surface);
 //! let _ = cupertino.resolve(SpaceToken::S4);
 //! let _ = cupertino.resolve(ShadowToken::Md);
 //! ```
 //!
-//! Nilai **konkret** juga mengimplementasikan [`Token`] sebagai identitas.
-//! Itulah yang membuat satu tanda tangan utility melayani keduanya:
+//! **Concrete** values implement [`Token`] too, as the identity. That is what
+//! lets a single utility signature serve both:
 //!
 //! ```
 //! use silka_paint::Color;
@@ -35,8 +35,8 @@
 //!
 //! let t = Theme::default();
 //! assert_eq!(bg(&t, ColorToken::Accent), t.color.accent);
-//! // Escape hatch untuk warna brand yang memang bukan token — sengaja
-//! // mungkin, sengaja terlihat mencolok saat direview.
+//! // An escape hatch for a brand color that genuinely is not a token —
+//! // deliberately possible, and deliberately conspicuous in review.
 //! assert_eq!(bg(&t, Color::hex(0xFF00FF)), Color::hex(0xFF00FF));
 //! ```
 
@@ -44,12 +44,12 @@ use silka_paint::{Color, Corners, ShadowPair};
 
 use crate::{ColorToken, FontToken, RadiusToken, ShadowToken, SpaceToken, Theme, TypeStyle};
 
-/// Sesuatu yang berubah menjadi nilai konkret setelah bertemu theme aktif.
+/// Something that becomes a concrete value once it meets the active theme.
 pub trait Token: Copy {
-    /// Nilai yang dihasilkan setelah resolusi.
+    /// The value produced by resolution.
     type Value;
 
-    /// Resolusi terhadap theme aktif.
+    /// Resolve against the active theme.
     fn resolve(self, theme: &Theme) -> Self::Value;
 }
 
@@ -93,7 +93,7 @@ impl Token for FontToken {
     }
 }
 
-/// Warna literal: identitas. Escape hatch untuk warna brand.
+/// A literal color: the identity. The escape hatch for brand colors.
 impl Token for Color {
     type Value = Color;
 
@@ -102,7 +102,7 @@ impl Token for Color {
     }
 }
 
-/// Jarak literal dalam poin logis: identitas.
+/// A literal distance in logical points: the identity.
 impl Token for f32 {
     type Value = f32;
 
@@ -111,7 +111,7 @@ impl Token for f32 {
     }
 }
 
-/// Geometri sudut yang sudah jadi: identitas.
+/// Ready-made corner geometry: the identity.
 impl Token for Corners {
     type Value = Corners;
 
@@ -120,7 +120,7 @@ impl Token for Corners {
     }
 }
 
-/// Resep bayangan yang sudah jadi: identitas.
+/// A ready-made shadow recipe: the identity.
 impl Token for ShadowPair {
     type Value = ShadowPair;
 
@@ -129,7 +129,7 @@ impl Token for ShadowPair {
     }
 }
 
-/// Gaya teks yang sudah jadi: identitas.
+/// A ready-made text style: the identity.
 impl Token for TypeStyle {
     type Value = TypeStyle;
 
@@ -156,7 +156,8 @@ mod tests {
 
     #[test]
     fn token_yang_sama_menghasilkan_nilai_berbeda_per_theme() {
-        // Inilah inti §2.7: widget menulis token sekali, presetnya yang bicara.
+        // This is the heart of §2.7: the widget writes the token once, and the
+        // preset does the talking.
         let a = Theme::cupertino(Appearance::Light);
         let b = Theme::tailwind(Appearance::Light);
         assert_ne!(a.resolve(ColorToken::Accent), b.resolve(ColorToken::Accent));
@@ -201,7 +202,7 @@ mod tests {
             terang.resolve(ColorToken::Background),
             gelap.resolve(ColorToken::Background)
         );
-        // Geometri tidak ikut berubah oleh dark mode — hanya warna.
+        // Geometry does not move with dark mode — only color does.
         assert_eq!(
             terang.resolve(RadiusToken::Lg),
             gelap.resolve(RadiusToken::Lg)

@@ -1,20 +1,20 @@
-//! Layer overlay: **satu tumpukan di atas konten**, dibangun sekali untuk
-//! sepuluh komponen (KOMPONEN.md aturan #3).
+//! The overlay layer: **one stack above the content**, built once for ten
+//! components (KOMPONEN.md rule #3).
 //!
-//! Bentuknya sesederhana yang bisa dipertanggungjawabkan: sebuah node dengan
-//! anak pertama = konten aplikasi dan anak kedua dan seterusnya = satu
-//! [`OverlayEntry`](super::OverlayEntry) per overlay. Urutan anak **adalah**
-//! urutan tumpuk — pass paint menggambar induk lalu anak berurutan, dan
-//! hit-test menelusuri anak dari belakang ke depan, jadi tidak ada tabel
-//! z-index yang harus dijaga tetap sinkron dengan apa pun.
+//! Its shape is as simple as can be justified: a node whose first child is the
+//! app content and whose second and later children are one
+//! [`OverlayEntry`](super::OverlayEntry) per overlay. Child order **is**
+//! stacking order — the paint pass draws the parent and then each child in
+//! turn, and hit-testing walks the children back to front, so there is no
+//! z-index table to keep in sync with anything.
 //!
-//! Yang tidak bisa diselesaikan node overlay sendiri, dan karena itu hidup di
-//! sini: **konten di belakang modal harus mati**. Sebuah node hanya bisa
-//! berbicara tentang dirinya dan keturunannya, sedangkan konten adalah
-//! *saudara* overlay — maka layer menyisipkan [`InertBox`] di antara dirinya
-//! dan konten. Satu node kecil itu yang menutup tiga lubang sekaligus: konten
-//! tidak bisa diklik, tidak bisa di-Tab, dan tidak dibacakan screen reader
-//! selama dialog terbuka.
+//! What an overlay node cannot settle on its own, and which therefore lives
+//! here: **the content behind a modal must go dead**. A node can only speak
+//! about itself and its descendants, whereas the content is a *sibling* of the
+//! overlay — so the layer slips an [`InertBox`] between itself and the content.
+//! That one small node closes three holes at once: while the dialog is open the
+//! content cannot be clicked, cannot be tabbed to, and is not read out by
+//! screen readers.
 
 use silka_core::access::{AccessNode, AccessRole};
 use silka_core::input::{FocusPolicy, HitBehavior};
@@ -29,24 +29,25 @@ use super::entry::OverlayBuilder;
 // InertBox
 // ---------------------------------------------------------------------------
 
-/// Pembungkus konten yang bisa **dimatikan sepenuhnya** selama modal terbuka.
+/// A content wrapper that can be **switched off completely** while a modal is
+/// open.
 ///
-/// "Inert" di sini berarti tiga hal sekaligus, dan ketiganya harus benar
-/// bersama — dialog yang isinya tidak bisa diklik tapi tetap bisa di-Tab, atau
-/// tetap dibacakan screen reader, adalah dialog yang bocor:
+/// "Inert" here means three things at once, and all three have to hold
+/// together — a dialog whose backdrop content cannot be clicked but can still
+/// be tabbed to, or is still read out by screen readers, is a leaky dialog:
 ///
-/// 1. **Penunjuk**: [`HitBehavior::Ignore`] — subtree-nya tidak diperiksa sama
-///    sekali. Sengaja tidak menggantungkan diri pada `Opaque` milik overlay di
-///    atasnya: jaminan ini tidak boleh bergantung pada urutan saudara.
-/// 2. **Fokus**: [`FocusPolicy::skip_subtree`] — Tab melompati seluruh konten,
-///    jadi fokus terperangkap di dalam panel tanpa perlu daftar khusus.
-/// 3. **Aksesibilitas**: `hidden`, yang menyembunyikan node **beserta seluruh
-///    keturunannya** dari teknologi bantu.
+/// 1. **Pointer**: [`HitBehavior::Ignore`] — its subtree is not tested at all.
+///    Deliberately not leaning on the `Opaque` of the overlay above it: this
+///    guarantee must not depend on sibling order.
+/// 2. **Focus**: [`FocusPolicy::skip_subtree`] — Tab skips the whole content,
+///    so focus is trapped inside the panel with no special list required.
+/// 3. **Accessibility**: `hidden`, which hides the node **and all of its
+///    descendants** from assistive technology.
 ///
-/// Layout-nya transparan: ia meneruskan constraints apa adanya dan mengambil
-/// ukuran anaknya, jadi menyisipkannya tidak mengubah satu piksel pun.
+/// Its layout is transparent: it passes constraints straight through and takes
+/// its child's size, so inserting it does not move a single pixel.
 pub struct InertBox {
-    /// Konten sedang dimatikan karena ada modal terbuka di atasnya.
+    /// The content is switched off because a modal is open above it.
     pub inert: bool,
 }
 
@@ -91,7 +92,7 @@ impl core::fmt::Debug for InertBox {
     }
 }
 
-/// Props [`InertBox`].
+/// The props of [`InertBox`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct InertProps {
     inert: bool,
@@ -110,9 +111,9 @@ impl ViewNode for InertProps {
             return Dirty::NONE;
         }
         n.inert = self.inert;
-        // Tidak ada piksel yang berubah — yang berubah adalah pohon a11y dan
-        // urutan tab. Keduanya dibaca ulang dari render tree, jadi cukup
-        // menandai pohon "sudah bukan yang tadi".
+        // No pixel changes — what changes is the a11y tree and the tab order.
+        // Both are re-read from the render tree, so it is enough to mark the
+        // tree as "no longer what it was".
         Dirty::PAINT
     }
 }
@@ -121,13 +122,13 @@ impl ViewNode for InertProps {
 // OverlayLayer
 // ---------------------------------------------------------------------------
 
-/// Node layer: konten di anak ke-0, overlay di anak berikutnya.
+/// The layer node: content at child 0, overlays in the children after it.
 ///
-/// Ia **rakus** pada sumbu yang terbatas: layer adalah kanvas tempat backdrop
-/// dan penempatan tepi dihitung, jadi ia harus seluas ruang yang tersedia,
-/// bukan seluas isinya. Pada sumbu yang tak terbatas ia jatuh ke ukuran
-/// konten — satu-satunya jawaban yang masuk akal saat "seluas yang tersedia"
-/// tidak punya arti.
+/// It is **greedy** on any bounded axis: the layer is the canvas on which the
+/// backdrop and edge placements are computed, so it must be as large as the
+/// space available, not as large as its content. On an unbounded axis it falls
+/// back to the content's size — the only sensible answer when "as large as
+/// available" means nothing.
 pub struct OverlayLayer;
 
 impl RenderNode for OverlayLayer {
@@ -153,9 +154,9 @@ impl RenderNode for OverlayLayer {
             },
         ));
 
-        // Setiap overlay memenuhi layer, dan ukurannya **tidak pernah**
-        // memengaruhi ukuran layer: dialog setinggi apa pun tidak boleh
-        // membuat window di-layout ulang.
+        // Every overlay fills the layer, and its size **never** influences the
+        // layer's own size: a dialog of any height must not force the window to
+        // be laid out again.
         for i in 1..ctx.child_count() {
             let ov = ctx.child(i);
             ctx.layout_child_boundary(ov, BoxConstraints::tight(size));
@@ -175,7 +176,7 @@ impl core::fmt::Debug for OverlayLayer {
     }
 }
 
-/// Props [`OverlayLayer`] — tidak ada, seluruh keadaan ada di anak-anaknya.
+/// The props of [`OverlayLayer`] — none; all state lives in its children.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct LayerProps;
 
@@ -193,10 +194,10 @@ impl ViewNode for LayerProps {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Bungkus `content` dengan layer overlay.
+/// Wrap `content` in an overlay layer.
 ///
-/// Konstruktor gaya Dart (§2.5): overlay-nya menyusul lewat method chain, dan
-/// urutan penulisannya adalah urutan tumpuknya.
+/// A Dart-style constructor (§2.5): the overlays follow via the method chain,
+/// and the order they are written in is their stacking order.
 ///
 /// ```
 /// # use silka_core::signals::Runtime;
@@ -223,29 +224,29 @@ pub fn overlay_layer(content: impl Into<View>) -> LayerBuilder {
     }
 }
 
-/// Builder layer overlay.
+/// The builder for an overlay layer.
 pub struct LayerBuilder {
     content: View,
     overlays: Vec<OverlayBuilder>,
 }
 
 impl LayerBuilder {
-    /// Tambahkan satu overlay di atas yang sudah ada.
+    /// Push one more overlay on top of the ones already there.
     ///
-    /// Menerima apa pun yang bisa menjadi [`OverlayBuilder`], sehingga preset
-    /// tingkat komponen ([`crate::dialog`], dan nanti sheet/popover/tooltip)
-    /// bisa ditulis langsung di sini tanpa membocorkan bahwa di dalamnya ada
-    /// sebuah overlay.
+    /// Accepts anything convertible into an [`OverlayBuilder`], so
+    /// component-level presets ([`crate::dialog`], and later
+    /// sheet/popover/tooltip) can be written directly here without leaking the
+    /// fact that there is an overlay inside them.
     pub fn overlay(mut self, overlay: impl Into<OverlayBuilder>) -> Self {
         self.overlays.push(overlay.into());
         self
     }
 
-    /// Tambahkan sekumpulan overlay sekaligus — tumpukan toast, misalnya.
+    /// Push a whole batch of overlays at once — a stack of toasts, say.
     ///
-    /// Anggota daftar dinamis **wajib** berkunci
-    /// ([`OverlayBuilder::key`](super::OverlayBuilder::key)), aturan identitas
-    /// yang sama dengan seluruh view-diff (§2.5).
+    /// Members of a dynamic list **must** be keyed
+    /// ([`OverlayBuilder::key`](super::OverlayBuilder::key)), the same identity
+    /// rule that governs all of view diffing (§2.5).
     pub fn overlays<O: Into<OverlayBuilder>>(
         mut self,
         overlays: impl IntoIterator<Item = O>,
@@ -254,7 +255,7 @@ impl LayerBuilder {
         self
     }
 
-    /// Benar bila salah satu overlay-nya mematikan konten di belakang.
+    /// True if any of its overlays disables the content behind.
     pub fn blocks_content(&self) -> bool {
         self.overlays.iter().any(OverlayBuilder::blocks_content)
     }
@@ -262,10 +263,10 @@ impl LayerBuilder {
 
 impl From<LayerBuilder> for View {
     fn from(b: LayerBuilder) -> View {
-        // Dihitung **sebelum** pohon dirakit, dan itulah alasan `LayerBuilder`
-        // memegang `OverlayBuilder` dan bukan `View`: begitu sebuah overlay
-        // menjadi `View`, propsnya terkubur di balik `dyn ViewNode` dan tidak
-        // ada lagi yang bisa menanyakan "apakah kamu modal?".
+        // Computed **before** the tree is assembled, and that is why
+        // `LayerBuilder` holds `OverlayBuilder`s rather than `View`s: once an
+        // overlay becomes a `View`, its props are buried behind `dyn ViewNode`
+        // and nobody can ask it "are you modal?" any more.
         let inert = b.blocks_content();
         let mut builder =
             Builder::new(LayerProps).child(Builder::new(InertProps { inert }).child(b.content));

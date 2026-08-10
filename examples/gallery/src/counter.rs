@@ -1,26 +1,26 @@
-//! Halaman demo: **counter** — bukti hidup bahwa seluruh rantai bekerja.
+//! Demo page: **counter** — living proof that the whole chain works.
 //!
-//! Halaman ini sengaja sesederhana mungkin secara visual, karena yang
-//! dibuktikannya bukan visual melainkan **jalur**: satu klik mouse harus
-//! menempuh seluruh framework dan berakhir sebagai piksel yang berbeda di
-//! layar.
+//! This page is deliberately as visually simple as possible, because what it
+//! proves is not the visuals but the **path**: a single mouse click has to
+//! travel through the entire framework and end up as different pixels on
+//! screen.
 //!
 //! ```text
 //! klik → hit-test squircle (§3.6)          crates/core: input
 //!      → Interactive::event → on_press      crates/core: tree
 //!      → Signal::update                     crates/core: signals
-//!      → scope "angka" ditandai dirty       crates/core: signals
+//!      → scope "angka" marked dirty          crates/core: signals
 //!      → FrameScheduler::request            crates/core: scheduler
-//!      → AppRuntime::frame: rebuild HANYA komponen itu   (§2.5)
+//!      → AppRuntime::frame: rebuild ONLY that component  (§2.5)
 //!      → view-diff → box constraints + Taffy (§2, §3.4)
 //!      → pass paint → Scene (§3.2)
 //!      → glyph atlas → wgpu                 crates/renderer
 //! ```
 //!
-//! Yang **tidak** ada di berkas ini, dan itulah intinya: tidak ada `Scene` yang
-//! disusun tangan, tidak ada aritmetika tata letak, tidak ada satu pun angka
-//! warna, dan tidak ada satu pun nama tipe wgpu/cosmic-text. Yang ditulis
-//! hanyalah pohon view bergaya Dart (§2.5) di atas token theme (§2.6, §2.7).
+//! What is **absent** from this file is the whole point: no hand-assembled
+//! `Scene`, no layout arithmetic, not a single color number, and not a single
+//! wgpu/cosmic-text type name. All that is written is a Dart-flavored view tree
+//! (§2.5) on top of theme tokens (§2.6, §2.7).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -31,28 +31,28 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{button, button_variant, text, ButtonVariant, Fonts};
 
-/// Nama tombol penambah — dipakai juga oleh test untuk mencarinya di pohon
-/// aksesibilitas, jadi apa yang diklik test **persis** yang dibacakan screen
-/// reader (§3.8).
+/// The increment button's name — also used by the tests to find it in the
+/// accessibility tree, so what the tests click is **exactly** what a screen
+/// reader announces (§3.8).
 pub const TOMBOL_TAMBAH: &str = "Tambah";
-/// Nama tombol pengurang.
+/// The decrement button's name.
 pub const TOMBOL_KURANG: &str = "Kurangi";
-/// Nama tombol reset.
+/// The reset button's name.
 pub const TOMBOL_RESET: &str = "Nol";
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Counter";
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app`.
+/// The view tree for the whole page — this is what gets handed to `run_app`.
 ///
-/// Dibaca di scope akar: theme dan scale factor yang berganti membangun ulang
-/// halaman ini seluruhnya (setiap nilainya token), tapi **pencacahnya tidak
-/// dibaca di sini** — itu yang membuat klik hanya membangun ulang satu
-/// komponen, bukan halaman.
+/// Read in the root scope: a change of theme or scale factor rebuilds this page
+/// in its entirety (every value here is a token), but **the counter is not read
+/// here** — that is what makes a click rebuild a single component rather than
+/// the page.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya; ukuran logis di
-    // bawah ini tidak ikut berubah (§3.3).
+    // Text is rasterized at the real screen resolution; the logical sizes
+    // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
@@ -63,7 +63,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             text(fonts, JUDUL)
                 .size(t.typography.body_size * 2.0)
                 .weight(FontWeight::SEMIBOLD)
-                // Tracking negatif pada ukuran besar — kebiasaan SF (§3.6).
+                // Negative tracking at large sizes — an SF habit (§3.6).
                 .tracking(-0.02)
                 .color(t.color.label)
                 .single_line(),
@@ -83,18 +83,18 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         kendali(fonts, &t, count),
     ])
     .spacing(t.space(6.0))
-    // Seluruh tumpukan di tengah window — perataannya milik mesin layout,
-    // bukan aritmetika di halaman ini (§3.4).
+    // The whole stack sits centered in the window — the alignment belongs to
+    // the layout engine, not to arithmetic on this page (§3.4).
     .main(MainAlign::Center)
     .cross(CrossAlign::Center)
     .padding(Insets::all(t.space(8.0)))
     .into()
 }
 
-/// Angka besar sebagai **komponen tersendiri**.
+/// The big number as **its own component**.
 ///
-/// Inilah satu-satunya tempat pencacah dibaca, dan karena itu satu-satunya
-/// scope yang ditandai dirty saat tombol ditekan (§2.5).
+/// This is the only place the counter is read, and therefore the only scope
+/// marked dirty when a button is pressed (§2.5).
 fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
     let fonts = fonts.clone();
     component("angka", move |cx| {
@@ -109,12 +109,12 @@ fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
     })
 }
 
-/// Baris tombol.
+/// The button row.
 ///
-/// Tombolnya hidup di scope akar dan **tidak** membaca pencacah — closure
-/// `on_press`-nya hanya menulis. Karena itu node tombol bertahan apa adanya
-/// lintas klik: yang ditekan jari pengguna tidak pernah dibangun ulang di
-/// tengah interaksi.
+/// The buttons live in the root scope and do **not** read the counter — their
+/// `on_press` closures only write. That is why the button nodes survive
+/// unchanged across clicks: what the user's finger is pressing is never rebuilt
+/// mid-interaction.
 fn kendali(fonts: &Fonts, t: &Theme, count: Signal<i32>) -> View {
     row([
         View::from(button(fonts, t, TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1))),
@@ -146,33 +146,35 @@ mod tests {
     use std::time::Duration;
 
     const VIEWPORT: Size = Size::new(720.0, 540.0);
-    /// Layar Retina — sekaligus memaksa jalur scale factor ikut diuji.
+    /// A Retina screen — which also forces the scale factor path to be
+    /// exercised.
     const SKALA: f64 = 2.0;
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app`**.
+    /// A headless app assembled **exactly the way `run_app` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         let ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
             .sized(VIEWPORT.width, VIEWPORT.height);
-        // Yang dilakukan shell tiap frame; di sini cukup sekali karena window
-        // uji tidak pernah pindah monitor.
+        // What the shell does every frame; once is enough here since the test
+        // window never moves between monitors.
         ui.env::<Signal<ScaleFactor>>()
             .expect("run_app menitipkan scale factor")
             .set(ScaleFactor(SKALA as f32));
         ui
     }
 
-    /// Mesin teks deterministik: tanpa font sistem, hasil test tidak tergantung
-    /// font apa yang kebetulan terpasang di mesin CI (§9.5).
+    /// A deterministic text engine: with no system fonts, test results do not
+    /// depend on whichever fonts happen to be installed on the CI machine
+    /// (§9.5).
     fn fonts() -> Fonts {
         Fonts::bundled_only()
     }
 
-    /// Kotak sebuah node **menurut pohon aksesibilitas**.
+    /// A node's rectangle **according to the accessibility tree**.
     ///
-    /// Sengaja lewat jalur a11y: dengan begitu test mengklik persis di tempat
-    /// yang dibacakan screen reader, dan geometrinya datang dari hasil layout
-    /// (§3.8) — bukan dari angka yang ditulis ulang di sini.
+    /// Deliberately via the a11y path: that way the tests click exactly where a
+    /// screen reader announces, and the geometry comes from the layout result
+    /// (§3.8) — not from coordinates restated here.
     fn kotak(ui: &AppRuntime, label: &str) -> Rect {
         let pohon = ui.access_tree();
         pohon
@@ -181,10 +183,10 @@ mod tests {
             .bounds
     }
 
-    /// Angka yang sedang ditampilkan, dibaca dari pohon a11y.
+    /// The number currently on screen, read from the a11y tree.
     ///
-    /// Kalau ini benar, screen reader membacakan angka yang sama dengan yang
-    /// digambar — keduanya berasal dari node yang sama.
+    /// If this is right, a screen reader announces the same number that is
+    /// drawn — both come from the same node.
     fn angka_terbaca(ui: &AppRuntime) -> i32 {
         let pohon = ui.access_tree();
         pohon
@@ -195,7 +197,7 @@ mod tests {
             .unwrap_or_else(|| panic!("tidak ada label berupa angka:\n{}", pohon.dump()))
     }
 
-    /// Satu klik penuh lewat lapisan input: gerak, tekan, lepas.
+    /// One full click through the input layer: move, press, release.
     fn klik(ui: &mut AppRuntime, titik: Point) {
         for e in [
             PointerEvent::new(PointerPhase::Move, titik, Duration::ZERO),
@@ -208,7 +210,7 @@ mod tests {
         }
     }
 
-    // -- yang bisa diuji tanpa GPU sama sekali ------------------------------
+    // -- what can be tested without a GPU at all ----------------------------
 
     #[test]
     fn halaman_menampilkan_teks_dan_tiga_tombol() {
@@ -216,7 +218,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         ui.frame();
 
-        // Teks benar-benar menjadi perintah gambar, bukan sekadar node kosong.
+        // The text really does become draw commands, not just empty nodes.
         let run: Vec<usize> = ui
             .scene()
             .commands()
@@ -235,8 +237,8 @@ mod tests {
             "halaman nyaris tanpa glyph: {run:?}"
         );
 
-        // Ketiga tombol ada di pohon a11y, bisa diklik, dan hit target-nya
-        // memenuhi HIG.
+        // All three buttons are in the a11y tree, clickable, and their hit
+        // targets satisfy the HIG.
         let pohon = ui.access_tree();
         for label in [TOMBOL_TAMBAH, TOMBOL_KURANG, TOMBOL_RESET] {
             let e = pohon
@@ -280,7 +282,7 @@ mod tests {
         assert_eq!(laporan.diff.removed, 0);
         assert!(ui.is_idle());
 
-        // Tombol lain menulis pencacah yang sama, dari scope yang sama.
+        // The other buttons write the same counter, from the same scope.
         for _ in 0..3 {
             let p = kotak(&ui, TOMBOL_TAMBAH).center();
             klik(&mut ui, p);
@@ -305,7 +307,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
         ui.frame();
 
-        // Sudut kiri-atas window: jauh dari tumpukan yang berada di tengah.
+        // Top-left corner of the window: far from the centered stack.
         klik(&mut ui, Point::new(4.0, 4.0));
         ui.frame();
         assert_eq!(angka_terbaca(&ui), 0);
@@ -317,8 +319,8 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
         ui.frame();
 
-        // Tab memindahkan fokus ke tombol pertama, Space mengaktifkannya —
-        // keyboard bukan warga kelas dua (`KOMPONEN.md` DoD).
+        // Tab moves focus to the first button, Space activates it — the
+        // keyboard is not a second-class citizen (`KOMPONEN.md` DoD).
         ui.dispatch(&Event::Key(KeyEvent::pressed(
             KeyCode::Named(NamedKey::Tab),
             Duration::ZERO,
@@ -360,7 +362,8 @@ mod tests {
                     );
                 }
 
-                // Latar tombol utama juga token, di kedua preset.
+                // The primary button's background is a token too, in both
+                // presets.
                 let kotak_tombol = ui
                     .scene()
                     .commands()
@@ -393,7 +396,7 @@ mod tests {
         ui.set_clear_color(gelap.color.background);
         ui.frame();
 
-        // State bertahan melewati rebuild theme — yang berganti hanya token.
+        // State survives the theme rebuild — only the tokens change.
         assert_eq!(angka_terbaca(&ui), 1);
         assert!(ui
             .scene()
@@ -402,13 +405,14 @@ mod tests {
             .any(|c| matches!(c, Command::GlyphRun(r) if r.color == gelap.color.accent)));
     }
 
-    // -- bukti piksel: yang berubah bukan cuma state, tapi layarnya ---------
+    // -- pixel proof: what changes is not just state, but the screen --------
 
-    /// Hitung piksel yang **bukan** warna latar di sebuah kotak logis, dan
-    /// hash isinya.
+    /// Count the pixels that are **not** the background color inside a logical
+    /// rectangle, and hash its contents.
     ///
-    /// Hash-nya FNV-1a atas byte mentah region — cukup untuk menjawab satu
-    /// pertanyaan yang penting: "apakah bagian layar ini benar-benar berbeda?"
+    /// The hash is FNV-1a over the region's raw bytes — enough to answer the
+    /// one question that matters: "is this part of the screen actually
+    /// different?"
     fn cuplik(img: &Rgba8Image, wilayah: Rect, latar: silka_paint::Color) -> (u32, u64) {
         let f = |v: f32| (v as f64 * SKALA).round().max(0.0) as u32;
         let mut n = 0u32;
@@ -429,13 +433,13 @@ mod tests {
         (n, hash)
     }
 
-    /// **Uji integrasi paling berharga di repo**: satu klik yang disimulasikan
-    /// lewat lapisan input harus berakhir sebagai piksel yang berbeda di
-    /// tekstur yang dirender GPU dengan jalur yang **persis sama** dengan
-    /// window (pipeline, format sRGB, blending, atlas glyph).
+    /// **The most valuable integration test in the repo**: a single click
+    /// simulated through the input layer must end up as different pixels in a
+    /// texture the GPU rendered through **exactly the same** path as the window
+    /// (pipeline, sRGB format, blending, glyph atlas).
     ///
-    /// Semua uji lain di berkas ini berhenti di sisi CPU dan akan tetap hijau
-    /// meski layar kosong; yang ini tidak bisa.
+    /// Every other test in this file stops on the CPU side and would stay green
+    /// even with a blank screen; this one cannot.
     #[test]
     fn klik_mengubah_piksel_angka_di_layar() {
         let Ok(gpu) = Gpu::headless() else {
@@ -455,9 +459,9 @@ mod tests {
                 .expect("render halaman counter")
         };
 
-        // Pita horizontal setinggi angka: hanya angka yang berada di dalamnya,
-        // dan kotaknya datang dari hasil layout (lewat pohon a11y), bukan dari
-        // koordinat yang ditulis ulang di sini.
+        // A horizontal band as tall as the number: only the number falls
+        // inside it, and its rectangle comes from the layout result (via the
+        // a11y tree), not from coordinates restated here.
         let angka0 = kotak(&ui, "0");
         let pita = Rect::new(
             0.0,
@@ -473,8 +477,9 @@ mod tests {
             "angka \"0\" nyaris tidak tergambar: hanya {n0} piksel bukan-latar"
         );
 
-        // Kontrol negatif: pita kosong di dalam padding halaman harus benar-
-        // benar nol, jadi ambang sampelnya terbukti tidak asal lolos.
+        // Negative control: an empty band inside the page padding must be
+        // exactly zero, proving the sampling threshold does not pass by
+        // accident.
         let kosong = Rect::new(0.0, 0.0, VIEWPORT.width, theme.space(4.0));
         assert_eq!(
             cuplik(&sebelum, kosong, theme.color.background).0,
@@ -482,7 +487,7 @@ mod tests {
             "ambang sampel salah: pita kosong sudah punya piksel bukan-latar"
         );
 
-        // Satu klik lewat lapisan input.
+        // One click through the input layer.
         let tambah = kotak(&ui, TOMBOL_TAMBAH).center();
         klik(&mut ui, tambah);
         assert!(!ui.is_idle());
@@ -497,9 +502,9 @@ mod tests {
             "layar tidak berubah setelah klik — angka {n0} vs {n1} piksel"
         );
 
-        // Kembali ke nol harus mengembalikan piksel yang **sama persis**:
-        // bukti bahwa yang berubah memang isinya, bukan sesuatu yang menumpuk
-        // frame demi frame.
+        // Going back to zero must restore **exactly the same** pixels: proof
+        // that what changed is the content, not something accumulating frame
+        // after frame.
         let nol = kotak(&ui, TOMBOL_RESET).center();
         klik(&mut ui, nol);
         ui.frame();

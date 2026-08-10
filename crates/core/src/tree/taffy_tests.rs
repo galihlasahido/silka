@@ -1,5 +1,5 @@
-//! Unit test integrasi Taffy: flexbox, grid, dan **sambungannya ke protokol
-//! box constraints** — termasuk pengukuran teks lewat measure function leaf.
+//! Taffy integration tests: flexbox, grid, and **the join to the box-constraints
+//! protocol** — including text measurement through the measure-function leaf.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -25,13 +25,13 @@ fn anak(tree: &RenderTree, id: NodeId, i: usize) -> NodeId {
     tree.children(id)[i]
 }
 
-/// Wadah = anak tunggal akar.
+/// The container = the root's only child.
 fn wadah(tree: &RenderTree) -> NodeId {
     anak(tree, tree.root(), 0)
 }
 
 // ---------------------------------------------------------------------------
-// Flex: sumbu utama & silang
+// Flex: main & cross axis
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -52,8 +52,9 @@ fn row_menumpuk_ke_samping_dengan_spacing() {
 #[test]
 fn spacing_hanya_mengenai_sumbu_utama() {
     let mut tree = RenderTree::new();
-    // Kalau `spacing` salah dipetakan ke kedua sumbu, `row` akan ikut
-    // menggeser anak ke bawah — bug yang gampang lolos tanpa test ini.
+    // If `spacing` were wrongly mapped to both axes, `row` would push its
+    // children downwards too — a bug that slips through easily without this
+    // test.
     reconcile(
         &mut tree,
         row([fixed(40.0, 10.0), fixed(40.0, 10.0)]).spacing(12.0),
@@ -151,7 +152,7 @@ fn expanded_mengisi_sisa_ruang_sumbu_utama() {
     let fleksibel = anak(&tree, baris, 1);
     assert_eq!(tree.size(fleksibel).width, 160.0, "40 + sisa");
     assert_eq!(tree.offset(fleksibel).x, 40.0);
-    // Constraints tight diteruskan ke anak di dalam pembungkus.
+    // The tight constraints are passed through to the child inside the wrapper.
     assert_eq!(tree.size(anak(&tree, fleksibel, 0)).width, 160.0);
 }
 
@@ -183,14 +184,15 @@ fn flexible_tumbuh_tapi_tetap_menghormati_ukuran_alami() {
     );
     tree.layout(BoxConstraints::tight(Size::new(200.0, 10.0)));
     let baris = wadah(&tree);
-    // basis auto = 120, lalu menyerap sisa 40.
+    // basis auto = 120, then it absorbs the remaining 40.
     assert_eq!(tree.size(anak(&tree, baris, 0)).width, 160.0);
 }
 
 #[test]
 fn anak_biasa_tidak_menyusut_walau_meluber() {
     let mut tree = RenderTree::new();
-    // Rasa Flutter: `Row` yang kelebihan isi meluber, bukan mengempis diam-diam.
+    // The Flutter feel: an overfull `Row` overflows rather than quietly
+    // collapsing.
     reconcile(&mut tree, row([fixed(300.0, 10.0), fixed(300.0, 10.0)]));
     tree.layout(BoxConstraints::tight(Size::new(200.0, 10.0)));
     let baris = wadah(&tree);
@@ -328,7 +330,7 @@ fn grid_menghormati_penempatan_eksplisit() {
     tree.layout(BoxConstraints::tight(Size::new(100.0, 10.0)));
 
     let g = wadah(&tree);
-    // Urutan anak di pohon tidak berubah; yang berpindah adalah kotaknya.
+    // The child order in the tree is unchanged; what moves is their boxes.
     assert_eq!(tree.offset(anak(&tree, g, 0)).x, 50.0);
     assert_eq!(tree.offset(anak(&tree, g, 1)).x, 0.0);
 }
@@ -362,7 +364,7 @@ fn grid_track_auto_seukuran_isi() {
 }
 
 // ---------------------------------------------------------------------------
-// Measure function leaf — jalan masuk teks
+// The measure-function leaf — the door text comes in through
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -386,16 +388,17 @@ fn daun_terukur_dipanggil_dengan_lebar_dari_taffy() {
         terlihat.get().is_finite(),
         "fungsi ukur harus menerima lebar berhingga dari taffy"
     );
-    // Di bawah `expanded` ukuran anak memang didikte wadah, jadi hasil ukurnya
-    // (50) diregangkan ke kotak yang ia dapat. Yang dibuktikan test ini adalah
-    // fungsi ukurnya benar-benar dipanggil dengan lebar dari Taffy.
+    // Under `expanded` the child's size really is dictated by the container, so
+    // its measured result (50) is stretched to the box it was given. What this
+    // test proves is that the measure function really was called with a width
+    // from Taffy.
     assert_eq!(tree.size(daun), Size::new(200.0, 12.0));
 }
 
 #[test]
 fn pengukuran_teks_asli_mengalir_lewat_flex() {
-    // Test paling penting di berkas ini: `silka-text` benar-benar dipakai
-    // sebagai measure function leaf Taffy (§3.4), bukan hanya secara teori.
+    // The most important test in this file: `silka-text` really is used as
+    // Taffy's measure-function leaf (§3.4), not just in theory.
     let mesin = Rc::new(RefCell::new(TextEngine::bundled_only()));
     let gaya = TextStyle::new().size(17.0);
     let kalimat = "Halo dunia dari silka";
@@ -411,7 +414,7 @@ fn pengukuran_teks_asli_mengalir_lewat_flex() {
         }
     };
 
-    // Ukuran alami teks, sebagai patokan.
+    // The text's natural size, as a reference point.
     let alami = mesin
         .borrow_mut()
         .measure(kalimat, &gaya, TextConstraints::UNBOUNDED)
@@ -476,14 +479,14 @@ fn teks_di_dalam_kolom_sempit_dipenggal_lewat_measure() {
 }
 
 // ---------------------------------------------------------------------------
-// Sambungan ke mesin dirty/boundary
+// The join to the dirty/boundary engine
 // ---------------------------------------------------------------------------
 
 #[test]
 fn perubahan_ukuran_anak_merambat_sampai_wadah() {
-    // Anak flex mendapat constraints tight dari hasil pengukurannya sendiri.
-    // Kalau itu diperlakukan sebagai relayout boundary biasa, perubahan isi
-    // tidak akan pernah sampai ke wadahnya dan layout membeku diam-diam.
+    // A flex child receives tight constraints derived from measuring itself. If
+    // that were treated as an ordinary relayout boundary, content changes would
+    // never reach its container and layout would freeze silently.
     let mut tree = RenderTree::new();
     reconcile(&mut tree, row([fixed(40.0, 10.0), fixed(20.0, 10.0)]));
     tree.layout(window(400.0, 400.0));
@@ -588,6 +591,7 @@ fn wadah_flex_tetap_terbaca_sebagai_grup_oleh_a11y() {
         pohon.find_role(AccessRole::Group).is_some(),
         "row/column adalah pengelompokan yang berarti"
     );
-    // Pembungkus item murni struktural: ia disaring keluar, labelnya naik.
+    // The item wrapper is purely structural: it is filtered out and its label
+    // rises in its place.
     assert!(pohon.find_label("Judul").is_some());
 }

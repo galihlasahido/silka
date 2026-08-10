@@ -1,6 +1,6 @@
-//! View untuk node primitif [`crate::tree`] — bentuk penulisannya sudah gaya
-//! Dart (§2.5), sehingga `silka-widgets` tinggal membungkusnya dengan nama
-//! yang ramah aplikasi.
+//! Views for the [`crate::tree`] primitive nodes — already written in the
+//! Dart style (§2.5), so `silka-widgets` only has to wrap them under
+//! application-friendly names.
 //!
 //! ```
 //! use silka_core::view::{column, fixed, pad, row};
@@ -30,31 +30,33 @@ use super::{Builder, View, ViewNode};
 // Styling utility (§2.6)
 // ---------------------------------------------------------------------------
 
-/// Props yang punya [`Decoration`] — pintu masuk utility styling.
+/// Props that carry a [`Decoration`] — the entry point for styling utilities.
 ///
-/// Diimplementasikan setiap primitif yang bisa menggambar latar, sehingga
-/// `bg`/`rounded`/`shadow` cukup ditulis **sekali** sebagai method chain
-/// ([`Builder`]) dan berlaku untuk `fixed`, `pad`, `constrained`, `row`,
-/// `column`, `grid`, dan `viewport` (§2.6).
+/// Implemented by every primitive that can draw a background, so that
+/// `bg`/`rounded`/`shadow` are written **once** as a method chain
+/// ([`Builder`]) and apply to `fixed`, `pad`, `constrained`, `row`, `column`,
+/// `grid`, and `viewport` alike (§2.6).
 pub trait Decorated {
-    /// Dekorasi props ini, untuk diubah method chain.
+    /// These props' decoration, for the method chain to modify.
     fn decoration_mut(&mut self) -> &mut Decoration;
 }
 
 impl<V: ViewNode + Decorated> Builder<V> {
-    /// Warna latar — **selalu token theme** (`theme.color.surface`), tidak
-    /// pernah literal di kode aplikasi (§2.6, §2.7).
+    /// The background color — **always a theme token**
+    /// (`theme.color.surface`), never a literal in application code (§2.6,
+    /// §2.7).
     pub fn background(self, color: Color) -> Self {
         self.map(move |p| p.decoration_mut().background = color)
     }
 
-    /// Geometri sudut: squircle di preset Cupertino, arc di preset Tailwind —
-    /// keduanya sekadar nilai [`Corners`] yang diteruskan ke shader (§3.6).
+    /// Corner geometry: a squircle in the Cupertino preset, an arc in the
+    /// Tailwind one — both merely [`Corners`] values passed to the shader
+    /// (§3.6).
     pub fn corners(self, corners: Corners) -> Self {
         self.map(move |p| p.decoration_mut().corners = corners)
     }
 
-    /// Border setebal `width` berwarna `color` (token `separator`).
+    /// A `width`-thick border in `color` (the `separator` token).
     pub fn border(self, width: f32, color: Color) -> Self {
         self.map(move |p| {
             let d = p.decoration_mut();
@@ -63,16 +65,16 @@ impl<V: ViewNode + Decorated> Builder<V> {
         })
     }
 
-    /// Bayangan ganda ala HIG untuk satu tingkat elevasi (token `shadow.md`).
+    /// The HIG-style double shadow for one elevation level (`shadow.md`).
     pub fn shadow(self, shadows: ShadowPair) -> Self {
         self.map(move |p| p.decoration_mut().shadows = shadows)
     }
 }
 
-/// Bandingkan lalu terapkan dekorasi baru; kembalikan alasan dirty.
+/// Compare, then apply the new decoration; return the dirty reasons.
 ///
-/// Dekorasi tidak pernah mengubah ukuran, jadi ia **tidak** memicu layout —
-/// hanya gambar ulang. Itulah bedanya `bg` dengan `padding`.
+/// A decoration never changes size, so it does **not** trigger layout — only a
+/// repaint. That is the difference between `bg` and `padding`.
 fn terapkan_dekorasi(lama: &mut Decoration, baru: &Decoration) -> Dirty {
     if lama == baru {
         return Dirty::NONE;
@@ -85,7 +87,7 @@ fn terapkan_dekorasi(lama: &mut Decoration, baru: &Decoration) -> Dirty {
 // fixed
 // ---------------------------------------------------------------------------
 
-/// Props daun berukuran tetap.
+/// Props for a fixed-size leaf.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FixedProps {
     size: Size,
@@ -132,7 +134,7 @@ impl ViewNode for FixedProps {
     }
 }
 
-/// Daun berukuran tetap `width` × `height`.
+/// A leaf of fixed size `width` × `height`.
 pub fn fixed(width: f32, height: f32) -> Builder<FixedProps> {
     Builder::new(FixedProps {
         size: Size::new(width, height),
@@ -143,7 +145,7 @@ pub fn fixed(width: f32, height: f32) -> Builder<FixedProps> {
 }
 
 impl Builder<FixedProps> {
-    /// Nama yang dibacakan screen reader (§3.8).
+    /// The name a screen reader announces (§3.8).
     pub fn label(self, label: impl Into<String>) -> Self {
         let label = label.into();
         self.map(move |p| {
@@ -152,12 +154,12 @@ impl Builder<FixedProps> {
         })
     }
 
-    /// Peran a11y.
+    /// The a11y role.
     pub fn role(self, role: AccessRole) -> Self {
         self.map(move |p| p.role = role)
     }
 
-    /// Ganti ukuran.
+    /// Change the size.
     pub fn size(self, width: f32, height: f32) -> Self {
         self.map(move |p| p.size = Size::new(width, height))
     }
@@ -167,7 +169,7 @@ impl Builder<FixedProps> {
 // pad
 // ---------------------------------------------------------------------------
 
-/// Props jarak di sekeliling anak.
+/// Props for spacing around a child.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PadProps {
     insets: Insets,
@@ -202,7 +204,7 @@ impl ViewNode for PadProps {
     }
 }
 
-/// Beri jarak `insets` di sekeliling `child`.
+/// Put `insets` of space around `child`.
 pub fn pad(insets: Insets, child: impl Into<View>) -> Builder<PadProps> {
     Builder::new(PadProps {
         insets,
@@ -215,7 +217,7 @@ pub fn pad(insets: Insets, child: impl Into<View>) -> Builder<PadProps> {
 // constrained
 // ---------------------------------------------------------------------------
 
-/// Props constraints tambahan.
+/// Props for additional constraints.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ConstrainProps {
     extra: BoxConstraints,
@@ -250,7 +252,7 @@ impl ViewNode for ConstrainProps {
     }
 }
 
-/// Terapkan constraints tambahan pada `child` (`constrained_box` Flutter).
+/// Apply extra constraints to `child` (Flutter's `constrained_box`).
 pub fn constrained(extra: BoxConstraints, child: impl Into<View>) -> Builder<ConstrainProps> {
     Builder::new(ConstrainProps {
         extra,
@@ -263,10 +265,10 @@ pub fn constrained(extra: BoxConstraints, child: impl Into<View>) -> Builder<Con
 // measured
 // ---------------------------------------------------------------------------
 
-/// Props daun yang mengukur dirinya sendiri.
+/// Props for a leaf that measures itself.
 ///
-/// `PartialEq`-nya membandingkan **identitas** fungsi ukur ([`std::rc::Rc`]),
-/// bukan hasilnya: closure yang sama = tidak ada yang berubah.
+/// Its `PartialEq` compares the **identity** of the measure function
+/// ([`std::rc::Rc`]), not its results: the same closure = nothing changed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeasuredProps {
     node: MeasuredBox,
@@ -289,13 +291,13 @@ impl ViewNode for MeasuredProps {
     }
 }
 
-/// Daun yang ukurannya dihitung fungsi `measure` — **measure function leaf**
-/// (§3.4).
+/// A leaf whose size the `measure` function computes — a **measure function
+/// leaf** (§3.4).
 ///
-/// Inilah jalan masuk pengukuran teks ke sistem layout: baik mesin box
-/// constraints kita maupun wadah flex/grid ([`row`]/[`column`]/[`grid`])
-/// bertanya lewat satu pintu yang sama. Lihat contoh lengkap di
-/// [`silka_core::tree::MeasuredBox`](crate::tree::MeasuredBox).
+/// This is how text measurement enters the layout system: both our own box
+/// constraints engine and the flex/grid containers
+/// ([`row`]/[`column`]/[`grid`]) ask through the very same door. See the full
+/// example on [`silka_core::tree::MeasuredBox`](crate::tree::MeasuredBox).
 pub fn measured(measure: impl Fn(BoxConstraints) -> Size + 'static) -> Builder<MeasuredProps> {
     Builder::new(MeasuredProps {
         node: MeasuredBox::new(measure),
@@ -303,7 +305,7 @@ pub fn measured(measure: impl Fn(BoxConstraints) -> Size + 'static) -> Builder<M
 }
 
 impl Builder<MeasuredProps> {
-    /// Nama yang dibacakan screen reader (§3.8).
+    /// The name a screen reader announces (§3.8).
     pub fn label(self, label: impl Into<String>) -> Self {
         let label = label.into();
         self.map(move |p| {
@@ -312,7 +314,7 @@ impl Builder<MeasuredProps> {
         })
     }
 
-    /// Peran a11y.
+    /// The a11y role.
     pub fn role(self, role: AccessRole) -> Self {
         self.map(move |p| p.node.role = role)
     }
@@ -322,12 +324,13 @@ impl Builder<MeasuredProps> {
 // row / column / grid
 // ---------------------------------------------------------------------------
 
-/// Props wadah flex/grid — satu tipe untuk [`row`], [`column`], dan [`grid`].
+/// Props for a flex/grid container — one type for [`row`], [`column`], and
+/// [`grid`].
 ///
-/// Satu tipe props berarti satu tipe view: mengubah `row(...)` menjadi
-/// `column(...)` **mempertahankan** node beserta state-nya, karena yang berubah
-/// hanya sumbu, bukan identitas. Itu perilaku yang diinginkan (bandingkan
-/// dengan mengganti `column` menjadi `viewport`, yang memang mengganti node).
+/// One props type means one view type: turning `row(...)` into `column(...)`
+/// **keeps** the node and its state, because only the axis changed, not the
+/// identity. That is the intended behavior (contrast it with swapping `column`
+/// for `viewport`, which really does replace the node).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LayoutProps {
     style: ContainerStyle,
@@ -360,7 +363,7 @@ impl ViewNode for LayoutProps {
     }
 }
 
-/// Tumpuk anak-anak ke bawah — `column((a, b)).spacing(12.0)` (§2.5).
+/// Stack children downward — `column((a, b)).spacing(12.0)` (§2.5).
 pub fn column<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<LayoutProps> {
     Builder::new(LayoutProps {
         style: ContainerStyle::flex(Axis::Vertical),
@@ -369,7 +372,7 @@ pub fn column<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<L
     .children(children)
 }
 
-/// Tumpuk anak-anak ke samping, **mengikuti arah baca** (§9.8).
+/// Stack children sideways, **following the reading direction** (§9.8).
 pub fn row<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<LayoutProps> {
     Builder::new(LayoutProps {
         style: ContainerStyle::flex(Axis::Horizontal),
@@ -378,7 +381,8 @@ pub fn row<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<Layo
     .children(children)
 }
 
-/// Tata anak-anak dalam grid CSS — `grid((a, b)).cols(repeat(3, Track::fr(1.0)))`.
+/// Lay children out in a CSS grid —
+/// `grid((a, b)).cols(repeat(3, Track::fr(1.0)))`.
 pub fn grid<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<LayoutProps> {
     Builder::new(LayoutProps {
         style: ContainerStyle::grid(),
@@ -388,12 +392,12 @@ pub fn grid<C: Into<View>>(children: impl IntoIterator<Item = C>) -> Builder<Lay
 }
 
 impl Builder<LayoutProps> {
-    /// Jarak antar anak **pada sumbu utama** (kedua sumbu untuk [`grid`]).
+    /// Spacing between children **on the main axis** (both axes for [`grid`]).
     pub fn spacing(self, spacing: f32) -> Self {
         self.map(move |p| p.style.set_spacing(spacing))
     }
 
-    /// Jarak antar anak di kedua sumbu.
+    /// Spacing between children on both axes.
     pub fn gap(self, x: f32, y: f32) -> Self {
         self.map(move |p| {
             p.style.gap_x = x;
@@ -401,123 +405,123 @@ impl Builder<LayoutProps> {
         })
     }
 
-    /// Jarak antar anak pada sumbu horizontal.
+    /// Spacing between children on the horizontal axis.
     pub fn gap_x(self, x: f32) -> Self {
         self.map(move |p| p.style.gap_x = x)
     }
 
-    /// Jarak antar anak pada sumbu vertikal.
+    /// Spacing between children on the vertical axis.
     pub fn gap_y(self, y: f32) -> Self {
         self.map(move |p| p.style.gap_y = y)
     }
 
-    /// Jarak `steps` langkah skala spacing di kedua sumbu (§2.6).
+    /// A gap of `steps` spacing-scale steps on both axes (§2.6).
     ///
-    /// Ini bentuk umum di balik `gap_1()`…`gap_12()`: nilainya **selalu**
-    /// kelipatan [`SPACING_UNIT`], tidak pernah angka bebas.
+    /// This is the general form behind `gap_1()`…`gap_12()`: the value is
+    /// **always** a multiple of [`SPACING_UNIT`], never an arbitrary number.
     pub fn gap_steps(self, steps: f32) -> Self {
         self.gap(SPACING_UNIT * steps, SPACING_UNIT * steps)
     }
 
-    /// Tanpa jarak.
+    /// No gap.
     pub fn gap_0(self) -> Self {
         self.gap_steps(0.0)
     }
 
-    /// Jarak 1 langkah (4pt).
+    /// A gap of 1 step (4pt).
     pub fn gap_1(self) -> Self {
         self.gap_steps(1.0)
     }
 
-    /// Jarak 2 langkah (8pt).
+    /// A gap of 2 steps (8pt).
     pub fn gap_2(self) -> Self {
         self.gap_steps(2.0)
     }
 
-    /// Jarak 3 langkah (12pt).
+    /// A gap of 3 steps (12pt).
     pub fn gap_3(self) -> Self {
         self.gap_steps(3.0)
     }
 
-    /// Jarak 4 langkah (16pt).
+    /// A gap of 4 steps (16pt).
     pub fn gap_4(self) -> Self {
         self.gap_steps(4.0)
     }
 
-    /// Jarak 5 langkah (20pt).
+    /// A gap of 5 steps (20pt).
     pub fn gap_5(self) -> Self {
         self.gap_steps(5.0)
     }
 
-    /// Jarak 6 langkah (24pt).
+    /// A gap of 6 steps (24pt).
     pub fn gap_6(self) -> Self {
         self.gap_steps(6.0)
     }
 
-    /// Jarak 8 langkah (32pt).
+    /// A gap of 8 steps (32pt).
     pub fn gap_8(self) -> Self {
         self.gap_steps(8.0)
     }
 
-    /// Jarak 10 langkah (40pt).
+    /// A gap of 10 steps (40pt).
     pub fn gap_10(self) -> Self {
         self.gap_steps(10.0)
     }
 
-    /// Jarak 12 langkah (48pt).
+    /// A gap of 12 steps (48pt).
     pub fn gap_12(self) -> Self {
         self.gap_steps(12.0)
     }
 
-    /// Pembagian ruang pada sumbu utama.
+    /// How free space is distributed along the main axis.
     pub fn main(self, align: MainAlign) -> Self {
         self.map(move |p| p.style.main = align)
     }
 
-    /// Perataan anak pada sumbu silang.
+    /// How children are aligned on the cross axis.
     pub fn cross(self, align: CrossAlign) -> Self {
         self.map(move |p| p.style.cross = align)
     }
 
-    /// Pembagian ruang antar baris hasil `wrap` (flex) atau antar track pada
-    /// sumbu blok (grid).
+    /// How space is distributed between wrapped lines (flex) or between tracks
+    /// on the block axis (grid).
     pub fn lines(self, align: MainAlign) -> Self {
         self.map(move |p| p.style.lines = Some(align))
     }
 
-    /// Izinkan anak pindah baris saat kehabisan ruang.
+    /// Let children move to the next line when they run out of room.
     pub fn wrap(self) -> Self {
         self.wrap_mode(FlexWrap::Wrap)
     }
 
-    /// Mode `wrap` eksplisit.
+    /// The explicit `wrap` mode.
     pub fn wrap_mode(self, wrap: FlexWrap) -> Self {
         self.map(move |p| p.style.wrap = wrap)
     }
 
-    /// Balik urutan sumbu utama.
+    /// Reverse the main axis order.
     pub fn reverse(self) -> Self {
         self.map(move |p| p.style.reverse = true)
     }
 
-    /// Jarak di dalam tepi wadah.
+    /// Spacing inside the container's edges.
     pub fn padding(self, insets: Insets) -> Self {
         self.map(move |p| p.style.padding = insets)
     }
 
-    /// Ukuran baris grid.
+    /// Grid row sizes.
     pub fn rows(self, rows: impl IntoIterator<Item = Track>) -> Self {
         let rows: Vec<Track> = rows.into_iter().collect();
         self.map(move |p| p.style.rows = rows)
     }
 
-    /// Ukuran kolom grid.
+    /// Grid column sizes.
     pub fn cols(self, cols: impl IntoIterator<Item = Track>) -> Self {
         let cols: Vec<Track> = cols.into_iter().collect();
         self.map(move |p| p.style.columns = cols)
     }
 
-    /// Urutan pengisian sel untuk item tanpa penempatan eksplisit.
+    /// The cell fill order for items without an explicit placement.
     pub fn auto_flow(self, flow: GridFlow) -> Self {
         self.map(move |p| p.style.auto_flow = flow)
     }
@@ -527,7 +531,7 @@ impl Builder<LayoutProps> {
 // item / expanded / flexible
 // ---------------------------------------------------------------------------
 
-/// Props pembawa [`ItemStyle`] untuk satu anak flex/grid.
+/// Props carrying an [`ItemStyle`] for one flex/grid child.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ItemProps {
     style: ItemStyle,
@@ -550,7 +554,7 @@ impl ViewNode for ItemProps {
     }
 }
 
-/// Bungkus `child` agar bisa membawa gaya item flex/grid.
+/// Wrap `child` so it can carry a flex/grid item style.
 pub fn item(child: impl Into<View>) -> Builder<ItemProps> {
     Builder::new(ItemProps {
         style: ItemStyle::DEFAULT,
@@ -558,50 +562,50 @@ pub fn item(child: impl Into<View>) -> Builder<ItemProps> {
     .child(child)
 }
 
-/// `child` mengisi seluruh sisa ruang sumbu utama — padanan `Expanded` Flutter
-/// (`flex: 1 1 0`).
+/// `child` fills all remaining main-axis space — the counterpart of Flutter's
+/// `Expanded` (`flex: 1 1 0`).
 pub fn expanded(child: impl Into<View>) -> Builder<ItemProps> {
     item(child).grow(1.0).shrink(1.0).basis(0.0)
 }
 
-/// `child` boleh tumbuh mengisi sisa ruang tapi tetap boleh lebih kecil —
-/// padanan `Flexible` Flutter (`flex: 1 1 auto`).
+/// `child` may grow into the remaining space but is still allowed to be
+/// smaller — the counterpart of Flutter's `Flexible` (`flex: 1 1 auto`).
 pub fn flexible(child: impl Into<View>) -> Builder<ItemProps> {
     item(child).grow(1.0).shrink(1.0)
 }
 
 impl Builder<ItemProps> {
-    /// Bagian sisa ruang yang diminta.
+    /// The share of remaining space this item asks for.
     pub fn grow(self, grow: f32) -> Self {
         self.map(move |p| p.style.grow = grow)
     }
 
-    /// Kesediaan menyusut saat ruang kurang.
+    /// Willingness to shrink when space runs short.
     pub fn shrink(self, shrink: f32) -> Self {
         self.map(move |p| p.style.shrink = shrink)
     }
 
-    /// Ukuran awal pada sumbu utama.
+    /// The initial size along the main axis.
     pub fn basis(self, basis: f32) -> Self {
         self.map(move |p| p.style.basis = Some(basis))
     }
 
-    /// Perataan sumbu silang khusus item ini.
+    /// A cross-axis alignment just for this item.
     pub fn align_self(self, align: CrossAlign) -> Self {
         self.map(move |p| p.style.align_self = Some(align))
     }
 
-    /// Jarak di luar tepi item.
+    /// Spacing outside the item's edges.
     pub fn margin(self, margin: Insets) -> Self {
         self.map(move |p| p.style.margin = margin)
     }
 
-    /// Penempatan pada sumbu baris grid.
+    /// Placement along the grid's row axis.
     pub fn grid_row(self, span: GridSpan) -> Self {
         self.map(move |p| p.style.row = span)
     }
 
-    /// Penempatan pada sumbu kolom grid.
+    /// Placement along the grid's column axis.
     pub fn grid_column(self, span: GridSpan) -> Self {
         self.map(move |p| p.style.column = span)
     }
@@ -611,15 +615,16 @@ impl Builder<ItemProps> {
 // viewport
 // ---------------------------------------------------------------------------
 
-/// Props jendela pandang yang bisa digulir.
+/// Props for a scrollable viewport.
 ///
-/// `scroll` sengaja **opsional**: begitu roda mouse bisa menggulir sendiri,
-/// posisi guliran menjadi state milik node. Menuliskannya kembali tiap rebuild
-/// akan melempar pengguna ke atas setiap kali ada signal lain berubah — bug
-/// klasik "controlled component". Jadi:
+/// `scroll` is **optional** on purpose: once the mouse wheel can scroll on its
+/// own, the scroll offset becomes state owned by the node. Writing it back on
+/// every rebuild would throw the user back to the top whenever any other signal
+/// changed — the classic "controlled component" bug. So:
 ///
-/// - `None` (bawaan) = node yang memiliki posisi guliran; view tidak menyentuhnya.
-/// - `Some(v)` = aplikasi yang memiliki (mis. terikat signal, `scroll_to`).
+/// - `None` (the default) = the node owns the scroll offset; the view does not
+///   touch it.
+/// - `Some(v)` = the application owns it (e.g. bound to a signal, `scroll_to`).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ViewportProps {
     axis: Axis,
@@ -658,8 +663,9 @@ impl ViewNode for ViewportProps {
         if let Some(scroll) = self.scroll {
             if n.scroll != scroll {
                 n.scroll = scroll;
-                // Menggulir hanya memindahkan anak — ukurannya tidak berubah,
-                // tapi posisinya iya, jadi layout viewport-nya sendiri diulang.
+                // Scrolling only moves the children — their sizes do not
+                // change but their positions do, so the viewport's own layout
+                // is re-run.
                 dirty |= Dirty::LAYOUT | Dirty::PAINT;
             }
         }
@@ -671,26 +677,26 @@ impl ViewNode for ViewportProps {
     }
 }
 
-/// Jendela pandang bergulir vertikal berisi `child`.
+/// A vertically scrolling viewport around `child`.
 pub fn viewport(child: impl Into<View>) -> Builder<ViewportProps> {
     Builder::new(ViewportProps::default()).child(child)
 }
 
 impl Builder<ViewportProps> {
-    /// Sumbu guliran.
+    /// The scroll axis.
     pub fn axis(self, axis: Axis) -> Self {
         self.map(move |p| p.axis = axis)
     }
 
-    /// Kendalikan posisi guliran dari aplikasi (mis. terikat signal).
+    /// Drive the scroll offset from the application (e.g. bound to a signal).
     ///
-    /// Tanpa ini, posisi guliran adalah milik node dan roda mouse yang
-    /// mengaturnya.
+    /// Without this, the scroll offset belongs to the node and the mouse wheel
+    /// is what sets it.
     pub fn scroll(self, scroll: f32) -> Self {
         self.map(move |p| p.scroll = Some(scroll))
     }
 
-    /// Tinggi satu baris roda mouse dalam poin logis.
+    /// The height of one mouse wheel line in logical points.
     pub fn line_height(self, line_height: f32) -> Self {
         self.map(move |p| p.line_height = Some(line_height))
     }

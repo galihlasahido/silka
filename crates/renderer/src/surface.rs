@@ -1,4 +1,4 @@
-//! Surface window: swapchain, resize/DPI, dan eksekusi satu [`Scene`].
+//! The window surface: swapchain, resize/DPI, and executing one [`Scene`].
 
 use silka_paint::{GlyphSource, NoGlyphs, Scene, Size};
 
@@ -9,21 +9,22 @@ use crate::gpu::Gpu;
 use crate::instance::{fill_draw_list, ColorSpace, DrawList};
 use crate::pipeline::SdfPipeline;
 
-/// Hasil satu upaya menggambar frame.
+/// The result of one attempt to draw a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameOutcome {
-    /// Frame digambar dan dipresentasikan.
+    /// The frame was drawn and presented.
     Presented,
-    /// Frame sengaja dilewati: window kosong/minimal, tertutup window lain,
-    /// atau swapchain sedang timeout. Bukan kesalahan — scheduler cukup
-    /// menunggu event berikutnya (§3.5: render hanya saat dirty).
+    /// The frame was deliberately skipped: the window is empty/minimized,
+    /// occluded by another window, or the swapchain is timing out. Not an
+    /// error — the scheduler simply waits for the next event (§3.5: render
+    /// only when dirty).
     Skipped,
 }
 
-/// Swapchain untuk satu window.
+/// The swapchain for one window.
 ///
-/// API-nya sengaja bebas tipe wgpu: `silka-platform` cukup meneruskan ukuran
-/// fisik dari winit dan sebuah [`Scene`].
+/// Its API is deliberately free of wgpu types: `silka-platform` only forwards
+/// the physical size from winit and a [`Scene`].
 #[derive(Debug)]
 pub struct WindowSurface {
     surface: wgpu::Surface<'static>,
@@ -31,8 +32,8 @@ pub struct WindowSurface {
     geometry: SurfaceGeometry,
     configured: bool,
     sdf: SdfPipeline,
-    /// Daftar gambar (instance + batch clip) yang dipakai ulang tiap frame —
-    /// steady-state bebas alokasi (§3.5: frame time prediktabel).
+    /// The draw list (instances + clip batches), reused every frame — the
+    /// steady state is allocation-free (§3.5: predictable frame times).
     list: DrawList,
 }
 
@@ -51,18 +52,18 @@ impl WindowSurface {
             format,
             width: geometry.physical_width().max(1),
             height: geometry.physical_height().max(1),
-            // AutoVsync menurunkan diri ke mode yang didukung platform;
-            // di macOS ini memberi presentasi yang sinkron dengan
-            // CVDisplayLink, termasuk ProMotion 120 Hz.
+            // AutoVsync degrades to whatever mode the platform supports; on
+            // macOS this gives presentation synchronized with CVDisplayLink,
+            // including 120 Hz ProMotion.
             present_mode: wgpu::PresentMode::AutoVsync,
-            // 2 = keseimbangan latensi/throughput untuk UI (dokumentasi wgpu).
+            // 2 = the latency/throughput balance for UI (per the wgpu docs).
             desired_maximum_frame_latency: 2,
             alpha_mode: choose_alpha_mode(&caps.alpha_modes),
             view_formats: Vec::new(),
         };
 
-        // Pipeline dibuat sekarang, bukan saat frame pertama: kompilasi shader
-        // dibayar di muka supaya frame pertama tidak jank (§3.2).
+        // The pipeline is built now, not on the first frame: shader compilation
+        // is paid for up front so the first frame does not jank (§3.2).
         let sdf = SdfPipeline::new(gpu.device(), format);
 
         let mut this = Self {
@@ -77,25 +78,25 @@ impl WindowSurface {
         Ok(this)
     }
 
-    /// Geometri surface saat ini.
+    /// The surface's current geometry.
     pub fn geometry(&self) -> SurfaceGeometry {
         self.geometry
     }
 
-    /// Ukuran dalam poin logis — inilah yang diteruskan ke layout.
+    /// The size in logical points — this is what gets handed to layout.
     pub fn logical_size(&self) -> Size {
         self.geometry.logical_size()
     }
 
-    /// Scale factor window.
+    /// The window's scale factor.
     pub fn scale_factor(&self) -> f64 {
         self.geometry.scale_factor()
     }
 
-    /// Terapkan ukuran fisik baru (event `Resized` winit).
+    /// Apply a new physical size (winit's `Resized` event).
     ///
-    /// Ukuran 0×0 (window diminimalkan) diterima tanpa mengonfigurasi
-    /// swapchain — wgpu menolak dimensi nol.
+    /// A 0×0 size (a minimized window) is accepted without configuring the
+    /// swapchain — wgpu rejects zero dimensions.
     pub fn resize(&mut self, gpu: &Gpu, width: u32, height: u32) {
         let baru = self.geometry.with_physical_size(width, height);
         if baru == self.geometry && self.configured {
@@ -105,16 +106,16 @@ impl WindowSurface {
         self.reconfigure(gpu);
     }
 
-    /// Terapkan scale factor baru (event `ScaleFactorChanged`).
+    /// Apply a new scale factor (the `ScaleFactorChanged` event).
     ///
-    /// Tidak menyentuh swapchain: winit selalu menyusulkan `Resized` dengan
-    /// ukuran fisik yang benar. Yang berubah di sini hanyalah pembagi
-    /// poin-logis, supaya frame berikutnya layout-nya benar.
+    /// This does not touch the swapchain: winit always follows up with a
+    /// `Resized` carrying the correct physical size. All that changes here is
+    /// the logical-point divisor, so the next frame lays out correctly.
     pub fn set_scale_factor(&mut self, scale_factor: f64) {
         self.geometry = self.geometry.with_scale_factor(scale_factor);
     }
 
-    /// Konfigurasi ulang swapchain dari geometri saat ini.
+    /// Reconfigure the swapchain from the current geometry.
     pub fn reconfigure(&mut self, gpu: &Gpu) {
         if !self.geometry.is_renderable() {
             self.configured = false;
@@ -126,26 +127,27 @@ impl WindowSurface {
         self.configured = true;
     }
 
-    /// Gambar satu frame **tanpa teks**.
+    /// Draw one frame **without text**.
     ///
-    /// Perintah `GlyphRun` di dalam scene tidak menghasilkan piksel apa pun:
-    /// tanpa sumber atlas tidak ada bitmap yang bisa digambar. Untuk teks,
-    /// pakai [`WindowSurface::render_with_glyphs`].
+    /// `GlyphRun` commands in the scene produce no pixels at all: without an
+    /// atlas source there is no bitmap to draw. For text, use
+    /// [`WindowSurface::render_with_glyphs`].
     pub fn render(&mut self, gpu: &Gpu, scene: &Scene) -> Result<FrameOutcome, RendererError> {
         self.render_with_glyphs(gpu, scene, &mut NoGlyphs)
     }
 
-    /// Gambar satu frame beserta teksnya.
+    /// Draw one frame, text included.
     ///
-    /// Seluruh perintah (quad, border, bayangan, **dan glyph**) dieksekusi
-    /// lewat satu pipeline SDF dalam **satu draw call** — perbedaan bentuknya
-    /// (arc/squircle, ada/tidak border, blur, bertekstur/tidak) adalah data
-    /// instance, bukan varian shader. Karena semuanya satu draw call, urutan
-    /// perintah scene sekaligus menjadi urutan gambar: teks di atas latarnya,
-    /// tidak pernah tertimpa.
+    /// Every command (quads, borders, shadows, **and glyphs**) runs through the
+    /// one SDF pipeline in **a single draw call** — the differences in shape
+    /// (arc/squircle, border or not, blur, textured or not) are instance data,
+    /// not shader variants. Because it is all one draw call, the scene's
+    /// command order doubles as the draw order: text sits above its background
+    /// and is never painted over.
     ///
-    /// `glyphs` biasanya `&mut TextEngine`. Kontraknya tetap: pemanggil tidak
-    /// pernah menyentuh tipe wgpu, dan backend tidak pernah tahu apa itu font.
+    /// `glyphs` is usually `&mut TextEngine`. The contract still holds: the
+    /// caller never touches a wgpu type, and the backend never knows what a
+    /// font is.
     pub fn render_with_glyphs(
         &mut self,
         gpu: &Gpu,
@@ -164,9 +166,9 @@ impl WindowSurface {
 
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
-            // Suboptimal: dipakai sekali lagi, lalu ditata ulang untuk frame
-            // berikutnya — inilah yang terjadi saat window sedang di-drag
-            // antar monitor dengan DPI berbeda.
+            // Suboptimal: used once more, then reconfigured for the next frame
+            // — this is what happens while a window is being dragged between
+            // monitors with different DPI.
             wgpu::CurrentSurfaceTexture::Suboptimal(f) => {
                 self.configured = false;
                 f
@@ -188,8 +190,8 @@ impl WindowSurface {
             }
         };
 
-        // Ruang warna ditentukan format target: `*Srgb` melakukan encoding
-        // balik di hardware, jadi shader harus menulis nilai linear.
+        // The color space follows the target format: `*Srgb` does the encoding
+        // back in hardware, so the shader must write linear values.
         let space = if self.config.format.is_srgb() {
             ColorSpace::Linear
         } else {

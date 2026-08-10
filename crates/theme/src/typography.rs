@@ -1,19 +1,19 @@
-//! Skala font semantik + gaya teks per token.
+//! The semantic type scale plus the text style behind each token.
 //!
-//! Widget menyebut **peran** (`Body`, `Headline`, `Caption1`), bukan angka —
-//! sama seperti warna. Yang berbeda antar preset bukan hanya ukurannya:
+//! Widgets name a **role** (`Body`, `Headline`, `Caption1`), not a number —
+//! just as with color. And size is not the only thing that differs between
+//! presets:
 //!
 //! | | Cupertino | Tailwind/shadcn |
 //! |---|---|---|
-//! | Ukuran | skala teks HIG (10 → 26pt) | skala Tailwind (12 → 30px) |
-//! | Tinggi baris | pasangan HIG (13/16/20/26/32) | pasangan Tailwind (16/20/28/32/36) |
-//! | Optical size | **ya** — sumbu `opsz` Inter v4 diikat ke ukuran | tidak |
-//! | Tracking | tabel ala SF: longgar di kecil, rapat di besar | 0, kecuali judul besar |
+//! | Size | HIG text scale (10 → 26pt) | Tailwind scale (12 → 30px) |
+//! | Line height | HIG pairs (13/16/20/26/32) | Tailwind pairs (16/20/28/32/36) |
+//! | Optical size | **yes** — Inter v4's `opsz` axis tied to the size | no |
+//! | Tracking | SF-style table: loose when small, tight when large | 0, except large titles |
 //!
-//! Crate ini sengaja **tidak** bergantung pada `silka-text`: token adalah
-//! nilai murni, dan sebuah crate token tidak boleh menyeret font shaper ke
-//! dalam pohon dependensi. Pemetaan ke `silka_text::TextStyle` terjadi di
-//! lapisan widget:
+//! This crate deliberately does **not** depend on `silka-text`: tokens are pure
+//! values, and a token crate must not drag a font shaper into the dependency
+//! tree. Mapping onto `silka_text::TextStyle` happens in the widget layer:
 //!
 //! ```ignore
 //! let ts = theme.font(FontToken::Headline);
@@ -24,50 +24,52 @@
 //!     .tracking(ts.tracking)
 //! ```
 
-/// Berat font pada skala CSS/OpenType — nilai yang dipakai token.
+/// Font weights on the CSS/OpenType scale — the values tokens use.
 ///
-/// Inter yang dibundel adalah variable font, jadi angka apa pun 1–1000 sah;
-/// konstanta di sini hanya nama untuk yang lazim.
+/// The bundled Inter is a variable font, so any number from 1 to 1000 is valid;
+/// the constants here are just names for the common ones.
 pub mod weight {
-    /// 400 — teks body.
+    /// 400 — body text.
     pub const REGULAR: u16 = 400;
-    /// 500 — label kontrol (tombol, tab).
+    /// 500 — control labels (buttons, tabs).
     pub const MEDIUM: u16 = 500;
-    /// 600 — judul ala HIG.
+    /// 600 — HIG-style titles.
     pub const SEMIBOLD: u16 = 600;
-    /// 700 — judul besar.
+    /// 700 — large titles.
     pub const BOLD: u16 = 700;
 }
 
-/// Rentang sumbu `opsz` (optical size) pada Inter v4.
+/// The range of Inter v4's `opsz` (optical size) axis.
 ///
-/// Di luar rentang ini font tidak punya master, jadi nilai harus di-clamp —
-/// bukan diekstrapolasi.
+/// Outside this range the font has no master, so values must be clamped — not
+/// extrapolated.
 pub const INTER_OPSZ_RANGE: (f32, f32) = (14.0, 32.0);
 
-/// Gaya teks satu token: nilai murni, siap dipetakan ke `TextStyle`.
+/// The text style behind one token: a pure value, ready to map onto
+/// `TextStyle`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypeStyle {
-    /// Ukuran font dalam poin logis.
+    /// Font size in logical points.
     pub size: f32,
-    /// Tinggi baris sebagai **kelipatan** ukuran font.
+    /// Line height as a **multiple** of the font size.
     pub line_height: f32,
-    /// Berat font (lihat [`weight`]).
+    /// Font weight (see [`weight`]).
     pub weight: u16,
-    /// Tracking dalam em — negatif merapatkan, ala SF pada ukuran besar.
+    /// Tracking in em — negative tightens, SF-style, at large sizes.
     pub tracking: f32,
-    /// Nilai sumbu `opsz` yang diminta, bila preset memakai optical sizing.
+    /// The requested `opsz` axis value, when the preset uses optical sizing.
     ///
-    /// `None` berarti "biarkan font memakai master default" — itulah perilaku
-    /// preset Tailwind, yang memang tidak meniru optical sizing SF.
+    /// `None` means "let the font use its default master" — that is the
+    /// Tailwind preset's behavior, which makes no attempt to imitate SF's
+    /// optical sizing.
     pub optical_size: Option<f32>,
 }
 
 impl TypeStyle {
-    /// Gaya dari ukuran dan tinggi baris **dalam poin** (bukan kelipatan).
+    /// A style from a size and a line height **in points** (not a multiple).
     ///
-    /// Bentuk inilah yang dipakai tabel HIG maupun Tailwind: keduanya menulis
-    /// "13/16", bukan "13 × 1,23".
+    /// This is the form both the HIG and Tailwind tables use: they write
+    /// "13/16", not "13 × 1.23".
     pub fn new(size: f32, line_height_px: f32) -> Self {
         let size = size.max(1.0);
         Self {
@@ -79,40 +81,42 @@ impl TypeStyle {
         }
     }
 
-    /// Setel berat.
+    /// Set the weight.
     pub fn weight(mut self, weight: u16) -> Self {
         self.weight = weight.clamp(1, 1000);
         self
     }
 
-    /// Setel tracking dalam em.
+    /// Set the tracking, in em.
     pub fn tracking(mut self, em: f32) -> Self {
         self.tracking = em;
         self
     }
 
-    /// Hidupkan optical sizing: sumbu `opsz` diikat ke ukuran font, di-clamp ke
-    /// rentang yang benar-benar ada di Inter v4.
+    /// Turn on optical sizing: the `opsz` axis is tied to the font size and
+    /// clamped to the range Inter v4 actually provides.
     pub fn optical(mut self) -> Self {
         let (min, max) = INTER_OPSZ_RANGE;
         self.optical_size = Some(self.size.clamp(min, max));
         self
     }
 
-    /// Tinggi baris dalam poin logis.
+    /// Line height in logical points.
     pub fn line_height_px(self) -> f32 {
         (self.size * self.line_height).max(1.0)
     }
 }
 
-/// Tracking ala SF: longgar di ukuran kecil, rapat di ukuran besar.
+/// SF-style tracking: loose at small sizes, tight at large ones.
 ///
-/// Ini yang membuat teks "terasa Apple" jauh sebelum orang sadar kenapa —
-/// SF Pro punya tabel tracking per ukuran, dan Inter (yang menggantikannya
-/// karena SF tidak boleh di-ship) perlu ditiru manual. Nilainya em, hasil
-/// interpolasi linear di antara titik-titik tabel; di luar tabel ia mendatar.
+/// This is what makes text "feel like Apple" long before anyone works out why —
+/// SF Pro has a per-size tracking table, and Inter (which stands in for it,
+/// since SF cannot be shipped) has to imitate it by hand. Values are in em,
+/// linearly interpolated between the table's points; beyond the table it goes
+/// flat.
 pub fn optical_tracking(size: f32) -> f32 {
-    /// (ukuran poin, tracking em) — disarikan dari tabel tracking SF Pro.
+    /// (size in points, tracking in em) — distilled from SF Pro's tracking
+    /// table.
     const TABEL: [(f32, f32); 11] = [
         (6.0, 0.041),
         (8.0, 0.025),
@@ -141,39 +145,39 @@ pub fn optical_tracking(size: f32) -> f32 {
     TABEL[TABEL.len() - 1].1
 }
 
-/// Nama token tipografi.
+/// The name of a typography token.
 ///
-/// Kosakatanya mengikuti HIG karena di sanalah perannya paling eksplisit;
-/// preset Tailwind memetakannya ke `text-xs`…`text-3xl`. Widget menulis
-/// `FontToken::Body` sekali dan benar di kedua preset.
+/// The vocabulary follows HIG, because that is where the roles are most
+/// explicit; the Tailwind preset maps them onto `text-xs`…`text-3xl`. A widget
+/// writes `FontToken::Body` once and is right under both presets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FontToken {
-    /// Teks terkecil (legenda chart, footer tabel).
+    /// The smallest text (chart legends, table footers).
     Caption2,
-    /// Keterangan kecil (label ikon, badge).
+    /// Small captions (icon labels, badges).
     Caption1,
-    /// Catatan kaki.
+    /// Footnotes.
     Footnote,
-    /// Sub-judul baris (keterangan di bawah judul list).
+    /// Row subtitle (the supporting line under a list title).
     Subheadline,
-    /// Teks pendamping (label kontrol sekunder).
+    /// Supporting text (secondary control labels).
     Callout,
-    /// Teks body — ukuran default seluruh UI.
+    /// Body text — the default size across the whole UI.
     Body,
-    /// Body dengan penekanan (judul baris list, label tombol).
+    /// Body with emphasis (list row titles, button labels).
     Headline,
-    /// Judul kecil.
+    /// Small title.
     Title3,
-    /// Judul sedang.
+    /// Medium title.
     Title2,
-    /// Judul besar.
+    /// Large title.
     Title1,
-    /// Judul halaman.
+    /// Page title.
     LargeTitle,
 }
 
 impl FontToken {
-    /// Semua token, dari terkecil ke terbesar.
+    /// Every token, smallest to largest.
     pub const ALL: [FontToken; 11] = [
         FontToken::Caption2,
         FontToken::Caption1,
@@ -188,7 +192,7 @@ impl FontToken {
         FontToken::LargeTitle,
     ];
 
-    /// Nama token untuk gallery/debug.
+    /// Token name for gallery/debug output.
     pub const fn name(self) -> &'static str {
         match self {
             FontToken::Caption2 => "caption2",
@@ -206,19 +210,18 @@ impl FontToken {
     }
 }
 
-/// Token tipografi lengkap satu preset.
+/// One preset's complete set of typography tokens.
 ///
-/// `body_size` dan `body_line_height` adalah bentuk pendek dari
-/// `body` — dipertahankan karena itulah yang paling sering dipakai widget, dan
-/// keduanya **diturunkan**, tidak diisi terpisah (lihat
-/// [`TypographyTokens::new`]).
+/// `body_size` and `body_line_height` are shorthands for `body` — kept because
+/// they are what widgets reach for most often, and both are **derived**, never
+/// filled in separately (see [`TypographyTokens::new`]).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TypographyTokens {
-    /// Ukuran teks body dalam poin logis.
+    /// Body text size in logical points.
     pub body_size: f32,
-    /// Tinggi baris body relatif terhadap ukuran font.
+    /// Body line height relative to the font size.
     pub body_line_height: f32,
-    /// Preset ini mengikat sumbu `opsz` ke ukuran font.
+    /// Whether this preset ties the `opsz` axis to the font size.
     pub optical_sizing: bool,
     /// [`FontToken::Caption2`].
     pub caption2: TypeStyle,
@@ -245,10 +248,10 @@ pub struct TypographyTokens {
 }
 
 impl TypographyTokens {
-    /// Susun skala dari 11 gaya, urut sesuai [`FontToken::ALL`].
+    /// Assemble the scale from 11 styles, ordered as in [`FontToken::ALL`].
     ///
-    /// `body_size`/`body_line_height` diturunkan dari gaya `Body` supaya tidak
-    /// mungkin melenceng dari skalanya sendiri.
+    /// `body_size`/`body_line_height` are derived from the `Body` style so they
+    /// cannot drift from the scale they belong to.
     pub fn new(optical_sizing: bool, styles: [TypeStyle; 11]) -> Self {
         let body = styles[FontToken::Body as usize];
         Self {
@@ -269,7 +272,7 @@ impl TypographyTokens {
         }
     }
 
-    /// Gaya satu token.
+    /// The style of one token.
     pub fn get(&self, token: FontToken) -> TypeStyle {
         match token {
             FontToken::Caption2 => self.caption2,
@@ -286,7 +289,7 @@ impl TypographyTokens {
         }
     }
 
-    /// Seluruh skala urut kecil → besar, berpasangan dengan tokennya.
+    /// The whole scale, small → large, paired with its tokens.
     pub fn scale(&self) -> [(FontToken, TypeStyle); 11] {
         let mut out = [(FontToken::Body, self.body); 11];
         for (i, token) in FontToken::ALL.iter().enumerate() {
@@ -336,10 +339,10 @@ mod tests {
         assert!(optical_tracking(12.0).abs() < 1e-6);
         assert!(optical_tracking(17.0) < -0.02);
         assert!(optical_tracking(64.0) < 0.0);
-        // Di luar tabel nilainya mendatar, tidak meledak.
+        // Beyond the table it goes flat rather than blowing up.
         assert_eq!(optical_tracking(1.0), optical_tracking(6.0));
         assert_eq!(optical_tracking(200.0), optical_tracking(48.0));
-        // Dan tetap dalam rentang yang masuk akal untuk teks UI.
+        // And stays within a sane range for UI text.
         for i in 0..=200 {
             let t = optical_tracking(i as f32);
             assert!((-0.05..=0.05).contains(&t), "tracking {t} di ukuran {i}");
@@ -418,7 +421,7 @@ mod tests {
         let sebelum = nama.len();
         nama.dedup();
         assert_eq!(nama.len(), sebelum);
-        // Urutan enum = urutan skala; `new()` mengandalkan itu.
+        // Enum order = scale order; `new()` relies on that.
         assert_eq!(FontToken::Body as usize, 5);
         for (i, token) in FontToken::ALL.iter().enumerate() {
             assert_eq!(*token as usize, i);

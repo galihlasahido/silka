@@ -1,59 +1,60 @@
 //! # silka-platform
 //!
-//! Shell **winit** dan seluruh "ekor 90/10 platform polish" — lapisan yang
-//! membuat aplikasi terasa warga asli di tiap OS (`INTEGRASI-NATIVE.md`,
-//! REKOMENDASI §3.1, §3.7). Target v1: macOS, Windows, Linux (X11/Wayland).
+//! The **winit** shell and the whole "90/10 platform polish tail" — the layer
+//! that makes an application feel like a native citizen on every OS
+//! (`INTEGRASI-NATIVE.md`, REKOMENDASI §3.1, §3.7). v1 targets: macOS, Windows,
+//! Linux (X11/Wayland).
 //!
-//! Isi crate ini:
+//! What lives in this crate:
 //!
-//! - **Window & event loop** lewat winit: multi-window, per-monitor DPI,
-//!   custom titlebar macOS (traffic lights), CSD Wayland, restorasi geometri.
-//! - **Frame scheduling per platform** (§3.5): `CADisplayLink` di macOS agar
-//!   ProMotion 120 Hz benar, compositor clock di Windows,
-//!   `wl_surface::frame`/Present di Linux.
-//! - **Input low-level**: IME preedit + `set_ime_cursor_area`, gesture
-//!   trackpad (momentum scroll native macOS dipakai apa adanya, bukan
-//!   disimulasikan), velocity untuk handoff fling → spring.
-//! - **Integrasi native**: menu (muda), tray, dialog file (rfd), clipboard
-//!   (arboard), notifikasi; **drag source** adalah gap ekosistem yang harus
-//!   ditulis sendiri per platform (INTEGRASI-NATIVE §4).
-//! - **Lifecycle & setting OS**: dark mode live, accent color, reduced motion
+//! - **Window & event loop** through winit: multi-window, per-monitor DPI,
+//!   custom macOS titlebar (traffic lights), Wayland CSD, geometry restoration.
+//! - **Per-platform frame scheduling** (§3.5): `CADisplayLink` on macOS so that
+//!   ProMotion 120 Hz is correct, the compositor clock on Windows,
+//!   `wl_surface::frame`/Present on Linux.
+//! - **Low-level input**: IME preedit + `set_ime_cursor_area`, trackpad
+//!   gestures (macOS native momentum scroll is used as-is, never simulated),
+//!   velocity for the fling → spring handoff.
+//! - **Native integration**: menus (young), tray, file dialogs (rfd), clipboard
+//!   (arboard), notifications; **drag source** is an ecosystem gap that has to
+//!   be written by hand per platform (INTEGRASI-NATIVE §4).
+//! - **Lifecycle & OS settings**: live dark mode, accent color, reduced motion
 //!   / reduce transparency, locale, quit/logout, session restore (§6).
 //!
-//! ## Escape hatch adalah kontrak resmi (INTEGRASI-NATIVE §8)
+//! ## The escape hatch is an official contract (INTEGRASI-NATIVE §8)
 //!
-//! Aplikasi harus bisa turun ke level platform tanpa menunggu framework:
-//! `raw_handle()` → `RawWindowHandle` (NSWindow*/HWND/wl_surface), re-export
-//! resmi objc2 / windows-rs / zbus dengan versi dikunci framework, dan hook
-//! event native mentah sebelum framework memprosesnya. Kode `#[cfg(target_os)]`
-//! di API publik adalah hal normal, bukan aib.
+//! Applications must be able to drop down to the platform level without waiting
+//! for the framework: `raw_handle()` → `RawWindowHandle`
+//! (NSWindow*/HWND/wl_surface), official re-exports of objc2 / windows-rs /
+//! zbus at versions pinned by the framework, and hooks for raw native events
+//! before the framework processes them. `#[cfg(target_os)]` code in a public
+//! API is normal here, not a disgrace.
 //!
-//! ## Yang sudah ada (milestone `window-wgpu`)
+//! ## What exists today (milestone `window-wgpu`)
 //!
-//! Window winit 0.30 dengan surface wgpu (Metal di macOS), resize dan DPI yang
-//! benar, dark mode OS yang live, serta warna latar yang **selalu** datang
-//! dari token theme. Event loop memakai `ControlFlow::Wait` — tidak ada loop
-//! yang berputar saat idle (§3.5).
+//! A winit 0.30 window with a wgpu surface (Metal on macOS), correct resize and
+//! DPI handling, live OS dark mode, and a background color that **always**
+//! comes from theme tokens. The event loop uses `ControlFlow::Wait` — nothing
+//! spins while idle (§3.5).
 //!
-//! Crate ini menjadi jembatan: ia tahu winit tapi **tidak tahu wgpu**. Yang
-//! menyeberang ke backend hanyalah [`silka_paint::Scene`] dan ukuran fisik.
+//! This crate is the bridge: it knows winit but **does not know wgpu**. All that
+//! crosses over to the backend is a [`silka_paint::Scene`] and a physical size.
 //!
 //! ## Milestone `input-hittest`
 //!
-//! [`input`] menerjemahkan event winit menjadi kosakata
-//! [`silka_core::input`] — dan itulah **satu-satunya** berkas di pohon ini
-//! yang tahu bentuk event winit, persis seperti wgpu terkurung di
-//! `silka-renderer` (§3.2). Yang diselesaikan di sana dan tidak boleh naik ke
-//! atas: pembagian scale factor (winit melapor piksel fisik, framework
-//! berbicara poin logis), posisi kursor untuk `MouseInput` yang tidak
-//! membawanya, modifier yang datang sebagai event terpisah, dan penandaan
-//! **momentum guliran milik OS** supaya scroll physics kita tidak
-//! menyimulasikannya dua kali (INTEGRASI-NATIVE §3).
+//! [`input`] translates winit events into the [`silka_core::input`] vocabulary —
+//! and it is the **only** file in this tree that knows the shape of a winit
+//! event, exactly as wgpu is confined to `silka-renderer` (§3.2). What is
+//! settled there and must never leak upward: dividing by the scale factor
+//! (winit reports physical pixels, the framework speaks logical points), the
+//! cursor position for `MouseInput` events that do not carry one, modifiers that
+//! arrive as separate events, and the tagging of **OS-owned scroll momentum** so
+//! that our scroll physics does not simulate it twice (INTEGRASI-NATIVE §3).
 //!
-//! [`WindowConfig::on_input`] menyambungkannya ke aplikasi: event masuk,
-//! [`silka_core::input::Response`] keluar, dan shell menerjemahkannya
-//! menjadi `request_redraw`, `set_ime_allowed` + `set_ime_cursor_area`
-//! (jendela kandidat CJK berlabuh di caret, §3.8), serta `set_cursor`.
+//! [`WindowConfig::on_input`] wires that into the application: an event goes in,
+//! a [`silka_core::input::Response`] comes out, and the shell translates it into
+//! `request_redraw`, `set_ime_allowed` + `set_ime_cursor_area` (the CJK
+//! candidate window anchors to the caret, §3.8), and `set_cursor`.
 //!
 //! ```no_run
 //! use silka_platform::window;
@@ -71,13 +72,12 @@
 //!
 //! ## Milestone `reactive-glue`
 //!
-//! [`run_app`] adalah bentuk yang sebenarnya dipakai penulis aplikasi: sebuah
-//! window plus satu closure yang mengembalikan pohon view. Scene per frame
-//! **datang dari siklus hidup** [`silka_core::app::AppRuntime`] — signals →
-//! view-diff → layout → paint — bukan dari `Scene` yang disusun tangan; input
-//! dan pohon a11y menempel ke render tree yang sama; dan theme dititipkan
-//! sebagai `Signal<Theme>` sehingga dark mode OS yang berubah hanya membangun
-//! ulang komponen yang benar-benar membacanya.
+//! [`run_app`] is the shape application authors actually use: a window plus one
+//! closure that returns a view tree. The per-frame scene **comes out of the
+//! [`silka_core::app::AppRuntime`] lifecycle** — signals → view-diff → layout →
+//! paint — not from a hand-assembled `Scene`; input and the a11y tree hang off
+//! that same render tree; and the theme is provided as a `Signal<Theme>`, so an
+//! OS dark-mode change only rebuilds the components that actually read it.
 //!
 //! ```no_run
 //! use silka_platform::{component, run_app, window};
@@ -94,12 +94,12 @@
 //! .unwrap();
 //! ```
 //!
-//! [`headless_app`] merakit [`silka_core::app::AppRuntime`] yang **sama
-//! persis** tanpa window dan tanpa GPU — dipakai `run_app` sendiri, dan dipakai
-//! uji integrasi untuk menjalankan halaman yang sama di CI, memberinya event
-//! input, lalu menghitung pikselnya di tekstur offscreen (§9.5). Titipan
-//! [`Env`] yang dilihat aplikasi karena itu tidak mungkin berbeda antara "di
-//! layar" dan "di test": `Signal<Theme>` (§2.7) dan
+//! [`headless_app`] assembles the **exact same** [`silka_core::app::AppRuntime`]
+//! without a window and without a GPU — `run_app` itself uses it, and so do
+//! integration tests that run the same page in CI, feed it input events, and
+//! then count its pixels in an offscreen texture (§9.5). The [`Env`] values the
+//! application sees therefore cannot differ between "on screen" and "in a test":
+//! `Signal<Theme>` (§2.7) and
 //! [`Signal<ScaleFactor>`](silka_core::app::ScaleFactor) (§3.3).
 
 #![warn(missing_docs)]
@@ -125,32 +125,32 @@ pub use window::{
     default_clear_color, headless_app, run_app, run_app_with, window, FrameContext, WindowConfig,
 };
 
-/// Kosakata siklus hidup aplikasi yang dipakai bersama `silka-core` (§2.5).
+/// Application lifecycle vocabulary shared with `silka-core` (§2.5).
 ///
-/// Diekspos ulang supaya `run_app(window(…), |cx| …)` bisa ditulis tanpa
-/// menambahkan `silka-core` sebagai dependensi langsung.
+/// Re-exported so `run_app(window(…), |cx| …)` can be written without adding
+/// `silka-core` as a direct dependency.
 pub use silka_core::app::{component, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};
 
-/// Pohon view — nilai kembalian closure yang diserahkan ke [`run_app`].
+/// The view tree — the return value of the closure handed to [`run_app`].
 pub use silka_core::view::View;
 
-/// Kosakata scheduler yang dipakai bersama `silka-core`.
+/// Scheduler vocabulary shared with `silka-core`.
 ///
-/// Diekspos ulang agar aplikasi tidak perlu menambahkan `silka-core` sebagai
-/// dependensi hanya untuk menyebut [`Dirty`] atau membaca [`Vsync`].
+/// Re-exported so applications need not add `silka-core` as a dependency just
+/// to name [`Dirty`] or read [`Vsync`].
 pub use silka_core::scheduler::{ClockSource, Dirty, FrameStats, FrameTiming, Vsync};
 
-/// Kosakata aksesibilitas yang dipakai bersama `silka-core` (§3.8).
+/// Accessibility vocabulary shared with `silka-core` (§3.8).
 ///
-/// Aplikasi menyusun [`AccessTree`] dari render tree-nya
-/// (`tree.access_tree(fokus)`) dan menyerahkannya lewat
-/// [`WindowConfig::on_access`]; permintaan dari teknologi bantu kembali sebagai
+/// The application builds an [`AccessTree`] from its render tree
+/// (`tree.access_tree(focus)`) and hands it over through
+/// [`WindowConfig::on_access`]; requests from assistive technology come back as
 /// [`AccessActionRequest`].
 pub use silka_core::access::{AccessActionRequest, AccessTree};
 
-/// Re-export winit dengan versi yang dikunci framework.
+/// Re-export of winit at the version pinned by the framework.
 ///
-/// Bagian dari kontrak escape hatch (INTEGRASI-NATIVE §8): aplikasi yang perlu
-/// menyentuh API winit langsung memakai re-export ini agar tidak pernah ada
-/// dua versi winit di satu pohon dependensi.
+/// Part of the escape hatch contract (INTEGRASI-NATIVE §8): applications that
+/// need to touch the winit API directly use this re-export, so there is never
+/// more than one version of winit in a dependency tree.
 pub use winit;

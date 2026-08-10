@@ -1,77 +1,77 @@
-// silka — shader SDF khusus UI (REKOMENDASI §3.2, §3.6).
+// silka — the UI-specific SDF shader (REKOMENDASI §3.2, §3.6).
 //
-// SATU pipeline menggambar seluruh kosakata kotak yang menutupi ~95% UI:
+// ONE pipeline draws the whole box vocabulary that covers ~95% of a UI:
 //
-//   * rounded rect dengan DUA mode geometri sudut lewat PARAMETER, bukan dua
-//     shader dan bukan konstanta:
-//       - `exponent` = 2  → busur lingkaran biasa (preset Tailwind/shadcn)
-//       - `exponent` > 2  → superellipse / squircle (preset Cupertino, HIG
-//         continuous corner; nilai Apple ≈ 4)
-//   * border: stroke di dalam tepi, ikut bentuk sudut yang sama;
-//   * drop shadow ber-blur gaussian sejati — dipakai berlapis dua
-//     (ambient + key ala HIG) sebagai dua instance;
-//   * GLYPH dari atlas: quad bertekstur yang men-sample cakupan alpha lalu
-//     mewarnainya dengan warna run (token theme). Karena jenisnya cuma sebuah
-//     angka di `params.w`, teks ikut dalam draw call yang sama dengan kotak
-//     dan bayangan — urutannya terjaga, jadi teks tidak pernah tertimpa latar.
+//   * rounded rects with TWO corner geometry modes, selected by PARAMETER
+//     rather than by two shaders or a constant:
+//       - `exponent` = 2  → an ordinary circular arc (Tailwind/shadcn preset)
+//       - `exponent` > 2  → superellipse / squircle (Cupertino preset, HIG
+//         continuous corner; Apple's value is ≈ 4)
+//   * border: an inset stroke that follows the same corner shape;
+//   * drop shadows with a true gaussian blur — used in two layers
+//     (ambient + key, HIG style) as two instances;
+//   * GLYPHS from an atlas: textured quads that sample alpha coverage and tint
+//     it with the run color (a theme token). Because the kind is just a number
+//     in `params.w`, text rides in the same draw call as boxes and shadows —
+//     order is preserved, so text is never painted over by a background.
 //
-// PELAJARAN IMPELLER YANG MENGIKAT: file ini di-`include_str!` saat kompilasi
-// Rust dan modulnya dibuat sekali di inisialisasi device. Tidak ada WGSL yang
-// dirakit, ditambal, atau divariasikan saat runtime — semua "varian" adalah
-// data instance, sehingga frame time tetap prediktabel.
+// THE BINDING IMPELLER LESSON: this file is `include_str!`d when Rust is
+// compiled and its module is created once at device initialization. No WGSL is
+// assembled, patched, or varied at runtime — every "variant" is instance data,
+// which is what keeps frame time predictable.
 //
-// Semua koordinat di sini adalah POIN LOGIS. Lebar anti-alias diturunkan dari
-// derivatif layar (`fwidth`), jadi Retina 2x maupun scale pecahan Wayland
-// otomatis benar tanpa mengirim scale factor ke shader.
+// All coordinates here are LOGICAL POINTS. The anti-aliasing width is derived
+// from screen-space derivatives (`fwidth`), so 2x Retina and fractional Wayland
+// scales are automatically correct without sending a scale factor to the shader.
 
-// Jumlah cuplikan integrasi gaussian untuk shadow. Konstanta build-time.
+// The number of gaussian integration samples for shadows. A build-time constant.
 const SHADOW_SAMPLES: i32 = 8;
-// sqrt(2*pi) dan sqrt(0.5) — dipakai normalisasi gaussian dan skala erf.
+// sqrt(2*pi) and sqrt(0.5) — used for gaussian normalization and the erf scale.
 const SQRT_2PI: f32 = 2.5066283;
 const SQRT_HALF: f32 = 0.70710678;
-// Kotak digambar sebagai quad; jenisnya dibedakan lewat params.w.
-// Ambang, bukan nilai persis: 0 = kotak, 1 = bayangan, 2 = glyph.
+// Boxes are drawn as quads; the kind is distinguished through params.w.
+// These are thresholds, not exact values: 0 = box, 1 = shadow, 2 = glyph.
 const KIND_SHADOW: f32 = 0.5;
 const KIND_GLYPH: f32 = 1.5;
-// Pemilih atlas di params.x untuk instance glyph.
+// The atlas selector in params.x for glyph instances.
 const ATLAS_COLOR: f32 = 0.5;
 
 struct Globals {
-    // Ukuran viewport dalam poin logis.
+    // The viewport size in logical points.
     viewport: vec2<f32>,
-    // Padding agar uniform tetap kelipatan 16 byte.
+    // Padding to keep the uniform a multiple of 16 bytes.
     reserved: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> globals: Globals;
-// Atlas glyph: cakupan alpha untuk teks biasa, RGBA untuk emoji berwarna.
-// Keduanya selalu ter-bind (placeholder 1×1 saat aplikasi belum punya teks)
-// supaya tidak ada varian pipeline "dengan/tanpa tekstur".
+// The glyph atlases: alpha coverage for ordinary text, RGBA for color emoji.
+// Both are always bound (a 1×1 placeholder while the application has no text)
+// so there is no "with/without texture" pipeline variant.
 @group(0) @binding(1) var atlas_mask: texture_2d<f32>;
 @group(0) @binding(2) var atlas_color: texture_2d<f32>;
 @group(0) @binding(3) var atlas_sampler: sampler;
 
 struct Instance {
-    // xy = pusat, zw = setengah ukuran (poin logis).
+    // xy = center, zw = half size (logical points).
     @location(0) bounds: vec4<f32>,
-    // Radius per sudut: kiri-atas, kanan-atas, kanan-bawah, kiri-bawah.
-    // Sudah dikalikan faktor squircle dan dibatasi CPU-side.
-    // GLYPH: slot yang sama membawa kotak UV [u0, v0, u1, v1].
+    // Per-corner radii: top-left, top-right, bottom-right, bottom-left.
+    // Already multiplied by the squircle factor and clamped CPU-side.
+    // GLYPH: the same slot carries the UV rect [u0, v0, u1, v1].
     @location(1) radii: vec4<f32>,
-    // Warna isi (shadow: warna bayangan; glyph: warna teks dari token theme),
-    // straight alpha, ruang target.
+    // Fill color (shadow: the shadow color; glyph: the text color from a theme
+    // token), straight alpha, in target space.
     @location(2) background: vec4<f32>,
-    // Warna border, straight alpha. Tidak dipakai instance glyph.
+    // Border color, straight alpha. Unused by glyph instances.
     @location(3) border: vec4<f32>,
-    // x = tebal border (glyph: 0 = atlas mask, 1 = atlas warna),
-    // y = eksponen superellipse, z = sigma blur,
-    // w = jenis (0 = kotak, 1 = bayangan, 2 = glyph).
+    // x = border width (glyph: 0 = mask atlas, 1 = color atlas),
+    // y = superellipse exponent, z = blur sigma,
+    // w = kind (0 = box, 1 = shadow, 2 = glyph).
     @location(4) params: vec4<f32>,
 };
 
 struct Varying {
     @builtin(position) position: vec4<f32>,
-    // Posisi fragmen relatif pusat kotak, poin logis.
+    // The fragment position relative to the box center, in logical points.
     @location(0) local: vec2<f32>,
     @location(1) @interpolate(flat) half_size: vec2<f32>,
     @location(2) @interpolate(flat) radii: vec4<f32>,
@@ -80,7 +80,7 @@ struct Varying {
     @location(5) @interpolate(flat) params: vec4<f32>,
 };
 
-// Empat titik triangle-strip: (-1,-1), (1,-1), (-1,1), (1,1).
+// The four triangle-strip points: (-1,-1), (1,-1), (-1,1), (1,1).
 fn corner_of(index: u32) -> vec2<f32> {
     return vec2<f32>(f32(index & 1u), f32((index >> 1u) & 1u)) * 2.0 - vec2<f32>(1.0);
 }
@@ -88,11 +88,11 @@ fn corner_of(index: u32) -> vec2<f32> {
 @vertex
 fn vs_main(@builtin(vertex_index) index: u32, inst: Instance) -> Varying {
     let half_size = inst.bounds.zw;
-    // Margin gambar: 3σ untuk ekor gaussian bayangan + 1 poin untuk anti-alias.
-    // Glyph TIDAK diberi margin: kotaknya sudah persis sebesar bitmap di atlas
-    // dan sudah disetel ke grid piksel fisik, jadi satu texel jatuh tepat pada
-    // satu piksel layar — margin sekecil apa pun akan meregangkan UV dan
-    // membuat teks lembek di layar 2×.
+    // The draw margin: 3σ for the shadow's gaussian tail + 1 point for
+    // anti-aliasing. Glyphs get NO margin: their box is already exactly the
+    // size of the atlas bitmap and already snapped to the physical pixel grid,
+    // so one texel lands exactly on one screen pixel — any margin at all would
+    // stretch the UVs and make text soft on a 2× display.
     let pad = select(inst.params.z * 3.0 + 1.0, 0.0, inst.params.w > KIND_GLYPH);
     let local = corner_of(index) * (half_size + vec2<f32>(pad));
     let point = inst.bounds.xy + local;
@@ -113,8 +113,8 @@ fn vs_main(@builtin(vertex_index) index: u32, inst: Instance) -> Varying {
     return out;
 }
 
-// Radius sudut yang berlaku untuk kuadran tempat fragmen ini berada.
-// Sumbu y menghadap ke bawah, sesuai koordinat `silka-paint`.
+// The corner radius that applies to the quadrant this fragment falls in.
+// The y axis points down, matching `silka-paint` coordinates.
 fn radius_for(local: vec2<f32>, radii: vec4<f32>) -> f32 {
     let kiri = local.x < 0.0;
     let atas = select(radii.y, radii.x, kiri);
@@ -122,8 +122,8 @@ fn radius_for(local: vec2<f32>, radii: vec4<f32>) -> f32 {
     return select(bawah, atas, local.y < 0.0);
 }
 
-// Norma-p dari vektor non-negatif: inilah satu-satunya tempat kedua mode
-// geometri sudut berbeda. n = 2 memberi lingkaran (arc), n > 2 memberi
+// The p-norm of a non-negative vector: this is the one and only place where the
+// two corner geometry modes differ. n = 2 gives a circle (arc), n > 2 gives a
 // superellipse (squircle).
 fn norm_p(v: vec2<f32>, n: f32) -> f32 {
     if (n <= 2.0) {
@@ -132,9 +132,9 @@ fn norm_p(v: vec2<f32>, n: f32) -> f32 {
     return pow(pow(v.x, n) + pow(v.y, n), 1.0 / n);
 }
 
-// Besar gradien norma-p. Untuk n > 2 bidangnya bukan jarak sejati (gradiennya
-// mengecil ke arah diagonal), sehingga pita anti-alias akan melebar di sudut
-// kalau tidak dinormalkan.
+// The magnitude of the p-norm's gradient. For n > 2 the field is not a true
+// distance (its gradient shrinks toward the diagonal), so the anti-aliasing band
+// would widen at the corners if it were not normalized.
 fn norm_p_gradient(v: vec2<f32>, n: f32) -> f32 {
     if (n <= 2.0) {
         return 1.0;
@@ -148,8 +148,8 @@ fn norm_p_gradient(v: vec2<f32>, n: f32) -> f32 {
     return max(sqrt(gx * gx + gy * gy), 1e-4);
 }
 
-// Signed distance ke kotak bersudut membulat/squircle.
-// Negatif di dalam, positif di luar, dalam poin logis.
+// The signed distance to a rounded/squircle box.
+// Negative inside, positive outside, in logical points.
 fn sd_shape(local: vec2<f32>, half_size: vec2<f32>, radii: vec4<f32>, n: f32) -> f32 {
     let r = radius_for(local, radii);
     let q = abs(local) - half_size + vec2<f32>(r);
@@ -158,7 +158,7 @@ fn sd_shape(local: vec2<f32>, half_size: vec2<f32>, radii: vec4<f32>, n: f32) ->
     return (dalam + norm_p(luar, n) - r) / norm_p_gradient(luar, n);
 }
 
-// Cakupan piksel dari jarak bertanda: pita selebar satu piksel layar.
+// Pixel coverage from a signed distance: a band one screen pixel wide.
 fn coverage(sd: f32, px: f32) -> f32 {
     return clamp(0.5 - sd / px, 0.0, 1.0);
 }
@@ -172,7 +172,7 @@ fn gaussian(x: f32, sigma: f32) -> f32 {
     return exp(-0.5 * t * t) / (sigma * SQRT_2PI);
 }
 
-// Aproksimasi erf (Abramowitz & Stegun 7.1.27), dua nilai sekaligus.
+// An erf approximation (Abramowitz & Stegun 7.1.27), two values at once.
 fn erf2(v: vec2<f32>) -> vec2<f32> {
     let s = sign(v);
     let a = abs(v);
@@ -182,9 +182,9 @@ fn erf2(v: vec2<f32>) -> vec2<f32> {
     return s - s / r;
 }
 
-// Setengah lebar bentuk pada baris `y` (relatif pusat). Untuk sudut arc ini
-// adalah sqrt(r² - dy²); untuk squircle dipakai norma-p yang sama dengan SDF,
-// sehingga bayangan kartu squircle ikut squircle.
+// The shape's half width at row `y` (relative to the center). For arc corners
+// this is sqrt(r² - dy²); for squircles it uses the same p-norm as the SDF, so
+// the shadow of a squircle card is itself a squircle.
 fn half_width_at(y: f32, half_size: vec2<f32>, r: f32, n: f32) -> f32 {
     let dy = clamp(abs(y) - (half_size.y - r), 0.0, r);
     var qx = 0.0;
@@ -198,10 +198,9 @@ fn half_width_at(y: f32, half_size: vec2<f32>, r: f32, n: f32) -> f32 {
     return max(half_size.x - r + qx, 0.0);
 }
 
-// Kotak membulat yang di-blur gaussian, cara Evan Wallace: integrasi analitik
-// (erf) pada sumbu x, numerik pada sumbu y. Jauh lebih murah daripada blur
-// dua-pass lewat texture, dan itulah yang membuat shadow ganda ala HIG
-// gratis di 120 fps.
+// A gaussian-blurred rounded box, Evan Wallace style: analytic integration
+// (erf) along x, numeric along y. Far cheaper than a two-pass blur through a
+// texture, and that is what makes HIG-style double shadows free at 120 fps.
 fn shadow_coverage(local: vec2<f32>, half_size: vec2<f32>, r: f32, n: f32, sigma: f32) -> f32 {
     let s = max(sigma, 1e-3);
     let low = local.y - half_size.y;
@@ -224,33 +223,33 @@ fn shadow_coverage(local: vec2<f32>, half_size: vec2<f32>, r: f32, n: f32, sigma
 fn fs_main(in: Varying) -> @location(0) vec4<f32> {
     let n = in.params.y;
     let sd = sd_shape(in.local, in.half_size, in.radii, n);
-    // `fwidth` wajib dipanggil di aliran kontrol seragam — karena itu ia ada
-    // di sini, sebelum percabangan jenis instance.
+    // `fwidth` must be called in uniform control flow — which is why it lives
+    // here, before the instance kind branch.
     let px = max(fwidth(sd), 1e-5);
 
     var warna: vec4<f32>;
     if (in.params.w > KIND_GLYPH) {
-        // Kotak tujuan → kotak UV, keduanya axis-aligned: pemetaannya afin.
-        // `textureSampleLevel` (bukan `textureSample`) supaya sampling tetap
-        // sah di dalam percabangan — dan atlas memang tidak punya mip.
+        // Destination box → UV rect, both axis-aligned: the mapping is affine.
+        // `textureSampleLevel` (not `textureSample`) keeps sampling legal
+        // inside a branch — and the atlas has no mips anyway.
         let t = clamp(in.local / max(in.half_size, vec2<f32>(1e-6)) * 0.5 + vec2<f32>(0.5),
                       vec2<f32>(0.0), vec2<f32>(1.0));
         let uv = mix(in.radii.xy, in.radii.zw, t);
         if (in.params.x > ATLAS_COLOR) {
-            // Emoji: warna datang dari atlas, alpha run tetap dihormati
-            // supaya fade/disabled bekerja sama seperti pada teks biasa.
+            // Emoji: the color comes from the atlas, but the run's alpha is
+            // still honored so fade/disabled work the same as for plain text.
             let texel = textureSampleLevel(atlas_color, atlas_sampler, uv, 0.0);
             warna = premultiply(texel) * in.background.a;
         } else {
-            // Teks biasa: atlas hanya menyimpan CAKUPAN, warnanya datang dari
-            // token theme lewat instance — itulah sebabnya satu bitmap "a"
-            // melayani label, secondary label, dan accent sekaligus.
+            // Plain text: the atlas stores only COVERAGE, the color comes from
+            // a theme token through the instance — which is why one "a" bitmap
+            // serves label, secondary label, and accent all at once.
             let cakupan = textureSampleLevel(atlas_mask, atlas_sampler, uv, 0.0).r;
             warna = premultiply(in.background) * cakupan;
         }
     } else if (in.params.w > KIND_SHADOW) {
-        // Blur gaussian memakai satu radius; perbedaan antar sudut tidak
-        // terlihat setelah di-blur, jadi dipakai rata-ratanya.
+        // The gaussian blur uses a single radius; differences between corners
+        // are invisible once blurred, so the average is used.
         let r = dot(in.radii, vec4<f32>(0.25));
         warna = premultiply(in.background) * shadow_coverage(
             in.local,
@@ -261,8 +260,8 @@ fn fs_main(in: Varying) -> @location(0) vec4<f32> {
         );
     } else {
         let luar = coverage(sd, px);
-        // Border adalah cincin antara tepi luar dan tepi yang menyusut
-        // setebal border — otomatis mengikuti squircle maupun arc.
+        // The border is the ring between the outer edge and an edge inset by
+        // the border width — it automatically follows squircle or arc alike.
         let dalam = coverage(sd + in.params.x, px);
         warna = premultiply(in.background) * dalam
             + premultiply(in.border) * max(luar - dalam, 0.0);

@@ -1,25 +1,25 @@
-//! Node render daftar tervirtualisasi: [`ListBody`] dan [`ListRowBox`].
+//! Virtualized list render nodes: [`ListBody`] and [`ListRowBox`].
 //!
-//! `ListBody` sengaja **bukan** wadah bergulir. Ia tinggal di dalam
-//! [`scroll_view`](mod@crate::scroll_view) dan hanya mengerjakan bagian yang memang milik
-//! daftar:
+//! `ListBody` is deliberately **not** a scrolling container. It lives inside
+//! [`scroll_view`](mod@crate::scroll_view) and does only the part that really
+//! belongs to a list:
 //!
-//! | Milik `scroll_view` | Milik `ListBody` |
+//! | Owned by `scroll_view` | Owned by `ListBody` |
 //! |---|---|
-//! | momentum OS, rubber band, pantulan spring | jendela baris + penempatannya |
-//! | scrollbar overlay + auto-hide | sorotan seleksi/hover (spring) |
-//! | Page/Home/End sebagai **guliran** | ↑/↓/Page/Home/End sebagai **seleksi** |
-//! | peran a11y `ScrollView` + aksi scroll | peran `List` + `ListItem` per baris |
+//! | OS momentum, rubber band, spring bounce | the row window + its placement |
+//! | overlay scrollbar + auto-hide | selection/hover highlight (spring) |
+//! | Page/Home/End as **scrolling** | ↑/↓/Page/Home/End as **selection** |
+//! | `ScrollView` a11y role + scroll actions | `List` role + `ListItem` per row |
 //!
-//! Pembagian itu bukan selera: `KOMPONEN.md` aturan urutan #4 melarang
-//! menumbuhkan sistem guliran (dan nanti virtualisasi) kedua — `table` akan
-//! menumpang keduanya lagi.
+//! That split is not a matter of taste: `KOMPONEN.md` ordering rule #4 forbids
+//! growing a second scrolling system (and later a second virtualization) —
+//! `table` is going to ride on both of them again.
 //!
-//! Yang membuat penempatan baris murah: node ini melapor setinggi **seluruh**
-//! isinya (`header + count × extent`) tapi hanya memiliki node untuk baris di
-//! dalam jendela, dan setiap baris ditempatkan pada koordinat isi yang dihitung
-//! langsung dari indeksnya ([`ListMetrics::row_top`]). Baris ke-99.999 karena
-//! itu bisa ditempatkan tanpa pernah membangun 99.998 node sebelumnya.
+//! What makes row placement cheap: this node reports the height of its
+//! **entire** content (`header + count × extent`) yet only owns nodes for the
+//! rows inside the window, and every row is placed at a content coordinate
+//! computed straight from its index ([`ListMetrics::row_top`]). Row 99,999 can
+//! therefore be placed without ever building the 99,998 nodes before it.
 
 use std::rc::Rc;
 
@@ -35,25 +35,25 @@ use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
 use super::geometry::ListMetrics;
 use super::state::ListState;
 
-/// Aksi yang menerima nomor baris — `on_activate` gaya Dart (§2.5).
+/// An action that takes a row number — Dart-style `on_activate` (§2.5).
 ///
-/// Bentuknya sama dengan [`silka_core::Callback`] (`Rc`, `PartialEq`
-/// identitas), hanya saja membawa argumen; begitu core punya `Callback<T>`,
-/// inilah yang pertama dihapus.
+/// Shaped exactly like [`silka_core::Callback`] (`Rc`, identity `PartialEq`),
+/// only it carries an argument; the moment core grows a `Callback<T>`, this is
+/// the first thing to go.
 ///
-/// Publik karena [`table`](mod@crate::table) memakainya juga: "aksi yang
-/// menerima nomor baris" adalah konsep yang sama di daftar dan di tabel, dan
-/// menyalinnya ke sana hanya akan melahirkan dua tipe yang berperilaku identik.
+/// Public because [`table`](mod@crate::table) uses it too: "an action that
+/// takes a row number" is the same concept in a list and in a table, and
+/// copying it over there would only breed two types that behave identically.
 #[derive(Clone)]
 pub struct RowAction(Rc<dyn Fn(usize)>);
 
 impl RowAction {
-    /// Bungkus sebuah closure menjadi aksi baris.
+    /// Wrap a closure into a row action.
     pub fn new(f: impl Fn(usize) + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Jalankan aksi untuk baris `index`.
+    /// Run the action for row `index`.
     pub fn call(&self, index: usize) {
         (self.0)(index)
     }
@@ -72,34 +72,37 @@ impl core::fmt::Debug for RowAction {
 }
 
 // ---------------------------------------------------------------------------
-// Gaya
+// Style
 // ---------------------------------------------------------------------------
 
-/// Nilai token yang **sudah diresolusi** untuk isi sebuah daftar.
+/// The **already resolved** token values for a list's content.
 ///
-/// Tidak satu pun angka warna lahir di lapisan ini: semuanya datang dari
-/// [`silka_theme::Theme`] satu tingkat di atas (§2.6, §2.7), sehingga preset
-/// Cupertino dan Tailwind berganti tanpa satu baris pun berubah di sini.
+/// Not a single color number is born at this layer: they all come from
+/// [`silka_theme::Theme`] one level up (§2.6, §2.7), so the Cupertino and
+/// Tailwind presets swap without one line changing in here.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ListStyle {
-    /// Latar isi daftar (biasanya transparan — latar milik wadahnya).
+    /// Background of the list content (usually transparent — the background
+    /// belongs to the container).
     pub decoration: Decoration,
-    /// Bentuk sudut sorotan baris (squircle di Cupertino, arc di Tailwind).
+    /// Corner shape of the row highlight (squircle on Cupertino, arc on
+    /// Tailwind).
     pub row_corners: Corners,
-    /// Latar baris terpilih saat daftar memegang fokus (token `selection`).
+    /// Background of the selected row while the list holds focus (token
+    /// `selection`).
     pub selection: Color,
-    /// Latar baris terpilih saat fokus ada di tempat lain — kebiasaan macOS:
-    /// seleksi tidak hilang, ia meredup.
+    /// Background of the selected row while focus is elsewhere — the macOS
+    /// habit: the selection does not vanish, it dims.
     pub selection_idle: Color,
-    /// Latar baris di bawah penunjuk (token `surface_hover`).
+    /// Background of the row under the pointer (token `surface_hover`).
     pub hover: Color,
-    /// Latar baris yang sedang ditekan (token `surface_pressed`).
+    /// Background of the row being pressed (token `surface_pressed`).
     pub pressed: Color,
-    /// Warna garis antar baris (token `separator`).
+    /// Color of the line between rows (token `separator`).
     pub separator: Color,
-    /// Tebal garis antar baris; `0` = tanpa garis.
+    /// Thickness of the line between rows; `0` = no line.
     pub separator_width: f32,
-    /// Cincin fokus keyboard di sekeliling baris terpilih (token `focus_ring`).
+    /// Keyboard focus ring around the selected row (token `focus_ring`).
     pub focus_ring: Option<FocusRing>,
 }
 
@@ -123,11 +126,11 @@ impl Default for ListStyle {
 // ListBody
 // ---------------------------------------------------------------------------
 
-/// Node isi daftar tervirtualisasi.
+/// The virtualized list content node.
 pub struct ListBody {
-    // -- properti (datang dari view) -------------------------------------
+    // -- properties (come from the view) ---------------------------------
     pub(super) metrics: ListMetrics,
-    /// Posisi guliran yang berlaku, dibaca dari [`ListState`] saat build.
+    /// The scroll position in effect, read from [`ListState`] at build time.
     pub(super) offset: f32,
     pub(super) first: usize,
     pub(super) rows: usize,
@@ -139,45 +142,47 @@ pub struct ListBody {
     pub(super) style: ListStyle,
     pub(super) state: Option<ListState>,
     pub(super) on_activate: Option<RowAction>,
-    /// Lebar jalur scrollbar di tepi kanan yang **tidak** boleh menelan klik.
+    /// Width of the scrollbar track on the right edge that must **not**
+    /// swallow clicks.
     pub(super) bar_inset: f32,
 
-    // -- keadaan runtime (tidak pernah disentuh diffing) -----------------
-    /// Tepi atas sorotan seleksi, koordinat isi — springnya yang membuat
-    /// seleksi *meluncur* dari baris ke baris, bukan berkedip pindah.
+    // -- runtime state (diffing never touches this) ----------------------
+    /// Top edge of the selection highlight, in content coordinates — its
+    /// spring is what makes the selection *glide* between rows instead of
+    /// blinking across.
     sel_y: SpringValue<f32>,
-    /// Kepekatan sorotan seleksi (0 = tidak ada yang terpilih).
+    /// Opacity of the selection highlight (0 = nothing selected).
     sel_alpha: SpringValue<f32>,
-    /// Tepi atas sorotan hover.
+    /// Top edge of the hover highlight.
     hover_y: SpringValue<f32>,
-    /// Kepekatan sorotan hover.
+    /// Opacity of the hover highlight.
     hover_alpha: SpringValue<f32>,
-    /// Kepekatan sorotan "sedang ditekan".
+    /// Opacity of the "being pressed" highlight.
     press_alpha: SpringValue<f32>,
 
-    /// Baris di bawah penunjuk.
+    /// The row under the pointer.
     hovered: Option<usize>,
-    /// Baris yang sedang ditekan; aktivasi hanya sah bila dilepas di baris yang sama.
+    /// The row being pressed; activation only counts if released on the same row.
     pressed: Option<usize>,
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     focused: bool,
-    /// Baris yang menunggu digulirkan ke dalam layar (dilayani [`super::sync`]).
+    /// A row waiting to be scrolled into view (served by [`super::sync`]).
     reveal: Option<usize>,
-    /// Lebar isi dari layout terakhir.
+    /// Content width from the last layout.
     width: f32,
 }
 
-/// Spring sorotan baris.
+/// The row highlight spring.
 ///
-/// **Dekoratif** dengan sengaja: yang membawa informasi adalah baris mana yang
-/// terpilih, bukan perjalanan sorotannya. Karena itu di bawah reduced-motion
-/// sorotan langsung berada di tempatnya — tidak meluncur, tidak memudar (§3.5).
+/// **Decorative** on purpose: what carries the information is which row is
+/// selected, not the highlight's journey there. So under reduced motion the
+/// highlight simply is where it belongs — no gliding, no fading (§3.5).
 fn sorotan_spring(spring: Spring) -> SpringValue<f32> {
     SpringValue::new(0.0).with_spring(spring).decorative()
 }
 
 impl ListBody {
-    /// Node baru dari props yang sudah diresolusi.
+    /// A fresh node from already resolved props.
     pub(super) fn from_props(props: &super::view::ListProps) -> Self {
         let mut node = Self {
             metrics: props.metrics,
@@ -204,48 +209,48 @@ impl ListBody {
             reveal: None,
             width: 0.0,
         };
-        // Daftar yang lahir dengan seleksi (state yang dipulihkan) **tidak**
-        // menganimasikan sorotannya masuk: itu bukan gerakan, itu keadaan awal.
+        // A list born with a selection (restored state) does **not** animate
+        // its highlight in: that is not motion, that is the initial state.
         node.pasang_seleksi(props.selected, false);
         node
     }
 
-    /// Ukuran-ukuran daftar yang berlaku.
+    /// The list metrics currently in effect.
     pub fn metrics(&self) -> ListMetrics {
         self.metrics
     }
 
-    /// Baris yang sedang terpilih.
+    /// The currently selected row.
     pub fn selected(&self) -> Option<usize> {
         self.selected
     }
 
-    /// Baris di bawah penunjuk.
+    /// The row under the pointer.
     pub fn hovered(&self) -> Option<usize> {
         self.hovered
     }
 
-    /// Benar bila daftar memegang fokus keyboard.
+    /// True while the list holds keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// State yang dipakai daftar ini, bila ada.
+    /// The state this list uses, if any.
     pub fn state(&self) -> Option<ListState> {
         self.state
     }
 
-    /// Indeks baris pertama yang benar-benar dimaterialisasi.
+    /// Index of the first row actually materialized.
     pub fn first(&self) -> usize {
         self.first
     }
 
-    /// Berapa baris yang benar-benar dimaterialisasi menjadi node.
+    /// How many rows are actually materialized into nodes.
     pub fn materialized(&self) -> usize {
         self.rows
     }
 
-    /// Kotak baris `index` dalam **koordinat isi**.
+    /// The rect of row `index` in **content coordinates**.
     pub fn row_rect(&self, index: usize) -> Rect {
         Rect::new(
             0.0,
@@ -255,9 +260,9 @@ impl ListBody {
         )
     }
 
-    // -- animasi ----------------------------------------------------------
+    // -- animation --------------------------------------------------------
 
-    /// Benar bila masih ada sorotan yang bergerak.
+    /// True while any highlight is still moving.
     pub fn is_animating(&self) -> bool {
         self.sel_y.is_animating()
             || self.sel_alpha.is_animating()
@@ -266,7 +271,7 @@ impl ListBody {
             || self.press_alpha.is_animating()
     }
 
-    /// Majukan sorotan satu frame; benar bila ada piksel yang berubah.
+    /// Advance the highlights by one frame; true if any pixel changed.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let sebelum = (
             self.sel_y.position(),
@@ -290,7 +295,7 @@ impl ListBody {
             )
     }
 
-    /// Selesaikan seluruh gerakan sorotan seketika (uji, snapshot).
+    /// Finish all highlight motion instantly (tests, snapshots).
     pub fn settle(&mut self) {
         self.sel_y.settle();
         self.sel_alpha.settle();
@@ -299,7 +304,7 @@ impl ListBody {
         self.press_alpha.settle();
     }
 
-    /// Ganti spring seluruh sorotan tanpa mengganggu gerakan yang berjalan.
+    /// Swap the spring of every highlight without disturbing motion in flight.
     pub fn set_spring(&mut self, spring: Spring) {
         self.sel_y.set_spring(spring);
         self.sel_alpha.set_spring(spring);
@@ -308,16 +313,16 @@ impl ListBody {
         self.press_alpha.set_spring(spring);
     }
 
-    /// Spring yang menjalankan sorotan.
+    /// The spring that drives the highlights.
     pub fn spring(&self) -> Spring {
         self.sel_y.spring()
     }
 
-    /// Arahkan sorotan seleksi ke `index`.
+    /// Aim the selection highlight at `index`.
     ///
-    /// `animasi` salah berarti sorotan langsung berada di tempatnya — dipakai
-    /// saat node lahir dan saat seleksi berpindah karena datanya yang berubah,
-    /// bukan karena pengguna.
+    /// A false `animasi` means the highlight lands in place immediately — used
+    /// when the node is born, and when the selection moves because the data
+    /// changed rather than because the user did something.
     fn pasang_seleksi(&mut self, index: Option<usize>, animasi: bool) {
         let Some(i) = index else {
             self.sel_alpha.set_target(0.0);
@@ -327,9 +332,9 @@ impl ListBody {
             return;
         };
         let y = self.metrics.row_top(i);
-        // Sorotan yang baru muncul **tidak** meluncur dari baris lama: ia
-        // memudar masuk di tempatnya. Yang meluncur hanya perpindahan antar
-        // baris saat sorotannya memang sudah terlihat.
+        // A highlight that is just appearing does **not** glide in from the
+        // old row: it fades in where it belongs. Only moves between rows
+        // glide, and only while the highlight is already visible.
         if self.sel_alpha.position() <= 0.0 || !animasi {
             self.sel_y.jump_to(y);
         } else {
@@ -356,9 +361,9 @@ impl ListBody {
         self.hover_alpha.set_target(1.0);
     }
 
-    // -- seleksi ----------------------------------------------------------
+    // -- selection --------------------------------------------------------
 
-    /// Setel seleksi di node **dan** terbitkan ke [`ListState`].
+    /// Set the selection on the node **and** publish it to [`ListState`].
     pub(super) fn pilih(&mut self, index: Option<usize>, animasi: bool) -> bool {
         if self.selected == index {
             return false;
@@ -371,17 +376,17 @@ impl ListBody {
         true
     }
 
-    /// Ambil permintaan "gulirkan baris ini ke layar" yang tertunda.
+    /// Take the pending "scroll this row into view" request.
     ///
-    /// Dilayani [`super::sync`], bukan di sini: yang bisa menggulir adalah
-    /// [`crate::scroll_view::ScrollView`] di atas node ini, dan sebuah render
-    /// node tidak boleh meraba leluhurnya dari dalam `event` (aturan "node
-    /// hanya boleh mengubah dirinya sendiri", [`silka_core::tree`]).
+    /// Served by [`super::sync`], not here: the thing that can scroll is the
+    /// [`crate::scroll_view::ScrollView`] above this node, and a render node
+    /// must not reach for its ancestors from inside `event` (the "a node may
+    /// only change itself" rule, [`silka_core::tree`]).
     pub(super) fn take_reveal(&mut self) -> Option<usize> {
         self.reveal.take()
     }
 
-    /// Berapa baris yang muat dalam satu layar penuh (Page Up/Down).
+    /// How many rows fit in one full screen (Page Up/Down).
     fn sehalaman(&self) -> usize {
         if self.metrics.extent <= 0.0 {
             return 1;
@@ -399,10 +404,10 @@ impl ListBody {
         }
     }
 
-    /// Baris yang berada di titik lokal `p` (koordinat isi).
+    /// The row at local point `p` (content coordinates).
     fn baris_di(&self, p: Point) -> Option<usize> {
-        // Header yang menempel menutupi baris di bawahnya: klik di atasnya
-        // adalah klik pada header, bukan pada baris yang kebetulan lewat.
+        // A sticky header covers the row beneath it: a click on the header is
+        // a click on the header, not on whatever row happens to be passing by.
         if self.has_header && self.metrics.sticky {
             let atas = self.offset;
             if p.y >= atas && p.y < atas + self.metrics.header {
@@ -412,12 +417,12 @@ impl ListBody {
         self.metrics.index_at(p.y)
     }
 
-    /// Benar bila titik ini berada di jalur scrollbar yang melayang di atas
-    /// daftar.
+    /// True when this point falls on the scrollbar track floating above the
+    /// list.
     ///
-    /// Hit-test menelusuri anak lebih dulu (Flutter), jadi tanpa penjaga ini
-    /// baris akan menelan setiap klik yang sebenarnya ditujukan ke thumb —
-    /// dan scrollbar sebuah daftar menjadi hiasan yang tidak bisa diseret.
+    /// Hit-testing walks children first (Flutter), so without this guard the
+    /// rows would swallow every click actually aimed at the thumb — and a
+    /// list's scrollbar would become an ornament nobody can drag.
     fn di_jalur_scrollbar(&self, p: Point) -> bool {
         self.bar_inset > 0.0
             && self.metrics.max_scroll() > 0.0
@@ -471,14 +476,14 @@ impl ListBody {
                 }
                 self.press_alpha.set_target(0.0);
                 ctx.release_pointer();
-                // Ketuk-ganda membuka, ketuk tunggal hanya memilih — kebiasaan
-                // Finder, Mail, dan setiap daftar macOS.
+                // A double tap opens, a single tap only selects — the habit of
+                // Finder, Mail, and every macOS list.
                 //
-                // `== 2`, bukan `>= 2`: router menaikkan `click_count` terus
-                // selama rentetan masih rapat (dua, tiga, empat…), jadi `>= 2`
-                // akan memanggil `on_activate` sekali lagi di setiap ketukan
-                // berikutnya. Membuka satu baris tiga kali karena pengguna
-                // gugup adalah bug, bukan fitur.
+                // `== 2`, not `>= 2`: the router keeps raising `click_count`
+                // for as long as the burst stays tight (two, three, four…), so
+                // `>= 2` would call `on_activate` again on every further tap.
+                // Opening one row three times because the user was jittery is
+                // a bug, not a feature.
                 if ditekan == baris && p.click_count == 2 {
                     if let (Some(i), Some(aksi)) = (baris, self.on_activate.clone()) {
                         aksi.call(i);
@@ -488,8 +493,8 @@ impl ListBody {
                 ctx.request_paint();
                 ctx.handled();
             }
-            // Dibatalkan OS ≠ dilepas: tidak ada aktivasi, hanya sorotan
-            // tekan yang memudar pulang.
+            // Cancelled by the OS ≠ released: no activation, just the press
+            // highlight fading back home.
             PointerPhase::Cancel if self.pressed.take().is_some() => {
                 self.press_alpha.set_target(0.0);
                 ctx.request_animation();
@@ -500,8 +505,9 @@ impl ListBody {
     }
 
     fn tombol(&mut self, ctx: &mut EventCtx<'_>, k: &KeyEvent) {
-        // Tanpa seleksi, panah/Page/Home/End bukan urusan daftar: mereka
-        // **menggelembung** ke `scroll_view` di atasnya dan menggulir isi.
+        // Without selection, arrows/Page/Home/End are none of the list's
+        // business: they **bubble** up to the `scroll_view` above and scroll
+        // the content.
         if !self.selectable || !k.modifiers.is_empty() || self.metrics.count == 0 {
             return;
         }
@@ -526,18 +532,18 @@ impl ListBody {
         };
         let Some(index) = tujuan else { return };
         self.pilih(Some(index), true);
-        // Guliran ke baris terpilih dijalankan `sync`, yang memegang pohon.
+        // Scrolling to the selected row is done by `sync`, which holds the tree.
         self.reveal = Some(index);
         ctx.request_animation();
         ctx.request_paint();
         ctx.handled();
     }
 
-    /// Baris tujuan setelah bergeser `delta` langkah dari seleksi sekarang.
+    /// The target row after moving `delta` steps from the current selection.
     fn langkah(&self, delta: isize) -> usize {
         let terakhir = (self.metrics.count - 1) as isize;
         match self.selected {
-            // Tanpa seleksi, tekanan pertama mendarat di ujung yang searah.
+            // With nothing selected, the first press lands on the end it points at.
             None if delta > 0 => 0,
             None => terakhir as usize,
             Some(i) => (i as isize + delta).clamp(0, terakhir) as usize,
@@ -550,15 +556,15 @@ impl RenderNode for ListBody {
         "ListBody"
     }
 
-    /// Baris ditempatkan sendiri, jadi node ini menyerap penunjuk yang tidak
-    /// diambil isinya — tombol di dalam baris tetap menang karena hit-test
-    /// menelusuri anak lebih dulu.
+    /// Rows are placed by hand, so this node absorbs any pointer its content
+    /// did not claim — a button inside a row still wins, because hit-testing
+    /// walks children first.
     fn hit_behavior(&self) -> HitBehavior {
         HitBehavior::Opaque
     }
 
-    /// Daftar yang bisa dipilih adalah satu perhentian Tab (pola listbox AppKit
-    /// dan ARIA); daftar tampilan murni menyerahkan Tab ke wadah gulirnya.
+    /// A selectable list is a single Tab stop (the AppKit and ARIA listbox
+    /// pattern); a display-only list hands Tab over to its scroll container.
     fn focus_policy(&self) -> FocusPolicy {
         if self.selectable && self.metrics.count > 0 {
             FocusPolicy::FOCUSABLE
@@ -588,9 +594,9 @@ impl RenderNode for ListBody {
         let mut idx = baris;
         if self.has_empty && idx < jumlah_anak {
             let anak = ctx.child(idx);
-            // Empty state mengisi jendela pandang bila tingginya sudah
-            // diketahui, supaya isinya bisa diratakan di tengah oleh
-            // aplikasinya sendiri; sebelum layout pertama ia seukuran isinya.
+            // The empty state fills the viewport once its height is known, so
+            // the app can center its own content inside it; before the first
+            // layout it is simply as tall as its content.
             let ruang = (self.metrics.viewport - self.metrics.header).max(0.0);
             let c = if ruang > 0.0 {
                 BoxConstraints::new(lebar, lebar, ruang, ruang)
@@ -602,14 +608,14 @@ impl RenderNode for ListBody {
             tinggi = tinggi.max(self.metrics.header + ukuran.height);
             idx += 1;
         }
-        // Header **terakhir** supaya ia tergambar di atas baris tanpa perlu
-        // pembungkus clip kedua (lihat `paint`).
+        // The header goes **last** so it paints above the rows without needing
+        // a second clip wrapper (see `paint`).
         if self.has_header && idx < jumlah_anak {
             let anak = ctx.child(idx);
             let c = BoxConstraints::new(lebar, lebar, self.metrics.header, self.metrics.header);
             ctx.layout_child_boundary(anak, c);
-            // Menempel = tetap di tepi atas jendela, yaitu tepat di posisi
-            // guliran; tidak menempel = ikut tergulir keluar bersama isi.
+            // Sticky = pinned to the top edge of the viewport, i.e. exactly at
+            // the scroll position; non-sticky = scrolls away with the content.
             let atas = if self.metrics.sticky {
                 self.offset
                     .clamp(0.0, (tinggi - self.metrics.header).max(0.0))
@@ -619,9 +625,10 @@ impl RenderNode for ListBody {
             ctx.place_child(anak, Point::new(0.0, atas));
         }
 
-        // Node ini setinggi **seluruh** isi walau hanya sepersekiannya yang
-        // dimaterialisasi: itulah yang membuat scrollbar dan `max_scroll` di
-        // atas sana benar tanpa harus tahu apa pun tentang virtualisasi.
+        // This node is as tall as the **whole** content even though only a
+        // fraction of it is materialized: that is what keeps the scrollbar and
+        // `max_scroll` up there correct without knowing anything about
+        // virtualization.
         let size = Size::new(lebar, constraints.constrain_height(tinggi));
         if let Some(state) = self.state {
             state.publish_content(tinggi, self.metrics.extent, self.metrics.header);
@@ -632,8 +639,8 @@ impl RenderNode for ListBody {
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.decorate(&self.style.decoration);
 
-        // `PaintCtx` sudah membuang apa pun di luar clip wadah gulir, jadi
-        // sorotan yang tergulir keluar tidak menghasilkan perintah sama sekali.
+        // `PaintCtx` already discards anything outside the scroll container's
+        // clip, so a highlight scrolled out of view emits no command at all.
         let mut sorot = |y: f32, warna: Color, alpha: f32| {
             if alpha <= 0.0 || warna.a <= 0.0 {
                 return;
@@ -665,8 +672,8 @@ impl RenderNode for ListBody {
         }
 
         if self.style.separator_width > 0.0 && self.style.separator.a > 0.0 {
-            // Garis hanya untuk baris yang dimaterialisasi: seratus ribu baris
-            // tetap menghasilkan belasan perintah gambar.
+            // Lines only for materialized rows: a hundred thousand rows still
+            // produce a dozen or so draw commands.
             for i in self.first.max(1)..(self.first + self.rows).min(self.metrics.count) {
                 ctx.quad(
                     Quad::new(Rect::new(
@@ -682,9 +689,9 @@ impl RenderNode for ListBody {
 
         ctx.paint_children();
 
-        // Cincin fokus digambar **di atas** isi baris dan di dalam kotak
-        // barisnya: daftar yang terfokus harus terbaca walau seluruh baris
-        // sudah berlatar warna seleksi.
+        // The focus ring is drawn **above** the row content and inside the
+        // row's rect: a focused list must stay readable even when the whole
+        // row already sits on the selection color.
         if self.focused && self.sel_alpha.position() > 0.0 {
             if let Some(ring) = self
                 .style
@@ -720,10 +727,10 @@ impl RenderNode for ListBody {
             Event::Key(k) if k.is_pressed() => self.tombol(ctx, k),
             Event::Focus(f) => {
                 self.focused = *f == FocusEvent::Gained;
-                // Daftar yang baru menerima fokus tanpa seleksi tidak punya
-                // tempat untuk cincin fokusnya — dan pengguna keyboard tidak
-                // punya petunjuk di mana ia berada. Kebiasaan AppKit: baris
-                // pertama yang terlihat menjadi titik mulai.
+                // A list that just took focus with nothing selected has no
+                // place to put its focus ring — and a keyboard user has no
+                // clue where they are. The AppKit habit: the first visible row
+                // becomes the starting point.
                 if self.focused
                     && self.selectable
                     && self.metrics.count > 0
@@ -757,20 +764,20 @@ impl core::fmt::Debug for ListBody {
 // ListRowBox
 // ---------------------------------------------------------------------------
 
-/// Node satu baris: transparan bagi layout, **berarti** bagi screen reader.
+/// A single row node: transparent to layout, **meaningful** to a screen reader.
 ///
-/// Ia tidak menggambar apa pun — sorotan seleksi milik [`ListBody`], yang tahu
-/// geometri seluruh daftar — dan tidak mengubah ukuran apa pun. Yang ia
-/// tambahkan hanya satu hal, dan hal itu wajib: peran `ListItem` beserta
-/// keadaan terpilihnya, sehingga daftar dibaca teknologi bantu sebagai daftar,
-/// bukan sebagai tumpukan kotak (§3.8).
+/// It draws nothing — the selection highlight belongs to [`ListBody`], which
+/// knows the geometry of the whole list — and it resizes nothing. It adds
+/// exactly one thing, and that thing is mandatory: the `ListItem` role along
+/// with its selected state, so that assistive technology reads a list as a
+/// list and not as a stack of boxes (§3.8).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ListRowBox {
-    /// Nomor baris ini di dalam data (bukan di dalam jendela).
+    /// This row's number within the data (not within the window).
     pub index: usize,
-    /// Terpilih atau tidak; `None` = daftar ini memang tidak punya seleksi.
+    /// Selected or not; `None` = this list has no selection at all.
     pub selected: Option<bool>,
-    /// Baris ini bisa diaktifkan (ketuk-ganda / Enter).
+    /// This row can be activated (double tap / Enter).
     pub activatable: bool,
 }
 

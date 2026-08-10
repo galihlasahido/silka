@@ -1,24 +1,25 @@
-//! # `table` — tabel tervirtualisasi (`KOMPONEN.md` Tier 5)
+//! # `table` — virtualized table (`KOMPONEN.md` Tier 5)
 //!
-//! Catatan `KOMPONEN.md` untuk komponen ini adalah daftar pekerjaan yang
-//! mengikat: **"Sort, resize/reorder kolom, seleksi baris, sticky header —
-//! komponen terberat kedua setelah `text_field`"**. Dan satu aturan lagi yang
-//! lebih penting dari semuanya, aturan urutan #4: **"`table` dan `tree`
-//! menunggu virtualisasi `list` terbukti — jangan bangun tiga sistem
-//! virtualisasi."**
+//! The `KOMPONEN.md` note for this component is a binding work order:
+//! **"Sort, resize/reorder columns, row selection, sticky header — the second
+//! heaviest component after `text_field`"**. And one more rule that outweighs
+//! all of those, ordering rule #4: **"`table` and `tree` wait until `list`'s
+//! virtualization has proven itself — do not build three virtualization
+//! systems."**
 //!
-//! Modul ini menaati aturan itu secara harfiah. Tidak ada satu baris pun
-//! aritmetika virtualisasi di sini:
+//! This module obeys that rule literally. There is not one line of
+//! virtualization arithmetic here:
 //!
-//! | Yang dibutuhkan tabel | Dari mana datangnya |
+//! | What a table needs | Where it comes from |
 //! |---|---|
-//! | "baris mana yang terlihat pada guliran sekian" | [`ListMetrics::visible_range`] — fungsi yang sama persis dengan `list` |
-//! | momentum OS, rubber band, scrollbar auto-hide | [`scroll_view`](mod@crate::scroll_view), tempat tabel tinggal |
-//! | jahitan guliran → jendela baris | [`crate::list::sync_virtual`], ditulis sekali untuk dua komponen |
-//! | kanal guliran (`scroll_to`, `ListScroll`) | [`ListState`], objek yang sama |
+//! | "which rows are visible at scroll offset X" | [`ListMetrics::visible_range`] — the very function `list` uses |
+//! | OS momentum, rubber band, auto-hiding scrollbar | [`scroll_view`](mod@crate::scroll_view), where the table lives |
+//! | stitching scroll → row window | [`crate::list::sync_virtual`], written once for two components |
+//! | the scroll channel (`scroll_to`, `ListScroll`) | [`ListState`], the same object |
 //!
-//! Yang benar-benar **milik tabel** hanyalah yang memang tidak ada di daftar:
-//! kolom (lebar, urutan, pengurutan), seleksi jamak, dan navigasi antar sel.
+//! What genuinely **belongs to the table** is only what is missing from that
+//! list: columns (width, order, sorting), multiple selection, and cell-to-cell
+//! navigation.
 //!
 //! ```ignore
 //! let tabel = use_table_state();
@@ -34,50 +35,50 @@
 //!     .on_activate(move |i| buka(i))
 //! ```
 //!
-//! ## Bentuk pohonnya
+//! ## The shape of the tree
 //!
 //! ```text
-//! component("table:…")     ← scope sendiri (§2.5): guliran hanya membangun ulang ini
-//!   scroll_view            ← momentum OS, rubber band, scrollbar, Page/Home/End
-//!     TableBody            ← setinggi SELURUH isi, memiliki jendelanya saja
-//!       TableRow(first)    ← TableCell × jumlah kolom
+//! component("table:…")     ← its own scope (§2.5): scrolling only rebuilds this
+//!   scroll_view            ← OS momentum, rubber band, scrollbar, Page/Home/End
+//!     TableBody            ← as tall as the ENTIRE content, owns only its window
+//!       TableRow(first)    ← TableCell × column count
 //!       …
 //!       [empty]
-//!       TableHeader        ← terakhir supaya tergambar di atas baris
+//!       TableHeader        ← last, so it paints above the rows
 //! ```
 //!
-//! Ketiga node yang menempatkan kolom ([`TableBody`], [`TableHeaderBox`],
-//! [`TableRowBox`]) menyelesaikan lebar lewat fungsi yang **sama**
-//! ([`solve_widths`](column::solve_widths)) dari lebar layout masing-masing.
-//! Tidak ada satu pun yang bertanya kepada yang lain, dan karena itu tidak ada
-//! satu poin pun selisih antara garis header dan garis barisnya.
+//! All three nodes that place columns ([`TableBody`], [`TableHeaderBox`],
+//! [`TableRowBox`]) resolve widths through the **same** function
+//! ([`solve_widths`](column::solve_widths)) from their own layout width. None
+//! of them ever asks another, and that is why there is never a single point of
+//! drift between the header's lines and the rows'.
 //!
 //! ## Definition of Done (`KOMPONEN.md`)
 //!
-//! | Syarat | Di mana |
+//! | Requirement | Where |
 //! |---|---|
-//! | Benar di kedua preset | seluruh nilai lewat [`TableStyle`]/[`HeaderStyle`], diisi dari token |
-//! | State interaktif + spring | sorotan baris aktif **meluncur**, hover memudar, penunjuk tujuan geser kolom meluncur — semuanya [`SpringValue`](silka_core::animation::SpringValue) |
-//! | Keyboard penuh + focus ring | ↑/↓/PageUp/PageDown/Home/End (+⇧ merentang), ←/→ berpindah **sel**, ⌘A, Esc, Enter/Space; cincin fokus mengelilingi sel aktif |
-//! | Node AccessKit | `Table` + `Row` per baris (termasuk baris judul) + `Cell` per sel, lengkap dengan keadaan terpilihnya |
-//! | Dark mode | konsekuensi token — tidak ada satu angka warna pun di modul ini |
-//! | Hit target ≥ 44pt | tinggi baris dinaikkan otomatis untuk tabel yang bisa dipilih; pegangan resize punya pita sentuh sendiri ([`HANDLE_TOLERANCE`](column::HANDLE_TOLERANCE)) |
-//! | Reduced-motion | seluruh sorotan ditandai dekoratif: di bawah reduced-motion ia langsung berada di tempatnya |
+//! | Correct in both presets | every value flows through [`TableStyle`]/[`HeaderStyle`], filled from tokens |
+//! | Interactive state + spring | the active row highlight **glides**, hover fades, the column drop indicator glides — all [`SpringValue`](silka_core::animation::SpringValue) |
+//! | Full keyboard + focus ring | ↑/↓/PageUp/PageDown/Home/End (+⇧ extends), ←/→ move by **cell**, ⌘A, Esc, Enter/Space; the focus ring surrounds the active cell |
+//! | AccessKit nodes | `Table` + `Row` per row (header row included) + `Cell` per cell, each carrying its selected state |
+//! | Dark mode | a consequence of tokens — not a single color literal in this module |
+//! | Hit target ≥ 44pt | row height is raised automatically for selectable tables; resize handles carry their own touch band ([`HANDLE_TOLERANCE`](column::HANDLE_TOLERANCE)) |
+//! | Reduced motion | every highlight is marked decorative: under reduced motion it is simply already in place |
 //!
-//! ## Yang sengaja belum ada
+//! ## Deliberately absent
 //!
-//! - **Guliran mendatar.** Kolom auto membagi lebar yang ada, jadi tabel
-//!   normal selalu muat. Kolom yang di-resize melebihi lebar wadah dipotong
-//!   clip alih-alih bisa dijangkau — memperbaikinya berarti sumbu kedua di
-//!   [`scroll_view`](mod@crate::scroll_view), bukan kode baru di sini.
-//! - **Tinggi baris bervariasi**: utang yang sama dengan `list`, dan akan
-//!   selesai di tempat yang sama ([`ListMetrics`]).
-//! - **Kolom beku (frozen)** dan **pengelompokan baris**: keduanya menuntut
-//!   dua jendela sekaligus; menunggu kebutuhan nyata.
-//! - **`size_of_set`/`position_in_set` AccessKit**: jumlah baris yang benar
-//!   tidak bisa disimpulkan dari pohon a11y karena hanya jendelanya yang
-//!   dimaterialisasi, dan [`silka_core::access::AccessNode`] belum punya
-//!   tempat untuk angka itu — utang yang sama persis dengan `list`.
+//! - **Horizontal scrolling.** Auto columns divide up whatever width there is,
+//!   so a normal table always fits. Columns resized past the container width
+//!   are clipped rather than reachable — fixing that means a second axis in
+//!   [`scroll_view`](mod@crate::scroll_view), not new code here.
+//! - **Variable row heights**: the same debt `list` carries, and it will be
+//!   paid off in the same place ([`ListMetrics`]).
+//! - **Frozen columns** and **row grouping**: both demand two windows at once;
+//!   waiting for a real need.
+//! - **AccessKit `size_of_set`/`position_in_set`**: the true row count cannot
+//!   be inferred from the a11y tree because only the window is materialized,
+//!   and [`silka_core::access::AccessNode`] has nowhere to put that number
+//!   yet — exactly the same debt as `list`.
 
 pub mod column;
 mod node;
@@ -107,8 +108,8 @@ pub use view::{
     DEFAULT_OVERSCAN, DEFAULT_ROW_EXTENT, VIEWPORT_HINT,
 };
 
-/// [`TableBody`] adalah isi tervirtualisasi seperti `ListBody` — dan justru
-/// itulah intinya: jahitan guliran → jendela baris tidak ditulis dua kali.
+/// [`TableBody`] is virtualized content just like `ListBody` — and that is
+/// precisely the point: the scroll → row window stitching is not written twice.
 impl Virtualized for TableBody {
     fn virtual_metrics(&self) -> ListMetrics {
         self.metrics()
@@ -123,12 +124,12 @@ impl Virtualized for TableBody {
     }
 }
 
-/// Semua [`TableBody`] di `tree`, urut sesuai pohon.
+/// Every [`TableBody`] in `tree`, in tree order.
 pub fn nodes(tree: &RenderTree) -> Vec<NodeId> {
     crate::list::nodes_of::<TableBody>(tree)
 }
 
-/// Semua [`TableHeaderBox`] di `tree`, urut sesuai pohon.
+/// Every [`TableHeaderBox`] in `tree`, in tree order.
 pub fn header_nodes(tree: &RenderTree) -> Vec<NodeId> {
     let mut out = Vec::new();
     kumpulkan_header(tree, tree.root(), &mut out);
@@ -144,22 +145,22 @@ fn kumpulkan_header(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
     }
 }
 
-/// Jahit setiap tabel ke wadah gulirnya — **sekali per frame, sebelum
+/// Stitch every table to its scroll container — **once per frame, before the
 /// rebuild**.
 ///
-/// Isinya nol baris: seluruh pekerjaannya dikerjakan
-/// [`crate::list::sync_virtual`], yang sama persis dengan yang menjalankan
-/// `list`. Fungsi ini ada supaya pemanggilnya tidak perlu tahu itu.
+/// The body is zero lines: all of the work is done by
+/// [`crate::list::sync_virtual`], the very same code that drives `list`. This
+/// function exists so that callers never have to know that.
 pub fn sync(tree: &mut RenderTree) -> Dirty {
     sync_virtual::<TableBody>(tree)
 }
 
-/// Jahit setiap tabel ke wadah gulirnya ([`sync`]) lalu majukan sorotannya
-/// satu frame.
+/// Stitch every table to its scroll container ([`sync`]), then advance its
+/// highlights by one frame.
 ///
-/// Guliran itu sendiri **tidak** ikut di sini: ia sudah dimajukan
-/// [`crate::scroll_view::advance`], dan urutan itu mengikat — [`sync`] harus
-/// membaca posisi guliran frame **ini**, bukan frame sebelumnya.
+/// The scrolling itself is **not** advanced here: it has already been advanced
+/// by [`crate::scroll_view::advance`], and that ordering is binding — [`sync`]
+/// must read **this** frame's scroll offset, not the previous frame's.
 pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     let mut dirty = sync(tree);
     for id in nodes(tree) {
@@ -195,7 +196,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     dirty
 }
 
-/// Benar bila masih ada sorotan tabel yang bergerak.
+/// True while any table highlight is still in motion.
 pub fn is_animating(tree: &RenderTree) -> bool {
     nodes(tree).into_iter().any(|id| {
         tree.node_ref::<TableBody>(id)
@@ -206,7 +207,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
     })
 }
 
-/// Hentikan seluruh gerakan sorotan seketika (uji dan snapshot).
+/// Stop every highlight animation instantly (tests and snapshots).
 pub fn settle(tree: &mut RenderTree) {
     for id in nodes(tree) {
         if let Some(b) = tree.node_mut_ref::<TableBody>(id) {

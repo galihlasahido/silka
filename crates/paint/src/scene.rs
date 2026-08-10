@@ -1,9 +1,9 @@
-//! Scene: satu frame yang siap digambar, dinyatakan sebagai daftar perintah.
+//! Scene: one frame ready to be drawn, expressed as a list of commands.
 //!
-//! `Scene` adalah satu-satunya hal yang menyeberang dari framework ke backend.
-//! Backend mana pun (`silka-renderer` di wgpu hari ini; GL/CPU nanti) menerima
-//! `&Scene` dan tidak pernah menerima tipe grafis milik dirinya sendiri dari
-//! sisi pemanggil (REKOMENDASI §3.2, §5 failure mode #7).
+//! A `Scene` is the only thing that crosses from the framework to the backend.
+//! Any backend (`silka-renderer` on wgpu today; GL/CPU later) takes a `&Scene`
+//! and never receives its own graphics types from the caller side
+//! (REKOMENDASI §3.2, §5 failure mode #7).
 
 use crate::color::Color;
 use crate::corner::Corners;
@@ -11,7 +11,7 @@ use crate::geometry::Rect;
 use crate::glyph::GlyphRun;
 use crate::shadow::{Shadow, ShadowPair};
 
-/// Kumpulan perintah gambar untuk satu frame, plus warna latar.
+/// The set of draw commands for one frame, plus the background color.
 ///
 /// ```
 /// use silka_paint::{Color, Scene};
@@ -26,10 +26,10 @@ pub struct Scene {
 }
 
 impl Scene {
-    /// Scene kosong dengan warna latar tertentu.
+    /// An empty scene with a given background color.
     ///
-    /// Warna latar selalu datang dari token theme (`background`), tidak pernah
-    /// dari literal di kode widget.
+    /// The background color always comes from a theme token (`background`),
+    /// never from a literal in widget code.
     pub fn new(clear_color: Color) -> Self {
         Self {
             clear_color,
@@ -37,51 +37,51 @@ impl Scene {
         }
     }
 
-    /// Warna latar frame ini.
+    /// This frame's background color.
     pub fn clear_color(&self) -> Color {
         self.clear_color
     }
 
-    /// Ganti warna latar (mis. setelah dark mode berubah).
+    /// Replaces the background color (e.g. after dark mode changed).
     pub fn set_clear_color(&mut self, color: Color) {
         self.clear_color = color;
     }
 
-    /// Perintah gambar frame ini, urut dari belakang ke depan.
+    /// This frame's draw commands, ordered back to front.
     pub fn commands(&self) -> &[Command] {
         &self.commands
     }
 
-    /// Tambah satu perintah.
+    /// Appends one command.
     pub fn push(&mut self, command: impl Into<Command>) -> &mut Self {
         self.commands.push(command.into());
         self
     }
 
-    /// Tambah sederet perintah yang sudah jadi.
+    /// Appends a run of already-built commands.
     ///
-    /// Ada untuk pass paint: subtree yang **bersih** menyalin kembali perintah
-    /// yang sudah dihitung frame sebelumnya, tanpa menjalankan ulang logika
-    /// gambarnya.
+    /// This exists for the paint pass: a **clean** subtree copies back the
+    /// commands computed on the previous frame without re-running its drawing
+    /// logic.
     pub fn push_all(&mut self, commands: &[Command]) -> &mut Self {
         self.commands.extend_from_slice(commands);
         self
     }
 
-    /// Buang perintah setelah indeks `len`.
+    /// Drops every command after index `len`.
     ///
-    /// Dipakai pass paint untuk membatalkan pembuka clip yang ternyata tidak
-    /// membungkus apa pun — clip kosong bukan perintah, ia hanya sampah.
+    /// Used by the paint pass to undo a clip opener that turned out to wrap
+    /// nothing — an empty clip is not a command, it is just garbage.
     pub fn truncate(&mut self, len: usize) {
         self.commands.truncate(len);
     }
 
-    /// Tambah sebuah quad **beserta bayangan gandanya** (ambient + key).
+    /// Appends a quad **together with its double shadow** (ambient + key).
     ///
-    /// Urutannya yang menentukan hasil: ambient, lalu key, baru kotaknya —
-    /// sehingga kotak selalu menutupi bagian bayangan yang berada di bawahnya.
-    /// Lapis yang transparan penuh tidak menghasilkan perintah sama sekali,
-    /// jadi elevasi 0 benar-benar gratis.
+    /// The order is what makes it work: ambient, then key, then the box itself
+    /// — so the box always covers the part of the shadow that falls beneath it.
+    /// A fully transparent layer produces no command at all, so elevation 0 is
+    /// genuinely free.
     ///
     /// ```
     /// use silka_paint::{Color, Quad, Rect, Scene, Shadow, ShadowPair};
@@ -103,54 +103,56 @@ impl Scene {
         self.push(quad)
     }
 
-    /// Benar bila belum ada perintah apa pun (frame hanya berisi clear).
+    /// True when there are no commands yet (the frame is just a clear).
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }
 
-    /// Jumlah perintah.
+    /// The number of commands.
     pub fn len(&self) -> usize {
         self.commands.len()
     }
 
-    /// Kosongkan daftar perintah tanpa melepas alokasi — dipakai scheduler
-    /// agar frame berikutnya tidak mengalokasi ulang.
+    /// Clears the command list without releasing its allocation — used by the
+    /// scheduler so the next frame does not have to reallocate.
     pub fn reset(&mut self, clear_color: Color) {
         self.clear_color = clear_color;
         self.commands.clear();
     }
 }
 
-/// Satu perintah gambar.
+/// A single draw command.
 ///
-/// Sengaja `#[non_exhaustive]`: kosakata masih tumbuh (glyph, shadow ganda,
-/// blur/material, layer offscreen) tanpa memecah backend yang sudah ada.
+/// Deliberately `#[non_exhaustive]`: the vocabulary is still growing (glyphs,
+/// double shadows, blur/materials, offscreen layers) and should grow without
+/// breaking existing backends.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Command {
-    /// Kotak dengan sudut membulat — primitif yang menutupi ~95% UI.
+    /// A box with rounded corners — the primitive that covers ~95% of any UI.
     Quad(Quad),
-    /// Satu lapis bayangan ber-blur di belakang sebuah kotak.
+    /// One blurred shadow layer behind a box.
     ///
-    /// Bayangan ganda ala HIG = dua perintah ini berurutan; lihat
+    /// A HIG-style double shadow is two of these in sequence; see
     /// [`Scene::push_shadowed`].
     Shadow(ShadowQuad),
-    /// Sekumpulan glyph sewarna dari atlas `silka-text`.
+    /// A set of same-colored glyphs from the `silka-text` atlas.
     ///
-    /// Perintah ini hanya membawa id atlas + kotak tujuan — tidak ada font,
-    /// tidak ada shaping, tidak ada DPI (lihat modul [`crate::glyph`]).
+    /// This command carries only atlas ids + destination rects — no fonts, no
+    /// shaping, no DPI (see the [`crate::glyph`] module).
     GlyphRun(GlyphRun),
-    /// Batasi perintah berikutnya ke sebuah kotak, sampai [`Command::PopClip`].
+    /// Clips the following commands to a rect, until [`Command::PopClip`].
     ///
-    /// Kotaknya **absolut** (poin logis, relatif sudut kiri-atas window) dan
-    /// sudah merupakan irisan dengan clip di luarnya, sehingga backend cukup
-    /// menyetel satu scissor rect dan tidak perlu memelihara tumpukan sendiri.
+    /// The rect is **absolute** (logical points, relative to the top-left
+    /// corner of the window) and has already been intersected with the
+    /// enclosing clip, so the backend only has to set a single scissor rect and
+    /// need not maintain a stack of its own.
     ///
-    /// Pass paint sudah membuang perintah yang **seluruhnya** di luar kotak
-    /// ini; yang tersisa untuk backend hanyalah memotong yang tertimpa
-    /// sebagian. Pasangannya selalu seimbang dalam satu `Scene`.
+    /// The paint pass has already dropped commands lying **entirely** outside
+    /// this rect; all that is left for the backend is clipping the partially
+    /// covered ones. The pairs are always balanced within one `Scene`.
     PushClip(Rect),
-    /// Kembalikan clip ke kotak sebelum [`Command::PushClip`] terakhir.
+    /// Restores the clip to what it was before the last [`Command::PushClip`].
     PopClip,
 }
 
@@ -172,23 +174,23 @@ impl From<GlyphRun> for Command {
     }
 }
 
-/// Kotak bersudut membulat dengan isi dan border opsional.
+/// A rounded box with a fill and an optional border.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quad {
-    /// Kotak dalam poin logis.
+    /// The box in logical points.
     pub rect: Rect,
-    /// Geometri sudut — arc atau squircle, datang dari token theme.
+    /// Corner geometry — arc or squircle, coming from a theme token.
     pub corners: Corners,
-    /// Warna isi.
+    /// Fill color.
     pub background: Color,
-    /// Tebal border (0.0 = tanpa border).
+    /// Border thickness (0.0 = no border).
     pub border_width: f32,
-    /// Warna border.
+    /// Border color.
     pub border_color: Color,
 }
 
 impl Quad {
-    /// Kotak polos tanpa lengkung dan tanpa border.
+    /// A plain box with no curve and no border.
     pub fn new(rect: Rect) -> Self {
         Self {
             rect,
@@ -199,53 +201,54 @@ impl Quad {
         }
     }
 
-    /// Setel warna isi.
+    /// Sets the fill color.
     pub fn background(mut self, color: Color) -> Self {
         self.background = color;
         self
     }
 
-    /// Setel geometri sudut.
+    /// Sets the corner geometry.
     pub fn corners(mut self, corners: Corners) -> Self {
         self.corners = corners;
         self
     }
 
-    /// Setel border.
+    /// Sets the border.
     pub fn border(mut self, width: f32, color: Color) -> Self {
         self.border_width = width.max(0.0);
         self.border_color = color;
         self
     }
 
-    /// Versi yang radius sudutnya sudah dibatasi terhadap ukuran kotak.
+    /// A copy whose corner radii have been clamped against the box size.
     pub fn normalized(mut self) -> Self {
         self.corners = self.corners.clamp_to(self.rect.size);
         self
     }
 }
 
-/// Satu lapis bayangan yang siap digambar.
+/// One shadow layer ready to draw.
 ///
-/// Geometrinya sudah **final**: `offset` dan `spread` dari [`Shadow`] sudah
-/// diterapkan ke `rect` dan `corners` di sini (CPU, bisa diuji), sehingga
-/// backend cukup mem-blur bentuk apa adanya. Bentuk sudutnya sengaja diwarisi
-/// dari kotak yang dibayangi — bayangan squircle tetap squircle.
+/// Its geometry is already **final**: the `offset` and `spread` from [`Shadow`]
+/// have been applied to `rect` and `corners` here (on the CPU, where it can be
+/// tested), so the backend only has to blur the shape as-is. The corner shape
+/// is deliberately inherited from the box being shadowed — a squircle's shadow
+/// stays a squircle.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShadowQuad {
-    /// Bentuk bayangan setelah offset dan spread, poin logis.
+    /// The shadow shape after offset and spread, in logical points.
     pub rect: Rect,
-    /// Geometri sudut bayangan (radius sudah ikut tumbuh bersama spread).
+    /// The shadow's corner geometry (the radii already grew with the spread).
     pub corners: Corners,
-    /// Warna bayangan.
+    /// Shadow color.
     pub color: Color,
-    /// Diameter blur, poin logis (sigma = `blur / 2`).
+    /// Blur diameter, in logical points (sigma = `blur / 2`).
     pub blur: f32,
 }
 
 impl ShadowQuad {
-    /// Bayangan untuk sebuah quad: mewarisi bentuk sudutnya, lalu menerapkan
-    /// offset dan spread.
+    /// The shadow for a quad: inherits its corner shape, then applies the
+    /// offset and spread.
     pub fn for_quad(quad: &Quad, shadow: Shadow) -> Self {
         let rect = shadow.shape(quad.rect);
         Self {
@@ -256,12 +259,12 @@ impl ShadowQuad {
         }
     }
 
-    /// Sigma gaussian yang dipakai shader.
+    /// The gaussian sigma used by the shader.
     pub fn sigma(&self) -> f32 {
         self.blur * 0.5
     }
 
-    /// Kotak pembatas termasuk ekor gaussian (3σ) — untuk dirty region.
+    /// The bounding rect including the gaussian tail (3σ) — for dirty regions.
     pub fn bounds(&self) -> Rect {
         let margin = self.sigma() * 3.0;
         Rect::new(
@@ -272,7 +275,7 @@ impl ShadowQuad {
         )
     }
 
-    /// Benar bila lapis ini menyumbang piksel sama sekali.
+    /// True when this layer contributes any pixels at all.
     pub fn is_visible(&self) -> bool {
         self.color.a > 0.0 && !self.rect.size.is_empty()
     }
@@ -318,7 +321,7 @@ mod tests {
             .corners(Corners::uniform(9999.0, CornerStyle::squircle()))
             .normalized();
         assert_eq!(q.corners.radii.max(), 12.0);
-        // Bentuk sudut tidak boleh ikut hilang saat radius dibatasi.
+        // Clamping the radius must not drop the corner shape along with it.
         assert_eq!(q.corners.style, CornerStyle::squircle());
     }
 
@@ -383,7 +386,7 @@ mod tests {
                 .spread(2.0),
         );
         assert_eq!(sh.rect, Rect::new(-2.0, 2.0, 44.0, 24.0));
-        // radius 10 + spread 2 = 12, tapi setengah sisi terpendek = 12 → pas.
+        // radius 10 + spread 2 = 12, and half the shorter side is 12 → exact fit.
         assert_eq!(sh.corners.radii.max(), 12.0);
         assert_eq!(sh.sigma(), 8.0);
         assert!(sh.is_visible());

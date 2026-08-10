@@ -1,11 +1,10 @@
-//! Rendering **headless**: scene yang sama, tanpa window.
+//! **Headless** rendering: the same scene, without a window.
 //!
-//! Dibutuhkan sejak sekarang, bukan nanti (REKOMENDASI §9.5): klaim
-//! "kestabilan" hanya berarti kalau ada golden/snapshot test visual dan
-//! benchmark frame-time yang bisa jalan di CI tanpa server tampilan. Jalur
-//! gambarnya **persis sama** dengan [`crate::WindowSurface`] — pipeline SDF,
-//! format sRGB, dan blending yang sama — sehingga apa yang diuji headless
-//! memang yang dilihat pengguna.
+//! Needed now rather than later (REKOMENDASI §9.5): a claim of "stability" only
+//! means something if there are visual golden/snapshot tests and frame-time
+//! benchmarks that can run in CI without a display server. The draw path is
+//! **exactly** the one [`crate::WindowSurface`] uses — same SDF pipeline, same
+//! sRGB format, same blending — so what is tested headless is what users see.
 
 use silka_paint::{GlyphSource, NoGlyphs, Scene, Size};
 
@@ -15,15 +14,15 @@ use crate::gpu::Gpu;
 use crate::instance::{fill_draw_list, ColorSpace, DrawList};
 use crate::pipeline::SdfPipeline;
 
-/// Format target headless: sama kelasnya dengan swapchain window (sRGB),
-/// supaya konversi ruang warna diuji juga, bukan dilewati.
+/// The headless target format: the same class as a window swapchain (sRGB), so
+/// the color space conversion is exercised too rather than bypassed.
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 
-/// Baris tekstur harus disalin dengan kelipatan 256 byte (aturan WebGPU).
+/// Texture rows must be copied in multiples of 256 bytes (a WebGPU rule).
 const ROW_ALIGNMENT: u32 = 256;
 
-/// Gambar RGBA 8-bit hasil render headless, sudah dalam ruang **sRGB**
-/// (angka byte-nya bisa dibandingkan langsung dengan token warna).
+/// An 8-bit RGBA image produced by a headless render, already in **sRGB** space
+/// (its byte values can be compared directly against color tokens).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rgba8Image {
     width: u32,
@@ -32,22 +31,22 @@ pub struct Rgba8Image {
 }
 
 impl Rgba8Image {
-    /// Lebar dalam piksel fisik.
+    /// Width in physical pixels.
     pub fn width(&self) -> u32 {
         self.width
     }
 
-    /// Tinggi dalam piksel fisik.
+    /// Height in physical pixels.
     pub fn height(&self) -> u32 {
         self.height
     }
 
-    /// Seluruh piksel, empat byte per piksel, baris demi baris.
+    /// All pixels, four bytes per pixel, row by row.
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
     }
 
-    /// Satu piksel `[r, g, b, a]`. Di luar batas mengembalikan transparan.
+    /// A single `[r, g, b, a]` pixel. Out of bounds returns transparent.
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
         if x >= self.width || y >= self.height {
             return [0; 4];
@@ -62,7 +61,7 @@ impl Rgba8Image {
     }
 }
 
-/// Tekstur di luar layar yang bisa menerima [`Scene`] apa pun.
+/// An offscreen texture that can receive any [`Scene`].
 #[derive(Debug)]
 pub struct OffscreenTarget {
     texture: wgpu::Texture,
@@ -75,7 +74,7 @@ pub struct OffscreenTarget {
 }
 
 impl OffscreenTarget {
-    /// Buat target dengan geometri tertentu (ukuran fisik + scale factor).
+    /// Create a target with a given geometry (physical size + scale factor).
     pub fn new(gpu: &Gpu, geometry: SurfaceGeometry) -> Result<Self, RendererError> {
         if !geometry.is_renderable() {
             return Err(RendererError::SurfaceUnsupported);
@@ -118,26 +117,27 @@ impl OffscreenTarget {
         })
     }
 
-    /// Ukuran dalam poin logis — sama artinya dengan
+    /// The size in logical points — the same meaning as
     /// [`crate::WindowSurface::logical_size`].
     pub fn logical_size(&self) -> Size {
         self.geometry.logical_size()
     }
 
-    /// Gambar satu scene lalu baca hasilnya kembali ke CPU.
+    /// Draw one scene, then read the result back to the CPU.
     ///
-    /// Sinkron dengan sengaja: ini alat uji, bukan jalur frame aplikasi.
-    /// Tanpa sumber atlas, perintah `GlyphRun` tidak menghasilkan piksel —
-    /// lihat [`OffscreenTarget::render_with_glyphs`].
+    /// Synchronous on purpose: this is a testing tool, not an application's
+    /// frame path. Without an atlas source, `GlyphRun` commands produce no
+    /// pixels — see [`OffscreenTarget::render_with_glyphs`].
     pub fn render(&mut self, gpu: &Gpu, scene: &Scene) -> Result<Rgba8Image, RendererError> {
         self.render_with_glyphs(gpu, scene, &mut NoGlyphs)
     }
 
-    /// Gambar satu scene **beserta teksnya** lalu baca hasilnya ke CPU.
+    /// Draw one scene **including its text**, then read the result back to the
+    /// CPU.
     ///
-    /// Inilah jalur golden/snapshot test teks (§9.5): atlas yang sama yang
-    /// dipakai window diunggah ke tekstur, dan hasil akhirnya bisa dihitung
-    /// piksel demi piksel tanpa server tampilan.
+    /// This is the golden/snapshot test path for text (§9.5): the same atlas a
+    /// window would use is uploaded to a texture, and the final result can be
+    /// counted pixel by pixel without a display server.
     pub fn render_with_glyphs(
         &mut self,
         gpu: &Gpu,
@@ -241,7 +241,7 @@ impl OffscreenTarget {
     }
 }
 
-/// Panjang satu baris salinan setelah dibulatkan ke kelipatan 256 byte.
+/// The length of one copied row after rounding up to a multiple of 256 bytes.
 fn padded_row_bytes(width: u32) -> u32 {
     let unpadded = width * 4;
     unpadded.div_ceil(ROW_ALIGNMENT) * ROW_ALIGNMENT

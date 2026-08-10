@@ -1,25 +1,25 @@
-//! Halaman demo: **checkbox** (`KOMPONEN.md` Tier 2).
+//! Demo page: **checkbox** (`KOMPONEN.md` Tier 2).
 //!
-//! Yang dipamerkan halaman ini adalah Definition of Done komponennya, satu per
-//! satu, dalam bentuk yang bisa **dilihat dan dicoba tangan** — bukan diklaim
-//! di komentar:
+//! What this page shows off is the component's Definition of Done, item by
+//! item, in a form you can **see and try by hand** — not one claimed in a
+//! comment:
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Benar di kedua preset | `--preset cupertino` (sudut squircle) vs `--preset tailwind` (arc 4pt) |
-//! | Dark mode | `--appearance dark` / `light`, atau ikut OS |
-//! | Animasi centang | Klik: goresannya **ditarik** dari pangkal ke ujung, bukan muncul jadi |
-//! | Spring yang bisa di-retarget | Klik dua kali cepat: goresan berbalik arah dari posisinya sekarang, tidak melompat ke nol |
-//! | State indeterminate | Centang satu item saja — "Pilih semua" berubah jadi garis, bukan centang |
-//! | Hover / tekan | Kotaknya mengempis sedikit saat ditahan, dan kembali saat dilepas |
-//! | Keyboard + focus ring | Tab berkeliling, **Space** mengaktifkan (Enter sengaja tidak — itu milik tombol default) |
-//! | Hit target ≥ 44pt | Kotaknya 16pt, tapi seluruh barisnya — termasuk labelnya — bisa diklik |
-//! | Node AccessKit | VoiceOver membacakan "kotak centang, tercentang/sebagian" |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: cincin fokus dan kempis hilang, goresan tetap tertarik |
+//! | Correct in both presets | `--preset cupertino` (squircle corners) vs `--preset tailwind` (4pt arc) |
+//! | Dark mode | `--appearance dark` / `light`, or follow the OS |
+//! | Check animation | Click: the stroke is **drawn** from root to tip, it does not pop in finished |
+//! | Retargetable spring | Click twice quickly: the stroke reverses from where it currently is, it does not jump to zero |
+//! | Indeterminate state | Check just one item — "Pilih semua" turns into a dash, not a checkmark |
+//! | Hover / press | The box shrinks slightly while held, and springs back on release |
+//! | Keyboard + focus ring | Tab around, **Space** activates (Enter deliberately does not — that belongs to the default button) |
+//! | Hit target ≥ 44pt | The box is 16pt, but the whole row — label included — is clickable |
+//! | AccessKit nodes | VoiceOver announces "checkbox, checked/partially checked" |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the focus ring and the shrink go away, the stroke is still drawn |
 //!
-//! Yang **tidak** ada di berkas ini, dan itulah intinya: tidak ada `Scene` yang
-//! disusun tangan, tidak ada aritmetika tata letak, dan tidak ada satu pun
-//! angka warna — semuanya token (§2.6, §2.7).
+//! What is **absent** from this file is the whole point: no hand-assembled
+//! `Scene`, no layout arithmetic, and not a single color number — everything is
+//! a token (§2.6, §2.7).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -30,33 +30,34 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{checkbox, checkbox_only, text, CheckState, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Checkbox";
-/// Nama checkbox induk yang keadaannya diturunkan dari anak-anaknya.
+/// The name of the parent checkbox whose state is derived from its children.
 pub const PILIH_SEMUA: &str = "Pilih semua";
-/// Nama tiap pilihan.
+/// The name of each option.
 pub const ITEM: [&str; 3] = [
     "Sinkronkan otomatis",
     "Kirim laporan galat",
     "Ikut program beta",
 ];
-/// Nama checkbox yang sengaja dimatikan dalam keadaan kosong.
+/// The name of the checkbox deliberately disabled in the unchecked state.
 pub const MATI: &str = "Tidak tersedia di paket ini";
-/// Nama checkbox yang sengaja dimatikan dalam keadaan tercentang.
+/// The name of the checkbox deliberately disabled in the checked state.
 pub const TERKUNCI: &str = "Wajib menyala";
-/// Nama checkbox tanpa label terlihat (nama a11y-nya tetap ada).
+/// The name of the checkbox with no visible label (its a11y name still
+/// exists).
 pub const TANPA_LABEL: &str = "Pilih baris pertama";
 
-/// Keadaan checkbox induk yang **diturunkan** dari anak-anaknya.
+/// The parent checkbox state, **derived** from its children.
 ///
-/// Fungsi murni, dan sengaja hidup di halaman ini alih-alih di dalam widget:
-/// `Mixed` bukan sesuatu yang bisa ditebak sebuah kontrol dari dirinya sendiri
-/// — ia selalu lahir dari data (`KOMPONEN.md`, catatan indeterminate).
+/// A pure function, deliberately living on this page rather than inside the
+/// widget: `Mixed` is not something a control can infer about itself — it
+/// always comes from the data (`KOMPONEN.md`, the indeterminate note).
 pub fn keadaan_induk(dipilih: &[bool]) -> CheckState {
     if dipilih.is_empty() {
-        // Tanpa cabang ini `all()` pada slice kosong bernilai `true` dan induk
-        // tanpa anak akan tampil tercentang — salah untuk daftar dinamis yang
-        // sedang kosong (filter tanpa hasil, data belum datang).
+        // Without this branch `all()` on an empty slice is `true` and a parent
+        // with no children would render as checked — wrong for a dynamic list
+        // that happens to be empty (a filter with no hits, data not in yet).
         CheckState::Off
     } else if dipilih.iter().all(|v| *v) {
         CheckState::On
@@ -67,13 +68,15 @@ pub fn keadaan_induk(dipilih: &[bool]) -> CheckState {
     }
 }
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 ///
-/// Judul dan penjelasan dibaca di scope akar; **pilihannya tidak**, sehingga
-/// satu klik hanya membangun ulang satu komponen, bukan halaman (§2.5).
+/// The title and the description are read in the root scope; **the selection is
+/// not**, so a single click rebuilds one component rather than the page
+/// (§2.5).
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
@@ -84,7 +87,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             text(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
-                // Tracking negatif pada ukuran besar — kebiasaan SF (§3.6).
+                // Negative tracking at large sizes — an SF habit (§3.6).
                 .tracking(t.typography.title2.tracking)
                 .color(t.color.label)
                 .single_line(),
@@ -112,10 +115,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Kelompok induk + anak sebagai **komponen tersendiri**.
+/// The parent + children group as **its own component**.
 ///
-/// Inilah satu-satunya tempat `dipilih` dibaca, dan karena itu satu-satunya
-/// scope yang ditandai dirty saat sebuah kotak diklik.
+/// This is the only place `dipilih` is read, and therefore the only scope
+/// marked dirty when a box is clicked.
 fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
     let fonts = fonts.clone();
     component("pilihan", move |cx| {
@@ -127,8 +130,8 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
             checkbox(&fonts, &t, PILIH_SEMUA)
                 .key("semua")
                 .state(keadaan_induk(&nilai))
-                // Induk "sebagian" yang diaktifkan berarti memutuskan: semua
-                // menyala (`CheckState::toggled`).
+                // Activating a "partial" parent means committing: everything
+                // turns on (`CheckState::toggled`).
                 .on_change(move |baru| dipilih.set([baru.is_on(); ITEM.len()]))
                 .into(),
         );
@@ -147,17 +150,17 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
         column(anak)
             .spacing(t.space(2.0))
             .cross(CrossAlign::Start)
-            // Anak-anaknya menjorok ke dalam seperti daftar bersarang macOS;
-            // jaraknya token, bukan angka lepas.
+            // The children are indented like a nested macOS list; the inset is
+            // a token, not a loose magic number.
             .padding(Insets::symmetric(t.space(0.0), t.space(1.0)))
             .into()
     })
 }
 
-/// Baris checkbox yang tidak bisa dipakai, plus satu tanpa label terlihat.
+/// The row of unusable checkboxes, plus one with no visible label.
 ///
-/// Ketiganya tetap ada di pohon aksesibilitas: kontrol yang mati **dibacakan**
-/// sebagai dimmed, bukan disembunyikan (§3.8).
+/// All three remain in the accessibility tree: a disabled control is
+/// **announced** as dimmed, not hidden (§3.8).
 fn mati(fonts: &Fonts, t: &Theme) -> View {
     row([
         View::from(checkbox(fonts, t, MATI).disabled(true)),
@@ -194,8 +197,8 @@ mod tests {
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Kotak sebuah node **menurut pohon aksesibilitas** — test mengklik persis
-    /// di tempat yang dibacakan screen reader.
+    /// A node's rectangle **according to the accessibility tree** — the tests
+    /// click exactly where a screen reader announces.
     fn kotak(ui: &AppRuntime, label: &str) -> Rect {
         let pohon = ui.access_tree();
         pohon
@@ -226,14 +229,14 @@ mod tests {
         }
     }
 
-    /// Jalankan frame sampai semua spring settle — persis yang dilakukan shell,
-    /// hanya tanpa window.
+    /// Pump frames until every spring settles — exactly what the shell does,
+    /// only without a window.
     ///
-    /// Jamnya **dikarang test**, bukan diambil dari `Instant::now()`: sebuah
-    /// loop uji berjalan dalam mikrodetik, jadi `dt` sungguhannya nyaris nol
-    /// dan spring-nya tidak akan pernah sampai. `animate_at` ada persis untuk
-    /// ini, dan 8,3 ms adalah satu frame ProMotion — bukan 16,6 ms yang
-    /// dikarang (§3.5).
+    /// The clock is **made up by the test** rather than taken from
+    /// `Instant::now()`: a test loop runs in microseconds, so the real `dt`
+    /// would be nearly zero and the springs would never arrive. `animate_at`
+    /// exists for precisely this, and 8.3 ms is one ProMotion frame — not an
+    /// invented 16.6 ms (§3.5).
     fn sampai_diam(ui: &mut AppRuntime) {
         let mut jam = Instant::now();
         for _ in 0..600 {
@@ -247,7 +250,7 @@ mod tests {
         panic!("spring tidak pernah berhenti");
     }
 
-    // -- logika murni -------------------------------------------------------
+    // -- pure logic ---------------------------------------------------------
 
     #[test]
     fn keadaan_induk_diturunkan_dari_anaknya() {
@@ -259,14 +262,14 @@ mod tests {
 
     #[test]
     fn induk_tanpa_anak_tidak_tercentang() {
-        // `all()` pada slice kosong bernilai `true`, jadi tanpa cabang khusus
-        // induk daftar kosong akan tampil tercentang — dan mencentangnya tidak
-        // akan memilih apa pun. Halaman ini memang selalu punya 3 item, tapi
-        // helper-nya murni dan bisa dipakai ulang untuk daftar dinamis.
+        // `all()` on an empty slice is `true`, so without a special branch the
+        // parent of an empty list would render as checked — and checking it
+        // would select nothing. This page always has 3 items, but the helper is
+        // pure and reusable for dynamic lists.
         assert_eq!(keadaan_induk(&[]), CheckState::Off);
     }
 
-    // -- halaman ------------------------------------------------------------
+    // -- the page -----------------------------------------------------------
 
     #[test]
     fn semua_kotak_ada_di_pohon_a11y_dengan_peran_dan_hit_target_yang_benar() {
@@ -289,7 +292,7 @@ mod tests {
             );
         }
 
-        // Yang mati tetap dibacakan, tapi tanpa aksi.
+        // Disabled ones are still announced, but carry no actions.
         for label in [MATI, TERKUNCI] {
             let e = pohon.find_label(label).expect("tetap dibacakan");
             assert!(e.node.disabled, "{label}");
@@ -316,7 +319,7 @@ mod tests {
             "induk harus jadi 'sebagian', bukan tercentang"
         );
 
-        // Sisanya menyusul → induk penuh.
+        // The rest follow → the parent goes full.
         for label in [ITEM[1], ITEM[2]] {
             let p = kotak(&ui, label).center();
             klik(&mut ui, p);
@@ -343,7 +346,7 @@ mod tests {
             assert_eq!(keadaan(&ui, label), AccessToggled::On, "{label}");
         }
 
-        // Sekali lagi = mematikan semuanya.
+        // Once more = turn everything off.
         let p = kotak(&ui, PILIH_SEMUA).center();
         klik(&mut ui, p);
         ui.frame();
@@ -358,7 +361,7 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
         ui.frame();
 
-        // Jauh di kanan kotak centangnya — masih di dalam label yang sama.
+        // Far to the right of the check box — still inside the same label.
         let b = kotak(&ui, ITEM[2]);
         klik(&mut ui, Point::new(b.max_x() - 4.0, b.center().y));
         ui.frame();
@@ -371,7 +374,7 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Dark), &f);
         ui.frame();
 
-        // Tab mendarat di kontrol pertama (induk), Space mengaktifkannya.
+        // Tab lands on the first control (the parent), Space activates it.
         ui.dispatch(&Event::Key(KeyEvent::pressed(
             KeyCode::Named(NamedKey::Tab),
             Duration::ZERO,
@@ -417,8 +420,9 @@ mod tests {
                 sampai_diam(&mut ui);
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 
-                // Satu kotak tercentang sudah ada sejak awal (yang terkunci +
-                // yang tanpa label), jadi kedua warna kotak pasti muncul.
+                // A checked box exists from the start (the locked one + the
+                // unlabeled one), so both box colors are guaranteed to show
+                // up.
                 let latar: Vec<_> = ui
                     .scene()
                     .commands()
@@ -441,8 +445,8 @@ mod tests {
                         q.background
                     );
                 }
-                // Kotak checkbox memakai bentuk sudut preset aktif — squircle
-                // di Cupertino, arc di Tailwind (§2.7).
+                // The check box uses the active preset's corner shape —
+                // squircle in Cupertino, arc in Tailwind (§2.7).
                 assert!(
                     latar
                         .iter()

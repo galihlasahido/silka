@@ -1,21 +1,20 @@
-//! Pemicu select: kotak yang menampilkan pilihan sekarang, dan **satu-satunya
-//! yang memegang fokus keyboard** selama popup terbuka.
+//! The select trigger: the box that shows the current option, and **the only
+//! thing that holds keyboard focus** while the popup is open.
 //!
-//! Kenapa fokus tidak pindah ke popup: itu justru yang dilakukan NSPopUpButton
-//! dan `<select>` — panah, Home/End, Enter, Esc, dan typeahead semuanya sampai
-//! ke kontrolnya, sementara menunya cuma menggambar. Konsekuensi praktisnya
-//! besar: tidak ada perangkap fokus yang harus dipasang dan dilepas, tidak ada
-//! "fokus otomatis ke panel yang baru terbuka" (kait yang memang belum ada,
-//! lihat [`crate::overlay`]), dan tidak ada satu pun keystroke yang hilang di
-//! antara dua frame.
+//! Why focus never moves into the popup: that is precisely what NSPopUpButton
+//! and `<select>` do — arrows, Home/End, Enter, Esc, and typeahead all reach
+//! the control, while the menu merely draws. The practical payoff is large:
+//! there is no focus trap to install and tear down, no "auto-focus the panel
+//! that just opened" (a hook that genuinely does not exist yet, see
+//! [`crate::overlay`]), and not one keystroke lost between two frames.
 //!
-//! Empat gerakan node ini dan perannya terhadap reduced-motion:
+//! The four motions of this node and how each stands up to reduced-motion:
 //!
-//! | Gerakan | Spring | Peran | Alasan |
+//! | Motion | Spring | Role | Rationale |
 //! |---|---|---|---|
-//! | Latar hover/press/disabled | `snappy` | Essential | Menjelaskan keadaan kontrol |
-//! | Cincin fokus tumbuh | `smooth` | Essential | Menjelaskan di mana fokus keyboard |
-//! | Segitiga membalik saat popup buka/tutup | `snappy` | Essential | Menjelaskan popup terbuka |
+//! | Hover/press/disabled background | `snappy` | Essential | Explains the control's state |
+//! | Focus ring grows | `smooth` | Essential | Explains where keyboard focus is |
+//! | Triangle flips on open/close | `snappy` | Essential | Explains the popup is open |
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -33,68 +32,70 @@ use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Shadow
 
 use super::{SelectHandler, SelectIntent};
 
-/// Jumlah bilah penyusun segitiga penunjuk.
+/// Number of bars that make up the indicator triangle.
 ///
-/// Lapisan paint hanya mengenal kotak, glyph, dan bayangan (§3.2) — tidak ada
-/// perintah path dan tidak ada rotasi. Segitiga karena itu disusun dari bilah
-/// horizontal yang menyempit; lima sudah cukup halus pada ukuran 8pt, dan
-/// **membalikkan urutan lebarnya** adalah animasi buka/tutupnya.
+/// The paint layer only knows quads, glyphs, and shadows (§3.2) — no path
+/// commands and no rotation. The triangle is therefore built out of narrowing
+/// horizontal bars; five is already smooth enough at 8pt, and **reversing the
+/// order of their widths** is its open/close animation.
 const BILAH: usize = 5;
 
-/// Jeda maksimum antar ketikan typeahead sebelum buffernya dilupakan.
+/// Longest pause between typeahead keystrokes before the buffer is forgotten.
 const JEDA_KETIK: Duration = Duration::from_millis(900);
 
 // ---------------------------------------------------------------------------
 // Style
 // ---------------------------------------------------------------------------
 
-/// Seluruh nilai gambar pemicu select, **sudah diresolusi** dari token theme.
+/// Every drawing value of the select trigger, **already resolved** from theme
+/// tokens.
 ///
-/// Mesin tidak pernah punya pendapat tentang warna (§2.6, §2.7): preset
-/// Cupertino dan Tailwind berganti dengan mengisi struct ini, tanpa satu baris
-/// pun berubah di [`SelectTrigger`].
+/// The engine never holds an opinion about color (§2.6, §2.7): the Cupertino
+/// and Tailwind presets swap by filling in this struct, without a single line
+/// changing in [`SelectTrigger`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SelectTriggerStyle {
-    /// Latar keadaan diam.
+    /// Background at rest.
     pub rest: Color,
-    /// Latar saat penunjuk di atasnya.
+    /// Background while the pointer is over it.
     pub hover: Color,
-    /// Latar saat ditekan (dan saat popup terbuka).
+    /// Background while pressed (and while the popup is open).
     pub pressed: Color,
-    /// Latar saat tidak bisa dipakai.
+    /// Background while unusable.
     pub disabled: Color,
-    /// Geometri sudut — sekaligus bentuk area sentuh (§3.6).
+    /// Corner geometry — also the shape of the hit area (§3.6).
     pub corners: Corners,
-    /// Tebal border (0 = tanpa border).
+    /// Border thickness (0 = no border).
     pub border_width: f32,
-    /// Warna border saat aktif.
+    /// Border color while enabled.
     pub border: Color,
-    /// Warna border saat mati.
+    /// Border color while disabled.
     pub border_disabled: Color,
-    /// Bayangan ganda ala HIG.
+    /// The HIG-style double shadow.
     pub shadows: ShadowPair,
-    /// Tebal cincin fokus keyboard.
+    /// Thickness of the keyboard focus ring.
     pub focus_ring_width: f32,
-    /// Warna cincin fokus.
+    /// Focus ring color.
     pub focus_ring: Color,
-    /// Jarak isi ke tepi kotak.
+    /// Distance from the content to the edge of the box.
     pub padding: Insets,
-    /// Jarak antara label dan segitiga penunjuk.
+    /// Distance between the label and the indicator triangle.
     pub gap: f32,
-    /// Lebar segitiga penunjuk.
+    /// Width of the indicator triangle.
     pub indicator: f32,
-    /// Warna segitiga penunjuk.
+    /// Color of the indicator triangle.
     pub indicator_color: Color,
-    /// Lebar minimum kotak (diukur dari pilihan terpanjang).
+    /// Minimum width of the box (measured from the longest option).
     pub min_width: f32,
-    /// Tinggi minimum kotak — hit target HIG.
+    /// Minimum height of the box — the HIG hit target.
     pub min_height: f32,
 }
 
 impl SelectTriggerStyle {
-    /// Latar yang seharusnya berlaku untuk kombinasi keadaan ini.
+    /// The background this combination of states should resolve to.
     ///
-    /// Inilah **target** spring; yang digambar adalah posisinya, bukan ini.
+    /// This is the spring's **target**; what gets drawn is its position, not
+    /// this.
     pub fn background_for(
         &self,
         hovered: bool,
@@ -105,10 +106,10 @@ impl SelectTriggerStyle {
         if disabled {
             return self.disabled;
         }
-        // `pressed` bertahan saat penunjuk ditangkap keluar kotak, tapi tampilan
-        // "ditekan" hanya berlaku selama penunjuknya masih di dalam — persis
-        // AppKit/UIKit. Popup yang terbuka membuat kontrolnya tetap terlihat
-        // aktif walau penunjuk sudah pergi ke daftarnya.
+        // `pressed` survives a captured pointer wandering out of the box, but
+        // the "pressed" look only holds while the pointer is still inside —
+        // exactly like AppKit/UIKit. An open popup keeps the control looking
+        // active even once the pointer has moved on to its list.
         if (pressed && hovered) || open {
             self.pressed
         } else if hovered {
@@ -118,7 +119,7 @@ impl SelectTriggerStyle {
         }
     }
 
-    /// Warna border yang berlaku.
+    /// The border color in effect.
     pub fn border_for(&self, disabled: bool) -> Color {
         if disabled {
             self.border_disabled
@@ -127,11 +128,12 @@ impl SelectTriggerStyle {
         }
     }
 
-    /// Jarak isi ke tepi, sudah memperhitungkan ruang segitiga penunjuk.
+    /// Content insets, with room for the indicator triangle already accounted
+    /// for.
     ///
-    /// Sisi mana yang melebar mengikuti arah baca (§9.8): penunjuk selalu di
-    /// **akhir** baris, jadi di RTL ia pindah ke kiri tanpa satu pun nilai
-    /// dihitung ulang di lapisan view.
+    /// Which side grows follows the reading direction (§9.8): the indicator
+    /// always sits at the **end** of the line, so under RTL it moves to the
+    /// left without a single value being recomputed in the view layer.
     pub fn insets(&self, rtl: bool) -> Insets {
         let ruang = self.gap + self.indicator;
         let mut i = self.padding;
@@ -148,7 +150,7 @@ impl SelectTriggerStyle {
 // Node
 // ---------------------------------------------------------------------------
 
-/// Node render pemicu select.
+/// Render node for the select trigger.
 pub struct SelectTrigger {
     style: SelectTriggerStyle,
     label: Option<String>,
@@ -160,11 +162,11 @@ pub struct SelectTrigger {
     focus: FocusPolicy,
     on_intent: Option<SelectHandler>,
 
-    /// Latar yang benar-benar digambar frame ini.
+    /// The background actually drawn this frame.
     bg: SpringValue<Color>,
-    /// 0 = tanpa cincin fokus, 1 = cincin penuh.
+    /// 0 = no focus ring, 1 = full ring.
     ring_t: SpringValue<f32>,
-    /// 0 = segitiga menunjuk ke bawah, 1 = ke atas.
+    /// 0 = triangle points down, 1 = points up.
     open_t: SpringValue<f32>,
 
     hovered: bool,
@@ -172,7 +174,7 @@ pub struct SelectTrigger {
     focused: bool,
     rtl: bool,
 
-    /// Buffer typeahead dan kapan huruf terakhir masuk.
+    /// The typeahead buffer and when its last letter arrived.
     ketikan: String,
     ketikan_pada: Duration,
 }
@@ -185,8 +187,8 @@ impl SelectTrigger {
         Self {
             bg: SpringValue::new(bg).with_spring(props.spring),
             ring_t: SpringValue::new(0.0).with_spring(Spring::smooth()),
-            // Select yang lahir dalam keadaan terbuka tidak beranimasi masuk:
-            // ia memang **sudah** terbuka, bukan baru saja dibuka.
+            // A select born open does not animate in: it **is** open, it was
+            // not just opened.
             open_t: SpringValue::new(if props.open { 1.0 } else { 0.0 }).with_spring(props.spring),
             style: props.style,
             label: props.label.clone(),
@@ -206,65 +208,65 @@ impl SelectTrigger {
         }
     }
 
-    /// Nilai gambar yang sedang berlaku.
+    /// The drawing values currently in effect.
     pub fn style(&self) -> SelectTriggerStyle {
         self.style
     }
 
-    /// Latar yang digambar frame ini — posisi spring, bukan targetnya.
+    /// The background drawn this frame — the spring's position, not its target.
     pub fn background(&self) -> Color {
         self.bg.position()
     }
 
-    /// Target latar yang sedang dituju spring.
+    /// The background the spring is currently heading for.
     pub fn background_target(&self) -> Color {
         self.bg.target()
     }
 
-    /// Kemajuan cincin fokus 0..1.
+    /// Focus ring progress, 0..1.
     pub fn focus_progress(&self) -> f32 {
         self.ring_t.position()
     }
 
-    /// Kemajuan buka 0..1 (arah segitiga penunjuk).
+    /// Open progress, 0..1 (the direction of the indicator triangle).
     pub fn open_progress(&self) -> f32 {
         self.open_t.position()
     }
 
-    /// Popup sedang terbuka menurut props terakhir.
+    /// The popup is open, according to the last props.
     pub fn is_open(&self) -> bool {
         self.open
     }
 
-    /// Penunjuk sedang di atasnya.
+    /// The pointer is over it.
     pub fn is_hovered(&self) -> bool {
         self.hovered
     }
 
-    /// Sedang ditekan.
+    /// It is being pressed.
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
 
-    /// Sedang memegang fokus keyboard.
+    /// It holds keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// Indeks yang sedang disorot.
+    /// The index currently highlighted.
     pub fn highlight(&self) -> usize {
         self.highlight
     }
 
-    /// Benar bila masih ada spring yang bergerak.
+    /// True while any spring is still moving.
     pub fn is_animating(&self) -> bool {
         self.bg.is_animating() || self.ring_t.is_animating() || self.open_t.is_animating()
     }
 
-    /// Arahkan seluruh spring ke keadaan sekarang.
+    /// Point every spring at the current state.
     ///
-    /// **Retarget, bukan animasi baru** (§3.5): kontrol yang dilepas di tengah
-    /// animasi tekan berbalik arah membawa kecepatannya.
+    /// **Retarget, not a fresh animation** (§3.5): a control released midway
+    /// through its press animation reverses while carrying its velocity.
     fn retarget(&mut self) {
         self.bg.set_target(self.style.background_for(
             self.hovered,
@@ -280,9 +282,9 @@ impl SelectTrigger {
         self.open_t.set_target(if self.open { 1.0 } else { 0.0 });
     }
 
-    /// Majukan seluruh spring satu frame; benar bila ada yang bergeser.
+    /// Advance every spring by one frame; true if anything moved.
     ///
-    /// Dipanggil [`crate::motion::advance`], satu tempat untuk seluruh pohon.
+    /// Called by [`crate::motion::advance`], one place for the whole tree.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let mut bergeser = false;
         let bg0 = self.bg.position();
@@ -299,29 +301,29 @@ impl SelectTrigger {
         bergeser
     }
 
-    /// Selesaikan seluruh gerakan seketika (uji, snapshot, reduced-motion).
+    /// Settle every motion instantly (tests, snapshots, reduced-motion).
     pub fn settle(&mut self) {
         self.bg.settle();
         self.ring_t.settle();
         self.open_t.settle();
     }
 
-    /// Kirim satu niat ke aplikasi.
+    /// Send one intent to the application.
     ///
-    /// Handler-nya **disalin keluar dulu**: ia hampir selalu menulis signal, dan
-    /// tulisan signal boleh memicu apa saja — yang tidak boleh adalah ia
-    /// berjalan sambil node ini masih dipinjam `&mut`.
+    /// The handler is **cloned out first**: it almost always writes a signal,
+    /// and a signal write may trigger anything — what it may not do is run
+    /// while this node is still borrowed `&mut`.
     fn kirim(&mut self, intent: SelectIntent) {
         if let Some(h) = self.on_intent.clone() {
             h.emit(intent);
         }
     }
 
-    /// Geser sorotan `delta` langkah, dijepit ke rentang yang sah.
+    /// Move the highlight `delta` steps, clamped to the valid range.
     ///
-    /// Sorotannya ikut disimpan di node, bukan hanya dikirim: dua tombol panah
-    /// yang datang sebelum frame berikutnya harus menghasilkan dua langkah,
-    /// bukan dua kali langkah yang sama.
+    /// The highlight is also kept on the node, not merely sent out: two arrow
+    /// keys arriving before the next frame must produce two steps, not the
+    /// same step twice.
     fn geser_sorotan(&mut self, delta: i32) {
         let n = self.options.len();
         if n == 0 {
@@ -341,11 +343,11 @@ impl SelectTrigger {
         self.kirim(SelectIntent::Highlight(index));
     }
 
-    /// Cari pilihan yang cocok dengan huruf yang baru diketik.
+    /// Find the option matching the letter just typed.
     ///
-    /// Aturannya sama dengan menu native: huruf berturut-turut menumpuk menjadi
-    /// satu awalan selama jedanya pendek, dan awalan yang tidak cocok jatuh
-    /// kembali ke satu huruf terakhir alih-alih diam saja.
+    /// The rules match native menus: consecutive letters pile up into one
+    /// prefix while the gaps stay short, and a prefix that matches nothing
+    /// falls back to the last letter alone instead of just sitting there.
     fn typeahead(&mut self, c: char, waktu: Duration) -> Option<usize> {
         if c.is_control() {
             return None;
@@ -366,7 +368,7 @@ impl SelectTrigger {
         None
     }
 
-    /// Kotak segitiga penunjuk dalam koordinat lokal.
+    /// The indicator triangle's rect in local coordinates.
     pub fn indicator_rect(&self, bounds: Rect) -> Rect {
         let w = self.style.indicator.max(0.0);
         let h = w * 0.5;
@@ -379,9 +381,9 @@ impl SelectTrigger {
     }
 }
 
-/// Indeks pilihan pertama yang diawali `awalan` (tanpa peduli besar-kecil).
+/// Index of the first option starting with `awalan` (case-insensitive).
 ///
-/// Fungsi murni, jadi typeahead bisa diuji tanpa satu pun event.
+/// A pure function, so typeahead can be tested without a single event.
 pub fn cari_awalan(options: &[String], awalan: &str) -> Option<usize> {
     if awalan.is_empty() {
         return None;
@@ -391,10 +393,10 @@ pub fn cari_awalan(options: &[String], awalan: &str) -> Option<usize> {
         .position(|o| o.to_lowercase().starts_with(awalan))
 }
 
-/// Lebar bilah ke-`i` segitiga penunjuk pada kemajuan buka `progress`.
+/// Width of bar `index` of the indicator triangle at open progress `progress`.
 ///
-/// Fungsi murni: pada `progress` 0 bilah teratas paling lebar (menunjuk ke
-/// bawah), pada 1 kebalikannya (menunjuk ke atas).
+/// A pure function: at `progress` 0 the topmost bar is the widest (pointing
+/// down), at 1 it is the other way round (pointing up).
 pub fn bar_width(width: f32, index: usize, progress: f32) -> f32 {
     let t = if BILAH > 1 {
         index as f32 / (BILAH - 1) as f32
@@ -422,8 +424,8 @@ impl RenderNode for SelectTrigger {
             (isi.width + insets.horizontal()).max(self.style.min_width),
             (isi.height + insets.vertical()).max(self.style.min_height),
         ));
-        // Label rata ke arah awal baris, dan tetap di tengah secara vertikal
-        // walau kotaknya dipaksa setinggi hit target HIG.
+        // The label aligns to the start of the line, and stays vertically
+        // centered even when the box is forced up to the HIG hit target height.
         let x = if self.rtl {
             (size.width - insets.right - isi.width).max(insets.left)
         } else {
@@ -447,8 +449,8 @@ impl RenderNode for SelectTrigger {
             ctx.shadowed(quad, self.style.shadows);
         }
 
-        // Cincin fokus digambar **di luar** kotak node supaya tidak menutupi
-        // label (kebiasaan AppKit), dan tumbuh lewat spring.
+        // The focus ring is drawn **outside** the node's box so it never covers
+        // the label (the AppKit habit), and it grows on a spring.
         let ring = self.ring_t.position().clamp(0.0, 1.0);
         let tebal = self.style.focus_ring_width * ring;
         if tebal > 0.0 && self.style.focus_ring.a > 0.0 {
@@ -469,7 +471,8 @@ impl RenderNode for SelectTrigger {
 
         ctx.paint_children();
 
-        // Segitiga penunjuk: membalik arah lewat spring saat popup buka/tutup.
+        // Indicator triangle: flips direction on a spring as the popup
+        // opens/closes.
         let kotak = self.indicator_rect(bounds);
         let warna = self.style.indicator_color;
         if warna.a > 0.0 && kotak.size.width > 0.0 {
@@ -492,13 +495,13 @@ impl RenderNode for SelectTrigger {
         }
     }
 
-    /// Peran `Button` dengan nilai = pilihan sekarang.
+    /// Role `Button`, with value = the current option.
     ///
-    /// Inilah pemetaan pop-up button macOS (`AXPopUpButton` = tombol yang punya
-    /// menu): namanya dibacakan sekali dari sini, nilainya adalah teks pilihan
-    /// yang tampil, dan aksi `Expand`/`Collapse` mengumumkan bahwa ia punya
-    /// daftar yang bisa dibuka — kosakata yang sudah disediakan
-    /// [`AccessActions`] justru untuk kasus ini.
+    /// This is the macOS pop-up button mapping (`AXPopUpButton` = a button that
+    /// owns a menu): its name is announced once from here, its value is the
+    /// option text on screen, and the `Expand`/`Collapse` actions announce that
+    /// it has a list that can be opened — exactly the case the vocabulary in
+    /// [`AccessActions`] was provided for.
     fn access(&self, node: &mut AccessNode) {
         node.role = AccessRole::Button;
         node.label.clone_from(&self.label);
@@ -519,8 +522,8 @@ impl RenderNode for SelectTrigger {
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Kontrol mati tetap **menyerap** penunjuk: kliknya tidak boleh menembus
-        // ke konten di belakangnya.
+        // A disabled control still **absorbs** the pointer: its click must not
+        // fall through to the content behind it.
         HitBehavior::Opaque
     }
 
@@ -549,8 +552,8 @@ impl RenderNode for SelectTrigger {
         match event {
             Event::Pointer(p) => match p.phase {
                 PointerPhase::Enter => self.hovered = true,
-                // Sengaja tidak membatalkan `pressed`: penunjuk yang ditangkap
-                // boleh keluar-masuk selama tombol ditahan.
+                // Deliberately does not cancel `pressed`: a captured pointer is
+                // free to wander out and back while the button is held.
                 PointerPhase::Leave => self.hovered = false,
                 PointerPhase::Down if p.button == Some(PointerButton::Primary) => {
                     self.pressed = true;
@@ -565,15 +568,15 @@ impl RenderNode for SelectTrigger {
                     ctx.release_pointer();
                     ctx.handled();
                     if aktif {
-                        // Retarget dulu, baru kirim: handler boleh membangun
-                        // ulang node ini seketika.
+                        // Retarget first, then send: the handler is free to
+                        // rebuild this node right away.
                         self.retarget();
                         let niat = if self.open {
                             SelectIntent::Close
                         } else {
-                            // Kotak global pemicu = jangkar popup. Node tidak
-                            // pernah tahu posisinya sendiri di dalam layout,
-                            // tapi lapisan input memang tahu (`EventCtx`).
+                            // The trigger's global rect = the popup's anchor.
+                            // A node never knows its own position within the
+                            // layout, but the input layer does (`EventCtx`).
                             SelectIntent::Open(ctx.bounds())
                         };
                         self.kirim(niat);
@@ -632,8 +635,8 @@ impl RenderNode for SelectTrigger {
                             if self.open {
                                 self.sorot(i);
                             } else {
-                                // Menu tertutup: mengetik langsung memilih,
-                                // persis pop-up button macOS.
+                                // Menu closed: typing selects outright, just
+                                // like a macOS pop-up button.
                                 self.highlight = i;
                                 self.kirim(SelectIntent::Commit(i));
                             }
@@ -656,8 +659,8 @@ impl RenderNode for SelectTrigger {
         if (self.hovered, self.pressed, self.focused) != sebelum {
             self.retarget();
             ctx.request_paint();
-            // Tanpa ini frame berikutnya tidak akan pernah datang dan spring
-            // membeku di tempat (§3.5 "render hanya saat dirty").
+            // Without this the next frame never arrives and the springs freeze
+            // where they stand (§3.5 "render only when dirty").
             ctx.request_animation();
         }
     }
@@ -678,28 +681,28 @@ impl core::fmt::Debug for SelectTrigger {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props pemicu select — bentuk view dari [`SelectTrigger`].
+/// Select trigger props — the view form of [`SelectTrigger`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SelectTriggerProps {
-    /// Nilai gambar, sudah diresolusi dari token.
+    /// Drawing values, already resolved from tokens.
     pub style: SelectTriggerStyle,
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub label: Option<String>,
-    /// Nilai yang dibacakan screen reader (teks pilihan sekarang).
+    /// The value a screen reader announces (the current option's text).
     pub value: Option<String>,
-    /// Daftar pilihan — dipakai typeahead di dalam node.
+    /// The list of options — used by typeahead inside the node.
     pub options: Rc<Vec<String>>,
-    /// Popup sedang terbuka.
+    /// The popup is open.
     pub open: bool,
-    /// Indeks yang sedang disorot.
+    /// The index currently highlighted.
     pub highlight: usize,
-    /// Tidak bisa dipakai.
+    /// Unusable.
     pub disabled: bool,
-    /// Peran dalam navigasi fokus.
+    /// Its role in focus navigation.
     pub focus: FocusPolicy,
-    /// Spring yang menjalankan transisi state.
+    /// The spring that drives state transitions.
     pub spring: Spring,
-    /// Ke mana niat pengguna dikirim.
+    /// Where the user's intent is sent.
     pub on_intent: Option<SelectHandler>,
 }
 
@@ -725,14 +728,15 @@ impl ViewNode for SelectTriggerProps {
         if n.disabled != self.disabled {
             n.disabled = self.disabled;
             if self.disabled {
-                // Kontrol yang baru saja dimatikan tidak boleh membeku dalam
-                // keadaan ditekan/hover — penunjuknya tidak akan datang lagi.
+                // A control that was just disabled must not freeze in a
+                // pressed/hovered state — its pointer is never coming back.
                 n.pressed = false;
                 n.hovered = false;
             }
         }
         if keadaan_berubah {
-            // Warna baru **dituju**, bukan dilompati: ganti theme pun lewat spring.
+            // New colors are **approached**, not jumped to: even a theme swap
+            // travels on a spring.
             n.retarget();
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
@@ -755,12 +759,13 @@ impl ViewNode for SelectTriggerProps {
             dirty |= Dirty::PAINT;
         }
         if n.bg.spring() != self.spring {
-            // Ganti preset spring tanpa mengganggu gerakan yang sedang berjalan.
+            // Swap the spring preset without disturbing motion already in
+            // flight.
             n.bg.set_spring(self.spring);
             n.open_t.set_spring(self.spring);
         }
-        // Handler selalu diganti tanpa dibandingkan: closure dibangun ulang tiap
-        // rebuild dan **menangkap nilai baru**.
+        // The handler is always replaced without comparison: the closure is
+        // rebuilt on every rebuild and **captures fresh values**.
         n.on_intent.clone_from(&self.on_intent);
         dirty
     }

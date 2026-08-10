@@ -1,15 +1,15 @@
-//! Resolusi token → nilai konkret untuk `tabs` (§2.6, §2.7).
+//! Token resolution → concrete values for `tabs` (§2.6, §2.7).
 //!
-//! Ini satu-satunya berkas komponen ini yang boleh menyebut [`Theme`]. Node
-//! render di [`super::list`] dan [`super::item`] hanya menerima
-//! [`TabsStyle`] yang **sudah** berisi warna, radius, dan jarak yang jadi —
-//! aturan yang sama seperti [`silka_core::tree::Decoration`]: mesin tidak
-//! punya pendapat tentang warna, jadi preset Cupertino/Tailwind berganti tanpa
-//! satu baris pun berubah di kode node.
+//! This is the only file in this component allowed to mention [`Theme`]. The
+//! render nodes in [`super::list`] and [`super::item`] only ever receive a
+//! [`TabsStyle`] that **already** holds finished colors, radii, and spacing —
+//! the same rule as [`silka_core::tree::Decoration`]: the engine has no opinion
+//! about color, so the Cupertino/Tailwind presets swap without a single line
+//! changing in the node code.
 //!
-//! Geometri sudut ikut sebagai **parameter** (squircle di Cupertino, arc di
-//! Tailwind) — bukan konstanta, karena bentuk itu mengalir sampai ke shader
-//! *dan* ke hit-testing (§2.7, §3.6).
+//! Corner geometry comes along as a **parameter** (squircle on Cupertino, arc
+//! on Tailwind) — not a constant, because that shape flows all the way into the
+//! shader *and* into hit-testing (§2.7, §3.6).
 
 use silka_core::tree::{Decoration, FocusRing};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Rect, ShadowPair};
@@ -17,34 +17,34 @@ use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 
-/// Varian visual deretan tab (`KOMPONEN.md` Tier 3: segmented/underline/
+/// Visual variant of a tab row (`KOMPONEN.md` Tier 3: segmented/underline/
 /// enclosed).
 ///
-/// Ketiganya berbagi **satu** mesin: yang berbeda hanya nilai token yang
-/// diresolusi di sini dan bentuk kotak indikatornya
-/// ([`TabsStyle::indicator_rect`]). Tidak ada satu pun dari mereka yang punya
-/// jalur layout atau input sendiri.
+/// All three share **one** engine: the only differences are the token values
+/// resolved here and the shape of the indicator rect
+/// ([`TabsStyle::indicator_rect`]). Not one of them has a layout or input path
+/// of its own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TabsVariant {
-    /// Thumb geser di dalam sebuah "sumur" — `NSSegmentedControl`/
-    /// `UISegmentedControl`. Segmen berlebar sama.
+    /// A thumb sliding inside a "well" — `NSSegmentedControl`/
+    /// `UISegmentedControl`. Equal-width segments.
     #[default]
     Segmented,
-    /// Garis tebal di bawah tab aktif — gaya shadcn/ui dan toolbar web.
+    /// A thick bar under the active tab — the shadcn/ui and web-toolbar style.
     Underline,
-    /// Tab berbentuk map/folder yang menyatu dengan panel di bawahnya.
+    /// Folder-shaped tabs that merge into the panel below them.
     Enclosed,
 }
 
 impl TabsVariant {
-    /// Ketiga varian — dipakai gallery dan uji lintas-varian.
+    /// All three variants — used by the gallery and cross-variant tests.
     pub const ALL: [TabsVariant; 3] = [
         TabsVariant::Segmented,
         TabsVariant::Underline,
         TabsVariant::Enclosed,
     ];
 
-    /// Nama pendek untuk CLI/gallery/debug.
+    /// Short name for CLI/gallery/debug output.
     pub const fn name(self) -> &'static str {
         match self {
             TabsVariant::Segmented => "segmented",
@@ -54,69 +54,70 @@ impl TabsVariant {
     }
 }
 
-/// Seluruh nilai visual `tabs`, **sudah diresolusi** dari token theme.
+/// Every visual value for `tabs`, **already resolved** from the theme tokens.
 ///
-/// Dipisah dari builder supaya bisa diuji tanpa render tree sama sekali:
-/// pertanyaan "apakah indikator underline benar-benar menempel di tepi bawah
-/// tab yang dipilih" tidak butuh GPU, tidak butuh window, dan tidak butuh
-/// pohon — hanya [`TabsStyle::indicator_rect`].
+/// Split out from the builder so it can be tested without a render tree at all:
+/// the question "does the underline indicator really sit flush against the
+/// bottom edge of the selected tab" needs no GPU, no window, and no tree —
+/// only [`TabsStyle::indicator_rect`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TabsStyle {
-    /// Varian yang menentukan bentuk indikator.
+    /// The variant that determines the indicator's shape.
     pub variant: TabsVariant,
 
-    /// Latar seluruh deretan (sumur segmented; kosong untuk varian lain).
+    /// Background of the whole row (the segmented well; empty for the others).
     pub track: Decoration,
-    /// Garis rambut selebar deretan di tepi bawah (underline & enclosed).
+    /// Hairline spanning the row along its bottom edge (underline & enclosed).
     pub rail: Option<Color>,
-    /// Tebal garis rambut itu, poin logis.
+    /// Thickness of that hairline, in logical points.
     pub rail_thickness: f32,
 
-    /// Latar, border, sudut, dan bayangan indikator yang bergerak.
+    /// Background, border, corners, and shadows of the moving indicator.
     pub indicator: Decoration,
-    /// Jarak indikator dari tepi kotak tab yang sedang dipilih.
+    /// Inset of the indicator from the edges of the selected tab's rect.
     pub indicator_inset: Insets,
-    /// Tebal indikator untuk varian [`TabsVariant::Underline`].
+    /// Indicator thickness for the [`TabsVariant::Underline`] variant.
     pub indicator_thickness: f32,
 
-    /// Cincin fokus keyboard (token `focus_ring`).
+    /// Keyboard focus ring (token `focus_ring`).
     pub focus_ring: FocusRing,
 
-    /// Jarak di dalam tepi deretan.
+    /// Padding inside the row's edges.
     pub padding: Insets,
-    /// Jarak antar tab.
+    /// Gap between tabs.
     pub spacing: f32,
-    /// Tinggi minimum satu tab — hit target HIG (`KOMPONEN.md` DoD).
+    /// Minimum height of one tab — the HIG hit target (`KOMPONEN.md` DoD).
     pub min_height: f32,
-    /// Semua tab selebar yang terlebar (rasa `NSSegmentedControl`).
+    /// Every tab as wide as the widest one (the `NSSegmentedControl` feel).
     pub equal_widths: bool,
 
-    /// Bentuk sudut satu tab: dipakai sorotan hover **dan** hit-testing (§3.6).
+    /// Corner shape of one tab: used by the hover highlight **and** hit-testing
+    /// (§3.6).
     pub tab_corners: Corners,
-    /// Jarak di dalam tepi satu tab.
+    /// Padding inside one tab's edges.
     pub tab_padding: Insets,
 
-    /// Sorotan saat penunjuk di atas sebuah tab.
+    /// Highlight while the pointer is over a tab.
     pub hover: Color,
-    /// Sorotan saat tab ditekan.
+    /// Highlight while a tab is pressed.
     pub pressed: Color,
 
-    /// Warna label tab yang tidak dipilih.
+    /// Label color of an unselected tab.
     pub label: Color,
-    /// Warna label tab yang sedang dipilih.
+    /// Label color of the selected tab.
     pub selected_label: Color,
-    /// Warna label tab yang dimatikan.
+    /// Label color of a disabled tab.
     pub disabled_label: Color,
-    /// Ukuran font label, poin logis.
+    /// Label font size, in logical points.
     pub label_size: f32,
 }
 
 impl TabsStyle {
-    /// Resolusi seluruh token untuk sebuah varian.
+    /// Resolve every token for a given variant.
     ///
-    /// Tidak ada satu angka warna pun yang lahir di sini: semuanya turunan
-    /// [`Theme`], sehingga kedua preset otomatis benar dan dark mode ikut
-    /// tanpa cabang `if`.
+    /// Not a single color value originates here: everything derives from
+    /// [`Theme`], so both presets are automatically correct and dark mode
+    /// follows without an `if` branch.
     pub fn from_theme(theme: &Theme, variant: TabsVariant) -> Self {
         let rambut = theme.space(0.25);
         let dasar = Self {
@@ -187,11 +188,11 @@ impl TabsStyle {
         }
     }
 
-    /// Kotak indikator untuk tab yang kotaknya `tab` (koordinat lokal deretan).
+    /// Indicator rect for the tab occupying `tab` (row-local coordinates).
     ///
-    /// Inilah satu-satunya tempat ketiga varian berbeda secara geometri —
-    /// dan karena ia fungsi murni, seluruh perbedaan itu bisa diuji tanpa
-    /// menyentuh render tree.
+    /// This is the one place where the three variants differ geometrically —
+    /// and because it is a pure function, all of that difference can be tested
+    /// without touching a render tree.
     pub fn indicator_rect(&self, tab: Rect) -> Rect {
         let kotak = tab.deflate(self.indicator_inset);
         match self.variant {
@@ -208,12 +209,12 @@ impl TabsStyle {
         }
     }
 
-    /// Benar bila indikator menyumbang piksel sama sekali.
+    /// True when the indicator contributes any pixels at all.
     pub fn indicator_is_visible(&self) -> bool {
         self.indicator.is_visible()
     }
 
-    /// Bayangan indikator (kosong untuk varian tanpa elevasi).
+    /// The indicator's shadows (empty for variants without elevation).
     pub fn indicator_shadows(&self) -> ShadowPair {
         self.indicator.shadows
     }

@@ -1,4 +1,4 @@
-//! `dialog()` dan `alert()` — komponen Tier 4 pertama (`KOMPONEN.md`).
+//! `dialog()` and `alert()` — the first Tier 4 components (`KOMPONEN.md`).
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -19,53 +19,55 @@
 //! );
 //! ```
 //!
-//! Catatan khusus `KOMPONEN.md` untuk komponen ini ada dua, dan keduanya
-//! dijawab di berkas ini:
+//! `KOMPONEN.md` raises two specific notes for this component, and both are
+//! answered in this file:
 //!
-//! 1. **"Modal dengan backdrop dim"** — bukan node baru: dialog adalah preset
-//!    di atas [`crate::overlay`], yang memang dibangun sekali untuk sepuluh
-//!    komponen (aturan pengerjaan #3). Yang dipilih di sini hanyalah
-//!    [`Barrier::Modal`], [`Placement::center`], dan backdrop token `scrim`;
-//!    geometri, dismiss, perangkap fokus, dan transisi spring-nya sudah ada.
-//! 2. **"Tombol default/cancel mengikuti konvensi per-OS"** — [`ButtonOrder`].
-//!    Aksi ditulis aplikasi dalam urutan **makna** (konfirmasi, batal, lainnya)
-//!    dan susunan visualnya ditentukan platform: di macOS dan GNOME tombol
-//!    default berada paling kanan dengan Batal di kirinya, di Windows justru
-//!    sebaliknya. Aplikasi tidak pernah menulis `#[cfg(target_os)]` untuk ini.
+//! 1. **"Modal with a dimmed backdrop"** — not a new node: a dialog is a preset
+//!    on top of [`crate::overlay`], which was built once to serve ten
+//!    components (working rule #3). All that is picked here is
+//!    [`Barrier::Modal`], [`Placement::center`], and the `scrim` backdrop
+//!    token; geometry, dismissal, focus trapping, and the spring transition
+//!    already exist.
+//! 2. **"Default/cancel buttons follow the per-OS convention"** —
+//!    [`ButtonOrder`]. The app writes its actions in order of **meaning**
+//!    (confirm, cancel, other) and the platform decides their visual order: on
+//!    macOS and GNOME the default button sits farthest right with Cancel to its
+//!    left, on Windows it is exactly the other way around. An app never writes
+//!    `#[cfg(target_os)]` for this.
 //!
-//! Definition of Done (`KOMPONEN.md`) yang dipenuhi:
+//! Definition of Done (`KOMPONEN.md`) satisfied here:
 //!
-//! - **Kedua preset** lewat token semantik — tidak ada satu pun angka warna,
-//!   radius, atau jarak yang lahir di sini.
-//! - **Transisi spring yang bisa di-retarget**: dialog yang ditutup di tengah
-//!   animasi buka berbalik arah membawa kecepatannya ([`crate::overlay`] §3.5).
-//! - **Keyboard penuh + focus ring**: Tab terperangkap di dalam panel (modal =
-//!   focus scope), Space mengaktifkan kontrol yang terfokus, dan **Esc**
-//!   menjalankan aksi batal.
+//! - **Both presets** via semantic tokens — not a single color, radius, or
+//!   spacing number is born in this file.
+//! - **A retargetable spring transition**: a dialog dismissed mid-open reverses
+//!   direction carrying its velocity ([`crate::overlay`] §3.5).
+//! - **Full keyboard + focus ring**: Tab is trapped inside the panel (modal =
+//!   focus scope), Space activates the focused control, and **Esc** runs the
+//!   cancel action.
 //!
-//!   Aturan **Return** ditulis di sini apa adanya karena ia satu-satunya yang
-//!   punya dua kemungkinan jawaban: Return diberikan lebih dulu ke node yang
-//!   terfokus, jadi tombol yang sedang difokuskan menang atas tombol default
-//!   (perilaku shadcn/web). Begitu yang terfokus **tidak** menelan Return —
-//!   kolom teks di dalam [`DialogBuilder::content`], atau belum ada yang
-//!   terfokus sama sekali — Return menggelembung ke [`DialogPanel`] dan
-//!   menjalankan tombol default (perilaku HIG). Yang tidak pernah terjadi:
-//!   Return menjalankan aksi merusak.
-//! - **Node AccessKit**: panelnya beperan [`AccessRole::Dialog`] dengan judul
-//!   sebagai namanya, isinya dibacakan, dan konten di belakang benar-benar
-//!   inert.
-//! - **Dark mode**, **hit target ≥ 44pt** (tombolnya [`crate::button`]), dan
-//!   **reduced-motion** (transisinya [`silka_core::animation::MotionRole`]
-//!   `Essential`: pantulan dibuang, gerakan yang menjelaskan dipertahankan).
+//!   The **Return** rule is spelled out here because it is the only one with
+//!   two plausible answers: Return is offered to the focused node first, so a
+//!   focused button wins over the default button (shadcn/web behavior). As soon
+//!   as the focused node does **not** swallow Return — a text field inside
+//!   [`DialogBuilder::content`], or nothing focused at all — Return bubbles up
+//!   to [`DialogPanel`] and runs the default button (HIG behavior). What never
+//!   happens: Return running a destructive action.
+//! - **AccessKit nodes**: the panel takes the [`AccessRole::Dialog`] role with
+//!   the title as its name, its contents are announced, and the content behind
+//!   it is genuinely inert.
+//! - **Dark mode**, **hit target ≥ 44pt** (the buttons are [`crate::button`]),
+//!   and **reduced-motion** (the transition is
+//!   [`silka_core::animation::MotionRole`] `Essential`: the bounce is dropped,
+//!   the motion that explains the change is kept).
 //!
-//! ## Enter tanpa fokus
+//! ## Enter with nothing focused
 //!
-//! Jalur normal Return adalah menggelembung dari node terfokus ke atas dan
-//! melewati [`DialogPanel`]. Tapi bila belum ada satu pun yang terfokus, event
-//! tombol hanya sampai ke akar pohon — persis lubang yang sama yang ditambal
-//! [`crate::overlay::dismiss_topmost`] untuk Esc. [`activate_default`] adalah
-//! pasangannya untuk Return, dan shell memanggilnya dengan syarat yang sama:
-//! **hanya** saat router menjawab tidak ada yang menangani.
+//! Return's normal path is to bubble up from the focused node and pass through
+//! [`DialogPanel`]. But when nothing is focused yet, a key event only reaches
+//! the root of the tree — exactly the same hole that
+//! [`crate::overlay::dismiss_topmost`] patches for Esc. [`activate_default`] is
+//! its counterpart for Return, and the shell calls it under the same condition:
+//! **only** when the router reports that nothing handled the event.
 
 use silka_core::access::{AccessNode, AccessRole};
 use silka_core::animation::Spring;
@@ -86,52 +88,54 @@ use crate::fonts::Fonts;
 use crate::overlay::{overlay, Barrier, Dismiss, OverlayBuilder, OverlayEntry, Placement};
 use crate::text::{text, Text};
 
-/// Lebar panel dialog dalam **langkah skala spacing** (§2.6).
+/// Dialog panel width in **spacing scale steps** (§2.6).
 ///
-/// 90 × 4pt = 360pt: di antara `NSAlert` (260pt, terlalu sempit untuk teks
-/// penjelas) dan `Dialog` shadcn (512pt, terlalu lebar untuk sebuah alert).
-/// Angka ini tetap sebuah kelipatan skala, bukan lebar bebas.
+/// 90 × 4pt = 360pt: between `NSAlert` (260pt, too narrow for explanatory
+/// text) and shadcn's `Dialog` (512pt, too wide for an alert). The number is
+/// still a multiple of the scale, not an arbitrary width.
 pub const DIALOG_WIDTH_STEPS: f32 = 90.0;
 
 // ---------------------------------------------------------------------------
-// Urutan tombol
+// Button order
 // ---------------------------------------------------------------------------
 
-/// Susunan tombol dialog — satu-satunya hal di komponen ini yang benar-benar
-/// berbeda antar sistem operasi.
+/// Dialog button order — the only thing in this component that genuinely
+/// differs between operating systems.
 ///
-/// | Platform | Susunan (kiri → kanan) |
+/// | Platform | Order (left → right) |
 /// |---|---|
-/// | macOS (HIG), GNOME | `[lainnya…] [Batal] [Default]` |
-/// | Windows | `[Default] [Batal] [lainnya…]` |
+/// | macOS (HIG), GNOME | `[other…] [Cancel] [Default]` |
+/// | Windows | `[Default] [Cancel] [other…]` |
 ///
-/// Aplikasi menulis aksinya dalam urutan **makna**, bukan urutan piksel;
-/// [`ButtonOrder::Platform`] yang menerjemahkannya. Di antarmuka RTL barisnya
-/// ikut tercermin dengan sendirinya karena [`row`] mengikuti arah baca (§9.8).
+/// The app writes its actions in order of **meaning**, not in pixel order;
+/// [`ButtonOrder::Platform`] translates between the two. In an RTL interface
+/// the row mirrors itself, because [`row`] follows the reading direction
+/// (§9.8).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ButtonOrder {
-    /// Ikuti konvensi OS tempat aplikasi ini dikompilasi ([`ButtonOrder::PLATFORM`]).
+    /// Follow the convention of the OS this app is compiled for
+    /// ([`ButtonOrder::PLATFORM`]).
     #[default]
     Platform,
-    /// Tombol default paling akhir (macOS, GNOME).
+    /// Default button last (macOS, GNOME).
     ConfirmLast,
-    /// Tombol default paling awal (Windows).
+    /// Default button first (Windows).
     ConfirmFirst,
 }
 
 impl ButtonOrder {
-    /// Konvensi OS target build ini.
+    /// The convention of this build's target OS.
     ///
-    /// Ditentukan saat kompilasi, bukan saat jalan: tidak ada aplikasi yang
-    /// perlu menanyakan sistem operasinya sendiri hanya untuk menyusun dua
-    /// tombol.
+    /// Decided at compile time, not at run time: no app should have to ask its
+    /// own operating system anything just to lay out two buttons.
     pub const PLATFORM: ButtonOrder = if cfg!(target_os = "windows") {
         ButtonOrder::ConfirmFirst
     } else {
         ButtonOrder::ConfirmLast
     };
 
-    /// Susunan konkret — [`ButtonOrder::Platform`] diganti [`ButtonOrder::PLATFORM`].
+    /// The concrete order — [`ButtonOrder::Platform`] resolves to
+    /// [`ButtonOrder::PLATFORM`].
     pub fn resolved(self) -> Self {
         match self {
             ButtonOrder::Platform => ButtonOrder::PLATFORM,
@@ -139,11 +143,12 @@ impl ButtonOrder {
         }
     }
 
-    /// Susun ulang `actions` menjadi urutan visual.
+    /// Rearrange `actions` into their visual order.
     ///
-    /// Fungsi murni, dan sengaja: inilah satu-satunya bagian "konvensi per-OS"
-    /// yang punya jawaban benar/salah, jadi ia harus bisa diuji tanpa pohon,
-    /// tanpa GPU, dan untuk **kedua** platform sekaligus (§9.5).
+    /// A pure function, deliberately: this is the one part of the "per-OS
+    /// convention" that has a right and a wrong answer, so it must be testable
+    /// without a tree, without a GPU, and for **both** platforms at once
+    /// (§9.5).
     ///
     /// ```
     /// use silka_widgets::dialog::{action, ButtonOrder};
@@ -156,12 +161,12 @@ impl ButtonOrder {
     /// assert_eq!(nama, ["Batal", "Simpan"]);
     /// ```
     pub fn arrange(self, actions: Vec<DialogAction>) -> Vec<DialogAction> {
-        // Satu aturan, bukan dua: pisahkan jadi tiga kelompok peran, lalu
-        // rangkai kelompoknya sesuai konvensi. Yang bertukar tempat adalah
-        // **kelompok**, bukan tombol satu per satu — urutan yang ditulis
-        // aplikasi di dalam sebuah kelompok tetap urutan bacanya, di kedua
-        // platform. (Membalik seluruh vektor akan ikut menukar dua tombol
-        // "lainnya" yang seharusnya tetap berdampingan sesuai penulisan.)
+        // One rule, not two: split into three role groups, then concatenate
+        // the groups per the convention. What swaps places is the **group**,
+        // not individual buttons — the order the app wrote within a group
+        // stays its reading order on both platforms. (Reversing the whole
+        // vector would also swap two "other" buttons that should stay
+        // side by side in the order they were written.)
         let mut lainnya: Vec<DialogAction> = Vec::new();
         let mut batal: Vec<DialogAction> = Vec::new();
         let mut utama: Vec<DialogAction> = Vec::new();
@@ -176,12 +181,12 @@ impl ButtonOrder {
         let mut out: Vec<DialogAction> =
             Vec::with_capacity(lainnya.len() + batal.len() + utama.len());
         if self.resolved() == ButtonOrder::ConfirmFirst {
-            // Windows: `[Default] [Batal] [lainnya…]`.
+            // Windows: `[Default] [Cancel] [other…]`.
             out.append(&mut utama);
             out.append(&mut batal);
             out.append(&mut lainnya);
         } else {
-            // macOS/GNOME: `[lainnya…] [Batal] [Default]`.
+            // macOS/GNOME: `[other…] [Cancel] [Default]`.
             out.append(&mut lainnya);
             out.append(&mut batal);
             out.append(&mut utama);
@@ -191,29 +196,29 @@ impl ButtonOrder {
 }
 
 // ---------------------------------------------------------------------------
-// Aksi
+// Actions
 // ---------------------------------------------------------------------------
 
-/// Peran sebuah tombol dialog — menentukan posisi, varian visual, dan tombol
-/// keyboard yang menjalankannya.
+/// The role of a dialog button — decides its position, visual variant, and the
+/// key that runs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum ActionKind {
-    /// Aksi utama, dijalankan **Return** dari mana pun di dalam dialog.
+    /// The primary action, run by **Return** from anywhere inside the dialog.
     Confirm,
-    /// Batal: dijalankan **Esc**, dan (bila diizinkan) klik di luar panel.
+    /// Cancel: run by **Esc**, and (when allowed) by a click outside the panel.
     Cancel,
-    /// Aksi merusak (Hapus, Buang). Menempati posisi yang sama dengan
-    /// [`ActionKind::Confirm`] tapi **tidak pernah** menjadi tombol default —
-    /// HIG melarang aksi merusak dijalankan tanpa sengaja oleh Return.
+    /// A destructive action (Delete, Discard). Takes the same position as
+    /// [`ActionKind::Confirm`] but is **never** the default button — the HIG
+    /// forbids a destructive action being run accidentally by Return.
     Destructive,
-    /// Aksi tambahan tanpa peran khusus ("Jangan Simpan").
+    /// An extra action with no special role ("Don't Save").
     #[default]
     Plain,
 }
 
-/// Satu tombol dialog.
+/// A single dialog button.
 ///
-/// Ditulis gaya Dart (§2.5): [`action`] lalu method chaining.
+/// Written Dart-style (§2.5): [`action`] followed by method chaining.
 #[derive(Debug, Clone)]
 pub struct DialogAction {
     label: String,
@@ -222,7 +227,7 @@ pub struct DialogAction {
     disabled: bool,
 }
 
-/// Tombol dialog berlabel `label`, tanpa peran khusus.
+/// A dialog button labeled `label`, with no special role.
 pub fn action(label: impl Into<String>) -> DialogAction {
     DialogAction {
         label: label.into(),
@@ -233,54 +238,54 @@ pub fn action(label: impl Into<String>) -> DialogAction {
 }
 
 impl DialogAction {
-    /// Jadikan aksi utama (tombol default; dijalankan Return).
+    /// Make this the primary action (the default button; run by Return).
     pub fn confirm(mut self) -> Self {
         self.kind = ActionKind::Confirm;
         self
     }
 
-    /// Jadikan aksi batal (dijalankan Esc).
+    /// Make this the cancel action (run by Esc).
     pub fn cancel(mut self) -> Self {
         self.kind = ActionKind::Cancel;
         self
     }
 
-    /// Jadikan aksi merusak.
+    /// Make this a destructive action.
     pub fn destructive(mut self) -> Self {
         self.kind = ActionKind::Destructive;
         self
     }
 
-    /// Apa yang dijalankan saat tombol ini diaktifkan.
+    /// What runs when this button is activated.
     pub fn on_press(mut self, f: impl Fn() + 'static) -> Self {
         self.on_press = Some(Callback::new(f));
         self
     }
 
-    /// Matikan tombol ini (tetap dibacakan sebagai dimmed).
+    /// Disable this button (still announced, as dimmed).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Nama tombol.
+    /// The button's name.
     pub fn label(&self) -> &str {
         &self.label
     }
 
-    /// Peran tombol.
+    /// The button's role.
     pub fn kind(&self) -> ActionKind {
         self.kind
     }
 
-    /// Benar bila tombol ini tidak bisa dipakai.
+    /// True when this button cannot be used.
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
 
-    /// Varian visual [`crate::button`] untuk peran ini.
+    /// The [`crate::button`] visual variant for this role.
     ///
-    /// Pemetaan, bukan pilihan warna: seluruh warnanya tetap milik token.
+    /// A mapping, not a color choice: every color still belongs to a token.
     pub fn variant(&self) -> ButtonVariant {
         match self.kind {
             ActionKind::Confirm => ButtonVariant::Primary,
@@ -289,34 +294,34 @@ impl DialogAction {
         }
     }
 
-    /// Callback aksi ini, bila ada.
+    /// This action's callback, if any.
     fn callback(&self) -> Option<Callback> {
         self.on_press.clone().filter(|_| !self.disabled)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Node panel
+// Panel node
 // ---------------------------------------------------------------------------
 
-/// Node panel dialog: **satu-satunya alasannya ada adalah tombol default**.
+/// The dialog panel node: **the default button is its only reason to exist**.
 ///
-/// Selain itu ia transparan — layout diteruskan apa adanya dan perannya
-/// struktural, karena nama dan peran dialog sudah diumumkan
-/// [`OverlayEntry`] di atasnya (satu dialog = satu nama, bukan dua).
+/// Beyond that it is transparent — layout is passed through untouched and its
+/// role is structural, because the dialog's name and role are already
+/// announced by the [`OverlayEntry`] above it (one dialog = one name, not two).
 pub struct DialogPanel {
-    /// Dialognya sedang terbuka (bukan sedang beranimasi keluar).
+    /// The dialog is open (not animating out).
     pub open: bool,
-    /// Aksi yang dijalankan Return.
+    /// The action Return runs.
     pub default_action: Option<Callback>,
 }
 
 impl DialogPanel {
-    /// Jalankan tombol default; benar bila memang ada yang dijalankan.
+    /// Run the default button; true when something actually ran.
     ///
-    /// Callback disalin keluar dulu — ia hampir selalu menulis signal, dan
-    /// tulisan signal boleh memicu apa saja; yang tidak boleh adalah ia
-    /// berjalan sambil node ini masih dipinjam `&mut` (pola yang sama dengan
+    /// The callback is cloned out first — it almost always writes a signal,
+    /// and a signal write may trigger anything; what it must not do is run
+    /// while this node is still borrowed `&mut` (the same pattern as
     /// [`silka_core::tree::Interactive`]).
     pub fn activate_default(&mut self) -> bool {
         if !self.open {
@@ -350,10 +355,10 @@ impl RenderNode for DialogPanel {
     }
 
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
-        // Return hanya ditandai handled kalau dialog ini memang punya tombol
-        // default: dialog tanpa aksi utama harus **membiarkan** Return
-        // menggelembung, bukan menelannya diam-diam (aturan yang sama dengan
-        // Esc di `OverlayEntry`).
+        // Return is only marked handled when this dialog actually has a
+        // default button: a dialog with no primary action must **let** Return
+        // bubble on, not swallow it silently (the same rule as Esc in
+        // `OverlayEntry`).
         let Event::Key(k) = event else { return };
         if !k.is_pressed() || !k.code.is(NamedKey::Enter) || !k.modifiers.is_empty() {
             return;
@@ -373,7 +378,7 @@ impl core::fmt::Debug for DialogPanel {
     }
 }
 
-/// Props [`DialogPanel`].
+/// [`DialogPanel`] props.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct DialogPanelProps {
     open: bool,
@@ -393,22 +398,23 @@ impl ViewNode for DialogPanelProps {
             .downcast_mut::<DialogPanel>()
             .expect("tipe view sama berarti tipe render node sama");
         n.open = self.open;
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (lihat `InteractiveProps`).
+        // The callback is always replaced without comparison: the closure is
+        // rebuilt on every rebuild and captures fresh values (see
+        // `InteractiveProps`).
         n.default_action.clone_from(&self.default_action);
         Dirty::NONE
     }
 }
 
 // ---------------------------------------------------------------------------
-// Jaring pengaman Return
+// Return safety net
 // ---------------------------------------------------------------------------
 
-/// Jalankan tombol default dialog paling atas; benar bila ada yang dijalankan.
+/// Run the topmost dialog's default button; true when something ran.
 ///
-/// Pasangan [`crate::overlay::dismiss_topmost`] untuk Return, dengan syarat
-/// pemakaian yang sama persis — shell memanggilnya **hanya** saat router
-/// menjawab tidak ada yang menangani:
+/// The counterpart of [`crate::overlay::dismiss_topmost`] for Return, with
+/// exactly the same usage condition — the shell calls it **only** when the
+/// router reports that nothing handled the event:
 ///
 /// ```
 /// # use silka_core::input::{Event, InputRouter, KeyEvent, KeyCode, NamedKey};
@@ -433,7 +439,7 @@ pub fn activate_default(tree: &mut RenderTree) -> bool {
         .is_some_and(DialogPanel::activate_default)
 }
 
-/// Panel dialog milik overlay terbuka yang paling atas.
+/// The dialog panel belonging to the topmost open overlay.
 fn panel_teratas(tree: &RenderTree) -> Option<NodeId> {
     crate::overlay::entries(tree)
         .into_iter()
@@ -458,10 +464,10 @@ fn cari_panel(tree: &RenderTree, akar: NodeId) -> Option<NodeId> {
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Dialog modal berjudul `title` — padanan `Dialog` shadcn.
+/// A modal dialog titled `title` — the equivalent of shadcn's `Dialog`.
 ///
-/// Bawaannya bisa ditutup dengan Esc **maupun** klik di luar panel; untuk
-/// alert yang tidak boleh hilang tak sengaja, pakai [`alert`].
+/// By default it can be dismissed with Esc **and** by clicking outside the
+/// panel; for an alert that must not disappear by accident, use [`alert`].
 pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
     DialogBuilder {
         fonts: fonts.clone(),
@@ -480,22 +486,22 @@ pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogB
     }
 }
 
-/// Alert modal — padanan `NSAlert`.
+/// A modal alert — the equivalent of `NSAlert`.
 ///
-/// Bedanya dengan [`dialog`] cuma satu, dan itu bukan soal tampilan: klik di
-/// luar panel **tidak** menutupnya. Sebuah alert menanyakan sesuatu yang harus
-/// dijawab; menghilangkannya karena kursor tergelincir adalah kehilangan data
-/// (perilaku yang sama dengan `NSAlert` dan `AlertDialog` shadcn).
+/// It differs from [`dialog`] in exactly one way, and it is not a visual one:
+/// clicking outside the panel does **not** dismiss it. An alert asks something
+/// that has to be answered; making it vanish because the cursor slipped means
+/// losing data (the same behavior as `NSAlert` and shadcn's `AlertDialog`).
 pub fn alert(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
     dialog(fonts, theme, title).dismiss(Dismiss::ESCAPE)
 }
 
-/// Builder dialog.
+/// The dialog builder.
 ///
-/// Menjadi [`OverlayBuilder`] saat dimasukkan ke
-/// [`crate::overlay_layer`], jadi dialog menumpang infrastruktur overlay yang
-/// sama dengan popover/tooltip/menu/toast — tidak ada geometri, dismiss, atau
-/// transisi yang dihitung ulang di sini.
+/// It becomes an [`OverlayBuilder`] when handed to [`crate::overlay_layer`],
+/// so a dialog rides on the same overlay infrastructure as
+/// popover/tooltip/menu/toast — no geometry, dismissal, or transition is
+/// recomputed here.
 pub struct DialogBuilder {
     fonts: Fonts,
     theme: Theme,
@@ -513,106 +519,109 @@ pub struct DialogBuilder {
 }
 
 impl DialogBuilder {
-    /// Isi tambahan di antara pesan dan barisan tombol — form, daftar pilihan,
-    /// atau apa pun.
+    /// Extra content between the message and the button row — a form, a list
+    /// of choices, or anything else.
     ///
-    /// Di sinilah aturan Return jadi terasa: selama fokus berada di sebuah
-    /// kontrol yang **tidak** menelan Return (kolom teks satu baris, misalnya),
-    /// Return tetap menjalankan tombol default dialog.
+    /// This is where the Return rule becomes visible: as long as focus sits on
+    /// a control that does **not** swallow Return (a single-line text field,
+    /// say), Return still runs the dialog's default button.
     pub fn content(mut self, content: impl Into<View>) -> Self {
         self.content = Some(content.into());
         self
     }
 
-    /// Kunci identitas — wajib bila dialognya datang dari daftar dinamis (§2.5).
+    /// Identity key — required when the dialog comes from a dynamic list
+    /// (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Terbuka atau tertutup. Perubahannya **memicu transisi**, bukan lompatan.
+    /// Open or closed. Changing it **triggers a transition**, not a jump.
     pub fn open(mut self, open: bool) -> Self {
         self.open = open;
         self
     }
 
-    /// Teks penjelas di bawah judul.
+    /// Explanatory text below the title.
     pub fn message(mut self, message: impl Into<String>) -> Self {
         self.message = Some(message.into());
         self
     }
 
-    /// Tambahkan satu tombol.
+    /// Add a single button.
     pub fn action(mut self, action: DialogAction) -> Self {
         self.actions.push(action);
         self
     }
 
-    /// Tambahkan beberapa tombol sekaligus.
+    /// Add several buttons at once.
     pub fn actions(mut self, actions: impl IntoIterator<Item = DialogAction>) -> Self {
         self.actions.extend(actions);
         self
     }
 
-    /// Tambahkan tombol default (dijalankan Return).
+    /// Add the default button (run by Return).
     pub fn confirm(self, label: impl Into<String>, f: impl Fn() + 'static) -> Self {
         self.action(action(label).confirm().on_press(f))
     }
 
-    /// Tambahkan tombol batal (dijalankan Esc, dan klik di luar bila diizinkan).
+    /// Add the cancel button (run by Esc, and by an outside click when
+    /// allowed).
     pub fn cancel(self, label: impl Into<String>, f: impl Fn() + 'static) -> Self {
         self.action(action(label).cancel().on_press(f))
     }
 
-    /// Tambahkan tombol merusak — **tidak** menjadi tombol default (HIG).
+    /// Add a destructive button — it is **not** the default button (HIG).
     pub fn destructive(self, label: impl Into<String>, f: impl Fn() + 'static) -> Self {
         self.action(action(label).destructive().on_press(f))
     }
 
-    /// Paksa susunan tombol alih-alih mengikuti konvensi OS.
+    /// Force a button order instead of following the OS convention.
     ///
-    /// Untuk gallery dan uji lintas-platform; aplikasi biasa tidak memakainya.
+    /// For the gallery and cross-platform tests; ordinary apps do not use it.
     pub fn order(mut self, order: ButtonOrder) -> Self {
         self.order = order;
         self
     }
 
-    /// Lebar panel dalam poin logis — **selalu** turunan skala spacing (§2.6).
+    /// Panel width in logical points — **always** derived from the spacing
+    /// scale (§2.6).
     ///
-    /// Nilainya tetap dibatasi ruang yang tersedia: di window sempit panel ikut
-    /// menyempit, tidak pernah menonjol keluar layar.
+    /// The value is still clamped to the available space: in a narrow window
+    /// the panel narrows with it, never sticking out past the screen.
     pub fn width(mut self, width: f32) -> Self {
         self.width = width.max(0.0);
         self
     }
 
-    /// Cara-cara yang diizinkan untuk menutup.
+    /// The ways this dialog is allowed to be dismissed.
     pub fn dismiss(mut self, dismiss: Dismiss) -> Self {
         self.dismiss = dismiss;
         self
     }
 
-    /// Apa yang dijalankan saat dialog ditutup pengguna (Esc/klik luar).
+    /// What runs when the user dismisses the dialog (Esc/outside click).
     ///
-    /// Tanpa ini, yang dijalankan adalah aksi [`ActionKind::Cancel`] — sehingga
-    /// "Esc = Batal" benar dengan sendirinya dan tidak perlu ditulis dua kali.
+    /// Without this, the [`ActionKind::Cancel`] action runs instead — so
+    /// "Esc = Cancel" holds by itself and never has to be written twice.
     pub fn on_dismiss(mut self, f: impl Fn() + 'static) -> Self {
         self.on_dismiss = Some(Callback::new(f));
         self
     }
 
-    /// Spring yang menjalankan transisinya (`smooth`/`snappy`/`bouncy`).
+    /// The spring that drives its transition (`smooth`/`snappy`/`bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Tombol-tombol dalam urutan visual yang berlaku.
+    /// The buttons in the visual order that applies here.
     pub fn arranged(&self) -> Vec<DialogAction> {
         self.order.arrange(self.actions.clone())
     }
 
-    /// Aksi yang dijalankan Return, bila ada.
+    /// The action Return runs, if any.
     fn default_action(&self) -> Option<Callback> {
         self.actions
             .iter()
@@ -620,7 +629,7 @@ impl DialogBuilder {
             .and_then(DialogAction::callback)
     }
 
-    /// Aksi yang dijalankan Esc/klik luar.
+    /// The action Esc/an outside click runs.
     fn dismiss_action(&self) -> Option<Callback> {
         self.on_dismiss.clone().or_else(|| {
             self.actions
@@ -630,7 +639,7 @@ impl DialogBuilder {
         })
     }
 
-    /// Panel: judul, pesan, isi tambahan, lalu barisan tombol.
+    /// The panel: title, message, extra content, then the button row.
     fn panel(&mut self) -> View {
         let t = &self.theme;
         let mut isi: Vec<View> = vec![self.header()];
@@ -647,13 +656,15 @@ impl DialogBuilder {
             .padding(Insets::all(t.space(5.0)))
             .background(t.color.surface_elevated)
             .corners(t.corners(t.radius.xl))
-            // Hairline mengikuti skala spacing (0.25 langkah = 1pt): di mode
-            // gelap inilah yang memisahkan panel dari peredup di belakangnya.
+            // The hairline follows the spacing scale (0.25 step = 1pt): in
+            // dark mode this is what separates the panel from the scrim
+            // behind it.
             .border(t.space(0.25), t.color.separator)
             .shadow(t.shadow.xl);
 
-        // Lebar dijepit ke ruang yang tersedia oleh `BoxConstraints::enforce`,
-        // jadi window yang lebih sempit dari dialognya tetap benar.
+        // The width is clamped to the available space by
+        // `BoxConstraints::enforce`, so a window narrower than the dialog
+        // still lays out correctly.
         let kotak = constrained(
             BoxConstraints::new(self.width, self.width, 0.0, f32::INFINITY),
             kartu,
@@ -667,7 +678,7 @@ impl DialogBuilder {
         .into()
     }
 
-    /// Judul + pesan.
+    /// Title + message.
     fn header(&self) -> View {
         let t = &self.theme;
         let mut baris: Vec<View> = Vec::with_capacity(2);
@@ -675,7 +686,8 @@ impl DialogBuilder {
             gaya(text(&self.fonts, &self.title), t.typography.headline)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.label)
-                // Judul dibacakan sekali, dari node dialognya — bukan dua kali.
+                // The title is announced once, from the dialog node — not
+                // twice.
                 .role(AccessRole::Container)
                 .into(),
         );
@@ -692,7 +704,7 @@ impl DialogBuilder {
             .into()
     }
 
-    /// Barisan tombol dalam urutan visual platform.
+    /// The button row in the platform's visual order.
     fn tombol(&self) -> View {
         let t = &self.theme;
         let tombol: Vec<View> = self
@@ -708,8 +720,9 @@ impl DialogBuilder {
             })
             .collect();
         row(tombol)
-            // Tombol dialog rata ke akhir baris di ketiga OS; yang berbeda cuma
-            // urutannya (`ButtonOrder`). Di RTL barisnya tercermin sendiri.
+            // Dialog buttons align to the end of the row on all three
+            // operating systems; only their order differs (`ButtonOrder`). In
+            // RTL the row mirrors itself.
             .main(MainAlign::End)
             .cross(CrossAlign::Center)
             .spacing(t.space(3.0))
@@ -718,7 +731,7 @@ impl DialogBuilder {
     }
 }
 
-/// Terapkan sebuah token tipografi ke teks.
+/// Apply a typography token to a piece of text.
 fn gaya(teks: Text, style: TypeStyle) -> Text {
     teks.size(style.size)
         .line_height(style.line_height)

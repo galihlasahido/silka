@@ -1,5 +1,5 @@
-//! `checkbox()` — kotak centang Tier 2 (`KOMPONEN.md`), **termasuk state
-//! indeterminate dan animasi centang** seperti yang diminta catatan khususnya.
+//! `checkbox()` — the Tier 2 checkbox (`KOMPONEN.md`), **including the
+//! indeterminate state and the check animation** its special notes ask for.
 //!
 //! ```
 //! # use silka_widgets::{checkbox, Fonts};
@@ -15,52 +15,56 @@
 //!     .on_toggle(move |v| aktif.set(v));
 //! ```
 //!
-//! ## Kenapa ini node sendiri, bukan pembungkus `Interactive`
+//! ## Why this is its own node, not an `Interactive` wrapper
 //!
-//! Checkbox butuh tiga hal yang tidak ada di kontrak interaktif umum dan tidak
-//! boleh dipalsukan:
+//! A checkbox needs three things the general interaction contract does not
+//! have and that must not be faked:
 //!
-//! 1. **Keadaan tiga-nilai** ([`CheckState`]) yang sampai ke screen reader
-//!    sebagai [`AccessToggled`] — bukan sebagai nama tombol yang berubah-ubah.
-//! 2. **Centang yang digambar bertahap** (`KOMPONEN.md`: "animasi centang"),
-//!    bukan simbol yang muncul tiba-tiba.
-//! 3. **Kotak kecil di dalam area sentuh besar**: yang digambar 16pt, yang bisa
-//!    diklik ≥ 44pt (HIG) — dan labelnya ikut bisa diklik, seperti `<label for>`
-//!    di web dan `NSButton` bertipe switch di AppKit.
+//! 1. **A three-value state** ([`CheckState`]) that reaches the screen reader
+//!    as [`AccessToggled`] — not as a button name that keeps changing.
+//! 2. **A check drawn progressively** (`KOMPONEN.md`: "animasi centang"),
+//!    not a symbol that pops into existence.
+//! 3. **A small box inside a large hit area**: 16pt drawn, ≥ 44pt clickable
+//!    (HIG) — and the label is clickable too, like `<label for>` on the web
+//!    and a switch-type `NSButton` in AppKit.
 //!
-//! ## Bagaimana centangnya digambar tanpa perintah "garis"
+//! ## How the check is drawn without a "stroke" command
 //!
-//! `silka-paint` hari ini mengenal kotak bersudut, glyph, dan bayangan (§3.2)
-//! — tidak ada primitif goresan, dan tidak ada rotasi. Centangnya karena itu
-//! dirakit dari rantai kotak berujung bulat yang saling menindih
-//! ([`check_dots`]): sebuah pena bundar yang dijejakkan rapat-rapat sepanjang
-//! jalur. Hasilnya identik dengan goresan ber-round-cap, biayanya belasan quad,
-//! dan geometrinya murni CPU sehingga bisa diuji tanpa GPU.
+//! `silka-paint` today knows rounded boxes, glyphs, and shadows (§3.2) —
+//! there is no stroke primitive, and no rotation. The check is therefore
+//! assembled from a chain of overlapping round-ended boxes ([`check_dots`]):
+//! a round pen stamped densely along a path. The result is identical to a
+//! round-capped stroke, it costs a dozen or so quads, and its geometry is
+//! pure CPU so it can be tested without a GPU.
 //!
-//! Itu **utang teknis yang disadari**, bukan kecelakaan: begitu lapisan paint
-//! punya perintah goresan SDF sendiri, [`check_dots`] menjadi satu perintah dan
-//! tidak ada satu baris pun di luar berkas ini yang berubah. Yang sengaja tidak
-//! ditempuh: merender glyph "✓" akan menyandera bentuk centang pada font yang
-//! kebetulan terpasang, **dan** membuat animasi goresan mustahil.
+//! That is **acknowledged technical debt**, not an accident: the moment the
+//! paint layer grows its own SDF stroke command, [`check_dots`] becomes a
+//! single command and not one line outside this file changes. What was
+//! deliberately not taken: rendering a "✓" glyph would hold the check's shape
+//! hostage to whichever font happens to be installed, **and** would make
+//! animating the stroke impossible.
 //!
 //! ## Definition of Done (`KOMPONEN.md`)
 //!
-//! - **Kedua preset** — setiap angka lewat [`CheckboxStyle::from_theme`];
-//!   sudut kotak adalah `radius.sm` yang di Cupertino squircle dan di Tailwind
-//!   arc, keduanya parameter shader, bukan konstanta (§2.7, §3.6).
-//! - **Semua state interaktif dengan spring** — latar, border, goresan, garis
-//!   indeterminate, penyusutan tekan, dan cincin fokus masing-masing sebuah
-//!   [`SpringValue`] yang di-retarget di tengah jalan, tidak pernah dimulai
-//!   ulang (§3.5).
-//! - **Keyboard + focus ring** — Space mengaktifkan (di HIG dan di web, Enter
-//!   milik tombol default sebuah form); cincinnya tumbuh dengan spring.
-//! - **Node AccessKit** — peran [`AccessRole::CheckBox`], nama dari labelnya,
-//!   [`AccessToggled`] tiga-nilai, aksi klik + fokus.
-//! - **Dark mode** — seluruh warna token, tanpa satu literal pun.
-//! - **Hit target ≥ 44pt** — dijamin [`CheckboxNode::layout`], bukan pemanggil.
-//! - **Reduced-motion** — gerakan yang *menjelaskan* (latar, goresan, garis)
-//!   tetap berjalan tanpa pantulan; yang cuma menghias (penyusutan tekan,
-//!   cincin fokus) ditandai [`MotionRole::Decorative`] dan hilang sepenuhnya.
+//! - **Both presets** — every number goes through
+//!   [`CheckboxStyle::from_theme`]; the box corners are `radius.sm`, a
+//!   squircle in Cupertino and an arc in Tailwind, both shader parameters
+//!   rather than constants (§2.7, §3.6).
+//! - **Every interactive state springs** — background, border, stroke,
+//!   indeterminate dash, press shrink, and focus ring are each a
+//!   [`SpringValue`] retargeted mid-flight, never restarted (§3.5).
+//! - **Keyboard + focus ring** — Space activates (in the HIG and on the web
+//!   alike, Enter belongs to a form's default button); the ring grows on a
+//!   spring.
+//! - **AccessKit node** — the [`AccessRole::CheckBox`] role, the name from
+//!   its label, a three-value [`AccessToggled`], click + focus actions.
+//! - **Dark mode** — every color a token, without a single literal.
+//! - **Hit target ≥ 44pt** — guaranteed by [`CheckboxNode::layout`], not by
+//!   the caller.
+//! - **Reduced-motion** — motion that *explains* (background, stroke, dash)
+//!   keeps running without its bounce; motion that merely decorates (press
+//!   shrink, focus ring) is marked [`MotionRole::Decorative`] and disappears
+//!   entirely.
 
 use std::rc::Rc;
 
@@ -83,31 +87,31 @@ use crate::fonts::Fonts;
 use crate::text::text;
 
 // ---------------------------------------------------------------------------
-// Keadaan
+// State
 // ---------------------------------------------------------------------------
 
-/// Keadaan sebuah kotak centang.
+/// The state of a checkbox.
 ///
-/// Tiga nilai, bukan dua: `Mixed` (indeterminate) adalah keadaan sah sebuah
-/// checkbox induk yang anak-anaknya hanya sebagian tercentang — `KOMPONEN.md`
-/// menyebutnya bagian komponen ini, bukan tambahan.
+/// Three values, not two: `Mixed` (indeterminate) is a legitimate state for a
+/// parent checkbox whose children are only partly checked — `KOMPONEN.md`
+/// calls it part of this component, not an addition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum CheckState {
-    /// Tidak tercentang.
+    /// Not checked.
     #[default]
     Off,
-    /// Tercentang.
+    /// Checked.
     On,
-    /// Sebagian — digambar sebagai garis, bukan centang.
+    /// Partly — drawn as a dash rather than a check.
     Mixed,
 }
 
 impl CheckState {
-    /// Keadaan berikutnya saat pengguna mengaktifkan kotak ini.
+    /// The next state when the user activates this box.
     ///
-    /// `Mixed` **tidak** ikut dalam siklus: pengguna tidak pernah memilih
-    /// "sebagian" — itu keadaan yang lahir dari data, jadi mengaktifkannya
-    /// berarti memutuskan, yaitu `On` (aturan yang sama di AppKit dan HTML).
+    /// `Mixed` is **not** part of the cycle: a user never picks "partly" —
+    /// that state is born from data, so activating it means deciding, which
+    /// means `On` (the same rule as AppKit and HTML).
     pub fn toggled(self) -> Self {
         match self {
             CheckState::On => CheckState::Off,
@@ -115,17 +119,17 @@ impl CheckState {
         }
     }
 
-    /// Benar bila tercentang penuh.
+    /// True when fully checked.
     pub fn is_on(self) -> bool {
         matches!(self, CheckState::On)
     }
 
-    /// Benar bila kotaknya menggambar sesuatu di dalamnya (centang atau garis).
+    /// True when the box draws something inside it (a check or a dash).
     pub fn is_filled(self) -> bool {
         !matches!(self, CheckState::Off)
     }
 
-    /// Nama pendek untuk dump dan log.
+    /// Short name for dumps and logs.
     pub const fn name(self) -> &'static str {
         match self {
             CheckState::Off => "off",
@@ -159,24 +163,24 @@ impl From<CheckState> for AccessToggled {
 // Callback
 // ---------------------------------------------------------------------------
 
-/// Aksi yang dititipkan aplikasi untuk menerima keadaan **baru**.
+/// The action an application hands over to receive the **new** state.
 ///
-/// Sengaja bukan [`silka_core::Callback`]: yang perlu diceritakan sebuah
-/// checkbox bukan "aku ditekan" melainkan "aku sekarang begini". Tanpa argumen
-/// itu setiap pemanggil terpaksa menghitung ulang keadaan berikutnya sendiri —
-/// tempat paling gampang melahirkan dua sumber kebenaran. Tiga sifatnya sama
-/// dengan `Callback`: `Clone` murah, `PartialEq` berdasarkan identitas, dan
-/// tidak pernah menyentuh pohon.
+/// Deliberately not a [`silka_core::Callback`]: what a checkbox has to report
+/// is not "I was pressed" but "this is what I am now". Without that argument
+/// every caller would have to work out the next state itself — the easiest
+/// place there is to grow a second source of truth. Its three properties
+/// match `Callback`: cheap `Clone`, `PartialEq` by identity, and it never
+/// touches the tree.
 #[derive(Clone)]
 pub struct ChangeCallback(Rc<dyn Fn(CheckState)>);
 
 impl ChangeCallback {
-    /// Bungkus sebuah closure.
+    /// Wrap a closure.
     pub fn new(f: impl Fn(CheckState) + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Jalankan aksinya dengan keadaan baru.
+    /// Run the action with the new state.
     pub fn call(&self, state: CheckState) {
         (self.0)(state)
     }
@@ -198,65 +202,65 @@ impl core::fmt::Debug for ChangeCallback {
 // Style
 // ---------------------------------------------------------------------------
 
-/// Seluruh nilai gambar sebuah checkbox, **sudah diresolusi** dari token theme.
+/// Every paint value of a checkbox, **already resolved** from theme tokens.
 ///
-/// Mesin tidak pernah punya pendapat tentang warna maupun ukuran (§2.6, §2.7):
-/// preset Cupertino dan Tailwind berganti dengan mengisi struct ini, tanpa satu
-/// baris pun berubah di [`CheckboxNode`]. Preset ketiga (brand kustom) tinggal
-/// menyerahkan struct ini lewat [`Builder::style`].
+/// The engine never has an opinion about color or size (§2.6, §2.7): the
+/// Cupertino and Tailwind presets swap over by filling in this struct,
+/// without a single line changing in [`CheckboxNode`]. A third preset (a
+/// custom brand) simply hands this struct over through [`Builder::style`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CheckboxStyle {
-    /// Sisi kotak yang digambar, poin logis.
+    /// Side of the drawn box, in logical points.
     pub box_size: f32,
-    /// Bentuk sudut kotak — squircle di Cupertino, arc di Tailwind.
+    /// Corner shape of the box — a squircle in Cupertino, an arc in Tailwind.
     pub corners: Corners,
-    /// Tebal border kotak.
+    /// Border width of the box.
     pub border_width: f32,
-    /// Tebal goresan centang dan garis indeterminate.
+    /// Width of the check stroke and of the indeterminate dash.
     pub stroke: f32,
-    /// Jarak kotak ke label.
+    /// Gap between the box and the label.
     pub gap: f32,
-    /// Tebal cincin fokus keyboard.
+    /// Width of the keyboard focus ring.
     pub focus_ring_width: f32,
-    /// Sisi minimum area sentuh (HIG).
+    /// Minimum side of the hit area (HIG).
     pub min_target: f32,
-    /// Seberapa jauh kotak mengempis saat ditekan, poin logis.
+    /// How far the box shrinks when pressed, in logical points.
     pub press_travel: f32,
 
-    /// Latar diam, keadaan kosong.
+    /// Background at rest, empty state.
     pub rest_off: Color,
-    /// Latar diam, keadaan terisi.
+    /// Background at rest, filled state.
     pub rest_on: Color,
-    /// Latar saat di-hover, keadaan kosong.
+    /// Background while hovered, empty state.
     pub hover_off: Color,
-    /// Latar saat di-hover, keadaan terisi.
+    /// Background while hovered, filled state.
     pub hover_on: Color,
-    /// Latar saat ditekan, keadaan kosong.
+    /// Background while pressed, empty state.
     pub pressed_off: Color,
-    /// Latar saat ditekan, keadaan terisi.
+    /// Background while pressed, filled state.
     pub pressed_on: Color,
-    /// Border keadaan kosong.
+    /// Border in the empty state.
     pub border_off: Color,
-    /// Border keadaan terisi.
+    /// Border in the filled state.
     pub border_on: Color,
-    /// Latar saat tidak bisa dipakai.
+    /// Background while unusable.
     pub disabled_box: Color,
-    /// Border saat tidak bisa dipakai.
+    /// Border while unusable.
     pub disabled_border: Color,
-    /// Warna goresan centang.
+    /// Color of the check stroke.
     pub mark: Color,
-    /// Warna goresan saat tidak bisa dipakai.
+    /// Stroke color while unusable.
     pub disabled_mark: Color,
-    /// Warna cincin fokus.
+    /// Focus ring color.
     pub focus_ring: Color,
 }
 
 impl CheckboxStyle {
-    /// Nilai bawaan dari theme aktif.
+    /// The defaults taken from the active theme.
     ///
-    /// `space(4.0)` = 16pt di kedua preset — kebetulan yang bukan kebetulan:
-    /// itu persis ukuran `h-4 w-4` milik checkbox shadcn/ui, dan sekitar ukuran
-    /// checkbox AppKit pada teks body.
+    /// `space(4.0)` = 16pt in both presets — a coincidence that is not one:
+    /// it is exactly the `h-4 w-4` of the shadcn/ui checkbox, and roughly the
+    /// size of an AppKit checkbox next to body text.
     pub fn from_theme(theme: &Theme) -> Self {
         let c = &theme.color;
         Self {
@@ -285,10 +289,10 @@ impl CheckboxStyle {
         }
     }
 
-    /// Latar yang seharusnya berlaku untuk kombinasi keadaan ini.
+    /// The background that should apply to this combination of state.
     ///
-    /// Inilah **target** spring; yang digambar adalah posisi spring-nya, bukan
-    /// nilai ini.
+    /// This is the spring's **target**; what gets drawn is the spring's
+    /// position, not this value.
     pub fn background_for(
         &self,
         state: CheckState,
@@ -300,9 +304,9 @@ impl CheckboxStyle {
             return self.disabled_box;
         }
         let terisi = state.is_filled();
-        // `pressed` bertahan saat penunjuk ditangkap keluar kotak, tapi tampilan
-        // "ditekan" hanya berlaku selama penunjuknya masih di dalam — persis
-        // AppKit/UIKit.
+        // `pressed` survives while the pointer is captured outside the box,
+        // but the "pressed" look only applies while the pointer is still
+        // inside — exactly like AppKit/UIKit.
         if pressed && hovered {
             if terisi {
                 self.pressed_on
@@ -322,7 +326,7 @@ impl CheckboxStyle {
         }
     }
 
-    /// Warna border yang berlaku.
+    /// The border color that applies.
     pub fn border_for(&self, state: CheckState, disabled: bool) -> Color {
         if disabled {
             self.disabled_border
@@ -333,7 +337,7 @@ impl CheckboxStyle {
         }
     }
 
-    /// Warna goresan yang berlaku.
+    /// The stroke color that applies.
     pub fn mark_for(&self, disabled: bool) -> Color {
         if disabled {
             self.disabled_mark
@@ -344,30 +348,30 @@ impl CheckboxStyle {
 }
 
 // ---------------------------------------------------------------------------
-// Geometri goresan — logika murni, diuji tanpa GPU
+// Stroke geometry — pure logic, tested without a GPU
 // ---------------------------------------------------------------------------
 
-/// Jalur centang dalam kotak satuan (0..1): tiga titik, dua ruas.
+/// The check path inside a unit box (0..1): three points, two segments.
 ///
-/// Angkanya menyisakan ruang untuk ujung bundar pena: dengan tebal 1/8 sisi
-/// kotak, tidak satu pun jejak keluar dari kotaknya (diuji).
+/// The numbers leave room for the pen's round cap: at a width of 1/8 of the
+/// box side, not a single stamp leaves the box (tested).
 const JALUR: [(f32, f32); 3] = [(0.22, 0.52), (0.42, 0.72), (0.78, 0.30)];
 
-/// Batas atas jumlah jejak pena untuk satu centang.
+/// Upper bound on the number of pen stamps in a single check.
 ///
-/// Bukan soal kualitas melainkan soal jaminan: kotak yang (karena theme kustom
-/// atau bug) berukuran ribuan poin tidak boleh mengubah satu widget kecil
-/// menjadi ribuan perintah gambar.
+/// Not a matter of quality but of guarantee: a box that is (because of a
+/// custom theme or a bug) thousands of points across must not turn one small
+/// widget into thousands of draw commands.
 const MAX_JEJAK: usize = 64;
 
-/// Titik-titik pusat pena sepanjang goresan centang, sampai `progress`.
+/// The pen centre points along the check stroke, up to `progress`.
 ///
-/// Ini seluruh "animasi centang" (`KOMPONEN.md`) dalam bentuk yang bisa diuji:
-/// `progress` 0 tidak menghasilkan apa pun, 1 menghasilkan goresan penuh yang
-/// **berakhir tepat** di ujung jalur, dan nilai di antaranya adalah goresan
-/// yang sedang ditarik. Jarak antar-jejak tidak bergantung pada `progress`,
-/// jadi jejak-jejak awal tidak pernah bergeser saat goresan memanjang — syarat
-/// agar gerakannya terbaca sebagai satu tarikan, bukan kedipan.
+/// This is the whole "animasi centang" (`KOMPONEN.md`) in a testable form:
+/// `progress` 0 produces nothing, 1 produces the full stroke that **ends
+/// exactly** at the end of the path, and anything in between is a stroke
+/// being drawn. The spacing between stamps does not depend on `progress`, so
+/// the early stamps never shift as the stroke grows — the condition for the
+/// motion to read as a single pen movement rather than a flicker.
 pub fn check_dots(box_rect: Rect, stroke: f32, progress: f32) -> Vec<Point> {
     let p = progress.clamp(0.0, 1.0);
     if p <= 0.0 || stroke <= 0.0 || box_rect.size.is_empty() {
@@ -398,16 +402,16 @@ pub fn check_dots(box_rect: Rect, stroke: f32, progress: f32) -> Vec<Point> {
         out.push(pada_jalur(&titik, &ruas, d));
         d += langkah;
     }
-    // Ujungnya selalu tepat: tanpa ini panjang goresan melompat sebesar satu
-    // langkah dan gerakannya terlihat bergetar.
+    // The end is always exact: without this the stroke length would jump by a
+    // whole step and the motion would look jittery.
     out.push(pada_jalur(&titik, &ruas, terlihat));
     out
 }
 
-/// Garis indeterminate: satu kotak berujung bulat yang tumbuh dari tengah.
+/// The indeterminate dash: one round-ended box growing out of the centre.
 ///
-/// `None` bila belum ada yang terlihat, sehingga keadaan `Off` benar-benar
-/// gratis — tidak ada perintah gambar sama sekali.
+/// `None` while nothing is visible yet, so the `Off` state really is free —
+/// not a single draw command.
 pub fn dash_rect(box_rect: Rect, stroke: f32, progress: f32) -> Option<Rect> {
     let p = progress.clamp(0.0, 1.0);
     if p <= 0.0 || stroke <= 0.0 || box_rect.size.is_empty() {
@@ -432,7 +436,7 @@ fn jarak(a: Point, b: Point) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
-/// Titik pada jalur setelah menempuh `d` satuan panjang.
+/// The point on the path after travelling `d` units of length.
 fn pada_jalur(titik: &[Point], ruas: &[f32], d: f32) -> Point {
     let mut sisa = d.max(0.0);
     for (i, panjang) in ruas.iter().enumerate() {
@@ -455,48 +459,48 @@ fn pada_jalur(titik: &[Point], ruas: &[f32], d: f32) -> Point {
 // Render node
 // ---------------------------------------------------------------------------
 
-/// Node render sebuah kotak centang: kontrak input penuh + enam spring.
+/// Render node of a checkbox: the full input contract + six springs.
 ///
-/// Anak pertamanya, bila ada, adalah label yang diletakkan di samping kotak dan
-/// **ikut bisa diklik**.
+/// Its first child, if any, is the label placed next to the box, and that
+/// label is **clickable too**.
 pub struct CheckboxNode {
     style: CheckboxStyle,
-    /// Keadaan yang datang dari aplikasi.
+    /// State that comes from the application.
     state: CheckState,
-    /// Tidak bisa dipakai — tetap dibacakan screen reader sebagai dimmed.
+    /// Unusable — still announced to screen readers as dimmed.
     disabled: bool,
     label: Option<String>,
     focus: FocusPolicy,
     on_change: Option<ChangeCallback>,
 
-    /// Latar yang benar-benar digambar frame ini.
+    /// The background actually drawn this frame.
     bg: SpringValue<Color>,
-    /// Border yang benar-benar digambar frame ini.
+    /// The border actually drawn this frame.
     border: SpringValue<Color>,
-    /// Panjang goresan centang (0..1).
+    /// Length of the check stroke (0..1).
     check: SpringValue<f32>,
-    /// Panjang garis indeterminate (0..1).
+    /// Length of the indeterminate dash (0..1).
     dash: SpringValue<f32>,
-    /// 0 = lepas, 1 = kempis penuh (scale-on-press).
+    /// 0 = released, 1 = fully shrunk (scale-on-press).
     press_t: SpringValue<f32>,
-    /// 0 = tanpa cincin fokus, 1 = cincin penuh.
+    /// 0 = no focus ring, 1 = full ring.
     ring_t: SpringValue<f32>,
 
     hovered: bool,
     pressed: bool,
     focused: bool,
-    /// Jumlah aktivasi (klik atau Space) sejak node dibuat.
+    /// Number of activations (click or Space) since the node was built.
     activations: u32,
-    /// Kotak yang digambar, koordinat lokal — hasil layout terakhir.
+    /// The drawn box in local coordinates — from the last layout.
     box_rect: Rect,
 }
 
 impl CheckboxNode {
-    /// Node baru yang **sudah berada** di keadaan diamnya.
+    /// A new node **already sitting** at its rest state.
     ///
-    /// Bedanya dengan overlay yang selalu beranimasi masuk: sebuah kontrol
-    /// tidak sedang "muncul", ia sedang menampilkan data. Menganimasikan
-    /// keadaan awal berarti setiap form yang dibuka akan berkedip.
+    /// The difference from an overlay, which always animates in: a control is
+    /// not "appearing", it is showing data. Animating the initial state would
+    /// make every form flash as it opens.
     fn new(style: CheckboxStyle, state: CheckState, disabled: bool, spring: Spring) -> Self {
         Self {
             bg: SpringValue::new(style.background_for(state, disabled, false, false))
@@ -523,13 +527,13 @@ impl CheckboxNode {
         }
     }
 
-    /// Peran gerakan untuk nilai yang **menjelaskan keadaan** (latar, border,
-    /// panjang centang, panjang garis indeterminate).
+    /// The motion role for the values that **explain the state** (background,
+    /// border, check length, indeterminate dash length).
     ///
-    /// `press_t`/`ring_t` sengaja tidak ikut: keduanya murni hiasan sehingga
-    /// selalu [`MotionRole::Decorative`] apa pun yang diminta pemanggil.
-    /// Dipakai `build` *dan* `update` agar rebuild yang mengubah `.decorative()`
-    /// benar-benar berpengaruh, bukan cuma yang pertama.
+    /// `press_t`/`ring_t` deliberately stay out: both are pure decoration, so
+    /// they are always [`MotionRole::Decorative`] whatever the caller asks
+    /// for. Used by `build` *and* `update` so that a rebuild changing
+    /// `.decorative()` really takes effect, not only the first one.
     fn set_motion_role(&mut self, role: MotionRole) {
         self.bg.set_role(role);
         self.border.set_role(role);
@@ -537,90 +541,90 @@ impl CheckboxNode {
         self.dash.set_role(role);
     }
 
-    /// Peran gerakan yang sedang dipakai nilai-nilai penjelas keadaan.
+    /// The motion role the state-explaining values currently use.
     fn motion_role(&self) -> MotionRole {
         self.bg.role()
     }
 
-    /// Keadaan yang datang dari aplikasi.
+    /// State that comes from the application.
     pub fn state(&self) -> CheckState {
         self.state
     }
 
-    /// Nilai gambar yang sedang berlaku.
+    /// The paint values currently in effect.
     pub fn style(&self) -> CheckboxStyle {
         self.style
     }
 
-    /// Tidak bisa dipakai.
+    /// Unusable.
     pub fn is_disabled(&self) -> bool {
         self.disabled
     }
 
-    /// Kotak yang digambar (koordinat lokal), hasil layout terakhir.
+    /// The drawn box (local coordinates), from the last layout.
     ///
-    /// Ukuran node bisa jauh lebih besar (area sentuh 44pt, label di
-    /// sampingnya); inilah bagian yang benar-benar terlihat sebagai checkbox.
+    /// The node can be far larger (a 44pt hit area, a label beside it); this
+    /// is the part that actually reads as a checkbox.
     pub fn box_rect(&self) -> Rect {
         self.box_rect
     }
 
-    /// Latar yang digambar frame ini — posisi spring, bukan targetnya.
+    /// The background drawn this frame — the spring position, not its target.
     pub fn background(&self) -> Color {
         self.bg.position()
     }
 
-    /// Target latar yang sedang dituju spring.
+    /// The background target the spring is heading for.
     pub fn background_target(&self) -> Color {
         self.bg.target()
     }
 
-    /// Border yang digambar frame ini.
+    /// The border drawn this frame.
     pub fn border_color(&self) -> Color {
         self.border.position()
     }
 
-    /// Kemajuan goresan centang 0..1.
+    /// Check stroke progress 0..1.
     pub fn check_progress(&self) -> f32 {
         self.check.position()
     }
 
-    /// Kemajuan garis indeterminate 0..1.
+    /// Indeterminate dash progress 0..1.
     pub fn dash_progress(&self) -> f32 {
         self.dash.position()
     }
 
-    /// Kemajuan tekanan 0..1 (0 = lepas).
+    /// Press progress 0..1 (0 = released).
     pub fn press_progress(&self) -> f32 {
         self.press_t.position()
     }
 
-    /// Kemajuan cincin fokus 0..1.
+    /// Focus ring progress 0..1.
     pub fn focus_progress(&self) -> f32 {
         self.ring_t.position()
     }
 
-    /// Penunjuk sedang di atasnya.
+    /// The pointer is over it.
     pub fn is_hovered(&self) -> bool {
         self.hovered
     }
 
-    /// Sedang ditekan.
+    /// Currently pressed.
     pub fn is_pressed(&self) -> bool {
         self.pressed
     }
 
-    /// Sedang memegang fokus keyboard.
+    /// Currently holding keyboard focus.
     pub fn is_focused(&self) -> bool {
         self.focused
     }
 
-    /// Jumlah aktivasi sejak node dibuat.
+    /// Number of activations since the node was built.
     pub fn activations(&self) -> u32 {
         self.activations
     }
 
-    /// Benar bila masih ada spring yang bergerak.
+    /// True while any spring is still moving.
     pub fn is_animating(&self) -> bool {
         self.bg.is_animating()
             || self.border.is_animating()
@@ -630,13 +634,12 @@ impl CheckboxNode {
             || self.ring_t.is_animating()
     }
 
-    /// Arahkan seluruh spring ke keadaan sekarang.
+    /// Point every spring at the current state.
     ///
-    /// **Retarget, bukan animasi baru** (§3.5): centang yang dibatalkan di
-    /// tengah goresan berbalik arah membawa kecepatannya. Satu fungsi untuk
-    /// enam nilai, dipanggil setiap kali apa pun berubah — dengan begitu tidak
-    /// mungkin ada satu spring yang lupa di-retarget dan tertinggal
-    /// menampilkan keadaan kemarin.
+    /// **Retarget, not a new animation** (§3.5): a check cancelled halfway
+    /// through its stroke reverses carrying its velocity. One function for six
+    /// values, called whenever anything changes — that way it is impossible
+    /// for a single spring to be forgotten and left showing yesterday's state.
     fn retarget(&mut self) {
         let aktif = !self.disabled;
         self.bg.set_target(self.style.background_for(
@@ -664,9 +667,9 @@ impl CheckboxNode {
             .set_target(if self.focused && aktif { 1.0 } else { 0.0 });
     }
 
-    /// Majukan seluruh spring satu frame; benar bila ada yang bergeser.
+    /// Advance every spring by one frame; true if anything moved.
     ///
-    /// Dipanggil [`crate::advance`], satu tempat untuk seluruh pohon.
+    /// Called by [`crate::advance`], one place for the whole tree.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         let mut bergeser = false;
         bergeser |= maju_warna(&mut self.bg, tick);
@@ -678,7 +681,7 @@ impl CheckboxNode {
         bergeser
     }
 
-    /// Selesaikan seluruh gerakan seketika (uji, snapshot, reduced-motion).
+    /// Finish every motion instantly (tests, snapshots, reduced-motion).
     pub fn settle(&mut self) {
         self.bg.settle();
         self.border.settle();
@@ -688,17 +691,17 @@ impl CheckboxNode {
         self.ring_t.settle();
     }
 
-    /// Aktifkan: hitung keadaan berikutnya lalu ceritakan ke aplikasi.
+    /// Activate: work out the next state, then report it to the application.
     ///
-    /// Node **tidak** mengubah `state`-nya sendiri. Sumber kebenarannya ada di
-    /// signal aplikasi, dan yang kembali ke sini adalah hasil rebuild lewat
-    /// [`CheckboxProps::update`]. Kalau node menebak duluan, checkbox yang
-    /// perubahannya ditolak aplikasi (validasi gagal) akan terlihat berubah
-    /// selama satu frame — kebohongan kecil yang mahal.
+    /// The node does **not** change its own `state`. The source of truth is a
+    /// signal in the application, and what comes back here is the result of a
+    /// rebuild through [`CheckboxProps::update`]. If the node guessed first, a
+    /// checkbox whose change the application rejects (a failed validation)
+    /// would look changed for one frame — a small lie with a high price.
     ///
-    /// Callback-nya disalin keluar dulu: ia hampir selalu menulis signal, dan
-    /// itu tidak boleh terjadi sambil node ini dipinjam `&mut` (pola yang sama
-    /// dengan [`crate::button::ButtonBox`]).
+    /// The callback is copied out first: it almost always writes a signal, and
+    /// that must not happen while this node is borrowed `&mut` (the same
+    /// pattern as [`crate::button::ButtonBox`]).
     fn aktifkan(&mut self) {
         if self.disabled {
             return;
@@ -710,8 +713,8 @@ impl CheckboxNode {
         }
     }
 
-    /// Kotak yang benar-benar digambar frame ini: mengempis mengikuti spring
-    /// tekanan, dan radiusnya ikut mengecil supaya bentuknya tidak melar.
+    /// The box actually drawn this frame: it shrinks with the press spring,
+    /// and its radius shrinks along so the shape never stretches.
     fn kotak_tergambar(&self) -> (Rect, Corners) {
         let kempis = (self.press_t.position() * self.style.press_travel)
             .clamp(0.0, self.box_rect.size.min_side() * 0.25);
@@ -723,11 +726,11 @@ impl CheckboxNode {
         )
     }
 
-    /// Pena bundar untuk goresan centang dan garis indeterminate.
+    /// The round pen for the check stroke and the indeterminate dash.
     ///
-    /// Ujungnya **selalu** busur, bukan `theme.radius.style`: yang dibulatkan
-    /// di sini adalah ujung pena, bukan sudut sebuah permukaan — squircle milik
-    /// preset mengatur kotaknya, bukan goresannya.
+    /// Its cap is **always** an arc, never `theme.radius.style`: what is
+    /// rounded here is the tip of a pen, not the corner of a surface — the
+    /// preset's squircle governs the box, not the stroke.
     fn pena(rect: Rect, warna: Color) -> Quad {
         Quad::new(rect).background(warna).corners(Corners::uniform(
             rect.size.min_side() * 0.5,
@@ -753,19 +756,20 @@ impl RenderNode for CheckboxNode {
         "Checkbox"
     }
 
-    /// Kotak di sisi awal baca, label mengikuti, dan **area sentuh ≥ 44pt**.
+    /// The box on the reading-start side, the label after it, and a
+    /// **hit area ≥ 44pt**.
     ///
-    /// RTL ditangani di sini dan hanya di sini: kotaknya pindah ke kanan
-    /// bersama isinya, karena arah baca adalah urusan layout — bukan urusan
-    /// tiap widget menghitungnya sendiri (§9.8).
+    /// RTL is handled here and only here: the box moves to the right together
+    /// with the contents, because reading direction is layout's business — not
+    /// something every widget works out for itself (§9.8).
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
         let s = self.style;
         let sisi = s.box_size.max(0.0);
 
         if ctx.child_count() == 0 {
-            // Tanpa label, hit target-nya kotak itu sendiri yang dipaksa
-            // membesar — yang digambar tetap `box_size` (HIG: area sentuh boleh
-            // lebih besar dari yang terlihat).
+            // Without a label the hit target is the box itself being forced
+            // to grow — what is drawn stays `box_size` (HIG: the hit area may
+            // be larger than what is visible).
             let target = sisi.max(s.min_target);
             let size = constraints.constrain(Size::new(target, target));
             self.box_rect = Rect::new(
@@ -815,9 +819,9 @@ impl RenderNode for CheckboxNode {
         let s = self.style;
         let (kotak, corners) = self.kotak_tergambar();
 
-        // Cincin fokus digambar **di luar** kotak supaya tidak menutupi
-        // centangnya — kebiasaan AppKit, dan syarat agar kontrol sekecil ini
-        // tetap terbaca saat difokuskan.
+        // The focus ring is drawn **outside** the box so it never covers the
+        // check — an AppKit habit, and the condition for a control this small
+        // to stay readable while focused.
         let ring = self.ring_t.position().clamp(0.0, 1.0) * s.focus_ring_width;
         if ring > 0.01 && s.focus_ring.a > 0.0 && !self.disabled {
             ctx.quad(
@@ -837,8 +841,8 @@ impl RenderNode for CheckboxNode {
                 .border(s.border_width, self.border.position()),
         );
 
-        // Goresan ikut mengempis bersama kotaknya supaya tidak menonjol keluar
-        // saat ditekan.
+        // The stroke shrinks together with its box so it never sticks out
+        // while pressed.
         let skala = if s.box_size > 0.0 {
             (kotak.size.min_side() / s.box_size).clamp(0.0, 1.0)
         } else {
@@ -862,8 +866,8 @@ impl RenderNode for CheckboxNode {
         node.role = AccessRole::CheckBox;
         node.label.clone_from(&self.label);
         node.disabled = self.disabled;
-        // Keadaan tiga-nilai sampai ke screen reader sebagai **keadaan**, bukan
-        // sebagai nama yang berubah-ubah (§3.8).
+        // The three-value state reaches the screen reader as a **state**, not
+        // as a name that keeps changing (§3.8).
         node.toggled = Some(AccessToggled::from(self.state));
         if !self.disabled {
             node.actions |= AccessActions::CLICK;
@@ -873,14 +877,14 @@ impl RenderNode for CheckboxNode {
         }
     }
 
-    /// Seluruh baris — kotak **dan** label — adalah area sentuhnya.
+    /// The whole row — box **and** label — is its hit area.
     fn hit_shape(&self) -> HitShape {
         HitShape::Rect
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Checkbox yang mati tetap menyerap penunjuk: klik di atasnya tidak
-        // boleh menembus ke konten di belakangnya.
+        // A disabled checkbox still absorbs the pointer: a click on it must
+        // not fall through to the content behind it.
         HitBehavior::Opaque
     }
 
@@ -898,7 +902,7 @@ impl RenderNode for CheckboxNode {
 
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         if self.disabled {
-            // Tetap menyerap agar tidak tembus, tapi tidak mengubah apa pun.
+            // Still absorbing so nothing falls through, but changing nothing.
             if matches!(event, Event::Pointer(p) if matches!(p.phase, PointerPhase::Down | PointerPhase::Up))
             {
                 ctx.handled();
@@ -918,8 +922,8 @@ impl RenderNode for CheckboxNode {
                 PointerPhase::Leave => {
                     if self.hovered {
                         self.hovered = false;
-                        // `pressed` sengaja dipertahankan: penunjuk yang
-                        // ditangkap boleh keluar-masuk selama tombol ditahan.
+                        // `pressed` is deliberately kept: a captured pointer
+                        // may leave and re-enter while the button is held.
                         self.retarget();
                         ctx.request_animation();
                     }
@@ -944,7 +948,7 @@ impl RenderNode for CheckboxNode {
                         self.aktifkan();
                     }
                 }
-                // Dibatalkan OS ≠ dilepas: tidak ada aktivasi.
+                // Cancelled by the OS ≠ released: no activation.
                 PointerPhase::Cancel if self.pressed => {
                     self.pressed = false;
                     self.retarget();
@@ -953,9 +957,9 @@ impl RenderNode for CheckboxNode {
                 _ => {}
             },
 
-            // Space, bukan Enter: di HIG (dan di web) Enter milik tombol
-            // default sebuah form, sedangkan Space adalah "aktifkan kontrol
-            // yang sedang difokuskan".
+            // Space, not Enter: in the HIG (and on the web) Enter belongs to
+            // a form's default button, whereas Space means "activate the
+            // control that currently has focus".
             Event::Key(k)
                 if k.is_pressed()
                     && k.code == KeyCode::Named(NamedKey::Space)
@@ -996,7 +1000,7 @@ impl core::fmt::Debug for CheckboxNode {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props [`CheckboxNode`] — bentuk view-nya.
+/// Props of [`CheckboxNode`] — its view form.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CheckboxProps {
     style: CheckboxStyle,
@@ -1010,7 +1014,7 @@ pub struct CheckboxProps {
 }
 
 impl CheckboxProps {
-    /// Props bawaan untuk theme aktif.
+    /// The default props for the active theme.
     pub fn from_theme(theme: &Theme) -> Self {
         Self {
             style: CheckboxStyle::from_theme(theme),
@@ -1031,8 +1035,8 @@ impl ViewNode for CheckboxProps {
         node.label.clone_from(&self.label);
         node.focus = self.focus;
         node.on_change.clone_from(&self.on_change);
-        // Aplikasi yang menyatakan gerakan ini sekadar hiasan: reduced-motion
-        // mematikannya sepenuhnya, bukan cuma membuang pantulannya.
+        // The application declaring this motion to be mere decoration:
+        // reduced-motion drops it entirely rather than only its bounce.
         node.set_motion_role(self.motion);
         Box::new(node)
     }
@@ -1044,8 +1048,8 @@ impl ViewNode for CheckboxProps {
         let mut dirty = Dirty::NONE;
 
         if n.style != self.style {
-            // `box_size`/`gap` ikut di sini, jadi theme yang berganti preset
-            // memang harus di-layout ulang — bukan cuma digambar ulang.
+            // `box_size`/`gap` are in here too, so a theme that switches
+            // preset really does need a relayout — not merely a repaint.
             n.style = self.style;
             dirty |= Dirty::LAYOUT | Dirty::PAINT | Dirty::ANIMATION;
         }
@@ -1058,8 +1062,8 @@ impl ViewNode for CheckboxProps {
             dirty |= Dirty::PAINT;
         }
         if n.motion_role() != self.motion {
-            // Tanpa diff ini, rebuild yang mengubah `.decorative()` diam-diam
-            // mempertahankan peran lama — dan reduced-motion jadi salah.
+            // Without this diff, a rebuild that changes `.decorative()` would
+            // quietly keep the old role — and reduced-motion would be wrong.
             n.set_motion_role(self.motion);
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
@@ -1072,8 +1076,8 @@ impl ViewNode for CheckboxProps {
         if n.disabled != self.disabled {
             n.disabled = self.disabled;
             if self.disabled {
-                // Kontrol yang baru dimatikan tidak boleh membeku dalam keadaan
-                // ditekan/hover: penunjuknya tidak akan pernah datang lagi.
+                // A control that was just disabled must not freeze in a
+                // pressed/hovered state: its pointer is never coming back.
                 n.pressed = false;
                 n.hovered = false;
             }
@@ -1083,27 +1087,28 @@ impl ViewNode for CheckboxProps {
             n.state = self.state;
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
-        // Selalu di-retarget: murah, dan menutup setiap kombinasi perubahan di
-        // atas sekaligus. Yang tidak berubah tidak menghasilkan gerakan apa pun
-        // karena `set_target` ke nilai yang sama tidak membangunkan spring.
+        // Always retargeted: it is cheap, and it covers every combination of
+        // the changes above at once. Anything that did not change produces no
+        // motion at all: `set_target` to the same value never wakes a spring.
         n.retarget();
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (pola `InteractiveProps`).
+        // The callback is always replaced without comparison: closures are
+        // rebuilt every rebuild and capture new values (`InteractiveProps`).
         n.on_change.clone_from(&self.on_change);
         dirty
     }
 }
 
 // ---------------------------------------------------------------------------
-// Builder gaya Dart
+// Dart-style builder
 // ---------------------------------------------------------------------------
 
-/// Kotak centang — komponen `checkbox` (`KOMPONEN.md` Tier 2).
+/// A checkbox — the `checkbox` component (`KOMPONEN.md` Tier 2).
 ///
-/// Tipe builder tersendiri, bukan [`Builder<CheckboxProps>`], karena label
-/// harus **sudah diketahui** saat pohon view dirakit: ia menjadi anak yang
-/// digambar *dan* nama a11y sekaligus, jadi ia tidak bisa dititipkan lewat
-/// `map` seperti properti biasa (pola yang sama dengan [`crate::button::Button`]).
+/// Its own builder type rather than [`Builder<CheckboxProps>`], because the
+/// label must **already be known** when the view tree is assembled: it
+/// becomes both the child that gets drawn *and* the a11y name, so it cannot
+/// be handed over through `map` like an ordinary property (the same pattern
+/// as [`crate::button::Button`]).
 pub struct Checkbox {
     fonts: Option<Fonts>,
     theme: Theme,
@@ -1118,11 +1123,11 @@ pub struct Checkbox {
     key: Option<Key>,
 }
 
-/// Kotak centang berlabel.
+/// A labelled checkbox.
 ///
-/// Labelnya ikut bisa diklik **dan sekaligus** menjadi nama yang dibacakan
-/// screen reader — satu sumber, jadi tidak mungkin yang terlihat dan yang
-/// terdengar berbeda.
+/// Its label is clickable **and at the same time** becomes the name announced
+/// by screen readers — one source, so what is seen and what is heard can
+/// never disagree.
 ///
 /// ```
 /// # use silka_widgets::{checkbox, CheckState, Fonts};
@@ -1141,12 +1146,12 @@ pub fn checkbox(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Check
     }
 }
 
-/// Kotak centang tanpa label terlihat — di dalam sel tabel, di depan baris
-/// daftar, atau di header "pilih semua".
+/// A checkbox with no visible label — inside a table cell, in front of a list
+/// row, or in a "select all" header.
 ///
-/// Tetap **wajib** punya nama lewat [`Checkbox::label`]: kontrol tanpa nama
-/// adalah kontrol yang tidak ada bagi screen reader (§3.8), dan itu bug, bukan
-/// pilihan desain.
+/// It **must** still have a name through [`Checkbox::label`]: a control
+/// without a name is a control that does not exist for a screen reader
+/// (§3.8), and that is a bug, not a design choice.
 ///
 /// ```
 /// # use silka_widgets::checkbox_only;
@@ -1162,8 +1167,8 @@ pub fn checkbox_only(theme: &Theme) -> Checkbox {
         style: CheckboxStyle::from_theme(theme),
         state: CheckState::Off,
         disabled: false,
-        // `snappy` adalah rasa kontrol macOS: cepat sampai, nyaris tanpa
-        // pantulan (WWDC23).
+        // `snappy` is the macOS control feel: arrives fast, with almost no
+        // bounce (WWDC23).
         spring: Spring::snappy(),
         motion: MotionRole::Essential,
         focus: FocusPolicy::FOCUSABLE,
@@ -1173,85 +1178,85 @@ pub fn checkbox_only(theme: &Theme) -> Checkbox {
 }
 
 impl Checkbox {
-    /// Keadaan dua-nilai.
+    /// The two-value state.
     pub fn checked(self, checked: bool) -> Self {
         self.state(CheckState::from(checked))
     }
 
-    /// Keadaan tiga-nilai (termasuk [`CheckState::Mixed`]).
+    /// The three-value state (including [`CheckState::Mixed`]).
     pub fn state(mut self, state: CheckState) -> Self {
         self.state = state;
         self
     }
 
-    /// Nama yang dibacakan screen reader.
+    /// The name announced by screen readers.
     ///
-    /// Untuk [`checkbox`] ini juga mengganti teks yang tergambar — nama dan
-    /// tulisan tidak pernah boleh berbeda.
+    /// For [`checkbox`] this also replaces the drawn text — the name and the
+    /// writing must never differ.
     pub fn label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
-    /// Matikan interaksi (tetap dibacakan sebagai dimmed).
+    /// Disable interaction (still announced as dimmed).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
     }
 
-    /// Bisa menerima fokus keyboard atau tidak.
+    /// Whether it can take keyboard focus.
     pub fn focusable(mut self, focusable: bool) -> Self {
         self.focus.focusable = focusable;
         self
     }
 
-    /// Urutan tab eksplisit (mendahului urutan pohon).
+    /// Explicit tab order (takes precedence over tree order).
     pub fn tab_order(mut self, order: i32) -> Self {
         self.focus.focusable = true;
         self.focus.order = Some(order);
         self
     }
 
-    /// Apa yang dijalankan saat pengguna mengubahnya — menerima keadaan
-    /// **baru**, bukan yang lama.
+    /// What runs when the user changes it — it receives the **new** state,
+    /// not the old one.
     pub fn on_change(mut self, f: impl Fn(CheckState) + 'static) -> Self {
         self.on_change = Some(ChangeCallback::new(f));
         self
     }
 
-    /// Bentuk dua-nilai dari [`Checkbox::on_change`], untuk checkbox yang
-    /// memang tidak pernah `Mixed`.
+    /// The two-value form of [`Checkbox::on_change`], for checkboxes that
+    /// genuinely are never `Mixed`.
     pub fn on_toggle(self, f: impl Fn(bool) + 'static) -> Self {
         self.on_change(move |s| f(s.is_on()))
     }
 
-    /// Spring yang menjalankan perubahan keadaannya.
+    /// The spring that drives its state changes.
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
         self
     }
 
-    /// Tandai gerakannya **dekoratif**: reduced-motion mematikannya sepenuhnya
-    /// alih-alih sekadar membuang pantulannya.
+    /// Mark its motion **decorative**: reduced-motion drops it entirely
+    /// instead of merely removing its bounce.
     pub fn decorative(mut self) -> Self {
         self.motion = MotionRole::Decorative;
         self
     }
 
-    /// Nilai gambar kustom (preset brand ketiga, §2.7).
+    /// Custom paint values (a third, brand preset, §2.7).
     pub fn style(mut self, style: CheckboxStyle) -> Self {
         self.style = style;
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5) — wajib untuk
-    /// anggota daftar dinamis.
+    /// Identity key among its siblings (§2.5) — required for members of a
+    /// dynamic list.
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Nilai gambar yang akan dipakai — dipakai gallery dan uji token.
+    /// The paint values that will be used — for the gallery and token tests.
     pub fn resolved_style(&self) -> CheckboxStyle {
         self.style
     }
@@ -1271,8 +1276,8 @@ impl From<Checkbox> for View {
             on_change: c.on_change,
         });
 
-        // Label hanya digambar bila memang ada mesin teksnya; `checkbox_only`
-        // tetap punya nama a11y tanpa satu glyph pun.
+        // The label is only drawn when there really is a text engine;
+        // `checkbox_only` still has an a11y name without a single glyph.
         if let (Some(fonts), Some(label)) = (c.fonts, c.label) {
             let warna = if c.disabled {
                 t.color.disabled_label
@@ -1285,8 +1290,8 @@ impl From<Checkbox> for View {
                     .line_height(t.typography.body_line_height)
                     .weight(FontWeight::REGULAR)
                     .color(warna)
-                    // Nama kontrol dibacakan sekali, dari node checkbox-nya —
-                    // bukan dua kali (aturan yang sama dengan `button`).
+                    // The control's name is announced once, by the checkbox
+                    // node — not twice (the same rule as `button`).
                     .role(AccessRole::Container),
             );
         }
@@ -1370,7 +1375,7 @@ mod tests {
         }
     }
 
-    // -- geometri goresan ---------------------------------------------------
+    // -- stroke geometry ----------------------------------------------------
 
     #[test]
     fn goresan_kosong_saat_belum_mulai_dan_penuh_saat_selesai() {
@@ -1396,7 +1401,7 @@ mod tests {
             let d = check_dots(kotak, 2.0, i as f32 / 10.0);
             assert!(d.len() >= sebelumnya, "goresan menyusut di {i}");
             sebelumnya = d.len();
-            // Semua kecuali jejak ujung berada di kisi yang sama setiap saat.
+            // Every stamp but the last sits on the same grid at all times.
             if let Some(awal) = &jejak_awal {
                 let n = awal.len();
                 assert_eq!(&d[..n], &awal[..], "jejak awal bergeser di {i}");
@@ -1437,13 +1442,13 @@ mod tests {
         assert_eq!(penuh.size.height, 2.0);
     }
 
-    // -- keadaan ------------------------------------------------------------
+    // -- state --------------------------------------------------------------
 
     #[test]
     fn mixed_tidak_pernah_jadi_pilihan_pengguna() {
         assert_eq!(CheckState::Off.toggled(), CheckState::On);
         assert_eq!(CheckState::On.toggled(), CheckState::Off);
-        // Mengaktifkan checkbox "sebagian" berarti memutuskan: penuh.
+        // Activating a "partly" checkbox means deciding: fully checked.
         assert_eq!(CheckState::Mixed.toggled(), CheckState::On);
     }
 
@@ -1465,7 +1470,7 @@ mod tests {
                 "hit target cuma {ukuran:?} (HIG minta {MIN_HIT_TARGET}pt)"
             );
             assert!(ukuran.width >= t.space(4.0));
-            // Yang digambar tetap sekecil tokennya.
+            // What is drawn stays as small as its token says.
             assert_eq!(node(&tree).box_rect().size.width, t.space(4.0));
         }
     }
@@ -1514,7 +1519,7 @@ mod tests {
             assert!(e.node.actions.contains(AccessActions::CLICK));
             assert!(e.node.actions.contains(AccessActions::FOCUS));
 
-            // Labelnya tidak ikut diumumkan sendiri: satu kontrol = satu nama.
+            // The label is not announced separately: one control, one name.
             let jumlah = a11y
                 .entries()
                 .iter()
@@ -1536,7 +1541,7 @@ mod tests {
         assert!(!e.node.actions.contains(AccessActions::CLICK));
     }
 
-    // -- interaksi ----------------------------------------------------------
+    // -- interaction --------------------------------------------------------
 
     #[test]
     fn klik_menceritakan_keadaan_baru_bukan_mengubah_dirinya_sendiri() {
@@ -1557,11 +1562,11 @@ mod tests {
         klik(&mut tree, &mut router, tengah);
 
         assert_eq!(dilihat.get(), Some(CheckState::On));
-        // Node tidak menebak duluan: keadaannya baru berubah lewat rebuild.
+        // The node does not guess first: its state only changes on rebuild.
         assert_eq!(node(&tree).state(), CheckState::Off);
         assert_eq!(node(&tree).activations(), 1);
 
-        // Rebuild dengan keadaan baru = spring diarahkan, bukan dilompati.
+        // Rebuild with the new state = the spring is aimed, not jumped.
         reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
         assert_eq!(node(&tree).state(), CheckState::On);
         assert!(node(&tree).is_animating());
@@ -1578,7 +1583,7 @@ mod tests {
         );
         let id = tree.children(tree.root())[0];
         let kotak = tree.bounds(id);
-        // Jauh di kanan kotak centangnya — masih di dalam labelnya.
+        // Far to the right of the check box — still inside its label.
         let titik = Point::new(kotak.max_x() - 4.0, kotak.center().y);
 
         let mut router = InputRouter::new();
@@ -1657,7 +1662,7 @@ mod tests {
         assert!(!node(&tree).is_focused());
     }
 
-    // -- spring -------------------------------------------------------------
+    // -- springs ------------------------------------------------------------
 
     #[test]
     fn lahir_tercentang_langsung_tergambar_tercentang() {
@@ -1711,7 +1716,7 @@ mod tests {
         let tengah = node(&tree).check_progress();
         assert!(tengah > 0.0 && tengah < 1.0, "belum di tengah: {tengah}");
 
-        // Retarget, bukan animasi baru: posisinya tidak melompat.
+        // Retarget, not a new animation: the position does not jump.
         reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(false));
         assert_eq!(node(&tree).check_progress(), tengah);
         assert!(node(&tree).is_animating());
@@ -1729,7 +1734,7 @@ mod tests {
         let f = Fonts::bundled_only();
         let t = tema();
 
-        // Hiasan (cincin fokus) ditandai dekoratif: langsung selesai.
+        // Decoration (the focus ring) is marked decorative: it finishes at once.
         let mut tree = pohon(checkbox(&f, &t, "Aktif"));
         let mut router = InputRouter::new();
         router.dispatch(
@@ -1746,8 +1751,8 @@ mod tests {
             "cincin dekoratif harus langsung sampai di reduced-motion"
         );
 
-        // Yang menjelaskan (goresan centang) tetap bergerak — hanya tanpa
-        // pantulan.
+        // What explains something (the check stroke) keeps moving — only
+        // without its bounce.
         let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
         reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
         detak(&mut tree, Motion::Reduced);
@@ -1760,7 +1765,7 @@ mod tests {
         let f = Fonts::bundled_only();
         let t = tema();
 
-        // Dibangun sebagai gerakan penjelas, lalu aplikasi berubah pikiran.
+        // Built as explanatory motion, then the application changes its mind.
         let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
         assert_eq!(node(&tree).motion_role(), MotionRole::Essential);
 
@@ -1774,8 +1779,8 @@ mod tests {
             "peran lama dipertahankan diam-diam"
         );
 
-        // Dan peran barunya harus terbaca di perilaku, bukan cuma di field:
-        // dekoratif + reduced-motion = tidak ada goresan sama sekali.
+        // And the new role has to show in behaviour, not just in a field:
+        // decorative + reduced-motion = no stroke animation at all.
         reconcile(
             &mut tree,
             checkbox(&f, &t, "Aktif").checked(true).decorative(),
@@ -1787,7 +1792,7 @@ mod tests {
             "goresan dekoratif harus langsung sampai di reduced-motion"
         );
 
-        // Perjalanan baliknya juga: dekoratif -> penjelas.
+        // The return trip too: decorative -> explanatory.
         reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
         assert_eq!(node(&tree).motion_role(), MotionRole::Essential);
     }
@@ -1796,8 +1801,8 @@ mod tests {
     fn hiasan_tetap_hiasan_walau_peran_dinaikkan_jadi_penjelas() {
         let f = Fonts::bundled_only();
         let t = tema();
-        // `press_t`/`ring_t` tidak boleh ikut naik peran: keduanya tidak
-        // membawa informasi apa pun, jadi reduced-motion selalu memakannya.
+        // `press_t`/`ring_t` must never be promoted: neither carries any
+        // information, so reduced-motion always eats them.
         let mut tree = pohon(checkbox(&f, &t, "Aktif").decorative());
         reconcile(&mut tree, checkbox(&f, &t, "Aktif"));
         let n = node(&tree);
@@ -1818,7 +1823,7 @@ mod tests {
         assert!(!node(&tree).is_animating());
     }
 
-    // -- token --------------------------------------------------------------
+    // -- tokens -------------------------------------------------------------
 
     #[test]
     fn warna_dan_bentuk_selalu_datang_dari_token_di_kedua_preset() {
@@ -1840,7 +1845,7 @@ mod tests {
                     })
                     .collect();
                 assert!(!kotak.is_empty());
-                // Kotaknya digambar lebih dulu, lalu jejak-jejak goresan.
+                // The box is drawn first, then the stroke stamps.
                 assert_eq!(kotak[0].background, t.color.accent, "{preset:?}");
                 assert_eq!(kotak[0].corners.style, t.radius.style, "{preset:?}");
                 assert_eq!(kotak[0].border_color, t.color.accent);
@@ -1849,7 +1854,7 @@ mod tests {
                 assert!(jejak.len() > 4, "centang nyaris tidak tergambar");
                 for q in jejak {
                     assert_eq!(q.background, t.color.on_accent, "{preset:?}");
-                    // Ujung pena selalu busur — squircle preset milik kotaknya.
+                    // The pen cap is always an arc — the preset squircle is the box's.
                     assert_eq!(q.corners.style, CornerStyle::Arc);
                 }
             }
@@ -1897,7 +1902,7 @@ mod tests {
         let garis = &kotak[1];
         assert!(garis.rect.size.width > garis.rect.size.height);
         assert_eq!(garis.background, t.color.on_accent);
-        // Latarnya tetap terisi seperti keadaan tercentang.
+        // Its background stays filled, just like the checked state.
         assert_eq!(kotak[0].background, t.color.accent);
     }
 

@@ -1,27 +1,27 @@
-//! Halaman demo: **tabs** (`KOMPONEN.md` Tier 3).
+//! Demo page: **tabs** (`KOMPONEN.md` Tier 3).
 //!
-//! Ketiga varian yang diminta katalog ditampilkan sekaligus — segmented
-//! (macOS), underline (shadcn), dan enclosed — dan ketiganya dikemudikan
-//! **satu signal yang sama**. Itu bukan kebetulan visual: ia bukti bahwa varian
-//! hanyalah token yang berbeda di atas satu mesin, bukan tiga komponen yang
-//! kebetulan bernama mirip.
+//! All three variants the catalog asks for are shown at once — segmented
+//! (macOS), underline (shadcn), and enclosed — and all three are driven by
+//! **one and the same signal**. That is not a visual coincidence: it is proof
+//! that a variant is just a different set of tokens on one engine, not three
+//! components that happen to have similar names.
 //!
-//! | Yang dibuktikan | Cara mencobanya di window |
+//! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Tiga varian, benar di kedua preset | `--preset cupertino` vs `--preset tailwind` |
-//! | Dark mode | `--appearance dark` / `light`, atau ikut OS |
-//! | Indikator ber-spring | Klik tab terjauh lalu segera klik yang lain: indikatornya **berbalik membawa kecepatannya**, tidak melompat |
-//! | Sorotan hover ber-spring | Gerakkan kursor melintasi deretan dengan cepat |
-//! | Keyboard + focus ring | Tab masuk ke deretan (satu perhentian), lalu ←/→/Home/End memilih; cincin fokus ikut meluncur |
-//! | Tab yang dimatikan | "Arsip" dilewati panah dan tidak bisa diklik |
-//! | Hit target ≥ 44pt | Tab sependek apa pun tetap 44pt tingginya |
-//! | Node AccessKit | VoiceOver membacakan "tab list" + tab mana yang terpilih |
-//! | Reduced-motion | Nyalakan "Reduce motion" di OS: sorotan hover hilang, indikator tetap berpindah tanpa memantul |
+//! | Three variants, correct in both presets | `--preset cupertino` vs `--preset tailwind` |
+//! | Dark mode | `--appearance dark` / `light`, or follow the OS |
+//! | A spring-driven indicator | Click the farthest tab and then immediately another: the indicator **reverses carrying its velocity**, it does not jump |
+//! | A spring-driven hover highlight | Sweep the cursor across the row quickly |
+//! | Keyboard + focus ring | Tab enters the row (a single stop), then ←/→/Home/End select; the focus ring slides along |
+//! | A disabled tab | "Arsip" is skipped by the arrows and cannot be clicked |
+//! | Hit target ≥ 44pt | Even the shortest tab is still 44pt tall |
+//! | AccessKit nodes | VoiceOver announces "tab list" + which tab is selected |
+//! | Reduced motion | Turn on "Reduce motion" in the OS: the hover highlight goes away, the indicator still moves but without bouncing |
 //!
-//! Panel di bawahnya dibangun **hanya untuk tab yang aktif**: yang tidak aktif
-//! tidak ada di pohon sama sekali, jadi ia tidak bisa di-Tab dan tidak
-//! dibacakan screen reader — cara paling murah sekaligus paling benar untuk
-//! "TabView" di model deklaratif (§2.5).
+//! The panel below is built **only for the active tab**: the inactive ones are
+//! not in the tree at all, so they cannot be Tabbed to and are not announced by
+//! a screen reader — the cheapest and simultaneously most correct way to do a
+//! "TabView" in a declarative model (§2.5).
 
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -33,28 +33,29 @@ use silka_theme::Theme;
 use silka_widgets::tabs::{tab, tabs, TabsVariant};
 use silka_widgets::{text, Fonts};
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Tabs";
 
-/// Label deretan segmented.
+/// Labels for the segmented row.
 pub const SEGMENTED: [&str; 3] = ["Hari", "Minggu", "Bulan"];
-/// Label deretan underline; yang terakhir sengaja dimatikan.
+/// Labels for the underline row; the last one is deliberately disabled.
 pub const UNDERLINE: [&str; 3] = ["Ringkasan", "Rincian", "Arsip"];
-/// Label deretan enclosed.
+/// Labels for the enclosed row.
 pub const ENCLOSED: [&str; 3] = ["Kode", "Pratinjau", "Log"];
 
-/// Isi panel per indeks — dipakai juga oleh test untuk membacanya dari pohon
-/// a11y, jadi yang diuji persis yang dibacakan screen reader.
+/// Panel content per index — also used by the tests to read it back from the
+/// a11y tree, so what is tested is exactly what a screen reader announces.
 pub const PANEL: [&str; 3] = [
     "Panel pertama: ringkasan seminggu terakhir.",
     "Panel kedua: rincian per transaksi.",
     "Panel ketiga: arsip yang sudah ditutup.",
 ];
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya (§3.3).
+    // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
@@ -65,7 +66,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             text(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
-                // Tracking negatif pada ukuran besar — kebiasaan SF (§3.6).
+                // Negative tracking at large sizes — an SF habit (§3.6).
                 .tracking(t.typography.title2.tracking)
                 .color(t.color.label)
                 .single_line(),
@@ -92,10 +93,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     .into()
 }
 
-/// Ketiga deretan sebagai **satu komponen**.
+/// All three rows as **a single component**.
 ///
-/// Inilah satu-satunya tempat pilihan dibaca bersama tab-nya, jadi klik hanya
-/// membangun ulang bagian ini dan panelnya — bukan seluruh halaman (§2.5).
+/// This is the only place the selection is read alongside its tabs, so a click
+/// rebuilds just this section and its panel — not the whole page (§2.5).
 fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
     let fonts = fonts.clone();
     component("deretan-tab", move |cx| {
@@ -114,8 +115,8 @@ fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
             [
                 tab(UNDERLINE[0]),
                 tab(UNDERLINE[1]),
-                // Tab mati: dilewati panah, tidak bisa diklik, tetap dibacakan
-                // screen reader sebagai dimmed.
+                // A disabled tab: skipped by the arrows, not clickable, still
+                // announced by a screen reader as dimmed.
                 tab(UNDERLINE[2]).disabled(true),
             ],
         )
@@ -141,10 +142,10 @@ fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
     })
 }
 
-/// Panel yang isinya mengikuti tab aktif.
+/// The panel whose content follows the active tab.
 ///
-/// Hanya panel yang aktif yang dibangun: yang lain tidak ada di pohon, jadi
-/// tidak ada yang perlu disembunyikan dari fokus maupun dari screen reader.
+/// Only the active panel is built: the others are not in the tree, so there is
+/// nothing to hide from focus or from a screen reader.
 fn panel(fonts: &Fonts, terpilih: Signal<usize>) -> View {
     let fonts = fonts.clone();
     component("panel-tab", move |cx| {
@@ -179,14 +180,14 @@ mod tests {
         Fonts::bundled_only()
     }
 
-    /// Aplikasi headless yang dirakit **persis seperti `run_app_with`**.
+    /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
         let untuk_view = fonts.clone();
         headless_app(theme, move |cx| halaman(cx, &untuk_view))
             .sized(VIEWPORT.width, VIEWPORT.height)
     }
 
-    /// Satu frame lengkap termasuk detak animasi — urutan yang sama dengan
+    /// One complete frame, animation tick included — the same order as the
     /// shell (`silka_platform::run_app_with`).
     fn frame(ui: &mut AppRuntime, waktu: Instant) -> Dirty {
         let dirty = ui.animate_at(waktu, silka_widgets::advance);
@@ -212,7 +213,7 @@ mod tests {
             .unwrap_or_else(|| panic!("tidak ada panel:\n{}", pohon.dump()))
     }
 
-    /// Keadaan terpilih setiap tab menurut pohon a11y.
+    /// Each tab's selected state according to the a11y tree.
     fn terpilih(ui: &AppRuntime, label: &str) -> Option<AccessToggled> {
         ui.access_tree().find_label(label)?.node.toggled
     }
@@ -262,12 +263,12 @@ mod tests {
             );
         }
 
-        // Tab pertama tiap deretan aktif, sisanya tidak.
+        // The first tab of each row is active, the rest are not.
         assert_eq!(terpilih(&ui, SEGMENTED[0]), Some(AccessToggled::On));
         assert_eq!(terpilih(&ui, SEGMENTED[1]), Some(AccessToggled::Off));
         assert_eq!(terpilih(&ui, ENCLOSED[0]), Some(AccessToggled::On));
 
-        // Tab yang dimatikan tetap dibacakan, tapi tidak bisa diklik.
+        // A disabled tab is still announced, but cannot be clicked.
         let mati = ui.access_tree().find_label(UNDERLINE[2]).unwrap().clone();
         assert!(mati.node.disabled);
         assert!(!mati.node.actions.contains(AccessActions::CLICK));
@@ -288,7 +289,7 @@ mod tests {
         ui.frame();
 
         assert_eq!(panel_terbaca(&ui), PANEL[1]);
-        // Satu signal, tiga deretan.
+        // One signal, three rows.
         assert_eq!(terpilih(&ui, SEGMENTED[1]), Some(AccessToggled::On));
         assert_eq!(terpilih(&ui, SEGMENTED[0]), Some(AccessToggled::Off));
         assert_eq!(terpilih(&ui, ENCLOSED[1]), Some(AccessToggled::On));
@@ -312,8 +313,8 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
         ui.frame();
 
-        // Tab pertama masuk ke deretan pertama — satu perhentian untuk
-        // seluruh deretan, bukan satu per tab.
+        // The first Tab enters the first row — a single stop for the whole
+        // row, not one per tab.
         ui.dispatch(&Event::Key(KeyEvent::pressed(
             KeyCode::Named(NamedKey::Tab),
             Duration::ZERO,
@@ -352,7 +353,8 @@ mod tests {
         waktu += Duration::from_millis(16);
         frame(&mut ui, waktu);
 
-        // Pilihan yang berganti memicu transisi yang meminta frame berikutnya.
+        // A changed selection triggers a transition that asks for the next
+        // frame.
         let mut n = 0;
         let mut pernah_beranimasi = false;
         while n < 2_000 {

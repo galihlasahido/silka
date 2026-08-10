@@ -1,24 +1,25 @@
-//! Kesalahan yang bisa muncul dari backend.
+//! Errors the backend can surface.
 
 use core::fmt;
 
-/// Kesalahan backend renderer.
+/// A renderer backend error.
 ///
-/// Tipe wgpu sengaja **tidak** ikut bocor keluar: varian menyimpan pesan yang
-/// sudah diformat agar pemanggil (dan nanti backend GL/CPU) berbicara dalam
-/// kosakata yang sama.
+/// wgpu types deliberately do **not** leak out: each variant carries an
+/// already-formatted message so callers (and later the GL/CPU backends) all
+/// speak the same vocabulary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RendererError {
-    /// Tidak ada adapter GPU yang cocok (mis. driver terlalu tua).
+    /// No suitable GPU adapter (e.g. the driver is too old).
     NoAdapter(String),
-    /// Perangkat GPU gagal dibuat atau limit yang diminta tidak tersedia.
+    /// The GPU device failed to be created, or a requested limit is missing.
     DeviceUnavailable(String),
-    /// Surface gagal dibuat dari window handle.
+    /// The surface could not be created from the window handle.
     SurfaceCreation(String),
-    /// Adapter yang terpilih tidak mendukung surface ini sama sekali.
+    /// The chosen adapter does not support this surface at all.
     SurfaceUnsupported,
-    /// Surface hilang dan harus dibuat ulang dari window (mis. GPU reset).
+    /// The surface was lost and must be recreated from the window (e.g. after
+    /// a GPU reset).
     SurfaceLost,
 }
 

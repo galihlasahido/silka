@@ -1,7 +1,7 @@
-//! `text_field()` — **komponen tersulit di seluruh katalog** (`KOMPONEN.md`
-//! Tier 2), dan karena itu yang dikerjakan paling awal: ia memaksa stack text,
-//! IME, dan accessibility matang lebih cepat (REKOMENDASI §5 failure mode #1
-//! dan #2).
+//! `text_field()` — **the hardest component in the whole catalogue**
+//! (`KOMPONEN.md` Tier 2), and precisely why it was built first: it forces the
+//! text, IME, and accessibility stacks to mature sooner (REKOMENDASI §5 failure
+//! mode #1 and #2).
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
@@ -17,50 +17,52 @@
 //!     .on_change(move |s| nama.set(s.to_string()));
 //! ```
 //!
-//! ## Yang membuatnya benar, bukan sekadar terlihat benar
+//! ## What makes it correct, not merely correct-looking
 //!
-//! | Bagian | Di mana | Kenapa di sana |
+//! | Piece | Where it lives | Why there |
 //! |---|---|---|
-//! | Caret/seleksi per grapheme, undo, preedit | [`silka_text::edit`] | Aturan Unicode (UAX #29), bukan aturan tampilan — dan bisa diuji tanpa piksel |
-//! | Geometri caret, hit-test, kotak seleksi | [`silka_text::TextLayout`] | Hanya hasil shaping yang tahu di mana huruf berdiri |
-//! | Fokus, capture penunjuk, klik beruntun | [`silka_core::input`] | Sudah jadi kontrak input framework |
-//! | Token warna/jarak/sudut | [`silka_theme`] | Satu tulisan, dua preset (§2.7) |
+//! | Per-grapheme caret/selection, undo, preedit | [`silka_text::edit`] | Unicode rules (UAX #29), not drawing rules — and testable without pixels |
+//! | Caret geometry, hit-testing, selection rects | [`silka_text::TextLayout`] | Only the shaping result knows where a letter stands |
+//! | Focus, pointer capture, multi-click | [`silka_core::input`] | Already the framework's input contract |
+//! | Color/spacing/corner tokens | [`silka_theme`] | Written once, two presets (§2.7) |
 //!
-//! Node ini menempelkan keempatnya, dan **tidak menambahkan aturan Unicode
-//! sendiri satu baris pun**.
+//! This node bolts the four together, and **does not add a single line of
+//! Unicode rules of its own**.
 //!
-//! ## Definition of Done (`KOMPONEN.md`) yang dipenuhi
+//! ## Definition of Done (`KOMPONEN.md`), satisfied
 //!
-//! - **Kedua preset** lewat token semantik; tidak ada satu angka warna pun di
-//!   berkas ini, dan bentuk sudut adalah parameter ([`Corners`]), bukan
-//!   konstanta (§2.7, §3.6).
-//! - **Semua state interaktif bertransisi spring**: hover dan fokus adalah
-//!   [`SpringValue`] yang bisa di-retarget di tengah gerakan — cincin fokus
-//!   tidak pernah "menyala" mendadak (§3.5).
-//! - **Keyboard penuh**: ←/→ (per grapheme), ⌥←/⌥→ (per kata), ⌘←/⌘→, Home/End,
-//!   Shift untuk memperluas, Backspace/Delete (+⌥ per kata), ⌘A, ⌘Z/⇧⌘Z, Enter
-//!   untuk `on_submit`. Tab **tidak** ditangkap: ia milik navigasi fokus.
-//! - **Node AccessKit** dengan peran [`AccessRole::TextInput`], nama, **nilai**,
-//!   dan aksi `SET_VALUE` (dikte suara) — lengkap dengan status disabled.
-//! - **Dark mode** ikut token; **hit target ≥ 44pt** ([`MIN_HIT_TARGET`]) walau
-//!   tinggi barisnya jauh lebih kecil; **reduced-motion** dihormati karena
-//!   seluruh gerakan lewat [`Tick`].
-//! - **IME preedit dirender inline** dengan garis bawah, dan selama komposisi
-//!   berjalan jalur tombol normal ditahan (§3.8). Selama itu pula `on_change`
-//!   **tidak** dipanggil: aplikasi tidak pernah menerima huruf setengah jadi.
+//! - **Both presets** through semantic tokens; not one color literal anywhere
+//!   in this file, and corner shape is a parameter ([`Corners`]), not a
+//!   constant (§2.7, §3.6).
+//! - **Every interactive state transitions on a spring**: hover and focus are
+//!   [`SpringValue`]s that can be retargeted mid-flight — the focus ring never
+//!   snaps on out of nowhere (§3.5).
+//! - **Full keyboard**: ←/→ (per grapheme), ⌥←/⌥→ (per word), ⌘←/⌘→, Home/End,
+//!   Shift to extend, Backspace/Delete (+⌥ per word), ⌘A, ⌘Z/⇧⌘Z, Enter for
+//!   `on_submit`. Tab is **not** captured: it belongs to focus navigation.
+//! - **AccessKit node** with role [`AccessRole::TextInput`], a name, a
+//!   **value**, and the `SET_VALUE` action (voice dictation) — disabled state
+//!   included.
+//! - **Dark mode** follows the tokens; **hit target ≥ 44pt**
+//!   ([`MIN_HIT_TARGET`]) even though the line itself is far shorter;
+//!   **reduced-motion** is honored because every motion goes through [`Tick`].
+//! - **IME preedit is rendered inline** with an underline, and while
+//!   composition is running the normal key path is held back (§3.8). For that
+//!   whole time `on_change` is **not** called: the app never receives
+//!   half-formed letters.
 //!
-//! ## Utang teknis yang disadari
+//! ## Technical debt we know about
 //!
-//! - **Clipboard** (⌘C/⌘X/⌘V) belum tersambung: `arboard` hidup di
-//!   `silka-platform` (INTEGRASI-NATIVE §4) dan crate ini tidak boleh
-//!   bergantung padanya. Pintasannya sengaja **dibiarkan menggelembung** ke
-//!   atas, bukan ditelan diam-diam, supaya shell bisa melayaninya nanti tanpa
-//!   satu baris pun berubah di sini.
-//! - **Caret tidak berkedip.** Kedipan butuh timer yang berdetak terus, dan itu
-//!   bertabrakan dengan janji "render hanya saat dirty" (§3.5) sampai scheduler
-//!   punya jalur timer resmi.
-//! - Satu baris saja; multi-baris + soft wrap adalah `text_area`, yang memakai
-//!   [`silka_text::TextEdit::multiline`] yang sudah ada.
+//! - **Clipboard** (⌘C/⌘X/⌘V) is not wired up yet: `arboard` lives in
+//!   `silka-platform` (INTEGRASI-NATIVE §4) and this crate must not depend on
+//!   it. Those shortcuts are deliberately **left to bubble** upward rather than
+//!   swallowed in silence, so the shell can serve them later without a single
+//!   line changing here.
+//! - **The caret does not blink.** Blinking needs a timer that ticks forever,
+//!   and that collides with the "render only when dirty" promise (§3.5) until
+//!   the scheduler grows a proper timer path.
+//! - Single line only; multi-line + soft wrap is `text_area`, which uses the
+//!   already-existing [`silka_text::TextEdit::multiline`].
 
 use std::rc::Rc;
 
@@ -86,25 +88,26 @@ use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 
 // ---------------------------------------------------------------------------
-// Callback pembawa teks
+// Text-carrying callback
 // ---------------------------------------------------------------------------
 
-/// Aksi yang menerima **isi kolom** — bentuk `on_change`/`on_submit`.
+/// An action that receives the **field's contents** — the shape of
+/// `on_change`/`on_submit`.
 ///
-/// [`silka_core::Callback`] sengaja tidak membawa argumen (ia melayani
-/// `on_press`); kolom teks butuh satu, dan hanya satu: teksnya. Sifatnya sama —
-/// `Clone` murah lewat [`Rc`], dan `PartialEq` berdasarkan identitas karena
-/// closure dibangun ulang tiap rebuild.
+/// [`silka_core::Callback`] deliberately carries no argument (it serves
+/// `on_press`); a text field needs one, and exactly one: its text. The
+/// characteristics are the same — cheap `Clone` via [`Rc`], and `PartialEq` by
+/// identity because closures are rebuilt on every rebuild.
 #[derive(Clone)]
 pub struct TextCallback(Rc<dyn Fn(&str)>);
 
 impl TextCallback {
-    /// Bungkus sebuah closure.
+    /// Wrap a closure.
     pub fn new(f: impl Fn(&str) + 'static) -> Self {
         Self(Rc::new(f))
     }
 
-    /// Jalankan dengan isi kolom.
+    /// Run it with the field's contents.
     pub fn call(&self, text: &str) {
         (self.0)(text)
     }
@@ -126,14 +129,14 @@ impl core::fmt::Debug for TextCallback {
 // Node
 // ---------------------------------------------------------------------------
 
-/// Node render sebuah kolom teks.
+/// The render node behind a text field.
 ///
-/// Ia menggambar teksnya sendiri (bukan lewat anak [`crate::text`]) karena
-/// caret, seleksi, dan preedit harus berbagi **satu** hasil shaping dengan
-/// glyph yang digambar. Dua sumber layout untuk satu baris teks = caret yang
-/// meleset setengah piksel, dan itu terlihat.
+/// It draws its own text (rather than through a [`crate::text`] child) because
+/// the caret, the selection, and the preedit must share **one** shaping result
+/// with the glyphs on screen. Two layout sources for one line of text = a caret
+/// off by half a pixel, and that shows.
 pub struct TextFieldBox {
-    // -- konfigurasi (token yang sudah diresolusi satu tingkat di atas) --
+    // -- configuration (tokens already resolved one level up) --
     fonts: Fonts,
     style: TextStyle,
     placeholder: String,
@@ -161,11 +164,11 @@ pub struct TextFieldBox {
     on_change: Option<TextCallback>,
     on_submit: Option<TextCallback>,
 
-    // -- state milik node (tidak pernah ditimpa diffing) --
+    // -- state owned by the node (diffing never overwrites it) --
     edit: TextEdit,
-    /// Nilai yang terakhir **datang dari props**, dan hanya dari sana: mengetik
-    /// tidak pernah mengubahnya. Pembanding untuk tahu apakah aplikasi benar-
-    /// benar mengganti isinya (lihat [`TextFieldProps::update`]).
+    /// The value that last **came from props**, and only from there: typing
+    /// never changes it. The yardstick for telling whether the app really did
+    /// replace the contents (see [`TextFieldProps::update`]).
     props_value: String,
     hovered: bool,
     focused: bool,
@@ -173,11 +176,11 @@ pub struct TextFieldBox {
     scroll: f32,
     size: Size,
 
-    // -- animasi (§3.5) --
+    // -- animation (§3.5) --
     hover_t: SpringValue<f32>,
     focus_t: SpringValue<f32>,
 
-    // -- turunan: selalu hasil dari yang di atas --
+    // -- derived: always a consequence of the above --
     layout: Option<TextLayout>,
     shaped: String,
     shaped_scale: f32,
@@ -189,55 +192,55 @@ pub struct TextFieldBox {
 }
 
 impl TextFieldBox {
-    /// Isi kolom **tersimpan** — tanpa preedit yang sedang dikomposisi.
+    /// The field's **committed** contents — without the preedit being composed.
     pub fn text(&self) -> &str {
         self.edit.text()
     }
 
-    /// Seleksi saat ini (indeks byte).
+    /// The current selection (byte indices).
     pub fn selection(&self) -> silka_text::Selection {
         self.edit.selection()
     }
 
-    /// Benar bila IME sedang mengomposisi di kolom ini.
+    /// True while an IME is composing in this field.
     pub fn is_composing(&self) -> bool {
         self.edit.is_composing()
     }
 
-    /// Kotak caret dalam koordinat lokal node (hasil layout terakhir).
+    /// The caret rect in node-local coordinates (from the last layout).
     pub fn caret_rect(&self) -> Rect {
         self.caret
     }
 
-    /// Kotak-kotak sorot seleksi, koordinat lokal node.
+    /// The selection highlight rects, in node-local coordinates.
     pub fn selection_rects(&self) -> &[Rect] {
         &self.selection
     }
 
-    /// Kotak garis bawah preedit, koordinat lokal node.
+    /// The preedit underline rects, in node-local coordinates.
     pub fn preedit_rects(&self) -> &[Rect] {
         &self.preedit
     }
 
-    /// Benar bila yang tampil adalah placeholder (kolom kosong).
+    /// True when what is on screen is the placeholder (an empty field).
     pub fn shows_placeholder(&self) -> bool {
         self.showing_placeholder
     }
 
-    /// Geseran horizontal isi, poin logis.
+    /// Horizontal offset of the contents, in logical points.
     pub fn scroll(&self) -> f32 {
         self.scroll
     }
 
-    /// Benar bila salah satu transisinya masih bergerak.
+    /// True while any of its transitions is still moving.
     pub fn is_animating(&self) -> bool {
         self.hover_t.is_animating() || self.focus_t.is_animating()
     }
 
-    /// Majukan transisi satu frame; benar bila ada yang berubah.
+    /// Advance the transitions by one frame; true if anything changed.
     ///
-    /// Dipanggil [`crate::advance`], satu-satunya tempat seluruh spring sebuah
-    /// pohon dimajukan bersama-sama.
+    /// Called by [`crate::advance`], the one place where every spring in a tree
+    /// is advanced together.
     pub fn advance(&mut self, tick: &Tick) -> bool {
         if !self.is_animating() {
             return false;
@@ -248,30 +251,31 @@ impl TextFieldBox {
         (self.hover_t.position(), self.focus_t.position()) != sebelum
     }
 
-    /// Selesaikan seluruh transisi seketika (uji dan snapshot).
+    /// Finish every transition instantly (tests and snapshots).
     pub fn settle(&mut self) {
         self.hover_t.settle();
         self.focus_t.settle();
     }
 
-    // -- geometri -----------------------------------------------------------
+    // -- geometry -----------------------------------------------------------
 
-    /// Kotak isi: kotak node dikurangi padding.
+    /// The content box: the node's box minus padding.
     fn kotak_isi(&self) -> Rect {
         Rect::from_origin_size(Point::ZERO, self.size).deflate(self.padding)
     }
 
-    /// Tepi atas teks: satu baris selalu **di tengah** secara vertikal, karena
-    /// hit target 44pt hampir selalu lebih tinggi dari barisnya (HIG).
+    /// Top edge of the text: a single line is always **vertically centered**,
+    /// because a 44pt hit target is nearly always taller than its line (HIG).
     fn atas_teks(&self) -> f32 {
         let baris = self.style.line_height_px();
         ((self.size.height - baris) / 2.0).max(self.padding.top)
     }
 
-    /// Shape ulang bila teks yang terlihat atau resolusi layar berubah.
+    /// Re-shape when the visible text or the screen resolution changes.
     ///
-    /// Dua alasan sah, dan hanya dua — aturan yang sama dengan [`crate::text`]:
-    /// isi berubah, atau scale factor berubah (bitmap glyph terikat resolusi).
+    /// Two valid reasons, and only two — the same rule as [`crate::text`]: the
+    /// contents changed, or the scale factor changed (glyph bitmaps are tied to
+    /// resolution).
     fn pastikan_bentuk(&mut self) {
         let tampil = self.edit.display_text().into_owned();
         let kosong = tampil.is_empty();
@@ -298,7 +302,8 @@ impl TextFieldBox {
         self.showing_placeholder = kosong;
     }
 
-    /// Caret menurut hasil shaping — nol bila yang tampil placeholder.
+    /// The caret according to the shaping result — zeroed when the placeholder
+    /// is showing.
     fn caret_teks(&self) -> Caret {
         let baris = self.style.line_height_px();
         let kosong = Caret {
@@ -317,18 +322,18 @@ impl TextFieldBox {
         }
     }
 
-    /// Hitung ulang scroll, caret, seleksi, preedit, dan glyph run.
+    /// Recompute scroll, caret, selection, preedit, and the glyph run.
     ///
-    /// Satu-satunya tempat koordinat lahir; `paint` hanya menggambar apa yang
-    /// sudah dihitung di sini, karena rasterisasi butuh `&mut` mesin teks dan
-    /// pass paint tidak punya itu.
+    /// The one place coordinates are born; `paint` only draws what was already
+    /// computed here, because rasterization needs `&mut` on the text engine and
+    /// the paint pass does not have it.
     fn perbarui_geometri(&mut self) {
         let isi = self.kotak_isi();
         let atas = self.atas_teks();
         let caret = self.caret_teks();
 
-        // Guliran horizontal: caret selalu terlihat, dan isi tidak pernah
-        // digeser lebih jauh dari yang perlu.
+        // Horizontal scroll: the caret is always visible, and the contents are
+        // never shifted further than they need to be.
         let lebar_isi = self
             .layout
             .as_ref()
@@ -377,8 +382,8 @@ impl TextFieldBox {
             _ => Vec::new(),
         };
 
-        // Garis bawah preedit: setebal caret, menempel di dasar baris — bentuk
-        // yang dipakai semua OS untuk menandai "ini belum jadi" (§3.8).
+        // Preedit underline: as thick as the caret, hugging the baseline — the
+        // shape every OS uses to mark "this isn't final yet" (§3.8).
         self.preedit = match (&self.layout, self.edit.preedit_range()) {
             (Some(l), Some(r)) => l
                 .selection_rects(r)
@@ -400,8 +405,8 @@ impl TextFieldBox {
         let warna = if self.showing_placeholder {
             self.placeholder_color
         } else if self.disabled {
-            // Token `disabled_label`, bukan warna teks yang diredupkan sendiri:
-            // "dimmed" adalah keputusan theme, bukan keputusan widget (§2.7).
+            // The `disabled_label` token, not the text color dimmed by hand:
+            // "dimmed" is a theme decision, not a widget decision (§2.7).
             self.disabled_color
         } else {
             self.color
@@ -409,8 +414,8 @@ impl TextFieldBox {
         self.run = match &self.layout {
             Some(l) => {
                 let mut run = self.fonts.with(|m| m.rasterize(l, asal, warna));
-                // Isi yang lebih panjang dari kolomnya dipotong di tepi isi,
-                // bukan menabrak border.
+                // Contents longer than the field are clipped at the content
+                // edge, rather than running into the border.
                 run.clip = Some(pandang);
                 run
             }
@@ -418,7 +423,7 @@ impl TextFieldBox {
         };
     }
 
-    /// Indeks byte di bawah titik `local` (koordinat lokal node).
+    /// The byte index under point `local` (node-local coordinates).
     fn indeks_di(&self, local: Point) -> usize {
         if self.showing_placeholder {
             return 0;
@@ -426,14 +431,14 @@ impl TextFieldBox {
         let isi = self.kotak_isi();
         let titik = Point::new(
             local.x - isi.origin.x + self.scroll,
-            // Satu baris: apa pun tinggi kliknya, barisnya itu-itu juga.
+            // Single line: however high the click lands, it's the same line.
             self.style.line_height_px() / 2.0,
         );
         self.layout.as_ref().map_or(0, |l| l.hit(titik))
     }
 
-    /// Dekorasi untuk keadaan sekarang — hasil **interpolasi spring**, bukan
-    /// lompatan antar tiga warna.
+    /// The decoration for the current state — the result of **spring
+    /// interpolation**, not a jump between three colors.
     fn dekorasi_aktif(&self) -> Decoration {
         let hover = self.hover_t.position().clamp(0.0, 1.0);
         let fokus = self.focus_t.position().clamp(0.0, 1.0);
@@ -458,20 +463,20 @@ impl TextFieldBox {
         }
     }
 
-    // -- reaksi terhadap perubahan ------------------------------------------
+    // -- reacting to changes -------------------------------------------------
 
-    /// Setelah teks berubah: shape ulang, hitung geometri, lapor ke aplikasi.
+    /// After the text changed: re-shape, recompute geometry, tell the app.
     fn setelah_teks_berubah(&mut self, ctx: &mut EventCtx<'_>) {
         self.pastikan_bentuk();
         self.perbarui_geometri();
-        // `props_value` sengaja **tidak** disentuh di sini: ia mencatat apa yang
-        // terakhir diberikan aplikasi, bukan apa yang diketik pengguna. Itulah
-        // yang membuat kolom tanpa `on_change` tetap bisa diketik (props-nya
-        // tidak pernah berubah, jadi tidak pernah menimpa), sementara kolom
-        // yang terkendali tetap menerima nilai baru dari aplikasi.
+        // `props_value` is deliberately **not** touched here: it records what
+        // the app last handed us, not what the user typed. That is exactly what
+        // keeps a field without `on_change` typable (its props never change, so
+        // they never overwrite), while a controlled field still accepts new
+        // values from the app.
         //
-        // Nilai yang dilaporkan **tidak pernah** memuat preedit: aplikasi hanya
-        // melihat teks yang sudah jadi (§3.8).
+        // The reported value **never** contains the preedit: the app only ever
+        // sees finished text (§3.8).
         if let Some(cb) = self.on_change.clone() {
             cb.call(self.edit.text());
         }
@@ -479,14 +484,14 @@ impl TextFieldBox {
         self.perbarui_ime(ctx);
     }
 
-    /// Setelah caret/seleksi berubah tapi teksnya tidak.
+    /// After the caret/selection changed but the text did not.
     fn setelah_caret_berubah(&mut self, ctx: &mut EventCtx<'_>) {
         self.perbarui_geometri();
         ctx.request_paint();
         self.perbarui_ime(ctx);
     }
 
-    /// Beri tahu shell di mana jendela kandidat IME harus berdiri.
+    /// Tell the shell where the IME candidate window should stand.
     fn perbarui_ime(&self, ctx: &mut EventCtx<'_>) {
         if !self.focused || self.disabled {
             return;
@@ -501,18 +506,17 @@ impl TextFieldBox {
         ));
     }
 
-    /// Bisa disunting sama sekali?
+    /// Editable at all?
     fn bisa_sunting(&self) -> bool {
         !self.disabled && !self.read_only
     }
 
-    /// Ganti isi atas permintaan **teknologi bantu** (dikte suara, isi ulang
-    /// field) — jalur masuk [`AccessAction::SetValue`].
+    /// Replace the contents at the request of **assistive technology** (voice
+    /// dictation, autofill) — the [`AccessAction::SetValue`] entry point.
     ///
-    /// Sengaja terpisah dari jalur props: yang satu adalah aplikasi yang
-    /// menyetel nilai, yang ini adalah *pengguna* yang mengetik lewat cara
-    /// lain — jadi ia wajib memanggil `on_change`, persis seperti ketikan
-    /// keyboard.
+    /// Deliberately separate from the props path: that one is the app setting a
+    /// value, this one is the *user* typing by other means — so it must call
+    /// `on_change`, exactly like a keystroke does.
     fn setel_nilai_bantu(&mut self, nilai: &str) -> bool {
         if !self.bisa_sunting() || self.edit.text() == nilai {
             return false;
@@ -529,9 +533,9 @@ impl TextFieldBox {
     // -- keyboard -----------------------------------------------------------
 
     fn tombol(&mut self, ctx: &mut EventCtx<'_>, k: &KeyEvent) {
-        // **Selama komposisi IME, jalur tombol normal ditahan** (§3.8): huruf
-        // yang sedang dipilih di jendela kandidat tidak boleh juga masuk
-        // sebagai ketikan biasa.
+        // **While an IME is composing, the normal key path is held back**
+        // (§3.8): the letters being picked in the candidate window must not
+        // also land as ordinary keystrokes.
         if self.edit.is_composing() {
             ctx.handled();
             return;
@@ -567,7 +571,7 @@ impl TextFieldBox {
                     };
                     caret_berubah = self.edit.move_caret(gerak, shift);
                 }
-                // Satu baris: atas/bawah = ujung baris, kebiasaan AppKit.
+                // Single line: up/down = ends of the line, the AppKit habit.
                 NamedKey::ArrowUp | NamedKey::Home => {
                     caret_berubah = self.edit.move_caret(Movement::LineStart, shift);
                 }
@@ -598,8 +602,8 @@ impl TextFieldBox {
                         tertangani = false;
                     }
                 }
-                // Esc dan Tab sengaja dibiarkan lewat: yang pertama milik
-                // overlay, yang kedua milik navigasi fokus.
+                // Esc and Tab are deliberately let through: the first belongs
+                // to overlays, the second to focus navigation.
                 _ => tertangani = false,
             },
 
@@ -612,14 +616,15 @@ impl TextFieldBox {
                         self.edit.undo();
                     }
                 }
-                // ⌘C/⌘X/⌘V dibiarkan menggelembung: clipboard hidup di
-                // `silka-platform` (lihat catatan modul).
+                // ⌘C/⌘X/⌘V are left to bubble: the clipboard lives in
+                // `silka-platform` (see the module notes).
                 _ => tertangani = false,
             },
 
             KeyCode::Character(c) if self.bisa_sunting() && !m.contains(Modifiers::CONTROL) => {
-                // Teks dari platform sudah melewati layout keyboard dan dead
-                // key; `c` hanyalah cadangan untuk event sintetis (uji).
+                // Text from the platform has already been through the keyboard
+                // layout and dead keys; `c` is only a fallback for synthetic
+                // events (tests).
                 let teks = k.text.clone().unwrap_or_else(|| c.to_string());
                 self.edit.insert(&teks);
             }
@@ -658,8 +663,8 @@ impl TextFieldBox {
         if self.edit.text() != sebelum {
             self.setelah_teks_berubah(ctx);
         } else {
-            // Preedit berubah = teks yang **terlihat** berubah, jadi shaping
-            // ulang tetap perlu — tapi aplikasi tidak diberi tahu apa pun.
+            // A changed preedit means the **visible** text changed, so
+            // re-shaping is still needed — but the app is told nothing.
             self.pastikan_bentuk();
             self.perbarui_geometri();
             ctx.request_layout();
@@ -667,7 +672,7 @@ impl TextFieldBox {
         }
     }
 
-    // -- penunjuk -----------------------------------------------------------
+    // -- pointer -------------------------------------------------------------
 
     fn penunjuk(&mut self, ctx: &mut EventCtx<'_>, p: &silka_core::input::PointerEvent) {
         match p.phase {
@@ -693,9 +698,9 @@ impl TextFieldBox {
                 self.dragging = true;
                 let indeks = self.indeks_di(ctx.local());
                 match p.click_count {
-                    // Klik ganda = satu kata, klik tripel = seluruh isi —
-                    // ambang waktunya milik framework (`ClickConfig`), sehingga
-                    // sama di tiga OS.
+                    // Double-click = one word, triple-click = everything — the
+                    // timing thresholds belong to the framework
+                    // (`ClickConfig`), so they match across all three OSes.
                     2 => {
                         self.edit.select_word_at(indeks);
                     }
@@ -711,8 +716,8 @@ impl TextFieldBox {
                 ctx.handled();
             }
             PointerPhase::Move if self.dragging => {
-                // Drag-select: penunjuk sudah ditangkap, jadi menyeret keluar
-                // kolom pun tetap memperluas seleksi.
+                // Drag-select: the pointer is already captured, so dragging
+                // outside the field still extends the selection.
                 let indeks = self.indeks_di(ctx.local());
                 if self.edit.place_caret(indeks, true) {
                     self.setelah_caret_berubah(ctx);
@@ -756,9 +761,9 @@ impl RenderNode for TextFieldBox {
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.decorate(&self.dekorasi_aktif());
 
-        // Cincin fokus **tumbuh** bersama spring: 0 saat diam, penuh saat
-        // fokus. Digambar di luar kotak agar tidak menutupi isi (kebiasaan
-        // AppKit, sama dengan `Interactive`).
+        // The focus ring **grows** with the spring: 0 at rest, full when
+        // focused. Drawn outside the box so it never covers the contents (the
+        // AppKit habit, same as `Interactive`).
         let fokus = self.focus_t.position().clamp(0.0, 1.0);
         if let Some(ring) = self.focus_ring.filter(|r| fokus > 0.0 && r.width > 0.0) {
             let tebal = ring.width * fokus;
@@ -774,8 +779,8 @@ impl RenderNode for TextFieldBox {
             );
         }
 
-        // Sorot seleksi **di bawah** teks; alpha-nya ikut fokus supaya kolom
-        // yang kehilangan fokus tidak terlihat masih "aktif".
+        // The selection highlight goes **under** the text; its alpha follows
+        // focus so an unfocused field doesn't still look "live".
         if !self.selection.is_empty() && !self.disabled {
             let warna = self
                 .selection_color
@@ -789,7 +794,7 @@ impl RenderNode for TextFieldBox {
             ctx.glyph_run(self.run.clone());
         }
 
-        // Garis bawah preedit: di atas teks, karena ia menandai teks itu.
+        // Preedit underline: on top of the text, because it marks that text.
         for r in &self.preedit {
             ctx.quad(Quad::new(*r).background(self.color));
         }
@@ -802,14 +807,14 @@ impl RenderNode for TextFieldBox {
     fn access(&self, node: &mut AccessNode) {
         node.role = AccessRole::TextInput;
         node.label.clone_from(&self.label);
-        // Nilai yang dibacakan adalah nilai tersimpan — bukan preedit yang
-        // masih setengah jadi.
+        // The value read out is the committed one — not a preedit that is
+        // still half-formed.
         node.value = Some(self.edit.text().to_string());
         node.disabled = self.disabled;
         if !self.disabled {
             node.actions |= AccessActions::CLICK | AccessActions::FOCUS;
             if !self.read_only {
-                // Dikte suara dan "isi ulang field" milik teknologi bantu.
+                // Voice dictation and autofill belong to assistive tech.
                 node.actions |= AccessActions::SET_VALUE;
             }
         }
@@ -820,8 +825,8 @@ impl RenderNode for TextFieldBox {
     }
 
     fn hit_behavior(&self) -> HitBehavior {
-        // Kolom mati tetap menyerap: klik padanya tidak boleh menembus ke
-        // konten di belakangnya.
+        // A disabled field still absorbs: a click on it must not fall through
+        // to whatever is behind it.
         HitBehavior::Opaque
     }
 
@@ -856,8 +861,8 @@ impl RenderNode for TextFieldBox {
                     .set_target(if self.focused { 1.0 } else { 0.0 });
                 if !self.focused {
                     self.dragging = false;
-                    // Komposisi yang menggantung saat fokus pergi dibuang: IME
-                    // tidak akan pernah mengirim commit-nya lagi.
+                    // A composition left dangling when focus leaves is thrown
+                    // away: the IME will never send its commit now.
                     self.edit.clear_preedit();
                     self.pastikan_bentuk();
                 }
@@ -887,27 +892,27 @@ impl core::fmt::Debug for TextFieldBox {
 }
 
 // ---------------------------------------------------------------------------
-// Detak
+// Ticking
 // ---------------------------------------------------------------------------
 
-/// Layani permintaan teknologi bantu yang ditujukan ke sebuah kolom teks.
+/// Serve an assistive-technology request aimed at a text field.
 ///
-/// Node aksesibilitas kolom mengumumkan [`AccessActions::SET_VALUE`], dan
-/// mengumumkan kemampuan yang tidak dilayani sama saja dengan berbohong kepada
-/// screen reader. Inilah yang melayaninya; shell tinggal meneruskan apa yang
-/// datang dari adapter platform:
+/// The field's accessibility node advertises [`AccessActions::SET_VALUE`], and
+/// advertising a capability you don't actually serve is just lying to the
+/// screen reader. This is what serves it; the shell only has to forward
+/// whatever arrives from the platform adapter:
 ///
 /// ```no_run
 /// # use silka_core::access::AccessActionRequest;
 /// # use silka_core::tree::RenderTree;
 /// # fn contoh(tree: &mut RenderTree, permintaan: &AccessActionRequest) {
-/// // Di dalam `WindowConfig::on_access_action(...)`:
+/// // Inside `WindowConfig::on_access_action(...)`:
 /// silka_widgets::text_field::apply_access_action(tree, permintaan);
 /// # }
 /// ```
 ///
-/// Mengembalikan `true` bila isinya benar-benar berubah — dan bila iya,
-/// `on_change` sudah dipanggil, sama seperti ketikan keyboard.
+/// Returns `true` when the contents really did change — and when they did,
+/// `on_change` has already been called, just as for a keystroke.
 pub fn apply_access_action(tree: &mut RenderTree, request: &AccessActionRequest) -> bool {
     if request.action != AccessAction::SetValue {
         return false;
@@ -924,11 +929,11 @@ pub fn apply_access_action(tree: &mut RenderTree, request: &AccessActionRequest)
     berubah
 }
 
-/// Kolom teks pertama di `tree` — jalan pintas untuk uji dan gallery.
+/// The first text field in `tree` — a shortcut for tests and the gallery.
 ///
-/// Spring-nya sendiri dimajukan [`crate::advance`], satu detak untuk seluruh
-/// pohon: komponen baru cukup menambah satu cabang di sana, bukan menumbuhkan
-/// loop frame kedua (§3.5).
+/// Its springs are advanced by [`crate::advance`], one tick for the whole tree:
+/// a new component only adds a branch there instead of growing a second frame
+/// loop (§3.5).
 pub fn first(tree: &RenderTree) -> Option<NodeId> {
     let mut tumpukan = vec![tree.root()];
     while let Some(id) = tumpukan.pop() {
@@ -944,7 +949,7 @@ pub fn first(tree: &RenderTree) -> Option<NodeId> {
 // View
 // ---------------------------------------------------------------------------
 
-/// Props sebuah kolom teks: **hanya token yang sudah diresolusi**.
+/// A text field's props: **resolved tokens only**.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextFieldProps {
     fonts: Fonts,
@@ -1031,11 +1036,12 @@ impl ViewNode for TextFieldProps {
             .expect("tipe view sama berarti tipe render node sama");
         let mut dirty = Dirty::NONE;
 
-        // **Isi hanya ditimpa kalau aplikasi memang mengubahnya.** Membandingkan
-        // props dengan props (bukan dengan isi node) adalah bedanya antara
-        // kolom yang bisa diketik dan kolom yang melempar caret ke belakang
-        // setiap kali ada signal lain berubah — bug "controlled component"
-        // klasik, sama yang dihindari `ViewportProps::scroll`.
+        // **The contents are overwritten only when the app actually changed
+        // them.** Comparing props against props (not against the node's
+        // contents) is the difference between a field you can type in and a
+        // field that throws the caret backwards every time some unrelated
+        // signal changes — the classic "controlled component" bug, the same one
+        // `ViewportProps::scroll` sidesteps.
         if n.props_value != self.value {
             n.props_value.clone_from(&self.value);
             if n.edit.text() != self.value {
@@ -1085,7 +1091,8 @@ impl ViewNode for TextFieldProps {
             n.border_color = self.border_color;
             n.border_focus_color = self.border_focus_color;
             n.focus_ring = self.focus_ring;
-            // Warna teks ikut warna node: run harus dirasterisasi ulang.
+            // Text color follows the node's color: the run must be
+            // re-rasterized.
             n.shaped_scale = f32::NAN;
             dirty |= Dirty::PAINT;
         }
@@ -1116,25 +1123,26 @@ impl ViewNode for TextFieldProps {
             n.hover_t.set_spring(self.spring);
             n.focus_t.set_spring(self.spring);
         }
-        // Callback selalu diganti tanpa dibandingkan: closure dibangun ulang
-        // tiap rebuild dan menangkap nilai baru (pola yang sama dengan
-        // `InteractiveProps::on_press`).
+        // Callbacks are always replaced without comparison: closures are
+        // rebuilt on every rebuild and capture fresh values (the same pattern
+        // as `InteractiveProps::on_press`).
         n.on_change.clone_from(&self.on_change);
         n.on_submit.clone_from(&self.on_submit);
         dirty
     }
 }
 
-/// Builder kolom teks bergaya Dart (§2.5).
+/// A Dart-style text field builder (§2.5).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TextField {
     props: TextFieldProps,
     key: Option<Key>,
 }
 
-/// Kolom teks satu baris — komponen `text_field` (`KOMPONEN.md` Tier 2).
+/// A single-line text field — the `text_field` component (`KOMPONEN.md`
+/// Tier 2).
 ///
-/// Seluruh nilainya datang dari `theme`; `fonts` adalah mesin teks aplikasi.
+/// Every value comes from `theme`; `fonts` is the app's text engine.
 pub fn text_field(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> TextField {
     let t = theme;
     TextField {
@@ -1149,8 +1157,8 @@ pub fn text_field(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> Tex
             padding: Insets::symmetric(t.space(3.0), t.space(1.5)),
             corners: t.corners(t.radius.md),
             min_height: MIN_HIT_TARGET,
-            // Setipis satu langkah spacing terkecil: caret HIG adalah garis
-            // rambut, bukan balok.
+            // As thin as the smallest spacing step: the HIG caret is a hairline,
+            // not a slab.
             caret_width: t.space(0.25),
             label: None,
             disabled: false,
@@ -1181,68 +1189,72 @@ impl TextField {
         self
     }
 
-    /// Kunci identitas di antara saudara-saudaranya (§2.5).
+    /// Identity key among its siblings (§2.5).
     pub fn key(mut self, key: impl Into<Key>) -> Self {
         self.key = Some(key.into());
         self
     }
 
-    /// Teks samar saat kolom kosong.
+    /// The faint text shown while the field is empty.
     pub fn placeholder(self, placeholder: impl Into<String>) -> Self {
         let p = placeholder.into();
         self.map(move |x| x.placeholder = p)
     }
 
-    /// Nama yang dibacakan screen reader (§3.8) — pasangan `label` visual.
+    /// The name a screen reader reads out (§3.8) — the visual `label`'s twin.
     pub fn label(self, label: impl Into<String>) -> Self {
         let l = label.into();
         self.map(move |x| x.label = Some(l))
     }
 
-    /// Matikan kolom: tidak menerima fokus maupun ketikan, tetap dibacakan.
+    /// Disable the field: it takes neither focus nor keystrokes, but is still
+    /// read out.
     pub fn disabled(self, disabled: bool) -> Self {
         self.map(move |x| x.disabled = disabled)
     }
 
-    /// Isinya bisa diseleksi dan disalin, tapi tidak bisa diubah.
+    /// The contents can be selected and copied, but not changed.
     pub fn read_only(self, read_only: bool) -> Self {
         self.map(move |x| x.read_only = read_only)
     }
 
-    /// Dipanggil setiap kali isi kolom berubah — **tanpa** preedit IME.
+    /// Called every time the field's contents change — **without** the IME
+    /// preedit.
     pub fn on_change(self, f: impl Fn(&str) + 'static) -> Self {
         let cb = TextCallback::new(f);
         self.map(move |x| x.on_change = Some(cb))
     }
 
-    /// Dipanggil saat Enter ditekan.
+    /// Called when Enter is pressed.
     pub fn on_submit(self, f: impl Fn(&str) + 'static) -> Self {
         let cb = TextCallback::new(f);
         self.map(move |x| x.on_submit = Some(cb))
     }
 
-    /// Gaya teks lengkap (mis. yang sudah dirakit dari token typography).
+    /// A complete text style (e.g. one already assembled from typography
+    /// tokens).
     pub fn style(self, style: TextStyle) -> Self {
         self.map(move |x| x.style = style)
     }
 
-    /// Jarak di dalam tepi kolom — **selalu** skala spacing token (§2.6).
+    /// Spacing inside the field's edges — **always** the token spacing scale
+    /// (§2.6).
     pub fn padding(self, padding: Insets) -> Self {
         self.map(move |x| x.padding = padding)
     }
 
-    /// Bentuk sudut: squircle di Cupertino, arc di Tailwind — dua nilai yang
-    /// sama sahnya, keduanya parameter shader (§3.6).
+    /// Corner shape: squircle on Cupertino, arc on Tailwind — two equally valid
+    /// values, both of them shader parameters (§3.6).
     pub fn corners(self, corners: Corners) -> Self {
         self.map(move |x| x.corners = corners)
     }
 
-    /// Tinggi minimum; bawaannya [`MIN_HIT_TARGET`] (HIG).
+    /// Minimum height; defaults to [`MIN_HIT_TARGET`] (HIG).
     pub fn min_height(self, height: f32) -> Self {
         self.map(move |x| x.min_height = height.max(0.0))
     }
 
-    /// Spring yang menjalankan transisi hover/fokus.
+    /// The spring that drives the hover/focus transitions.
     pub fn spring(self, spring: Spring) -> Self {
         self.map(move |x| x.spring = spring)
     }

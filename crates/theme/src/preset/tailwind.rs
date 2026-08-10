@@ -1,16 +1,18 @@
-//! Preset **Tailwind/shadcn** — kiblat shadcn/ui di web, dirender native.
+//! The **Tailwind/shadcn** preset — modeled on shadcn/ui from the web,
+//! rendered natively.
 //!
-//! Ciri yang membedakannya (§2.7):
+//! What sets it apart (§2.7):
 //!
-//! - **Arc biasa**: `rounded-lg` = 8px, sama persis dengan web.
-//! - **Palet slate/blue step 50–950** apa adanya dari [`crate::palette::tailwind`].
-//! - **Shadow `sm`/`md`/`lg`** dengan angka Tailwind (yang di web memang juga
-//!   dua `box-shadow` bertumpuk — cocok dengan model ambient+key kita).
-//! - **Skala font Tailwind** (`text-xs` … `text-3xl`), tanpa optical sizing:
-//!   preset ini memang tidak berpura-pura jadi SF.
+//! - **Plain arcs**: `rounded-lg` = 8px, exactly as on the web.
+//! - **The slate/blue 50–950 ramps** verbatim from [`crate::palette::tailwind`].
+//! - **`sm`/`md`/`lg` shadows** with Tailwind's numbers (which on the web are
+//!   themselves two stacked `box-shadow`s — a natural fit for our ambient+key
+//!   model).
+//! - **The Tailwind type scale** (`text-xs` … `text-3xl`), with no optical
+//!   sizing: this preset makes no pretense of being SF.
 //!
-//! Yang **tidak** ikut dari web: CSS-nya. Tidak ada parser, tidak ada cascade,
-//! tidak ada selector — hanya angkanya (§2.6).
+//! What does **not** come along from the web: the CSS. No parser, no cascade,
+//! no selectors — only the numbers (§2.6).
 
 use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
@@ -19,14 +21,14 @@ use crate::palette::Step;
 use crate::typography::{weight, TypeStyle, TypographyTokens};
 use crate::{Appearance, ColorTokens, Preset, RadiusTokens, ShadowTokens, SpacingTokens, Theme};
 
-/// Bangun theme preset Tailwind/shadcn untuk appearance tertentu.
+/// Build the Tailwind/shadcn preset's theme for a given appearance.
 pub fn theme(appearance: Appearance) -> Theme {
     Theme {
         preset: Preset::Tailwind,
         appearance,
         color: colors(appearance),
         radius: RadiusTokens {
-            // `rounded-lg` di web = arc 8px.
+            // `rounded-lg` on the web = an 8px arc.
             style: CornerStyle::Arc,
             sm: 4.0,
             md: 6.0,
@@ -40,12 +42,12 @@ pub fn theme(appearance: Appearance) -> Theme {
     }
 }
 
-/// Palet slate/blue untuk satu appearance.
+/// The slate/blue palette for one appearance.
 ///
-/// Dark mode di sini bukan "warna yang digelapkan" melainkan **ramp yang
-/// dibalik**: apa yang di light memakai `slate-50` di dark memakai `slate-900`,
-/// dan aksen naik dari `blue-600` ke `blue-500` supaya tetap terbaca di latar
-/// gelap — persis konvensi shadcn/ui.
+/// Dark mode here is not "colors that got darkened" but **an inverted ramp**:
+/// what uses `slate-50` in light uses `slate-900` in dark, and the accent moves
+/// up from `blue-600` to `blue-500` so it stays legible on a dark background —
+/// exactly the shadcn/ui convention.
 pub fn colors(appearance: Appearance) -> ColorTokens {
     match appearance {
         Appearance::Light => ColorTokens {
@@ -79,9 +81,9 @@ pub fn colors(appearance: Appearance) -> ColorTokens {
             background: SLATE.get(Step::S950),
             surface: SLATE.get(Step::S900),
             surface_elevated: SLATE.get(Step::S800),
-            // Di dark, "cekung" menyatu dengan latar: kedalaman dinyatakan oleh
-            // permukaan yang naik, bukan yang turun — kalau dipaksa lebih gelap
-            // dari `slate-950` warnanya jadi hitam mati.
+            // In dark mode, "recessed" merges into the background: depth is
+            // expressed by surfaces rising rather than sinking — forcing
+            // anything darker than `slate-950` would give dead black.
             surface_sunken: SLATE.get(Step::S950),
             surface_hover: SLATE.get(Step::S800),
             surface_pressed: SLATE.get(Step::S700),
@@ -108,9 +110,9 @@ pub fn colors(appearance: Appearance) -> ColorTokens {
     }
 }
 
-/// Angka `shadow` / `shadow-md` / `shadow-lg` / `shadow-xl` Tailwind, disalin
-/// apa adanya — keduanya memang dua lapis, jadi lapis pertama dipetakan ke
-/// `ambient` dan lapis kedua (yang ber-spread negatif) ke `key`.
+/// Tailwind's `shadow` / `shadow-md` / `shadow-lg` / `shadow-xl` numbers,
+/// copied verbatim — each of them really is two layers, so the first maps onto
+/// `ambient` and the second (the one with negative spread) onto `key`.
 pub fn shadows(appearance: Appearance) -> ShadowTokens {
     let k = match appearance {
         Appearance::Light => 1.0,
@@ -145,10 +147,11 @@ pub fn shadows(appearance: Appearance) -> ShadowTokens {
     }
 }
 
-/// Skala font Tailwind, dipetakan ke token semantik.
+/// The Tailwind type scale, mapped onto the semantic tokens.
 ///
-/// `text-sm` (14/20) yang jadi body — bukan `text-base` — karena itulah default
-/// shadcn/ui untuk UI desktop, dan karena 16px terasa besar di jendela padat.
+/// `text-sm` (14/20) is what becomes body — not `text-base` — because that is
+/// shadcn/ui's default for desktop UI, and because 16px feels large in a dense
+/// window.
 pub fn typography() -> TypographyTokens {
     let gaya = |size: f32, line: f32, w: u16| TypeStyle::new(size, line).weight(w);
 
@@ -199,7 +202,7 @@ mod tests {
     fn dark_mode_membalik_ramp_bukan_menggelapkan_warna() {
         let terang = colors(Appearance::Light);
         let gelap = colors(Appearance::Dark);
-        // Teks dan latar bertukar ujung ramp.
+        // Text and background swap ends of the ramp.
         assert_eq!(terang.label, gelap.background);
         assert_eq!(terang.background, Color::WHITE);
         assert_eq!(gelap.label, SLATE.get(Step::S50));

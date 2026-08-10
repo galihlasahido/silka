@@ -1,4 +1,4 @@
-//! Unit test diffing view → render tree: identitas, kunci, dan biaya.
+//! Unit tests for view → render tree diffing: identity, keys, and cost.
 
 use silka_paint::{Insets, Size};
 
@@ -141,8 +141,8 @@ fn kunci_menjaga_identitas_saat_urutan_berubah() {
 #[test]
 #[should_panic(expected = "kunci ganda di antara saudara")]
 fn kunci_ganda_di_antara_saudara_langsung_berisik() {
-    // Diam-diam, ini akan menelan salah satu node dan baru meledak satu frame
-    // kemudian di dalam arena — jauh dari kesalahan penulisnya (§9.7).
+    // Left silent, this would swallow one of the nodes and only blow up a
+    // frame later inside the arena — far from the author's mistake (§9.7).
     let mut tree = RenderTree::new();
     reconcile(&mut tree, column(daftar(&["a", "b", "a"])));
 }
@@ -152,13 +152,13 @@ fn kunci_ganda_di_antara_saudara_langsung_berisik() {
 fn kunci_ganda_ketahuan_pada_frame_pertama_bukan_berikutnya() {
     let mut tree = RenderTree::new();
     reconcile(&mut tree, column(daftar(&["a", "b"])));
-    // Frame kedua memperkenalkan id duplikat (kasus daftar berbasis data).
+    // The second frame introduces a duplicate id (the data-driven list case).
     reconcile(&mut tree, column(daftar(&["a", "b", "b"])));
 }
 
 #[test]
 fn kunci_sama_di_induk_berbeda_tetap_sah() {
-    // Unik "di antara saudara", bukan unik di seluruh pohon.
+    // Unique "among siblings", not unique across the whole tree.
     let mut tree = RenderTree::new();
     let stat = reconcile(
         &mut tree,

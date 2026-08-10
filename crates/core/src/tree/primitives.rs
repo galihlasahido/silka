@@ -1,15 +1,15 @@
-//! Node render primitif — bahan dasar Tier 0/1 `KOMPONEN.md`.
+//! Primitive render nodes — the raw material for Tier 0/1 of `KOMPONEN.md`.
 //!
-//! Semuanya tunduk pada satu protokol yang sama (constraints turun, ukuran
-//! naik, induk menentukan posisi) dan tidak satu pun tahu apa itu wgpu.
-//! Widget bergaya Dart di `silka-widgets` nanti tinggal membungkus node-node
-//! ini lewat lapisan view ([`crate::view`]).
+//! All of them obey the same protocol (constraints go down, sizes come up, the
+//! parent sets the position) and not one of them knows what wgpu is. The
+//! Dart-flavoured widgets in `silka-widgets` will simply wrap these nodes
+//! through the view layer ([`crate::view`]).
 //!
-//! Wadah flex/grid **tidak** ada di sini: ia dijalankan Taffy dan tinggal di
-//! [`super::taffy_box`] (§3.4). Yang tersisa di modul ini adalah primitif
-//! constraint ala Flutter (padding, constrained box, viewport) dan dua daun:
-//! [`FixedBox`] (ukuran diketahui) serta [`MeasuredBox`] (ukuran dihitung
-//! fungsi ukur — inilah pintu masuk teks).
+//! Flex/grid containers are **not** here: those are driven by Taffy and live in
+//! [`super::taffy_box`] (§3.4). What remains in this module are the Flutter-style
+//! constraint primitives (padding, constrained box, viewport) and two leaves:
+//! [`FixedBox`] (a known size) and [`MeasuredBox`] (a size computed by a measure
+//! function — this is the door text comes in through).
 
 use std::rc::Rc;
 
@@ -22,18 +22,18 @@ use super::arena::{LayoutCtx, RenderNode};
 use super::constraints::BoxConstraints;
 use super::paint::{Decoration, PaintCtx};
 
-/// Sumbu utama sebuah wadah.
+/// A container's main axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Axis {
-    /// Menumpuk ke bawah (`column`).
+    /// Stacks downwards (`column`).
     #[default]
     Vertical,
-    /// Menumpuk ke samping (`row`).
+    /// Stacks sideways (`row`).
     Horizontal,
 }
 
 impl Axis {
-    /// Komponen ukuran pada sumbu utama.
+    /// The size component along the main axis.
     pub fn main_of(self, size: Size) -> f32 {
         match self {
             Axis::Vertical => size.height,
@@ -41,7 +41,7 @@ impl Axis {
         }
     }
 
-    /// Komponen ukuran pada sumbu silang.
+    /// The size component along the cross axis.
     pub fn cross_of(self, size: Size) -> f32 {
         match self {
             Axis::Vertical => size.width,
@@ -49,7 +49,7 @@ impl Axis {
         }
     }
 
-    /// Rakit ukuran dari komponen sumbu utama dan silang.
+    /// Assemble a size from its main and cross components.
     pub fn size_of(self, main: f32, cross: f32) -> Size {
         match self {
             Axis::Vertical => Size::new(cross, main),
@@ -58,25 +58,26 @@ impl Axis {
     }
 }
 
-/// Daun berukuran tetap.
+/// A fixed-size leaf.
 ///
-/// Pengganti sementara node terukur (teks, ikon, gambar) sebelum widget
-/// aslinya ada: ukurannya diketahui, sisanya identik — termasuk emisi a11y.
+/// A stand-in for measured nodes (text, icons, images) until the real widgets
+/// exist: its size is known, everything else is identical — including a11y
+/// emission.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FixedBox {
-    /// Ukuran yang diminta; tetap dipotong oleh constraints induk.
+    /// The requested size; still clamped by the parent's constraints.
     pub size: Size,
-    /// Latar, sudut, border, bayangan — nilainya sudah diresolusi dari token
-    /// theme satu tingkat di atas (lihat [`Decoration`]).
+    /// Background, corners, border, shadows — the values are already resolved
+    /// from theme tokens one level up (see [`Decoration`]).
     pub decoration: Decoration,
-    /// Nama yang dibacakan screen reader.
+    /// The name a screen reader announces.
     pub label: Option<String>,
-    /// Peran a11y.
+    /// The a11y role.
     pub role: AccessRole,
 }
 
 impl FixedBox {
-    /// Daun berukuran `size`.
+    /// A leaf of size `size`.
     pub fn new(size: Size) -> Self {
         Self {
             size,
@@ -97,9 +98,9 @@ impl RenderNode for FixedBox {
         ctx.paint_children();
     }
 
-    /// **Bentuk sentuh = bentuk gambar** (§3.6): sudut yang dikirim ke shader
-    /// adalah sudut yang sama yang diuji hit-testing, jadi tidak ada pita di
-    /// pojok yang terlihat kosong tapi bisa diklik.
+    /// **Touch shape = drawn shape** (§3.6): the corners sent to the shader are
+    /// the very corners hit-testing checks, so there is no band in the corners
+    /// that looks empty yet is clickable.
     fn hit_shape(&self) -> HitShape {
         if self.decoration.corners.radii.is_sharp() {
             HitShape::Rect
@@ -114,14 +115,15 @@ impl RenderNode for FixedBox {
     }
 }
 
-/// Menambahkan jarak di sekeliling satu anak.
+/// Adds space around a single child.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PaddingBox {
-    /// Jarak di keempat sisi (sisi fisik; token `start`/`end` sudah
-    /// diresolusi satu tingkat di atas).
+    /// Space on all four sides (physical sides; the `start`/`end` tokens were
+    /// resolved one level up).
     pub insets: Insets,
-    /// Latar opsional — **termasuk area jarak**, karena itulah gunanya padding
-    /// berlatar: kartu dengan isi yang tidak menempel tepi.
+    /// An optional background — **covering the padded area too**, because that
+    /// is exactly what a padded background is for: a card whose content does not
+    /// touch the edges.
     pub decoration: Decoration,
 }
 
@@ -142,27 +144,28 @@ impl RenderNode for PaddingBox {
     }
 
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
-        // Latar dulu, isi belakangan: anak selalu menumpuk di atas induknya.
+        // Background first, content after: a child always stacks above its
+        // parent.
         ctx.decorate(&self.decoration);
         ctx.paint_children();
     }
 
     fn access(&self, node: &mut AccessNode) {
-        // Jarak bukan informasi bagi screen reader: node ini disaring keluar
-        // dan anaknya naik menggantikannya.
+        // Spacing carries no information for a screen reader: this node is
+        // filtered out and its child takes its place.
         node.role = AccessRole::Container;
     }
 }
 
-/// Menambahkan constraints sendiri di atas milik induk (`constrained_box`).
+/// Adds its own constraints on top of the parent's (`constrained_box`).
 ///
-/// Permintaan dihormati hanya sejauh induk mengizinkan
+/// The request is honoured only as far as the parent permits
 /// ([`BoxConstraints::enforce`]).
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ConstrainedBox {
-    /// Constraints tambahan yang diminta.
+    /// The extra constraints being requested.
     pub extra: BoxConstraints,
-    /// Latar opsional.
+    /// An optional background.
     pub decoration: Decoration,
 }
 
@@ -188,13 +191,13 @@ impl RenderNode for ConstrainedBox {
     }
 }
 
-/// Daun yang **mengukur dirinya sendiri** dari constraints.
+/// A leaf that **measures itself** from its constraints.
 ///
-/// Inilah bentuk "measure function leaf" yang disebut §3.4: satu fungsi
-/// `constraints -> ukuran`, dipakai sama persis oleh mesin box-constraints kita
-/// dan — lewat measure function Taffy — oleh wadah flex/grid
-/// ([`super::TaffyBox`]). Node teks nanti hanyalah `MeasuredBox` yang fungsinya
-/// memanggil `silka_text::TextEngine::measure`:
+/// This is the "measure function leaf" §3.4 talks about: a single
+/// `constraints -> size` function, used identically by our own box-constraints
+/// engine and — through Taffy's measure function — by flex/grid containers
+/// ([`super::TaffyBox`]). The text node will be nothing more than a
+/// `MeasuredBox` whose function calls `silka_text::TextEngine::measure`:
 ///
 /// ```
 /// use silka_core::tree::{BoxConstraints, RenderTree};
@@ -224,21 +227,21 @@ impl RenderNode for ConstrainedBox {
 /// assert!(ukuran.width > 0.0 && ukuran.height > 0.0);
 /// ```
 ///
-/// Fungsi ukurnya `Rc` supaya view (yang dibangun ulang tiap rebuild) bisa
-/// membandingkan identitasnya dengan murah: `Rc::ptr_eq` yang sama = tidak ada
-/// yang berubah = nol pekerjaan.
+/// The measure function is an `Rc` so the view (rebuilt on every rebuild) can
+/// compare identity cheaply: the same `Rc::ptr_eq` means nothing changed means
+/// zero work.
 #[derive(Clone)]
 pub struct MeasuredBox {
-    /// Fungsi ukur: constraints turun, ukuran naik.
+    /// The measure function: constraints down, size up.
     pub measure: Rc<dyn Fn(BoxConstraints) -> Size>,
-    /// Nama yang dibacakan screen reader (isi teksnya).
+    /// The name a screen reader announces (the text content).
     pub label: Option<String>,
-    /// Peran a11y.
+    /// The a11y role.
     pub role: AccessRole,
 }
 
 impl MeasuredBox {
-    /// Daun baru dengan fungsi ukur `measure`.
+    /// A new leaf with the measure function `measure`.
     pub fn new(measure: impl Fn(BoxConstraints) -> Size + 'static) -> Self {
         Self {
             measure: Rc::new(measure),
@@ -276,30 +279,32 @@ impl RenderNode for MeasuredBox {
     }
 }
 
-/// Jendela pandang yang bisa digulir — **relayout boundary permanen**.
+/// A scrollable viewport — a **permanent relayout boundary**.
 ///
-/// Ukurannya ditentukan induk sepenuhnya, jadi isi setinggi apa pun tidak
-/// pernah membuat window di-layout ulang. Inilah alasan
-/// [`RenderNode::is_relayout_boundary`] ada.
+/// Its size is decided entirely by the parent, so content of any height never
+/// causes the window to relayout. This is the reason
+/// [`RenderNode::is_relayout_boundary`] exists.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Viewport {
-    /// Sumbu guliran.
+    /// The scroll axis.
     pub axis: Axis,
-    /// Posisi guliran saat ini (poin logis, positif = isi bergeser naik/kiri).
+    /// The current scroll position (logical points; positive = content shifted
+    /// up/left).
     pub scroll: f32,
-    /// Tinggi satu "baris" roda mouse dalam poin logis.
+    /// The height of one mouse-wheel "line" in logical points.
     ///
-    /// Roda melapor dalam baris, trackpad dalam poin (INTEGRASI-NATIVE §3);
-    /// hanya wadah ini yang tahu berapa poin satu barisnya. Angkanya nanti
-    /// datang dari metrik teks/theme — sampai saat itu, bawaannya konvensi
-    /// desktop (tiga baris teks ukuran badan).
+    /// Wheels report in lines, trackpads in points (INTEGRASI-NATIVE §3); only
+    /// this container knows how many points a line is worth. The number will
+    /// eventually come from text/theme metrics — until then the default is the
+    /// desktop convention (three lines of body text).
     pub line_height: f32,
-    /// Ukuran isi pada sumbu guliran, diisi mesin saat layout.
+    /// The content size along the scroll axis, filled in by the engine during
+    /// layout.
     ///
-    /// Dipakai membatasi guliran; **jangan** ditulis dari view — ia hasil
-    /// pengukuran, bukan properti.
+    /// Used to clamp scrolling; **do not** write it from a view — it is a
+    /// measurement, not a property.
     pub content: f32,
-    /// Latar opsional di belakang isi yang digulir.
+    /// An optional background behind the scrolled content.
     pub decoration: Decoration,
 }
 
@@ -316,7 +321,7 @@ impl Default for Viewport {
 }
 
 impl Viewport {
-    /// Guliran maksimum yang masih menyisakan isi di layar.
+    /// The largest scroll offset that still leaves content on screen.
     pub fn max_scroll(&self, viewport: Size) -> f32 {
         (self.content - self.axis.main_of(viewport)).max(0.0)
     }
@@ -327,14 +332,14 @@ impl RenderNode for Viewport {
         true
     }
 
-    /// Isi yang sudah tergulir keluar tidak boleh bisa diklik hanya karena ia
-    /// masih ada di pohon.
+    /// Content that has scrolled away must not stay clickable just because it is
+    /// still in the tree.
     fn clips_children(&self) -> bool {
         true
     }
 
-    /// Permukaan yang bisa digulir itu padat: guliran di atas area kosongnya
-    /// tetap miliknya, dan klik tidak boleh tembus ke apa pun di belakangnya.
+    /// A scrollable surface is solid: a scroll over its empty area still belongs
+    /// to it, and clicks must not fall through to whatever is behind it.
     fn hit_behavior(&self) -> crate::input::HitBehavior {
         crate::input::HitBehavior::Opaque
     }
@@ -348,28 +353,28 @@ impl RenderNode for Viewport {
             return;
         };
         let delta = scroll.delta.to_points(self.line_height);
-        // Positif = isi bergerak ke kanan/bawah, jadi posisi guliran berkurang.
+        // Positive = content moves right/down, so the scroll position decreases.
         let gerak = match self.axis {
             Axis::Vertical => -delta.y,
             Axis::Horizontal => -delta.x,
         };
         let baru = (self.scroll + gerak).clamp(0.0, self.max_scroll(ctx.size()));
         if baru == self.scroll {
-            // Sudah mentok: biarkan wadah di atasnya yang mengambil alih
-            // (scroll chaining) — jangan menelan event diam-diam.
+            // Already at the end: let the container above take over (scroll
+            // chaining) — do not swallow the event silently.
             return;
         }
         self.scroll = baru;
-        // Guliran memindahkan anak; ukuran viewport sendiri tidak berubah,
-        // dan ia relayout boundary — jadi kerjanya berhenti di sini.
+        // Scrolling moves the child; the viewport's own size does not change,
+        // and it is a relayout boundary — so the work stops here.
         ctx.request_layout();
         ctx.handled();
     }
 
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
-        // Aturan Flutter yang sama: sumbu guliran WAJIB terbatas. Viewport di
-        // dalam column tanpa pembatas tinggi adalah bug layout, dan bug layout
-        // harus berisik — bukan diam-diam setinggi nol.
+        // The same Flutter rule: the scroll axis MUST be bounded. A viewport
+        // inside a column with no height limit is a layout bug, and layout bugs
+        // must be loud — not silently zero-height.
         debug_assert!(
             match self.axis {
                 Axis::Vertical => constraints.has_bounded_height(),
@@ -378,8 +383,8 @@ impl RenderNode for Viewport {
             "viewport {:?} menerima sumbu guliran tanpa batas — beri pembatas ukuran di atasnya",
             self.axis
         );
-        // Viewport mengambil sebesar yang diizinkan; kalau tidak ada batas,
-        // minimumnya — ukuran tak hingga adalah bug, bukan ukuran.
+        // The viewport takes as much as it is allowed; when there is no bound, it
+        // takes the minimum — an infinite size is a bug, not a size.
         let ukuran = Size::new(
             if constraints.has_bounded_width() {
                 constraints.max_width
@@ -403,8 +408,8 @@ impl RenderNode for Viewport {
                 }
             };
             let ukuran_anak = ctx.layout_child_boundary(child, constraints_anak);
-            // Ukuran isi adalah hasil pengukuran, bukan properti — dan ia yang
-            // membatasi guliran, jadi ia harus segar setiap layout.
+            // The content size is a measurement, not a property — and it is what
+            // clamps scrolling, so it must be fresh after every layout.
             self.content = self.axis.main_of(ukuran_anak);
             let offset = match self.axis {
                 Axis::Vertical => Point::new(0.0, -self.scroll),
@@ -417,13 +422,14 @@ impl RenderNode for Viewport {
         ukuran
     }
 
-    /// Latar sendiri, lalu isi — dan isi itu **dipotong** ke kotak viewport.
+    /// Its own background, then the content — and that content is **clipped** to
+    /// the viewport box.
     ///
-    /// Pemotongannya tidak ditulis di sini: [`RenderNode::clips_children`] di
-    /// atas sudah menjawab "ya", dan pass paint yang membungkus anak dengan
-    /// perintah clip serta membuang apa pun yang seluruhnya tergulir keluar.
-    /// Satu jawaban dipakai dua pass, jadi mustahil ada baris yang tak terlihat
-    /// tapi masih bisa diklik.
+    /// The clipping is not written here: [`RenderNode::clips_children`] above
+    /// already answered "yes", and it is the paint pass that wraps the children
+    /// in clip commands and drops anything scrolled entirely out of view. One
+    /// answer used by two passes, so it is impossible to have a row that is
+    /// invisible yet still clickable.
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.decorate(&self.decoration);
         ctx.paint_children();

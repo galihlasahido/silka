@@ -1,13 +1,14 @@
-//! Arena render tree ber-ID + mesin layout box-constraints (REKOMENDASI §2, §3.4).
+//! ID-based render tree arena + the box-constraints layout engine
+//! (REKOMENDASI §2, §3.4).
 //!
-//! Kenapa arena dan bukan ownership biasa: AccessKit dan Taffy sama-sama
-//! berbasis ID/arena, jadi semuanya selaras — dan kita tidak perlu berperang
-//! dengan borrow checker pada pohon yang saling menunjuk (induk ⇄ anak).
-//! ID-nya **bergenerasi** persis seperti arena signals: slot yang sudah mati
-//! tidak pernah tertukar dengan penghuninya yang baru.
+//! Why an arena instead of plain ownership: AccessKit and Taffy are both
+//! ID/arena based, so everything lines up — and we never have to fight the
+//! borrow checker over a tree whose nodes point at each other (parent ⇄ child).
+//! The IDs are **generational**, exactly like the signals arena: a dead slot is
+//! never confused with its new occupant.
 //!
-//! Modul ini adalah detail implementasi. Penulis aplikasi tidak pernah
-//! menyentuhnya; penulis *widget* menyentuhnya lewat [`RenderNode`].
+//! This module is an implementation detail. Application authors never touch it;
+//! *widget* authors touch it through [`RenderNode`].
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -25,20 +26,20 @@ use super::paint::{paint_tree, PaintCache, PaintCtx};
 use super::style::ItemStyle;
 
 // ---------------------------------------------------------------------------
-// ID
+// IDs
 // ---------------------------------------------------------------------------
 
 static NEXT_TREE: AtomicU32 = AtomicU32::new(0);
 
-/// Identitas satu render tree (satu per window).
+/// The identity of one render tree (one per window).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct TreeId(u32);
 
-/// Identitas satu node di arena render tree.
+/// The identity of one node in the render tree arena.
 ///
-/// Bergenerasi: setelah node mati, ID lama tidak akan pernah cocok lagi dengan
-/// node baru yang menempati slot yang sama. ID juga membawa [`TreeId`] supaya
-/// node dari window lain tidak pernah tertukar diam-diam.
+/// Generational: once a node dies, its old ID never matches the new node that
+/// takes over the same slot. The ID also carries a [`TreeId`] so nodes from
+/// another window are never silently mixed in.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId {
     tree: TreeId,
@@ -47,17 +48,17 @@ pub struct NodeId {
 }
 
 impl NodeId {
-    /// Pohon pemilik node ini.
+    /// The tree that owns this node.
     pub fn tree(self) -> TreeId {
         self.tree
     }
 
-    /// Nomor slot arena (stabil hanya selama node hidup).
+    /// The arena slot number (stable only while the node is alive).
     pub fn index(self) -> u32 {
         self.index
     }
 
-    /// Generasi slot — pembeda antara penghuni lama dan baru.
+    /// The slot generation — what tells the old occupant from the new one.
     pub fn generation(self) -> u32 {
         self.generation
     }
@@ -70,18 +71,18 @@ impl core::fmt::Debug for NodeId {
 }
 
 // ---------------------------------------------------------------------------
-// Trait node
+// The node trait
 // ---------------------------------------------------------------------------
 
-/// Downcast otomatis untuk semua tipe `'static`.
+/// Automatic downcasting for every `'static` type.
 ///
-/// Ada supaya penulis [`RenderNode`] tidak perlu menulis boilerplate `as_any`;
-/// lapisan view memakainya untuk menerapkan props ke node yang sudah ada
+/// It exists so [`RenderNode`] authors never have to write `as_any`
+/// boilerplate; the view layer uses it to apply props to an existing node
 /// ("trait object + downcast", REKOMENDASI §2).
 pub trait AsAny: 'static {
-    /// Referensi `Any` ke diri sendiri.
+    /// An `Any` reference to self.
     fn as_any(&self) -> &dyn Any;
-    /// Referensi `Any` mutable ke diri sendiri.
+    /// A mutable `Any` reference to self.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
@@ -94,144 +95,146 @@ impl<T: Any> AsAny for T {
     }
 }
 
-/// Perilaku satu node render: layout, batas relayout, dan emisi a11y.
+/// The behaviour of one render node: layout, relayout boundaries, and a11y
+/// emission.
 ///
-/// Kontraknya persis tiga kalimat box constraints (lihat
-/// [`BoxConstraints`]): terima constraints, kembalikan ukuran, dan **tetapkan
-/// posisi anak-anak** lewat [`LayoutCtx::place_child`]. Node tidak pernah tahu
-/// posisinya sendiri.
+/// Its contract is exactly the three box-constraints sentences (see
+/// [`BoxConstraints`]): take constraints, return a size, and **position the
+/// children** via [`LayoutCtx::place_child`]. A node never knows its own
+/// position.
 ///
-/// [`RenderNode::access`] **tidak punya implementasi bawaan** dan itu
-/// disengaja: accessibility adalah keluaran pohon render, bukan tambahan
-/// (§3.8). Widget baru yang lupa memikirkan screen reader tidak lolos compile
-/// — inilah satu-satunya pertahanan yang terbukti terhadap failure mode
-/// "accessibility di-retrofit" (§5 poin 2). Node yang memang hanya struktur
-/// menyatakannya secara eksplisit dengan [`AccessRole::Container`].
+/// [`RenderNode::access`] **has no default implementation**, and that is
+/// deliberate: accessibility is an output of the render tree, not an add-on
+/// (§3.8). A new widget that forgot to think about screen readers does not
+/// compile — the only defence against the "accessibility retrofitted later"
+/// failure mode that has actually proven to work (§5, item 2). A node that
+/// really is pure structure says so explicitly with [`AccessRole::Container`].
 pub trait RenderNode: AsAny {
-    /// Nama tipe untuk debug/inspector.
+    /// A type name for debugging/inspectors.
     fn type_name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
 
-    /// Hitung ukuran sendiri dari `constraints`, dan tempatkan anak-anak.
+    /// Compute this node's own size from `constraints`, and place the children.
     fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size;
 
-    /// Gambar node ini ke dalam scene (REKOMENDASI §3.2).
+    /// Draw this node into the scene (REKOMENDASI §3.2).
     ///
-    /// Koordinatnya **lokal**: `(0, 0)` adalah sudut kiri-atas node, dan
-    /// [`PaintCtx`] yang menaikkannya ke koordinat absolut — aturan yang sama
-    /// dengan layout, di mana node juga tidak pernah tahu posisinya sendiri.
+    /// Coordinates are **local**: `(0, 0)` is the node's top-left corner and
+    /// [`PaintCtx`] lifts them into absolute coordinates — the same rule as
+    /// layout, where a node likewise never knows its own position.
     ///
-    /// Bawaannya **tidak menggambar apa pun** tapi tetap menurunkan isinya
-    /// ([`PaintCtx::paint_children`]), sehingga node yang murni struktural
-    /// (padding, align, wadah) tidak dipaksa menulis apa-apa dan pohonnya tidak
-    /// menghilang. Node yang menimpanya wajib memanggil
-    /// [`PaintCtx::paint_children`]/[`PaintCtx::paint_child`] sendiri — di
-    /// situlah ia memutuskan apa yang berada di bawah dan di atas anaknya.
+    /// The default **draws nothing** but still descends into the content
+    /// ([`PaintCtx::paint_children`]), so purely structural nodes (padding,
+    /// align, containers) are not forced to write anything and their subtrees do
+    /// not vanish. A node that overrides this must call
+    /// [`PaintCtx::paint_children`]/[`PaintCtx::paint_child`] itself — that is
+    /// where it decides what sits below and what sits above its children.
     ///
-    /// Kosakatanya hanya `silka-paint`; tipe wgpu tidak pernah sampai ke sini
+    /// The vocabulary is `silka-paint` only; wgpu types never reach this far
     /// (§3.2).
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         ctx.paint_children();
     }
 
-    /// Benar bila node ini **selalu** menjadi relayout boundary.
+    /// True when this node is **always** a relayout boundary.
     ///
-    /// Dipakai node yang ukurannya tidak pernah bergantung pada isinya —
-    /// viewport scroll adalah contoh kanonis: isi boleh berubah setinggi apa
-    /// pun, kotak viewport-nya tetap.
+    /// For nodes whose size never depends on their content — a scroll viewport
+    /// is the canonical case: the content may grow to any height, the viewport
+    /// box stays put.
     fn is_relayout_boundary(&self) -> bool {
         false
     }
 
-    /// Gaya node ini **sebagai item** di dalam wadah flex/grid.
+    /// This node's style **as an item** inside a flex/grid container.
     ///
-    /// Padanan `ParentData` Flutter: datanya menempel di anak, tapi yang
-    /// membacanya adalah induk ([`LayoutCtx::child_layout_style`]). Node biasa
-    /// tidak perlu peduli — bawaannya [`ItemStyle::DEFAULT`], dan hanya
-    /// [`super::LayoutItem`] (`expanded()`/`flexible()`) yang mengisinya.
+    /// The equivalent of Flutter's `ParentData`: the data lives on the child,
+    /// but the parent is what reads it ([`LayoutCtx::child_layout_style`]).
+    /// Ordinary nodes need not care — the default is [`ItemStyle::DEFAULT`], and
+    /// only [`super::LayoutItem`] (`expanded()`/`flexible()`) fills it in.
     fn layout_style(&self) -> ItemStyle {
         ItemStyle::DEFAULT
     }
 
-    /// Isi node aksesibilitas: role, name, value, actions, state.
+    /// The contents of the accessibility node: role, name, value, actions,
+    /// state.
     ///
-    /// **Wajib diimplementasikan.** `bounds`, induk, dan daftar anak tidak ada
-    /// di [`AccessNode`] sama sekali — semuanya dirakit mesin dari hasil layout
-    /// ([`RenderTree::access_tree`]), jadi tidak mungkin basi dan tidak mungkin
-    /// dipalsukan widget.
+    /// **Must be implemented.** `bounds`, the parent, and the child list do not
+    /// appear in [`AccessNode`] at all — the engine assembles them from layout
+    /// results ([`RenderTree::access_tree`]), so they cannot go stale and cannot
+    /// be faked by a widget.
     ///
-    /// Node yang murni struktural (padding, align) cukup menyatakan
-    /// [`AccessRole::Container`]: teknologi bantu akan menyaringnya keluar dan
-    /// anak-anaknya naik menggantikannya.
+    /// Purely structural nodes (padding, align) simply declare
+    /// [`AccessRole::Container`]: assistive technology filters them out and
+    /// their children take their place.
     fn access(&self, node: &mut AccessNode);
 
     // -- input ------------------------------------------------------------
     //
-    // Empat kait berikut adalah kontrak input. Semuanya punya nilai bawaan
-    // yang aman ("saya tidak ikut campur"), karena mayoritas node memang
-    // struktural — tapi node interaktif yang lupa mengisinya akan langsung
-    // terasa: tidak bisa diklik, tidak bisa di-Tab.
+    // The four hooks below are the input contract. All have a safe default
+    // ("I stay out of this"), because the majority of nodes really are
+    // structural — but an interactive node that forgets to fill them in is
+    // noticed immediately: it cannot be clicked and cannot be tabbed to.
 
-    /// Bentuk area sentuh node — **inilah tempat squircle merembet ke
+    /// The node's touch shape — **this is where the squircle reaches
     /// hit-testing** (REKOMENDASI §3.6).
     ///
-    /// Bawaannya kotak penuh. Node yang menggambar dirinya dengan sudut
-    /// melengkung wajib mengembalikan [`HitShape::Rounded`] dengan
-    /// [`silka_paint::Corners`] **yang sama persis** dengan yang dikirim ke
-    /// shader — kalau tidak, ada pita beberapa poin di tiap pojok yang terlihat
-    /// kosong tapi bisa diklik.
+    /// The default is the full rectangle. A node that draws itself with rounded
+    /// corners must return [`HitShape::Rounded`] with **exactly the same**
+    /// [`silka_paint::Corners`] it sends to the shader — otherwise there is a
+    /// band a few points wide in every corner that looks empty but is
+    /// clickable.
     fn hit_shape(&self) -> HitShape {
         HitShape::Rect
     }
 
-    /// Perilaku node terhadap event penunjuk.
+    /// How the node behaves towards pointer events.
     ///
-    /// Bawaannya [`HitBehavior::DeferToChild`]: wadah struktural tidak mencuri
-    /// klik dari isinya.
+    /// The default is [`HitBehavior::DeferToChild`]: a structural container does
+    /// not steal clicks from its content.
     fn hit_behavior(&self) -> HitBehavior {
         HitBehavior::DeferToChild
     }
 
-    /// Benar bila node memotong isinya di kotaknya sendiri.
+    /// True when the node clips its content to its own box.
     ///
-    /// Viewport menjawab benar: baris yang sudah tergulir keluar layar tidak
-    /// boleh bisa diklik hanya karena masih ada di pohon.
+    /// A viewport answers yes: a row that has scrolled off screen must not stay
+    /// clickable just because it is still in the tree.
     fn clips_children(&self) -> bool {
         false
     }
 
-    /// Peran node dalam navigasi fokus keyboard (Tab/Shift+Tab).
+    /// The node's role in keyboard focus navigation (Tab/Shift+Tab).
     fn focus_policy(&self) -> FocusPolicy {
         FocusPolicy::NONE
     }
 
-    /// Bentuk kursor saat penunjuk berada di atas node ini.
+    /// The cursor shape while the pointer is over this node.
     ///
-    /// `None` = "terserah node di bawahku". Router menanyakan ini pada jalur
-    /// hover, jadi tidak ada state kursor yang bisa basi.
+    /// `None` means "whatever the node below me says". The router asks this
+    /// along the hover path, so no cursor state can go stale.
     fn cursor(&self) -> Option<CursorIcon> {
         None
     }
 
-    /// Tangani satu event input.
+    /// Handle one input event.
     ///
-    /// Node hanya boleh mengubah **dirinya sendiri**; segala hal yang
-    /// menyangkut dunia luar (fokus, capture, IME, permintaan gambar ulang)
-    /// dititipkan lewat [`EventCtx`]. Struktur pohon tidak boleh berubah dari
-    /// sini — itu wewenang view-diff.
+    /// A node may only change **itself**; anything concerning the outside world
+    /// (focus, capture, IME, repaint requests) goes through [`EventCtx`]. The
+    /// tree structure must not change from here — that is the view-diff's
+    /// prerogative.
     fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
         let _ = (ctx, event);
     }
 }
 
 impl dyn RenderNode {
-    /// Downcast ke tipe node konkret.
+    /// Downcast to a concrete node type.
     pub fn downcast_ref<T: RenderNode>(&self) -> Option<&T> {
         self.as_any().downcast_ref::<T>()
     }
 
-    /// Downcast mutable ke tipe node konkret.
+    /// Mutably downcast to a concrete node type.
     pub fn downcast_mut<T: RenderNode>(&mut self) -> Option<&mut T> {
         self.as_any_mut().downcast_mut::<T>()
     }
@@ -244,31 +247,32 @@ impl core::fmt::Debug for dyn RenderNode {
 }
 
 // ---------------------------------------------------------------------------
-// Arah teks
+// Text direction
 // ---------------------------------------------------------------------------
 
-/// Arah baca dokumen — dipahami sistem layout **sejak awal** (§9.8).
+/// The document's reading direction — understood by the layout system **from
+/// the start** (§9.8).
 ///
-/// Mirroring RTL bukan fitur susulan: `row` membalik urutan sumbu utamanya dan
-/// sumbu silang `column` ikut terbalik, keduanya di dalam mesin layout.
+/// RTL mirroring is not a later addition: `row` reverses its main axis and the
+/// cross axis of `column` flips with it, both inside the layout engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum TextDirection {
-    /// Kiri ke kanan (Latin, CJK).
+    /// Left to right (Latin, CJK).
     #[default]
     Ltr,
-    /// Kanan ke kiri (Arab, Ibrani).
+    /// Right to left (Arabic, Hebrew).
     Rtl,
 }
 
 impl TextDirection {
-    /// Benar bila arahnya kanan-ke-kiri.
+    /// True when the direction is right-to-left.
     pub fn is_rtl(self) -> bool {
         matches!(self, TextDirection::Rtl)
     }
 }
 
 // ---------------------------------------------------------------------------
-// Node & slot
+// Nodes & slots
 // ---------------------------------------------------------------------------
 
 struct Node {
@@ -277,37 +281,38 @@ struct Node {
     parent: Option<NodeId>,
     children: Vec<NodeId>,
     depth: u32,
-    /// `None` **hanya** selama node itu sedang menjalankan layout-nya sendiri.
+    /// `None` **only** while this node is running its own layout.
     render: Option<Box<dyn RenderNode>>,
     size: Size,
-    /// Posisi relatif induk — selalu ditulis induk, tidak pernah diri sendiri.
+    /// Position relative to the parent — always written by the parent, never by
+    /// the node itself.
     offset: Point,
     constraints: Option<BoxConstraints>,
     needs_layout: bool,
     needs_paint: bool,
     boundary: bool,
     parent_uses_size: bool,
-    /// Bolehkah constraints tight menjadikan node ini relayout boundary?
+    /// May tight constraints make this node a relayout boundary?
     ///
-    /// Biasanya ya: kalau induk sudah memaksa ukurannya, isi node tidak mungkin
-    /// mengubah siapa pun di atas. Kecuali satu kasus — wadah flex/grid yang
-    /// **menurunkan angka tight itu dari hasil mengukur anaknya sendiri**
-    /// ([`super::TaffyBox`]). Di sana ketatnya semu: isi berubah → hasil ukur
-    /// berubah → seluruh flex wajib dihitung ulang, jadi rambatan dirty tidak
-    /// boleh berhenti di anak.
+    /// Usually yes: if the parent already forced its size, the node's content
+    /// cannot change anything above it. With one exception — a flex/grid
+    /// container that **derives those tight numbers from measuring the child
+    /// itself** ([`super::TaffyBox`]). There the tightness is only apparent: the
+    /// content changes → the measurement changes → the whole flex must be
+    /// recomputed, so dirty propagation must not stop at the child.
     tight_is_boundary: bool,
-    /// Cermin persis dari keanggotaan di `RenderTree::dirty_boundaries`.
+    /// An exact mirror of membership in `RenderTree::dirty_boundaries`.
     ///
-    /// Ada supaya antrean bisa dijaga bebas duplikat **tanpa** memakai
-    /// early-out "sudah ditandai berarti sudah terdaftar" yang pernah membuat
-    /// boundary hilang dari antrean selamanya.
+    /// It exists so the queue can be kept duplicate-free **without** the
+    /// "already marked means already queued" early-out that once made
+    /// boundaries disappear from the queue forever.
     queued: bool,
     layout_count: u32,
-    /// Perintah gambar subtree ini dari pass paint terakhir.
+    /// This subtree's draw commands from the last paint pass.
     ///
-    /// Hanya diisi di relayout boundary (selain akar) — lihat
-    /// [`super::paint`]. `None` berarti "belum pernah, atau bukan tempat
-    /// menyimpan cache".
+    /// Only filled in at relayout boundaries (other than the root) — see
+    /// [`super::paint`]. `None` means "never painted yet, or not a place to
+    /// keep a cache".
     paint_cache: Option<PaintCache>,
     paint_count: u32,
 }
@@ -317,11 +322,12 @@ struct Slot {
     node: Option<Node>,
 }
 
-/// Node akar: meneruskan constraints window apa adanya ke satu anak.
+/// The root node: passes the window constraints through unchanged to its single
+/// child.
 ///
-/// Bagi teknologi bantu ia adalah **window**, dan namanya (judul window)
-/// adalah hal pertama yang dibacakan screen reader saat aplikasi mendapat
-/// fokus — karena itu labelnya ikut disimpan di sini.
+/// To assistive technology it is the **window**, and its name (the window title)
+/// is the first thing a screen reader announces when the application takes
+/// focus — which is why the label is kept here.
 #[derive(Default)]
 struct Root {
     label: Option<String>,
@@ -348,11 +354,11 @@ impl RenderNode for Root {
 // RenderTree
 // ---------------------------------------------------------------------------
 
-/// Render tree retained berbasis arena.
+/// The retained, arena-backed render tree.
 ///
-/// Strukturnya **hanya** diubah lapisan view-diff ([`crate::view`]); layout
-/// tidak pernah menambah atau membuang node. Karena itu `depth` selalu benar
-/// dan urutan flush layout bisa diandalkan.
+/// Its structure is mutated **only** by the view-diff layer ([`crate::view`]);
+/// layout never adds or removes nodes. That is why `depth` is always correct and
+/// the layout flush order can be relied upon.
 ///
 /// ```
 /// use silka_core::tree::{BoxConstraints, RenderTree};
@@ -365,9 +371,9 @@ impl RenderNode for Root {
 ///
 /// let luar = tree.children(tree.root())[0];
 /// let dalam = tree.children(luar)[0];
-/// // Ukuran naik: padding = anak + insets.
+/// // Sizes come up: the padding is child + insets.
 /// assert_eq!(tree.size(luar), Size::new(116.0, 36.0));
-/// // Induk yang menentukan posisi anak.
+/// // The parent decides where the child goes.
 /// assert_eq!(tree.offset(dalam), Point::new(8.0, 8.0));
 /// ```
 pub struct RenderTree {
@@ -388,7 +394,7 @@ impl Default for RenderTree {
 }
 
 impl RenderTree {
-    /// Pohon baru berisi satu node akar.
+    /// A new tree containing a single root node.
     pub fn new() -> Self {
         let id = TreeId(NEXT_TREE.fetch_add(1, Ordering::Relaxed));
         let mut tree = Self {
@@ -413,26 +419,26 @@ impl RenderTree {
         tree
     }
 
-    /// Identitas pohon ini.
+    /// This tree's identity.
     pub fn id(&self) -> TreeId {
         self.id
     }
 
-    /// Node akar (selalu hidup).
+    /// The root node (always alive).
     pub fn root(&self) -> NodeId {
         self.root
     }
 
-    /// Arah baca yang berlaku untuk seluruh pohon.
+    /// The reading direction in force for the whole tree.
     pub fn direction(&self) -> TextDirection {
         self.direction
     }
 
-    /// Ganti arah baca; **seluruh** pohon perlu di-layout ulang.
+    /// Change the reading direction; the **entire** tree needs relayout.
     ///
-    /// Arah baca adalah masukan layout yang tidak ikut jadi kunci cache, jadi
-    /// menandai akar saja tidak cukup — cache anak-anak yang constraints-nya
-    /// tidak berubah akan menahan mirroring-nya (§9.8).
+    /// Reading direction is a layout input that is not part of the cache key, so
+    /// marking only the root is not enough — children whose constraints did not
+    /// change would hold on to their cache and refuse to mirror (§9.8).
     pub fn set_direction(&mut self, direction: TextDirection) {
         if self.direction == direction {
             return;
@@ -441,8 +447,8 @@ impl RenderTree {
         self.invalidate_all();
     }
 
-    /// Batalkan seluruh cache layout — dipakai saat masukan global berubah
-    /// (arah baca, dan nanti scale factor/theme yang memengaruhi ukuran).
+    /// Invalidate the whole layout cache — used when a global input changes
+    /// (reading direction, and later scale factor/theme where they affect size).
     pub fn invalidate_all(&mut self) {
         for slot in &mut self.slots {
             if let Some(n) = slot.node.as_mut() {
@@ -455,60 +461,60 @@ impl RenderTree {
         self.enqueue_boundary(root);
     }
 
-    // -- inspeksi ---------------------------------------------------------
+    // -- inspection -------------------------------------------------------
 
-    /// Jumlah node hidup (termasuk akar).
+    /// The number of live nodes (including the root).
     pub fn len(&self) -> usize {
         self.slots.len() - self.free.len()
     }
 
-    /// Benar bila hanya ada akar.
+    /// True when only the root is present.
     pub fn is_empty(&self) -> bool {
         self.len() <= 1
     }
 
-    /// Benar bila `id` masih menunjuk node hidup di pohon ini.
+    /// True when `id` still points at a live node in this tree.
     pub fn contains(&self, id: NodeId) -> bool {
         self.node(id).is_some()
     }
 
-    /// Induk sebuah node (`None` untuk akar atau id mati).
+    /// A node's parent (`None` for the root or a dead id).
     pub fn parent(&self, id: NodeId) -> Option<NodeId> {
         self.node(id)?.parent
     }
 
-    /// Anak-anak sebuah node, urut.
+    /// A node's children, in order.
     pub fn children(&self, id: NodeId) -> &[NodeId] {
         self.node(id).map(|n| n.children.as_slice()).unwrap_or(&[])
     }
 
-    /// Kunci identitas node (dari view yang membangunnya).
+    /// A node's identity key (from the view that built it).
     pub fn key(&self, id: NodeId) -> Option<Key> {
         self.node(id)?.key.clone()
     }
 
-    /// Tipe view yang membangun node ini — dipakai diffing untuk memutuskan
-    /// "perbarui di tempat" vs "ganti".
+    /// The view type that built this node — used by diffing to decide between
+    /// "update in place" and "replace".
     pub fn type_id_of(&self, id: NodeId) -> Option<TypeId> {
         Some(self.node(id)?.type_id)
     }
 
-    /// Kedalaman dari akar (akar = 0).
+    /// Depth from the root (the root is 0).
     pub fn depth(&self, id: NodeId) -> Option<u32> {
         Some(self.node(id)?.depth)
     }
 
-    /// Ukuran hasil layout terakhir.
+    /// The size produced by the last layout.
     pub fn size(&self, id: NodeId) -> Size {
         self.node(id).map(|n| n.size).unwrap_or(Size::ZERO)
     }
 
-    /// Posisi relatif terhadap induk (ditetapkan induk).
+    /// The position relative to the parent (set by the parent).
     pub fn offset(&self, id: NodeId) -> Point {
         self.node(id).map(|n| n.offset).unwrap_or(Point::ZERO)
     }
 
-    /// Posisi absolut di dalam pohon.
+    /// The absolute position within the tree.
     pub fn global_offset(&self, id: NodeId) -> Point {
         let mut x = 0.0;
         let mut y = 0.0;
@@ -522,90 +528,91 @@ impl RenderTree {
         Point::new(x, y)
     }
 
-    /// Kotak absolut node — inilah `bounds` yang dipakai a11y dan hit-testing.
+    /// A node's absolute box — this is the `bounds` used by a11y and
+    /// hit-testing.
     pub fn bounds(&self, id: NodeId) -> Rect {
         Rect::from_origin_size(self.global_offset(id), self.size(id))
     }
 
-    /// Constraints yang dipakai pada layout terakhir.
+    /// The constraints used by the last layout.
     pub fn constraints(&self, id: NodeId) -> Option<BoxConstraints> {
         self.node(id)?.constraints
     }
 
-    /// Berapa kali node ini benar-benar menjalankan layout-nya.
+    /// How many times this node actually ran its layout.
     ///
-    /// Ada untuk membuktikan janji "kerja layout dibatasi relayout boundary" —
-    /// dipakai unit test dan inspector, bukan logika framework.
+    /// It exists to prove the promise "layout work is bounded by relayout
+    /// boundaries" — used by unit tests and the inspector, not by framework
+    /// logic.
     pub fn layout_count(&self, id: NodeId) -> u32 {
         self.node(id).map(|n| n.layout_count).unwrap_or(0)
     }
 
-    /// Benar bila node menunggu layout.
+    /// True when the node is waiting for layout.
     pub fn needs_layout(&self, id: NodeId) -> bool {
         self.node(id).map(|n| n.needs_layout).unwrap_or(false)
     }
 
-    /// Benar bila node menunggu digambar ulang.
+    /// True when the node is waiting to be repainted.
     pub fn needs_paint(&self, id: NodeId) -> bool {
         self.node(id).map(|n| n.needs_paint).unwrap_or(false)
     }
 
-    /// Benar bila node adalah relayout boundary menurut layout terakhir.
+    /// True when the node was a relayout boundary as of the last layout.
     pub fn is_relayout_boundary(&self, id: NodeId) -> bool {
         self.node(id).map(|n| n.boundary).unwrap_or(false)
     }
 
-    /// Jumlah boundary yang menunggu di antrean relayout.
+    /// How many boundaries are waiting in the relayout queue.
     pub fn pending_boundaries(&self) -> usize {
         self.dirty_boundaries.len()
     }
 
-    /// Perilaku node.
+    /// A node's behaviour.
     pub fn render(&self, id: NodeId) -> Option<&dyn RenderNode> {
         self.node(id)?.render.as_deref()
     }
 
-    /// Perilaku node, mutable.
+    /// A node's behaviour, mutable.
     pub fn render_mut(&mut self, id: NodeId) -> Option<&mut dyn RenderNode> {
         self.node_mut(id)?.render.as_deref_mut()
     }
 
-    /// Perilaku node yang sudah di-downcast ke tipe konkret.
+    /// A node's behaviour, already downcast to a concrete type.
     pub fn node_ref<T: RenderNode>(&self, id: NodeId) -> Option<&T> {
         self.render(id)?.downcast_ref::<T>()
     }
 
-    /// Perilaku node yang sudah di-downcast ke tipe konkret, mutable.
+    /// A node's behaviour, already downcast to a concrete type, mutable.
     ///
-    /// Perubahan lewat jalur ini **tidak** otomatis menandai dirty — panggil
+    /// Changes made through this path do **not** mark anything dirty — call
     /// [`RenderTree::mark_needs_layout`]/[`RenderTree::mark_needs_paint`]
-    /// sendiri. Jalur normalnya adalah view-diff, yang sudah melakukannya.
+    /// yourself. The normal path is the view-diff, which already does.
     pub fn node_mut_ref<T: RenderNode>(&mut self, id: NodeId) -> Option<&mut T> {
         self.render_mut(id)?.downcast_mut::<T>()
     }
 
-    /// Keluarkan perilaku node dari arena sementara.
+    /// Temporarily take a node's behaviour out of the arena.
     ///
-    /// Dipakai routing input dengan alasan yang sama seperti layout: selama
-    /// sebuah node menangani event, ia tidak boleh bisa melihat (apalagi
-    /// mengubah) dirinya sendiri lewat pohon. Wajib dikembalikan dengan
-    /// [`RenderTree::put_render`].
+    /// Used by input routing for the same reason as layout: while a node handles
+    /// an event it must not be able to see (let alone mutate) itself through the
+    /// tree. It must be put back with [`RenderTree::put_render`].
     pub(crate) fn take_render(&mut self, id: NodeId) -> Option<Box<dyn RenderNode>> {
         self.node_mut(id)?.render.take()
     }
 
-    /// Kembalikan perilaku node yang diambil [`RenderTree::take_render`].
+    /// Put back a node's behaviour taken by [`RenderTree::take_render`].
     pub(crate) fn put_render(&mut self, id: NodeId, render: Box<dyn RenderNode>) {
         if let Some(node) = self.node_mut(id) {
             node.render = Some(render);
         }
     }
 
-    // -- mutasi struktur --------------------------------------------------
+    // -- structural mutation ----------------------------------------------
 
-    /// Sisipkan anak baru di `index` (dipotong ke jumlah anak yang ada).
+    /// Insert a new child at `index` (clamped to the current child count).
     ///
-    /// Hanya lapisan view-diff yang boleh memanggil ini.
+    /// Only the view-diff layer may call this.
     pub fn insert_child(
         &mut self,
         parent: NodeId,
@@ -627,9 +634,10 @@ impl RenderTree {
         child
     }
 
-    /// Buang node beserta seluruh keturunannya; kembalikan jumlah node terbuang.
+    /// Remove a node together with all its descendants; returns how many nodes
+    /// were removed.
     ///
-    /// Akar tidak bisa dibuang (panik) — pohon selalu punya akar.
+    /// The root cannot be removed (it panics) — a tree always has a root.
     pub fn remove_subtree(&mut self, id: NodeId) -> usize {
         assert!(id != self.root, "akar render tree tidak boleh dibuang");
         let Some(node) = self.node(id) else { return 0 };
@@ -656,10 +664,11 @@ impl RenderTree {
         removed
     }
 
-    /// Tata ulang urutan anak `parent` menjadi `order`.
+    /// Reorder `parent`'s children into `order`.
     ///
-    /// `order` wajib berisi persis anak-anak yang ada sekarang (jumlah dan
-    /// himpunan sama) — pelanggaran = panik, bukan pohon yang rusak diam-diam.
+    /// `order` must contain exactly the children that exist right now (same
+    /// count, same set) — a violation panics rather than silently corrupting the
+    /// tree.
     pub fn set_children(&mut self, parent: NodeId, order: &[NodeId]) {
         let current = self.children(parent);
         assert_eq!(
@@ -686,26 +695,27 @@ impl RenderTree {
 
     // -- dirty ------------------------------------------------------------
 
-    /// Tandai node butuh layout ulang.
+    /// Mark a node as needing relayout.
     ///
-    /// Penandaan merambat ke atas **sampai relayout boundary terdekat**, lalu
-    /// boundary itulah yang masuk antrean. Inilah yang membuat perubahan kecil
-    /// di dalam scroll view tidak pernah membuat seluruh window di-layout ulang
-    /// (§3.4).
+    /// The mark propagates upwards **until the nearest relayout boundary**, and
+    /// it is that boundary which enters the queue. This is what keeps a small
+    /// change inside a scroll view from ever forcing the whole window to
+    /// relayout (§3.4).
     pub fn mark_needs_layout(&mut self, id: NodeId) {
         self.dirty.insert(Dirty::LAYOUT | Dirty::PAINT);
-        // Rambatan paint punya aturannya sendiri (sampai akar, tanpa berhenti
-        // di relayout boundary) — lihat [`RenderTree::mark_needs_paint`].
+        // Paint propagation has its own rule (all the way to the root, without
+        // stopping at relayout boundaries) — see [`RenderTree::mark_needs_paint`].
         self.mark_needs_paint(id);
         let mut cur = Some(id);
         while let Some(c) = cur {
             let Some(node) = self.node_mut(c) else { return };
-            // Sengaja **tidak** berhenti hanya karena `needs_layout` sudah true:
-            // tanda itu tidak membuktikan boundary di atasnya masih mengantre
-            // (antrean bisa saja sudah dikuras oleh pass sebelumnya). Berhenti
-            // di situ = boundary yang tidak pernah dikerjakan lagi, dan
-            // `needs_layout` yang tidak pernah bisa dibersihkan. Jalannya tetap
-            // pendek: rambatan selalu berhenti di boundary terdekat.
+            // Deliberately **not** stopping just because `needs_layout` is
+            // already true: that flag does not prove the boundary above is still
+            // queued (the queue may already have been drained by an earlier
+            // pass). Stopping there means a boundary that is never worked on
+            // again, and a `needs_layout` that can never be cleared. The walk
+            // stays short anyway: propagation always stops at the nearest
+            // boundary.
             node.needs_layout = true;
             node.needs_paint = true;
             let boundary = node.boundary;
@@ -718,10 +728,10 @@ impl RenderTree {
         }
     }
 
-    /// Masukkan boundary ke antrean relayout, sekali saja.
+    /// Put a boundary into the relayout queue, exactly once.
     ///
-    /// `Node::queued` adalah cermin keanggotaan antrean, jadi pemanggilan
-    /// berulang tidak pernah menumpuk duplikat.
+    /// `Node::queued` mirrors queue membership, so repeated calls never pile up
+    /// duplicates.
     fn enqueue_boundary(&mut self, id: NodeId) {
         let Some(node) = self.node_mut(id) else {
             return;
@@ -733,59 +743,59 @@ impl RenderTree {
         self.dirty_boundaries.push(id);
     }
 
-    /// Tambahkan sebuah alasan dirty ke pohon tanpa menyentuh node mana pun.
+    /// Add a dirty reason to the tree without touching any node.
     ///
-    /// Untuk alasan yang **bukan tentang geometri**, dan hanya satu yang
-    /// begitu: [`Dirty::ANIMATION`]. Sebuah spring yang baru diarahkan (props
-    /// `open` sebuah dialog berubah lewat view-diff, tombol masuk keadaan
-    /// loading) belum menggeser satu piksel pun frame ini — yang dibutuhkannya
-    /// adalah **frame berikutnya**. Tanpa pintu ini alasan itu hilang di
-    /// perjalanan dan animasinya membeku sampai ada event input berikutnya.
+    /// For reasons that are **not about geometry**, and there is only one such
+    /// reason: [`Dirty::ANIMATION`]. A spring that has just been re-aimed (a
+    /// dialog's `open` prop changed through the view-diff, a button entering its
+    /// loading state) has not moved a single pixel this frame — what it needs is
+    /// the **next** frame. Without this door that reason gets lost in transit and
+    /// the animation freezes until the next input event arrives.
     pub fn mark_dirty(&mut self, dirty: Dirty) {
         self.dirty.insert(dirty);
     }
 
-    /// Tandai node perlu digambar ulang (tanpa layout).
+    /// Mark a node as needing a repaint (without layout).
     ///
-    /// Penandaan merambat **sampai akar**, dan itu bukan pemborosan: pass paint
-    /// menyimpan perintah gambar satu subtree di relayout boundary
-    /// ([`RenderTree::paint`]). Kalau tanda ini berhenti di tengah, sebuah
-    /// boundary di atas node yang berubah akan mengira dirinya bersih dan
-    /// menyalin kembali gambar lama — perubahannya hilang tanpa suara. "Bersih"
-    /// harus benar-benar berarti "tidak ada apa pun di dalamku yang berubah".
+    /// The mark propagates **all the way to the root**, and that is not waste:
+    /// the paint pass stores a subtree's draw commands at relayout boundaries
+    /// ([`RenderTree::paint`]). If the mark stopped halfway, a boundary above the
+    /// changed node would believe itself clean and replay the old drawing — the
+    /// change would vanish without a sound. "Clean" has to really mean "nothing
+    /// inside me changed".
     ///
-    /// Repaint boundary (layer yang ukurannya tidak merambat) adalah pekerjaan
-    /// milestone layer/offscreen, bukan di sini.
+    /// Repaint boundaries (layers whose size does not propagate) belong to the
+    /// layer/offscreen milestone, not here.
     pub fn mark_needs_paint(&mut self, id: NodeId) {
         self.dirty.insert(Dirty::PAINT);
         let mut cur = Some(id);
         while let Some(c) = cur {
             let Some(node) = self.node_mut(c) else { return };
-            // Sengaja **tidak** berhenti hanya karena `needs_paint` sudah true:
-            // tanda itu bisa datang dari jalur lain (node baru dialokasikan,
-            // ukurannya berubah saat layout) yang tidak ikut merambat ke atas.
-            // Berhenti di situ = leluhur yang mengira dirinya bersih. Jalannya
-            // pendek: satu jalur lurus ke akar.
+            // Deliberately **not** stopping just because `needs_paint` is already
+            // true: that flag can come from another path (a newly allocated node,
+            // a size change during layout) that did not propagate upwards.
+            // Stopping there means an ancestor that believes itself clean. The
+            // walk is short: one straight line to the root.
             node.needs_paint = true;
             cur = node.parent;
         }
     }
 
-    /// Ambil alasan dirty yang terkumpul dan kosongkan.
+    /// Take the accumulated dirty reasons and clear them.
     ///
-    /// Inilah yang disambungkan ke
-    /// [`crate::scheduler::FrameScheduler::request`] — render tetap **hanya
-    /// saat dirty** (§3.5).
+    /// This is what gets wired to
+    /// [`crate::scheduler::FrameScheduler::request`] — rendering stays
+    /// **dirty-driven only** (§3.5).
     pub fn take_dirty(&mut self) -> Dirty {
         core::mem::replace(&mut self.dirty, Dirty::NONE)
     }
 
-    /// Alasan dirty yang terkumpul, tanpa mengosongkan.
+    /// The accumulated dirty reasons, without clearing them.
     pub fn dirty(&self) -> Dirty {
         self.dirty
     }
 
-    /// Tandai seluruh pohon sudah digambar.
+    /// Mark the whole tree as painted.
     pub fn clear_paint(&mut self) {
         for slot in &mut self.slots {
             if let Some(n) = slot.node.as_mut() {
@@ -796,16 +806,17 @@ impl RenderTree {
 
     // -- paint ------------------------------------------------------------
 
-    /// Warna latar frame — **selalu token theme** (`theme.color.background`).
+    /// The frame's background colour — **always a theme token**
+    /// (`theme.color.background`).
     pub fn clear_color(&self) -> Color {
         self.clear_color
     }
 
-    /// Ganti warna latar frame (mis. setelah dark mode berubah).
+    /// Change the frame's background colour (e.g. after dark mode flips).
     ///
-    /// Mengubahnya menandai seluruh pohon perlu digambar ulang: warna latar
-    /// berganti karena preset/appearance berganti, dan itu mengubah setiap
-    /// warna token yang sudah terlanjur masuk cache gambar.
+    /// Changing it marks the whole tree as needing a repaint: the background
+    /// changed because the preset/appearance changed, and that changes every
+    /// token colour already baked into the paint caches.
     pub fn set_clear_color(&mut self, color: Color) {
         if self.clear_color == color {
             return;
@@ -819,14 +830,15 @@ impl RenderTree {
         }
     }
 
-    /// **Pass paint**: susun [`Scene`] frame ini dari render tree (§3.2).
+    /// **The paint pass**: assemble this frame's [`Scene`] from the render tree
+    /// (§3.2).
     ///
-    /// Sejajar dengan layout dan a11y. Subtree yang bersih **tidak** dijalankan
-    /// ulang: perintah gambarnya disalin dari cache di relayout boundary, dan
-    /// `needs_paint` seluruh pohon dibersihkan setelah selesai.
+    /// A peer of layout and a11y. Clean subtrees are **not** re-run: their draw
+    /// commands are copied from the cache at relayout boundaries, and
+    /// `needs_paint` is cleared across the whole tree afterwards.
     ///
-    /// Wajib dipanggil setelah layout: posisi absolut yang dipakai di sini
-    /// datang dari hasil layout, sama persis seperti `bounds` a11y.
+    /// Must be called after layout: the absolute positions used here come from
+    /// layout results, exactly like the a11y `bounds`.
     ///
     /// ```
     /// use silka_core::tree::{BoxConstraints, RenderTree};
@@ -848,38 +860,39 @@ impl RenderTree {
         scene
     }
 
-    /// Versi [`RenderTree::paint`] yang memakai ulang buffer scene.
+    /// The variant of [`RenderTree::paint`] that reuses a scene buffer.
     ///
-    /// Inilah jalur per-frame: alokasi perintah gambar dipertahankan antar
-    /// frame, jadi menggambar ulang tidak menyentuh allocator.
+    /// This is the per-frame path: draw-command allocations are kept across
+    /// frames, so repainting never touches the allocator.
     pub fn paint_into(&mut self, scene: &mut Scene) {
         scene.reset(self.clear_color);
         paint_tree(self, scene);
         self.clear_paint();
     }
 
-    /// Berapa kali node ini benar-benar menjalankan gambarnya.
+    /// How many times this node actually ran its paint.
     ///
-    /// Kembarannya [`RenderTree::layout_count`], dan ada untuk alasan yang
-    /// sama: membuktikan subtree bersih memang dilewati. Bukan logika framework.
+    /// The twin of [`RenderTree::layout_count`], and it exists for the same
+    /// reason: to prove that clean subtrees really are skipped. Not framework
+    /// logic.
     pub fn paint_count(&self, id: NodeId) -> u32 {
         self.node(id).map(|n| n.paint_count).unwrap_or(0)
     }
 
-    /// Geometri yang dibutuhkan pass paint: offset relatif, ukuran, tanda
-    /// kotor, dan status boundary.
+    /// The geometry the paint pass needs: relative offset, size, dirty flag, and
+    /// boundary status.
     pub(super) fn paint_geometry(&self, id: NodeId) -> Option<(Point, Size, bool, bool)> {
         let n = self.node(id)?;
         Some((n.offset, n.size, n.needs_paint, n.boundary))
     }
 
-    /// Perintah gambar subtree ini dari frame sebelumnya, bila ada.
+    /// This subtree's draw commands from the previous frame, if any.
     pub(super) fn paint_cache(&self, id: NodeId) -> Option<&PaintCache> {
         self.node(id)?.paint_cache.as_ref()
     }
 
-    /// Simpan hasil pass paint sebuah node dan catat bahwa ia benar-benar
-    /// menggambar.
+    /// Store the result of a node's paint pass and record that it really did
+    /// draw.
     pub(super) fn finish_paint(&mut self, id: NodeId, cache: Option<PaintCache>) {
         if let Some(n) = self.node_mut(id) {
             n.paint_cache = cache;
@@ -889,34 +902,33 @@ impl RenderTree {
 
     // -- layout -----------------------------------------------------------
 
-    /// Layout penuh dari akar dengan constraints window.
+    /// A full layout from the root with the window constraints.
     ///
-    /// Dipanggil pada frame pertama dan setiap kali ukuran surface berubah.
-    /// Constraints yang sama + pohon bersih = tidak ada kerja sama sekali.
+    /// Called on the first frame and whenever the surface size changes. Same
+    /// constraints + clean tree = no work at all.
     ///
-    /// Setelah pass penuh, antrean relayout ikut dikuras
-    /// ([`RenderTree::flush_layout`]): boundary yang mengantre bisa saja
-    /// terlewat karena leluhurnya kena cache-hit, dan setelah ini
-    /// [`RenderTree::pending_boundaries`] selalu nol untuk boundary yang sudah
-    /// pernah di-layout.
+    /// After the full pass the relayout queue is drained too
+    /// ([`RenderTree::flush_layout`]): a queued boundary may have been skipped
+    /// because its ancestor got a cache hit, and after this
+    /// [`RenderTree::pending_boundaries`] is always zero for boundaries that
+    /// have already been laid out once.
     pub fn layout(&mut self, constraints: BoxConstraints) -> Size {
         let root = self.root;
         let size = self.layout_node(root, constraints, true, true);
-        // Antrean **tidak boleh sekadar dibuang**. Pass penuh berhenti lebih
-        // awal setiap kali menemui cache-hit, jadi boundary yang mengantre di
-        // bawah leluhur yang bersih (mis. scroll view di dalam kotak
-        // berukuran tight, sementara yang berubah adalah saudaranya) tidak
-        // pernah tersentuh. Membuang entrinya membuat `needs_layout`-nya
-        // menetap selamanya dan scroll view mati tanpa suara.
+        // The queue **must not simply be discarded**. A full pass stops early on
+        // every cache hit, so a boundary queued below a clean ancestor (e.g. a
+        // scroll view inside a tightly sized box, while what actually changed is
+        // its sibling) is never touched. Dropping its entry would leave its
+        // `needs_layout` set forever and kill the scroll view silently.
         self.flush_layout();
         size
     }
 
-    /// Layout ulang **hanya** subtree yang kotor, memakai constraints yang
-    /// tersimpan di tiap boundary. Kembalikan jumlah boundary yang dikerjakan.
+    /// Relayout **only** the dirty subtrees, using the constraints stored at each
+    /// boundary. Returns how many boundaries were processed.
     ///
-    /// Boundary menjamin ukurannya sendiri tidak berubah, jadi tidak ada yang
-    /// perlu merambat ke atas.
+    /// A boundary guarantees its own size does not change, so nothing has to
+    /// propagate upwards.
     pub fn flush_layout(&mut self) -> usize {
         let mut queue = core::mem::take(&mut self.dirty_boundaries);
         for id in &queue {
@@ -924,8 +936,8 @@ impl RenderTree {
                 n.queued = false;
             }
         }
-        // Leluhur lebih dulu: satu boundary bisa membersihkan boundary di
-        // bawahnya, dan yang sudah bersih tinggal dilewati.
+        // Ancestors first: one boundary may clean up the boundaries below it, and
+        // whatever is already clean is simply skipped.
         queue.sort_by_key(|id| self.depth(*id).unwrap_or(0));
         let mut done = 0;
         for id in queue {
@@ -945,8 +957,8 @@ impl RenderTree {
                 continue;
             }
             let Some(constraints) = constraints else {
-                // Belum pernah di-layout: harus lewat layout penuh dari akar,
-                // jadi entrinya dikembalikan ke antrean.
+                // Never laid out before: it has to go through a full layout from
+                // the root, so its entry goes back into the queue.
                 self.enqueue_boundary(id);
                 continue;
             };
@@ -956,8 +968,8 @@ impl RenderTree {
         done
     }
 
-    /// Jalur layout normal per frame: layout penuh bila constraints berubah
-    /// atau akar kotor, selain itu cukup subtree yang kotor.
+    /// The normal per-frame layout path: a full layout when the constraints
+    /// changed or the root is dirty, otherwise just the dirty subtrees.
     pub fn perform_layout(&mut self, constraints: BoxConstraints) -> Size {
         let root = self.root;
         let perlu_penuh =
@@ -987,10 +999,10 @@ impl RenderTree {
             });
             (node.parent.is_none(), render.is_relayout_boundary())
         };
-        // Aturan Flutter: boundary bila ukuran sendiri tidak mungkin dipengaruhi
-        // isinya, atau induk memang tidak memakai ukuran kita. `tight_is_boundary`
-        // adalah pengecualian yang dipakai wadah flex/grid — lihat field
-        // `Node::tight_is_boundary`.
+        // The Flutter rule: a boundary when our own size cannot be affected by
+        // our content, or when the parent does not use our size anyway.
+        // `tight_is_boundary` is the exception used by flex/grid containers — see
+        // the `Node::tight_is_boundary` field.
         let boundary = is_root
             || intrinsic
             || (tight_is_boundary && constraints.is_tight())
@@ -1037,37 +1049,38 @@ impl RenderTree {
         node.size = size;
         node.needs_layout = false;
         node.layout_count = node.layout_count.saturating_add(1);
-        // Node yang benar-benar menjalankan layout **selalu** perlu digambar
-        // ulang: kita hanya sampai di sini kalau ia kotor atau constraints-nya
-        // berubah, dan keduanya bisa mengubah ukurannya. Menandainya dari sini
-        // menutup jalur yang tidak lewat `mark_needs_layout` sama sekali —
-        // mis. anak yang di-layout ulang hanya karena induknya berubah.
+        // A node that actually ran its layout **always** needs a repaint: we only
+        // got here because it was dirty or its constraints changed, and either can
+        // change its size. Marking it from here closes the paths that never go
+        // through `mark_needs_layout` at all — e.g. a child relaid out purely
+        // because its parent changed.
         self.mark_needs_paint(id);
         size
     }
 
     // -- a11y -------------------------------------------------------------
 
-    /// Emisi seluruh pohon aksesibilitas — **pass sejajar layout dan paint**,
-    /// bukan lapisan susulan (§3.8).
+    /// Emit the whole accessibility tree — **a peer pass to layout and paint**,
+    /// not an afterthought layer (§3.8).
     ///
-    /// `bounds` tiap node datang dari hasil layout, jadi apa yang dibacakan
-    /// screen reader dan apa yang digambar tidak mungkin berbeda. Node
-    /// [`AccessNode::hidden`] hilang beserta seluruh keturunannya.
+    /// Each node's `bounds` comes from layout results, so what a screen reader
+    /// announces and what gets drawn cannot disagree. An [`AccessNode::hidden`]
+    /// node disappears together with all its descendants.
     ///
-    /// `focus` **sengaja dititipkan pemanggil**, bukan disimpan di pohon:
-    /// pemegang fokus yang sah adalah [`crate::input::FocusManager`], dan dua
-    /// tempat penyimpanan fokus berarti cepat atau lambat keduanya berbeda.
-    /// Biasanya `router.focus().focused()`; `None` berarti window sendirilah
-    /// yang memegang fokus (aturan AccessKit).
+    /// `focus` is **deliberately passed in by the caller** rather than stored in
+    /// the tree: the rightful owner of focus is [`crate::input::FocusManager`],
+    /// and two places storing focus means sooner or later the two disagree.
+    /// Usually `router.focus().focused()`; `None` means the window itself holds
+    /// focus (the AccessKit rule).
     pub fn access_tree(&self, focus: Option<NodeId>) -> AccessTree {
         AccessTree::emit(self, focus)
     }
 
-    /// Nama window bagi teknologi bantu (biasanya judul window).
+    /// The window's name for assistive technology (usually the window title).
     ///
-    /// Inilah hal pertama yang dibacakan screen reader saat aplikasi mendapat
-    /// fokus, jadi ia bagian dari pohon a11y — bukan sekadar dekorasi titlebar.
+    /// It is the first thing a screen reader announces when the application
+    /// takes focus, so it belongs to the a11y tree — not merely to titlebar
+    /// decoration.
     pub fn set_root_label(&mut self, label: impl Into<String>) {
         let root = self.root;
         let label = label.into();
@@ -1079,7 +1092,7 @@ impl RenderTree {
         }
     }
 
-    // -- internal ---------------------------------------------------------
+    // -- internals --------------------------------------------------------
 
     fn alloc(
         &mut self,
@@ -1171,45 +1184,46 @@ impl core::fmt::Debug for RenderTree {
 // LayoutCtx
 // ---------------------------------------------------------------------------
 
-/// Akses terbatas ke pohon selama sebuah node menjalankan layout-nya.
+/// Restricted access to the tree while a node runs its layout.
 ///
-/// Sengaja **tidak** menyediakan mutasi struktur: pohon hanya berubah lewat
-/// view-diff. Yang boleh dilakukan node: melayout anak dan menempatkannya.
+/// It deliberately offers **no** structural mutation: the tree only changes
+/// through the view-diff. What a node may do is lay out its children and place
+/// them.
 pub struct LayoutCtx<'a> {
     tree: &'a mut RenderTree,
     node: NodeId,
 }
 
 impl LayoutCtx<'_> {
-    /// Node yang sedang di-layout.
+    /// The node currently being laid out.
     pub fn node(&self) -> NodeId {
         self.node
     }
 
-    /// Arah baca yang berlaku (mirroring RTL, §9.8).
+    /// The reading direction in force (RTL mirroring, §9.8).
     pub fn direction(&self) -> TextDirection {
         self.tree.direction
     }
 
-    /// Anak-anak node ini.
+    /// This node's children.
     pub fn children(&self) -> &[NodeId] {
         self.tree.children(self.node)
     }
 
-    /// Jumlah anak.
+    /// The number of children.
     pub fn child_count(&self) -> usize {
         self.tree.children(self.node).len()
     }
 
-    /// Anak ke-`index`.
+    /// The child at `index`.
     ///
-    /// Panik bila di luar jangkauan — indeks anak selalu datang dari
+    /// Panics when out of range — child indices always come from
     /// [`LayoutCtx::child_count`].
     pub fn child(&self, index: usize) -> NodeId {
         self.tree.children(self.node)[index]
     }
 
-    /// Layout seorang anak; ukurannya boleh memengaruhi ukuran kita.
+    /// Lay out a child whose size may influence our own.
     pub fn layout_child(&mut self, child: NodeId, constraints: BoxConstraints) -> Size {
         debug_assert_eq!(
             self.tree.parent(child),
@@ -1219,16 +1233,16 @@ impl LayoutCtx<'_> {
         self.tree.layout_node(child, constraints, true, true)
     }
 
-    /// Layout seorang anak dengan constraints yang **berasal dari hasil
-    /// mengukur anak itu sendiri**.
+    /// Lay out a child with constraints that **were derived from measuring that
+    /// very child**.
     ///
-    /// Bedanya dengan [`LayoutCtx::layout_child`] hanya satu, tapi penting:
-    /// constraints tight di sini **tidak** menjadikan anak relayout boundary.
-    /// Wadah flex/grid ([`super::TaffyBox`]) memberi anaknya ukuran pasti
-    /// setelah menanyakan sendiri "kamu maunya sebesar apa?" — kalau isi anak
-    /// berubah, jawabannya berubah dan seluruh flex harus dihitung ulang. Kalau
-    /// anak dijadikan boundary di situ, perubahan itu tidak akan pernah sampai
-    /// ke wadahnya dan layout membeku tanpa suara.
+    /// There is only one difference from [`LayoutCtx::layout_child`], but it
+    /// matters: tight constraints here do **not** make the child a relayout
+    /// boundary. A flex/grid container ([`super::TaffyBox`]) hands its child an
+    /// exact size after first asking it "how big do you want to be?" — if the
+    /// child's content changes, the answer changes and the whole flex has to be
+    /// recomputed. Making the child a boundary there would mean that change never
+    /// reaches its container and layout freezes silently.
     pub fn layout_child_measured(&mut self, child: NodeId, constraints: BoxConstraints) -> Size {
         debug_assert_eq!(
             self.tree.parent(child),
@@ -1238,7 +1252,7 @@ impl LayoutCtx<'_> {
         self.tree.layout_node(child, constraints, true, false)
     }
 
-    /// Gaya anak sebagai item flex/grid ([`RenderNode::layout_style`]).
+    /// A child's style as a flex/grid item ([`RenderNode::layout_style`]).
     pub fn child_layout_style(&self, child: NodeId) -> ItemStyle {
         self.tree
             .render(child)
@@ -1246,11 +1260,11 @@ impl LayoutCtx<'_> {
             .unwrap_or(ItemStyle::DEFAULT)
     }
 
-    /// Layout seorang anak yang ukurannya **tidak** memengaruhi ukuran kita.
+    /// Lay out a child whose size does **not** influence our own.
     ///
-    /// Anak otomatis menjadi relayout boundary: perubahan di dalamnya berhenti
-    /// di situ. Ukurannya tetap dikembalikan agar bisa ditempatkan, tapi tidak
-    /// boleh dipakai untuk menghitung ukuran sendiri.
+    /// The child automatically becomes a relayout boundary: changes inside it
+    /// stop there. Its size is still returned so it can be placed, but must not
+    /// be used to compute our own size.
     pub fn layout_child_boundary(&mut self, child: NodeId, constraints: BoxConstraints) -> Size {
         debug_assert_eq!(
             self.tree.parent(child),
@@ -1260,13 +1274,13 @@ impl LayoutCtx<'_> {
         self.tree.layout_node(child, constraints, false, true)
     }
 
-    /// Ukuran anak dari layout terakhir.
+    /// A child's size from the last layout.
     pub fn child_size(&self, child: NodeId) -> Size {
         self.tree.size(child)
     }
 
-    /// **Induk yang menentukan posisi**: tempatkan anak relatif terhadap
-    /// sudut kiri-atas node ini.
+    /// **The parent decides the position**: place a child relative to this
+    /// node's top-left corner.
     pub fn place_child(&mut self, child: NodeId, offset: Point) {
         debug_assert_eq!(
             self.tree.parent(child),
@@ -1281,25 +1295,25 @@ impl LayoutCtx<'_> {
             _ => false,
         };
         if berubah {
-            // Anak yang pindah menggeser seluruh keturunannya; yang perlu
-            // ditandai adalah jalur ke atas, karena cache gambar leluhur
-            // memuat gambar anak ini. Pergeseran keturunan tertangkap sendiri:
-            // cache mereka menyimpan posisi absolut saat dibuat.
+            // Moving a child shifts all of its descendants; what needs marking is
+            // the path upwards, because the ancestors' paint caches contain this
+            // child's drawing. The descendants take care of themselves: their
+            // caches record the absolute position they were built at.
             self.tree.mark_needs_paint(child);
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Utilitas untuk lapisan view
+// Utilities for the view layer
 // ---------------------------------------------------------------------------
 
-/// Peta `key -> node` untuk anak-anak sebuah node; dipakai diffing berkunci.
+/// A `key -> node` map for a node's children; used by keyed diffing.
 ///
-/// Panik bila ada dua saudara berkunci sama: peta akan menelan salah satunya,
-/// dan node yang tertelan tidak akan pernah dicocokkan maupun dibuang — yang
-/// baru terlihat satu frame kemudian sebagai invariant arena yang meledak.
-/// Lebih baik berisik di tempat kesalahannya (§9.7).
+/// Panics when two siblings share a key: the map would swallow one of them, and
+/// the swallowed node would never be matched nor removed — which only surfaces a
+/// frame later as an arena invariant blowing up. Better to be loud at the site
+/// of the mistake (§9.7).
 pub(crate) fn keyed_children(tree: &RenderTree, parent: NodeId) -> HashMap<Key, NodeId> {
     let mut map = HashMap::new();
     for id in tree.children(parent) {

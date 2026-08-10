@@ -1,18 +1,18 @@
-//! Kesalahan lapisan platform.
+//! Platform-layer errors.
 
 use core::fmt;
 
 use silka_renderer::RendererError;
 
-/// Kesalahan saat membuka window atau menjalankan event loop.
+/// Something went wrong opening a window or running the event loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PlatformError {
-    /// Event loop gagal dibuat atau dijalankan (mis. tanpa display server).
+    /// The event loop could not be created or run (e.g. no display server).
     EventLoop(String),
-    /// Window gagal dibuat oleh OS.
+    /// The OS refused to create the window.
     WindowCreation(String),
-    /// Backend renderer gagal.
+    /// The renderer backend failed.
     Renderer(RendererError),
 }
 

@@ -1,11 +1,11 @@
-//! Jembatan appearance OS → token theme (INTEGRASI-NATIVE §6).
+//! Bridge from OS appearance to theme tokens (INTEGRASI-NATIVE §6).
 //!
-//! Dark mode harus **live**: token warna dibangun ulang saat OS berpindah
-//! mode, bukan dibaca sekali saat start.
+//! Dark mode must be **live**: color tokens are rebuilt when the OS switches
+//! mode, not read once at startup.
 
 use silka_theme::{Appearance, Theme};
 
-/// Terjemahkan tema OS dari winit ke [`Appearance`] token.
+/// Translate the OS theme reported by winit into an [`Appearance`] token.
 pub fn appearance_from_winit(theme: winit::window::Theme) -> Appearance {
     match theme {
         winit::window::Theme::Light => Appearance::Light,
@@ -13,7 +13,7 @@ pub fn appearance_from_winit(theme: winit::window::Theme) -> Appearance {
     }
 }
 
-/// Terjemahkan [`Appearance`] ke preferensi tema window winit.
+/// Translate an [`Appearance`] into winit's window theme preference.
 pub fn winit_theme_from_appearance(appearance: Appearance) -> winit::window::Theme {
     match appearance {
         Appearance::Light => winit::window::Theme::Light,
@@ -21,19 +21,19 @@ pub fn winit_theme_from_appearance(appearance: Appearance) -> winit::window::The
     }
 }
 
-/// Bagaimana appearance ditentukan.
+/// How the appearance is decided.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppearanceSource {
-    /// Ikuti setting OS, dan ikut berubah saat OS berubah.
+    /// Follow the OS setting, and change along with it.
     System,
-    /// Dikunci oleh aplikasi; event OS diabaikan.
+    /// Pinned by the application; OS events are ignored.
     Locked,
 }
 
-/// Terapkan appearance OS ke theme, menghormati penguncian aplikasi.
+/// Apply the OS appearance to a theme, honouring an application-side pin.
 ///
-/// Mengembalikan `Some(theme_baru)` hanya bila memang ada perubahan — supaya
-/// pemanggil tidak menjadwalkan redraw sia-sia (§3.5: render saat dirty saja).
+/// Returns `Some(new_theme)` only when something actually changed, so callers
+/// never schedule a pointless redraw (§3.5: render only when dirty).
 pub fn apply_system_appearance(
     theme: Theme,
     source: AppearanceSource,
@@ -63,7 +63,7 @@ mod tests {
         let baru = apply_system_appearance(theme, AppearanceSource::System, Appearance::Dark)
             .expect("harus berubah");
         assert_eq!(baru.appearance, Appearance::Dark);
-        // Preset tidak boleh ikut berubah saat OS ganti mode.
+        // The preset must not change when the OS switches mode.
         assert_eq!(baru.preset, Preset::Cupertino);
     }
 

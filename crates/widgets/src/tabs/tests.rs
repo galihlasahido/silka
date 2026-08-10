@@ -1,5 +1,5 @@
-//! Uji `tabs` — seluruhnya **logika non-visual**: geometri indikator, jalur
-//! input, pohon a11y, dan aturan token. Tidak satu pun butuh GPU.
+//! `tabs` tests — entirely **non-visual logic**: indicator geometry, the input
+//! path, the a11y tree, and the token rules. None of them needs a GPU.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -38,7 +38,7 @@ fn pohon(view: impl Into<silka_core::view::View>) -> RenderTree {
     tree
 }
 
-/// Node deretan tab di dalam pohon.
+/// The tab-row node inside the tree.
 fn deretan(tree: &RenderTree) -> NodeId {
     fn cari(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
         if tree.node_ref::<TabListBox>(id).is_some() {
@@ -53,12 +53,12 @@ fn daftar(tree: &RenderTree) -> &TabListBox {
     tree.node_ref::<TabListBox>(deretan(tree)).unwrap()
 }
 
-/// Detak frame 120 Hz.
+/// A 120 Hz frame tick.
 fn detak(motion: Motion) -> Tick {
     Tick::manual(Duration::from_micros(8_333), motion)
 }
 
-/// Satu detak "kosong" supaya node tahu ada penggerak frame di aplikasi ini.
+/// One "empty" tick so the nodes know this app has a frame driver.
 fn hidupkan(tree: &mut RenderTree) {
     advance(tree, &detak(Motion::Full));
 }
@@ -93,7 +93,7 @@ fn tekan(tree: &mut RenderTree, router: &mut InputRouter, key: NamedKey) {
 }
 
 // ---------------------------------------------------------------------------
-// Geometri & layout
+// Geometry & layout
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -169,7 +169,7 @@ fn arah_baca_rtl_membalik_urutan_visual() {
     tree.layout(BoxConstraints::loose(RUANG));
 
     let kotak = daftar(&tree).tab_rects().to_vec();
-    // Tab pertama berada paling kanan (§9.8).
+    // The first tab sits furthest right (§9.8).
     assert!(
         kotak[0].min_x() > kotak[2].min_x(),
         "RTL harus mencerminkan urutan: {kotak:?}"
@@ -271,7 +271,7 @@ fn pilihan_yang_berbalik_di_tengah_animasi_membawa_kecepatannya() {
     let tengah = daftar(&tree).active_rect();
     assert!(tengah.min_x() > daftar(&tree).tab_rects()[0].min_x());
 
-    // Retarget di tengah jalan: tidak ada lompatan ke posisi awal.
+    // Retarget mid-flight: no jump back to the starting position.
     reconcile(&mut tree, tiga(&f, &t, 0).segmented());
     tree.layout(BoxConstraints::loose(RUANG));
     assert_eq!(
@@ -295,7 +295,7 @@ fn tanpa_penggerak_frame_indikator_melompat_bukan_membeku() {
     reconcile(&mut tree, tiga(&f, &t, 0).segmented());
     tree.layout(BoxConstraints::loose(RUANG));
 
-    // Sengaja **tidak** memanggil `advance` sama sekali.
+    // Deliberately **never** calls `advance` at all.
     reconcile(&mut tree, tiga(&f, &t, 2).segmented());
     tree.layout(BoxConstraints::loose(RUANG));
 
@@ -320,8 +320,8 @@ fn reduced_motion_mematikan_sorotan_dan_membuang_pantulan_indikator() {
     tree.layout(BoxConstraints::loose(RUANG));
     hidupkan(&mut tree);
 
-    // Sorotan hover bersifat dekoratif: di bawah reduced-motion ia hilang
-    // sepenuhnya, jadi satu detak sudah menyelesaikannya.
+    // The hover highlight is decorative: under reduced-motion it disappears
+    // entirely, so a single tick already finishes it.
     assert_eq!(
         super::TAB_TINT_MOTION,
         silka_core::animation::MotionRole::Decorative
@@ -339,7 +339,7 @@ fn reduced_motion_mematikan_sorotan_dan_membuang_pantulan_indikator() {
     let mut lewat = false;
     while is_animating(&tree) && n < 10_000 {
         advance(&mut tree, &tick);
-        // Tanpa pantulan, indikator tidak pernah melewati tujuannya.
+        // Without bounce, the indicator never overshoots its target.
         lewat |= daftar(&tree).active_rect().min_x() > tujuan.min_x() + 0.5;
         n += 1;
     }
@@ -435,9 +435,9 @@ fn klik_di_tab_yang_sudah_aktif_tidak_memanggil_apa_pun() {
     let kotak = daftar(&tree).tab_rects()[1];
     let mut router = InputRouter::new();
     klik(&mut tree, &mut router, kotak.center());
-    // Callback tetap dipanggil dari klik — aplikasi yang menyetel signal ke
-    // nilai yang sama, dan `Signal::set_if_changed` yang menahannya. Yang
-    // penting: tidak ada dua panggilan untuk satu klik.
+    // The callback still fires on click — the app sets the signal to the same
+    // value, and `Signal::set_if_changed` is what stops it there. What matters:
+    // one click never produces two calls.
     assert_eq!(n.get(), 1);
 }
 
@@ -467,9 +467,9 @@ fn keyboard_memindahkan_pilihan_dengan_panah_home_dan_end() {
     let f = fonts();
     let t = tema();
     let pilihan = Rc::new(Cell::new(0usize));
-    // Pilihan adalah milik aplikasi: setiap rebuild membawa nilai barunya
-    // **beserta** callback-nya kembali ke pohon, persis siklus signal →
-    // rebuild yang sebenarnya.
+    // The selection belongs to the app: every rebuild carries its new value
+    // **together with** its callback back into the tree, exactly like the real
+    // signal → rebuild cycle.
     let bangun = |i: usize| {
         let catat = pilihan.clone();
         tiga(&f, &t, i).segmented().on_select(move |i| catat.set(i))
@@ -477,7 +477,7 @@ fn keyboard_memindahkan_pilihan_dengan_panah_home_dan_end() {
     let mut tree = pohon(bangun(0));
 
     let mut router = InputRouter::new();
-    // Satu perhentian Tab untuk seluruh deretan.
+    // One Tab stop for the entire row.
     tekan(&mut tree, &mut router, NamedKey::Tab);
     assert_eq!(
         router.focus().focused(),
@@ -498,7 +498,7 @@ fn keyboard_memindahkan_pilihan_dengan_panah_home_dan_end() {
     tekan(&mut tree, &mut router, NamedKey::Home);
     assert_eq!(pilihan.get(), 0);
 
-    // Home di tab pertama tidak memanggil apa pun lagi.
+    // Home on the first tab no longer calls anything.
     reconcile(&mut tree, bangun(0));
     tree.layout(BoxConstraints::loose(RUANG));
     pilihan.set(usize::MAX);
@@ -529,7 +529,7 @@ fn panah_melewati_tab_yang_dimatikan_dan_berhenti_di_ujung() {
     tekan(&mut tree, &mut router, NamedKey::ArrowRight);
     assert_eq!(pilihan.get(), 2, "tab mati dilewati, bukan dipilih");
 
-    // Di ujung kanan panah tidak melingkar (kebiasaan NSSegmentedControl).
+    // At the right end the arrow does not wrap (the NSSegmentedControl habit).
     pilihan.set(usize::MAX);
     reconcile(&mut tree, bangun(2));
     tree.layout(BoxConstraints::loose(RUANG));
@@ -553,7 +553,7 @@ fn panah_dicerminkan_di_rtl() {
 
     let mut router = InputRouter::new();
     tekan(&mut tree, &mut router, NamedKey::Tab);
-    // Di RTL, "kanan" berarti tab sebelumnya (§9.8).
+    // In RTL, "right" means the previous tab (§9.8).
     tekan(&mut tree, &mut router, NamedKey::ArrowRight);
     assert_eq!(pilihan.get(), 0);
 }
@@ -602,7 +602,7 @@ fn cincin_fokus_hanya_digambar_saat_deretan_terfokus() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -643,7 +643,7 @@ fn pohon_a11y_memuat_tablist_dan_tab_dengan_keadaan_terpilih() {
     assert!(lanjutan.node.disabled);
     assert!(!lanjutan.node.actions.contains(AccessActions::CLICK));
 
-    // Nama tab dibacakan **sekali**: teks di dalamnya struktural.
+    // A tab's name is announced **once**: the text inside it is structural.
     let jumlah = a11y
         .entries()
         .iter()
@@ -664,7 +664,7 @@ fn kotak_a11y_sama_dengan_hasil_layout() {
 }
 
 // ---------------------------------------------------------------------------
-// Token: dua preset, dark mode
+// Tokens: both presets, dark mode
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -758,7 +758,7 @@ fn varian_underline_memakai_aksen_dan_setipis_token() {
 }
 
 // ---------------------------------------------------------------------------
-// Diff & keadaan tepi
+// Diffing & edge cases
 // ---------------------------------------------------------------------------
 
 #[test]

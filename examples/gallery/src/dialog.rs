@@ -1,43 +1,44 @@
-//! Halaman demo: **dialog & alert** (`KOMPONEN.md` Tier 4).
+//! Demo page: **dialogs & alerts** (`KOMPONEN.md` Tier 4).
 //!
-//! Yang diperiksa mata di halaman ini, satu per satu Definition of Done:
+//! What the eye checks on this page, one Definition of Done item at a time:
 //!
-//! - **Backdrop dim + panel di tengah** yang datang dari token `scrim` dan
-//!   `surface_elevated` — bandingkan di kedua preset (`--preset tailwind`) dan
-//!   kedua appearance: sudutnya squircle di Cupertino, arc di Tailwind.
-//! - **Transisi spring yang bisa di-retarget**: tekan tombol pembuka lalu
-//!   segera tekan Esc — dialognya berbalik arah membawa kecepatannya, tidak
-//!   melompat ke nol dulu.
-//! - **Konvensi tombol per-OS**: dialog pertama memakai
-//!   [`ButtonOrder::Platform`] (di macOS "Batal" di kiri, "Simpan" di kanan),
-//!   sedangkan dua dialog di bawahnya memaksa kedua susunan supaya keduanya
-//!   bisa dilihat bersebelahan tanpa mengganti OS.
-//! - **Keyboard**: Tab masuk ke perangkap fokus dialog dan tidak pernah keluar
-//!   ke konten di belakang, Space/Enter mengaktifkan tombol yang terfokus,
-//!   Return menjalankan tombol default dari mana pun **di dalam** dialog, dan
-//!   Esc menjalankan aksi batal.
-//! - **Alert tidak hilang karena kursor tergelincir**: klik di luar panel
-//!   menutup dialog biasa, tapi tidak menutup alert (`NSAlert`).
-//! - **Reduced-motion**: transisinya berperan `Essential`, jadi di bawah
-//!   setting itu panel tetap bergerak (gerakannya menjelaskan dari mana dialog
-//!   datang) tapi pantulannya dibuang. Belum bisa dilihat dari halaman ini —
-//!   shell belum membaca setting OS-nya (INTEGRASI-NATIVE §6) — jadi yang
-//!   menjaganya adalah uji `silka_widgets::dialog` yang menjalankan transisi
-//!   yang sama di bawah `Motion::Reduced`.
+//! - **A dimmed backdrop + centered panel** coming from the `scrim` and
+//!   `surface_elevated` tokens — compare across both presets
+//!   (`--preset tailwind`) and both appearances: the corners are squircles in
+//!   Cupertino, arcs in Tailwind.
+//! - **A retargetable spring transition**: press the opening button and then
+//!   immediately press Esc — the dialog reverses carrying its velocity, it does
+//!   not first jump to zero.
+//! - **Per-OS button convention**: the first dialog uses
+//!   [`ButtonOrder::Platform`] (on macOS "Batal" on the left, "Simpan" on the
+//!   right), while the two dialogs below it force both orderings so they can be
+//!   seen side by side without switching OS.
+//! - **Keyboard**: Tab enters the dialog's focus trap and never escapes to the
+//!   content behind it, Space/Enter activates the focused button, Return runs
+//!   the default button from anywhere **inside** the dialog, and Esc runs the
+//!   cancel action.
+//! - **An alert does not vanish because the cursor slipped**: clicking outside
+//!   the panel closes an ordinary dialog, but not an alert (`NSAlert`).
+//! - **Reduced motion**: the transition is marked `Essential`, so under that
+//!   setting the panel still moves (the motion explains where the dialog came
+//!   from) but the bounce is dropped. Not yet observable from this page — the
+//!   shell does not read the OS setting yet (INTEGRASI-NATIVE §6) — so what
+//!   guards it is the `silka_widgets::dialog` test that runs the same
+//!   transition under `Motion::Reduced`.
 //!
 //! ```text
 //! cargo run -p silka-gallery -- --page dialog
 //! cargo run -p silka-gallery -- --page dialog --preset tailwind --appearance light
 //! ```
 //!
-//! Satu batas yang jujur disebut di sini karena terlihat langsung: **fokus
-//! belum berpindah otomatis** ke panel yang baru terbuka (lubang yang sudah
-//! dicatat `silka_widgets::overlay`), jadi setelah dialog muncul lewat klik,
-//! tekan Tab sekali untuk masuk ke perangkap fokusnya. Jaring pengaman untuk
-//! keadaan "belum ada yang terfokus" sudah ada sebagai fungsi shell —
-//! `overlay::dismiss_topmost` dan `dialog::activate_default` — tapi yang
-//! memasangnya adalah siklus input aplikasi, dan `run_app_with` belum punya
-//! kait untuk itu.
+//! One limitation is named honestly here because it shows up immediately:
+//! **focus does not move automatically** to a freshly opened panel (a gap
+//! already recorded in `silka_widgets::overlay`), so after a dialog appears via
+//! a click, press Tab once to enter its focus trap. The safety net for the
+//! "nothing is focused yet" case already exists as shell functions —
+//! `overlay::dismiss_topmost` and `dialog::activate_default` — but wiring them
+//! up is the application's input cycle's job, and `run_app_with` has no hook
+//! for that yet.
 
 use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
@@ -50,54 +51,55 @@ use silka_widgets::{
     alert, button, button_variant, dialog, overlay_layer, text, ButtonOrder, ButtonVariant, Fonts,
 };
 
-/// Judul halaman.
+/// The page title.
 pub const JUDUL: &str = "Dialog";
 
-/// Tombol pembuka dialog biasa.
+/// The button that opens the ordinary dialog.
 pub const BUKA_SIMPAN: &str = "Simpan perubahan…";
-/// Tombol pembuka alert merusak.
+/// The button that opens the destructive alert.
 pub const BUKA_HAPUS: &str = "Hapus berkas…";
-/// Tombol pembuka dialog dengan susunan tombol ala Windows.
+/// The button that opens the dialog with Windows-style button order.
 pub const BUKA_WINDOWS: &str = "Susunan Windows…";
 
-/// Judul dialog biasa.
+/// The ordinary dialog's title.
 pub const JUDUL_SIMPAN: &str = "Simpan perubahan?";
-/// Judul alert merusak.
+/// The destructive alert's title.
 pub const JUDUL_HAPUS: &str = "Hapus 3 berkas?";
-/// Judul dialog contoh susunan Windows.
+/// The title of the Windows-button-order example dialog.
 pub const JUDUL_WINDOWS: &str = "Susunan tombol Windows";
 
-/// Jawaban sebelum pengguna menekan apa pun.
+/// The answer before the user presses anything.
 pub const BELUM_DIJAWAB: &str = "belum ada";
 
-/// Dialog mana yang sedang terbuka.
+/// Which dialog is currently open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Buka {
-    /// Tidak ada.
+    /// None.
     #[default]
     Tidak,
-    /// Dialog "Simpan perubahan?".
+    /// The "Simpan perubahan?" dialog.
     Simpan,
-    /// Alert "Hapus 3 berkas?".
+    /// The "Hapus 3 berkas?" alert.
     Hapus,
-    /// Dialog contoh susunan Windows.
+    /// The Windows-button-order example dialog.
     Windows,
 }
 
-/// Pohon view seluruh halaman — inilah yang diserahkan ke `run_app_with`.
+/// The view tree for the whole page — this is what gets handed to
+/// `run_app_with`.
 pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    // Teks dirasterisasi pada resolusi layar yang sebenarnya; ukuran logis di
-    // bawah ini tidak ikut berubah (§3.3).
+    // Text is rasterized at the real screen resolution; the logical sizes
+    // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
 
     let buka = use_signal(|| Buka::Tidak);
     let jawaban = use_signal(|| String::from(BELUM_DIJAWAB));
 
-    // `jawaban` ditulis dari dalam dialog dan dibaca di halaman: bukti bahwa
-    // tombol yang diklik benar-benar menjalankan aksinya, bukan sekadar
-    // menutup panel.
+    // `jawaban` is written from inside the dialog and read on the page: proof
+    // that the button clicked really does run its action, not merely close the
+    // panel.
     let jawab = move |apa: &'static str| {
         move || {
             jawaban.set(apa.to_string());
@@ -119,8 +121,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .confirm("Simpan", jawab("Simpan")),
         )
         .overlay(
-            // Alert merusak: klik di luar tidak menutupnya, dan Return tidak
-            // pernah menjalankan "Hapus" (HIG).
+            // A destructive alert: clicking outside does not close it, and
+            // Return never runs "Hapus" (HIG).
             alert(fonts, &t, JUDUL_HAPUS)
                 .message("Berkas yang dihapus tidak bisa dikembalikan.")
                 .open(buka.get() == Buka::Hapus)
@@ -141,7 +143,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .into()
 }
 
-/// Isi halaman di belakang dialog — ikut mati saat modal terbuka.
+/// The page content behind the dialog — inert while a modal is open.
 fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>) -> View {
     column([
         View::from(
@@ -188,7 +190,8 @@ fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>)
         ),
     ])
     .spacing(t.space(6.0))
-    // Perataannya milik mesin layout, bukan aritmetika di halaman ini (§3.4).
+    // The alignment belongs to the layout engine, not to arithmetic on this
+    // page (§3.4).
     .main(MainAlign::Center)
     .cross(CrossAlign::Center)
     .padding(Insets::all(t.space(8.0)))
@@ -209,12 +212,12 @@ mod tests {
     use std::time::{Duration, Instant};
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
-    /// Satu frame 60 Hz — jam palsu, karena uji tidak boleh menunggu waktu
-    /// sungguhan untuk membiarkan spring bergerak (§9.5).
+    /// One 60 Hz frame — a fake clock, because tests must not wait on real
+    /// time to let springs move (§9.5).
     const FRAME: Duration = Duration::from_millis(16);
 
-    /// Halaman ini di dalam siklus hidup yang **sama persis** dengan
-    /// `run_app_with`: animate → frame, dengan jam yang dikendalikan uji.
+    /// This page inside **exactly the same** lifecycle as `run_app_with`:
+    /// animate → frame, with a clock the test controls.
     struct Uji {
         ui: AppRuntime,
         jam: Instant,
@@ -231,14 +234,14 @@ mod tests {
             }
         }
 
-        /// Satu frame, termasuk memajukan spring — urutan yang sama dengan shell.
+        /// One frame, springs stepped included — the same order as the shell.
         fn frame(&mut self) {
             self.jam += FRAME;
             self.ui.animate_at(self.jam, silka_widgets::advance);
             self.ui.frame();
         }
 
-        /// Jalankan frame sampai tidak ada lagi yang bergerak.
+        /// Pump frames until nothing is moving any more.
         fn diam(&mut self) -> u32 {
             let mut n = 0;
             while !self.ui.is_idle() {
@@ -300,7 +303,7 @@ mod tests {
         }
     }
 
-    /// Mesin teks deterministik: tanpa font sistem (§9.5).
+    /// A deterministic text engine: no system fonts (§9.5).
     fn fonts() -> Fonts {
         Fonts::bundled_only()
     }
@@ -328,22 +331,23 @@ mod tests {
         assert!(!uji.ui.is_idle(), "klik harus menjadwalkan frame");
         uji.frame();
 
-        // Dialognya ada di pohon a11y sejak frame pertama…
+        // The dialog is in the a11y tree from the very first frame…
         let a11y = uji.ui.access_tree();
         let d = a11y
             .find_label(JUDUL_SIMPAN)
             .unwrap_or_else(|| panic!("{}", a11y.dump()));
         assert_eq!(d.node.role, AccessRole::Dialog);
-        // …dan konten di belakangnya sudah mati.
+        // …and the content behind it is already inert.
         assert!(
             a11y.find_label(BUKA_SIMPAN).is_none(),
             "konten di belakang modal masih dibacakan:\n{}",
             a11y.dump()
         );
 
-        // …tapi masih bergerak: transisinya spring, bukan lompatan. Inilah
-        // regresi yang pernah terjadi — animasi yang **dimulai view-diff**
-        // (props `open` berubah) harus tetap menjadwalkan frame berikutnya.
+        // …but it is still moving: the transition is a spring, not a jump.
+        // This is a regression that actually happened once — an animation
+        // **started by the view-diff** (the `open` prop changed) must still
+        // schedule the next frame.
         assert!(
             !uji.ui.is_idle(),
             "panel yang baru muncul harus meminta frame berikutnya"
@@ -375,7 +379,7 @@ mod tests {
             !uji.ada(JUDUL_SIMPAN),
             "setelah transisi keluar habis, dialog benar-benar tidak ada"
         );
-        // Konten di belakang hidup lagi.
+        // The content behind it comes back to life.
         assert!(uji.ada(BUKA_SIMPAN));
     }
 
@@ -387,8 +391,8 @@ mod tests {
         uji.tombol(BUKA_SIMPAN);
         uji.diam();
 
-        // Tab masuk ke perangkap fokus dialog; Esc lalu menggelembung lewat
-        // entri overlay dan menjalankan aksi batal.
+        // Tab enters the dialog's focus trap; Esc then bubbles through the
+        // overlay entry and runs the cancel action.
         uji.key(NamedKey::Tab);
         uji.key(NamedKey::Escape);
         uji.diam();
@@ -405,9 +409,9 @@ mod tests {
         uji.tombol(BUKA_WINDOWS);
         uji.diam();
 
-        // Tab pertama mendarat di dialognya (tempat mendarat sebuah modal),
-        // Tab kedua di tombol pertama — pada susunan Windows itu tombol
-        // default-nya — lalu Space mengaktifkannya.
+        // The first Tab lands on the dialog itself (where a modal lands), the
+        // second on the first button — which under the Windows order is the
+        // default one — and then Space activates it.
         uji.key(NamedKey::Tab);
         uji.key(NamedKey::Tab);
         uji.key(NamedKey::Space);
@@ -467,9 +471,9 @@ mod tests {
                         .any(|q| q.background == t.color.scrim && q.rect.size == VIEWPORT),
                     "{preset:?}/{appearance:?}: backdrop bukan token scrim"
                 );
-                // Dicari lewat lebarnya, bukan warnanya saja: di preset
-                // Cupertino `surface_elevated` sama dengan `surface`, jadi
-                // tombol sekunder punya latar yang sama dengan panel.
+                // Found by width, not by color alone: in the Cupertino preset
+                // `surface_elevated` equals `surface`, so secondary buttons
+                // share the panel's background.
                 let lebar = t.space(silka_widgets::DIALOG_WIDTH_STEPS);
                 let panel = kotak
                     .iter()

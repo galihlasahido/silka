@@ -1,9 +1,9 @@
-//! Uji `dialog()` sebagai satu kesatuan.
+//! Tests for `dialog()` as a whole.
 //!
-//! [`crate::overlay`] sudah menguji geometri, backdrop, dismiss, dan transisi
-//! spring-nya sendiri; yang diuji di sini adalah **apa yang ditambahkan
-//! dialog**: konvensi tombol per-OS, tombol default keyboard, aksi batal yang
-//! tersambung ke Esc, dan Definition of Done `KOMPONEN.md` (kedua preset, dark
+//! [`crate::overlay`] already tests its own geometry, backdrop, dismissal, and
+//! spring transition; what is tested here is **what the dialog adds**: the
+//! per-OS button convention, the keyboard default button, the cancel action
+//! wired to Esc, and the `KOMPONEN.md` Definition of Done (both presets, dark
 //! mode, a11y, hit target, reduced-motion).
 
 use std::cell::Cell;
@@ -28,8 +28,8 @@ use crate::overlay::{dismiss_topmost, entries, overlay_layer, OverlayEntry};
 const LAYAR: Size = Size::new(640.0, 480.0);
 
 fn fonts() -> Fonts {
-    // Tanpa font sistem: hasil test tidak tergantung font apa yang kebetulan
-    // terpasang di mesin CI (§9.5).
+    // No system fonts: test results must not depend on whatever fonts happen
+    // to be installed on the CI machine (§9.5).
     Fonts::bundled_only()
 }
 
@@ -44,7 +44,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
     tree
 }
 
-/// Dialog terbuka di atas konten seukuran layar, sudah selesai beranimasi.
+/// An open dialog over screen-sized content, done animating.
 fn buka(d: DialogBuilder) -> RenderTree {
     let mut tree = pohon(overlay_layer(fixed(LAYAR.width, LAYAR.height)).overlay(d.open(true)));
     settle(&mut tree);
@@ -86,7 +86,7 @@ fn lepas(pos: Point) -> Event {
     )
 }
 
-/// Pencacah yang bisa dititipkan ke sebuah aksi.
+/// A counter that can be handed to an action.
 fn cacah() -> (Rc<Cell<u32>>, impl Fn() + Clone) {
     let n = Rc::new(Cell::new(0u32));
     let tulis = {
@@ -97,7 +97,7 @@ fn cacah() -> (Rc<Cell<u32>>, impl Fn() + Clone) {
 }
 
 // ---------------------------------------------------------------------------
-// Konvensi per-OS
+// Per-OS convention
 // ---------------------------------------------------------------------------
 
 fn nama(actions: &[DialogAction]) -> Vec<&str> {
@@ -114,20 +114,21 @@ fn urutan_tombol_mengikuti_konvensi_per_os() {
         ]
     };
 
-    // macOS/GNOME: default paling kanan, batal di kirinya, sisanya paling kiri.
+    // macOS/GNOME: default farthest right, cancel to its left, the rest on the
+    // far left.
     let mac = ButtonOrder::ConfirmLast.arrange(ditulis());
     assert_eq!(nama(&mac), ["Jangan Simpan", "Batal", "Simpan"]);
 
-    // Windows: persis cerminnya.
+    // Windows: exactly its mirror image.
     let win = ButtonOrder::ConfirmFirst.arrange(ditulis());
     assert_eq!(nama(&win), ["Simpan", "Batal", "Jangan Simpan"]);
 }
 
 #[test]
 fn yang_bertukar_tempat_antar_os_adalah_kelompok_bukan_tiap_tombol() {
-    // Dua aksi "lainnya" ditulis A lalu B. Di kedua konvensi, kelompok
-    // "lainnya" boleh pindah sisi, tapi A tetap dibaca sebelum B — kalau
-    // seluruh vektor dibalik, Windows akan menampilkan B sebelum A.
+    // Two "other" actions written as A then B. Under either convention the
+    // "other" group may switch sides, but A is still read before B — if the
+    // whole vector were reversed, Windows would show B before A.
     let ditulis = || {
         vec![
             action("A"),
@@ -169,7 +170,7 @@ fn susunan_bawaan_datang_dari_platform_bukan_dari_pemanggil() {
     };
     assert_eq!(ButtonOrder::PLATFORM, harapan);
 
-    // Dan builder-nya memang memakainya.
+    // And the builder really does use it.
     let f = fonts();
     let t = tema();
     let d = dialog(&f, &t, "Judul")
@@ -180,8 +181,8 @@ fn susunan_bawaan_datang_dari_platform_bukan_dari_pemanggil() {
 
 #[test]
 fn urutan_visual_adalah_urutan_tab() {
-    // Tab menyusuri pohon apa adanya, jadi urutan tombol di layar **adalah**
-    // urutan fokus: di macOS Tab pertama jatuh ke Batal, bukan ke Simpan.
+    // Tab walks the tree as it stands, so the on-screen button order **is**
+    // the focus order: on macOS the first Tab lands on Cancel, not on Save.
     let f = fonts();
     let t = tema();
     let tree = buka(
@@ -207,7 +208,7 @@ fn urutan_visual_adalah_urutan_tab() {
 }
 
 // ---------------------------------------------------------------------------
-// Bentuk & tata letak
+// Shape & layout
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -224,7 +225,7 @@ fn panel_berada_di_tengah_layer_dengan_lebar_token() {
     let p = panel(&tree);
     assert_eq!(p.size.width, t.space(DIALOG_WIDTH_STEPS));
     assert!(p.size.height > 0.0);
-    // Tepat di tengah, dan seluruhnya di dalam layar.
+    // Dead center, and entirely on screen.
     assert!((p.center().x - LAYAR.width / 2.0).abs() < 0.5, "{p:?}");
     assert!((p.center().y - LAYAR.height / 2.0).abs() < 0.5, "{p:?}");
     assert!(p.min_x() >= 0.0 && p.max_x() <= LAYAR.width);
@@ -274,13 +275,13 @@ fn dialog_tanpa_aksi_tidak_menyisakan_baris_tombol_kosong() {
 // Keyboard
 // ---------------------------------------------------------------------------
 
-/// Kontrol yang bisa difokuskan tapi membiarkan **semua** tombol lewat.
+/// A focusable control that lets **every** key pass through.
 ///
-/// Berdiri di tempat `text_field` (`KOMPONEN.md` Tier 2, belum ada) untuk satu
-/// pertanyaan yang tidak bisa dijawab tanpa dia: kalau fokus berada di sebuah
-/// kontrol yang tidak menelan Return, apakah Return sampai ke tombol default
-/// dialog? Tombol biasa tidak bisa dipakai untuk menanyakannya karena ia
-/// memang **harus** menelan Return untuk dirinya sendiri.
+/// It stands in for `text_field` (`KOMPONEN.md` Tier 2, not built yet) to
+/// answer one question that cannot be answered without it: when focus sits on
+/// a control that does not swallow Return, does Return reach the dialog's
+/// default button? An ordinary button cannot be used to ask, because it
+/// **must** swallow Return for itself.
 #[derive(Debug, Default)]
 struct KolomPalsu {
     label: String,
@@ -330,7 +331,8 @@ fn kolom_palsu(label: &str) -> View {
     .into()
 }
 
-/// Node [`DialogPanel`] di dalam pohon — titik masuk uji jalur Return.
+/// The [`DialogPanel`] node in the tree — the entry point for Return-path
+/// tests.
 fn panel_node(tree: &RenderTree) -> NodeId {
     fn cari(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
         if tree.node_ref::<DialogPanel>(id).is_some() {
@@ -347,9 +349,9 @@ fn return_menjalankan_tombol_default_dari_kontrol_lain_di_dalam_dialog() {
     let t = tema();
     let (simpan, tulis_simpan) = cacah();
     let (batal, tulis_batal) = cacah();
-    // Kontrol yang bisa difokuskan tapi **tidak** menelan Return — berdiri di
-    // sini mewakili kolom teks satu baris di dalam dialog (`text_field` belum
-    // ada; lihat `KolomPalsu`).
+    // A focusable control that does **not** swallow Return — standing in here
+    // for a single-line text field inside the dialog (`text_field` does not
+    // exist yet; see `KolomPalsu`).
     let kolom = kolom_palsu("Nama berkas");
     let mut tree = buka(
         dialog(&f, &t, "Simpan perubahan?")
@@ -376,8 +378,8 @@ fn return_menjalankan_tombol_default_dari_kontrol_lain_di_dalam_dialog() {
 
 #[test]
 fn tombol_yang_terfokus_menang_atas_tombol_default() {
-    // Return diberikan lebih dulu ke node terfokus; yang menekan Return sambil
-    // fokus ada di "Batal" memang bermaksud membatalkan.
+    // Return is offered to the focused node first; whoever presses Return
+    // while focus is on "Batal" really does mean to cancel.
     let f = fonts();
     let t = tema();
     let (simpan, tulis_simpan) = cacah();
@@ -412,14 +414,14 @@ fn return_tanpa_fokus_ditangani_jaring_pengaman() {
     let mut tree = buka(dialog(&f, &t, "Simpan?").confirm("Simpan", tulis));
 
     let mut router = InputRouter::new();
-    // Tanpa fokus, event tombol hanya sampai ke akar pohon…
+    // With nothing focused, the key event only reaches the root of the tree…
     assert!(
         !router
             .dispatch(&mut tree, &tombol_key(NamedKey::Enter))
             .handled
     );
     assert_eq!(simpan.get(), 0);
-    // …dan di situlah `activate_default` ada.
+    // …and that is exactly where `activate_default` comes in.
     assert!(activate_default(&mut tree));
     assert_eq!(simpan.get(), 1);
 }
@@ -442,8 +444,8 @@ fn return_tidak_menyentuh_dialog_yang_tertutup() {
 
 #[test]
 fn aksi_merusak_tidak_pernah_dijalankan_return() {
-    // HIG: aksi merusak tidak boleh punya tombol default — Return yang
-    // terlanjur ditekan tidak boleh menghapus apa pun.
+    // HIG: a destructive action must never be the default button — a Return
+    // pressed by reflex must not delete anything.
     let f = fonts();
     let t = tema();
     let (hapus, tulis_hapus) = cacah();
@@ -514,10 +516,10 @@ fn tombol_bisa_diaktifkan_keyboard_lewat_space() {
     let mut tree = buka(dialog(&f, &t, "Simpan?").confirm("Simpan", tulis));
 
     let mut router = InputRouter::new();
-    // Tab pertama mendarat di dialognya sendiri (tempat mendarat sebuah modal,
-    // lihat `Barrier::Modal`), Tab kedua masuk ke tombol pertama di dalamnya,
-    // lalu Space mengaktifkannya — keyboard bukan warga kelas dua
-    // (`KOMPONEN.md` DoD).
+    // The first Tab lands on the dialog itself (where a modal takes focus,
+    // see `Barrier::Modal`), the second Tab moves to the first button inside
+    // it, and Space then activates it — the keyboard is not a second-class
+    // citizen (`KOMPONEN.md` DoD).
     router.dispatch(&mut tree, &tombol_key(NamedKey::Tab));
     assert_eq!(router.focus().focused(), Some(entri(&tree)));
     router.dispatch(&mut tree, &tombol_key(NamedKey::Tab));
@@ -526,7 +528,7 @@ fn tombol_bisa_diaktifkan_keyboard_lewat_space() {
 }
 
 // ---------------------------------------------------------------------------
-// Dismiss dengan penunjuk
+// Pointer dismissal
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -552,7 +554,7 @@ fn klik_di_luar_menutup_dialog_tapi_tidak_menutup_alert() {
         0,
         "NSAlert tidak boleh hilang karena kursor tergelincir"
     );
-    // …tapi Esc tetap berlaku.
+    // …but Esc still works.
     assert!(dismiss_topmost(&mut tree, Dismiss::ESCAPE));
     assert_eq!(n.get(), 1);
 }
@@ -576,7 +578,7 @@ fn klik_tombol_menjalankan_aksinya_lewat_lapisan_input() {
 }
 
 // ---------------------------------------------------------------------------
-// Aksesibilitas
+// Accessibility
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -596,7 +598,7 @@ fn dialog_punya_peran_nama_dan_aksi_bagi_screen_reader() {
         .unwrap_or_else(|| panic!("{}", a11y.dump()));
     assert_eq!(d.node.role, AccessRole::Dialog);
 
-    // Judul dibacakan **sekali**: sebagai nama dialog, bukan lagi sebagai teks.
+    // The title is announced **once**: as the dialog's name, no longer as text.
     let jumlah = a11y
         .entries()
         .iter()
@@ -604,7 +606,7 @@ fn dialog_punya_peran_nama_dan_aksi_bagi_screen_reader() {
         .count();
     assert_eq!(jumlah, 1, "judul dibacakan dua kali:\n{}", a11y.dump());
 
-    // Pesannya tetap bisa dibaca saat menyusuri isi dialog.
+    // The message is still readable when walking the dialog's contents.
     let pesan = a11y
         .find_label("Perubahan yang belum disimpan akan hilang.")
         .unwrap_or_else(|| panic!("{}", a11y.dump()));
@@ -658,7 +660,7 @@ fn tombol_mati_dibacakan_dimmed_dan_tidak_bisa_diklik() {
     assert!(b.node.disabled);
     assert!(!b.node.actions.contains(AccessActions::CLICK));
 
-    // Termasuk lewat tombol default: aksi yang mati tidak punya callback.
+    // Including via the default button: a disabled action has no callback.
     assert!(!activate_default(&mut tree));
     let mut router = InputRouter::new();
     router.dispatch(&mut tree, &tekan(b.bounds.center()));
@@ -687,7 +689,7 @@ fn hit_target_setiap_tombol_minimal_44pt() {
 }
 
 // ---------------------------------------------------------------------------
-// Token: kedua preset + dark mode
+// Tokens: both presets + dark mode
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -712,14 +714,15 @@ fn seluruh_warna_dan_sudut_datang_dari_token_di_kedua_preset() {
                 })
                 .collect();
 
-            // Peredup: satu quad seukuran layer, warnanya token `scrim`.
+            // Scrim: one quad the size of the layer, colored by the `scrim`
+            // token.
             assert!(
                 kotak
                     .iter()
                     .any(|q| q.rect.size == LAYAR && q.background == t.color.scrim),
                 "{preset:?}/{appearance:?}: backdrop bukan token scrim"
             );
-            // Panel: permukaan terangkat, sudut mengikuti bentuk preset.
+            // Panel: elevated surface, corners follow the preset's shape.
             let p = panel(&tree);
             let kartu = kotak
                 .iter()
@@ -730,8 +733,8 @@ fn seluruh_warna_dan_sudut_datang_dari_token_di_kedua_preset() {
             assert_eq!(kartu.corners.radii.max(), t.radius.xl);
             assert_eq!(kartu.border_color, t.color.separator);
 
-            // Tombol utama memakai aksen, dan tidak ada warna teks yang lepas
-            // dari token.
+            // The primary button uses the accent, and no text color escapes
+            // the tokens.
             assert!(kotak.iter().any(|q| q.background == t.color.accent));
             for c in s.commands() {
                 if let Command::GlyphRun(r) = c {
@@ -780,10 +783,10 @@ fn dark_mode_mengganti_warna_panel_tanpa_menggeser_geometrinya() {
 }
 
 // ---------------------------------------------------------------------------
-// Transisi spring
+// Spring transition
 // ---------------------------------------------------------------------------
 
-/// Majukan seluruh transisi sampai diam, seperti siklus frame sungguhan.
+/// Advance every transition until it settles, like a real frame loop.
 fn sampai_diam(tree: &mut RenderTree, motion: Motion) -> u32 {
     let tick = Tick::manual(Duration::from_millis(16), motion);
     let mut frame = 0;
@@ -831,7 +834,7 @@ fn menutup_di_tengah_animasi_buka_membawa_kecepatan() {
     let kemajuan = e.progress();
     assert!(kemajuan > 0.0 && kemajuan < 1.0);
     e.set_open(false);
-    // Retarget, bukan animasi baru: posisinya tidak melompat ke nol.
+    // A retarget, not a new animation: the position does not jump to zero.
     assert_eq!(e.progress(), kemajuan);
 
     sampai_diam(&mut tree, Motion::Full);
@@ -848,8 +851,8 @@ fn reduced_motion_membuang_pantulan_tanpa_membuang_gerakan() {
         let mut tree = pohon(
             overlay_layer(fixed(LAYAR.width, LAYAR.height)).overlay(
                 dialog(&f, &t, "Judul")
-                    // Spring paling memantul: kalau reduced-motion benar, yang
-                    // ini pun tidak boleh melewati tujuannya.
+                    // The bounciest spring: if reduced-motion is right, even
+                    // this one must not overshoot its target.
                     .spring(Spring::bouncy())
                     .open(true)
                     .confirm("Ok", || {}),

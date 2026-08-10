@@ -1,62 +1,62 @@
-//! Fisika guliran: **rubber band ala macOS**, geometri scrollbar, dan langkah
-//! keyboard — semuanya fungsi murni.
+//! Scroll physics: **macOS-style rubber banding**, scrollbar geometry, and
+//! keyboard steps — all pure functions.
 //!
-//! Dipisah dari node-nya dengan sengaja. Yang ada di sini adalah satu-satunya
-//! bagian `scroll_view` yang bisa salah secara *diam-diam*: sebuah pantulan
-//! yang terlalu keras, thumb yang meleset setengah piksel dari jarinya, atau
-//! guliran yang menyangkut satu poin sebelum ujung. Sebagai fungsi murni ia
-//! bisa diuji tanpa pohon, tanpa GPU, dan tanpa jam (REKOMENDASI §9.5).
+//! Deliberately kept apart from the node. What lives here is the one part of
+//! `scroll_view` that can go wrong *quietly*: a bounce that snaps back too
+//! hard, a thumb that sits half a pixel off the finger dragging it, or a scroll
+//! that sticks one point short of the end. As pure functions they can be tested
+//! without a tree, without a GPU, and without a clock (REKOMENDASI §9.5).
 //!
 //! ## Rubber band
 //!
-//! Rumus Apple yang dipakai UIScrollView:
+//! The formula Apple uses in UIScrollView:
 //!
 //! ```text
-//! f(x) = L · x / (x + L)        L = koefisien × ukuran viewport
+//! f(x) = L · x / (x + L)        L = coefficient × viewport size
 //! ```
 //!
-//! `x` adalah jarak tarik mentah dan `f(x)` simpangan yang terlihat: mulai
-//! 1:1 di bawah jari, lalu makin berat, dan tidak pernah melewati `L`.
-//! Turunannya — [`rubber_band_factor`] — adalah bentuk yang benar-benar dipakai
-//! saat menggulir, karena event guliran datang sebagai **selisih**, bukan
-//! sebagai jarak total dari titik tarik:
+//! `x` is the raw pull distance and `f(x)` the visible displacement: it starts
+//! out 1:1 under the finger, then grows heavier, and never passes `L`. Its
+//! derivative — [`rubber_band_factor`] — is the form actually used while
+//! scrolling, because scroll events arrive as **deltas**, not as a total
+//! distance from the point where the pull began:
 //!
 //! ```text
-//! f'(x) = (1 − y/L)²           y = simpangan yang sedang terlihat
+//! f'(x) = (1 − y/L)²           y = the displacement currently visible
 //! ```
 //!
-//! Keduanya konsisten secara matematis, dan ada uji yang membuktikannya dengan
-//! mengintegrasikan faktor itu kembali menjadi `f`.
+//! The two are mathematically consistent, and a test proves it by integrating
+//! that factor back into `f`.
 
-/// Koefisien rubber band ala macOS/UIKit: simpangan maksimum = 0,55 × viewport.
+/// macOS/UIKit rubber-band coefficient: maximum displacement = 0.55 × viewport.
 pub const RUBBER_BAND: f32 = 0.55;
 
-/// Ambang perbandingan panjang dalam poin logis.
+/// Length-comparison threshold in logical points.
 ///
-/// Jauh di bawah satu piksel fisik di layar 3×, jadi "sama" di sini berarti
-/// sama bagi mata sekaligus stabil terhadap kesalahan pembulatan f32.
+/// Far below a single physical pixel on a 3× display, so "equal" here means
+/// equal to the eye while staying stable against f32 rounding error.
 const EPS: f32 = 1.0 / 1024.0;
 
 // ---------------------------------------------------------------------------
-// Batas guliran
+// Scroll bounds
 // ---------------------------------------------------------------------------
 
-/// Guliran maksimum yang masih menyisakan isi di layar.
+/// The largest scroll offset that still leaves content on screen.
 ///
-/// Nol berarti isi muat seluruhnya — dan itu bukan sekadar angka: wadah yang
-/// `max_scroll`-nya nol **tidak boleh** menelan event guliran, supaya wadah di
-/// atasnya yang mengambil alih (scroll chaining).
+/// Zero means the content fits entirely — and that is more than a number: a
+/// container whose `max_scroll` is zero **must not** swallow scroll events, so
+/// that the container above it takes over instead (scroll chaining).
 pub fn max_scroll(viewport: f32, content: f32) -> f32 {
     (content - viewport).max(0.0)
 }
 
-/// Jepit posisi guliran ke rentang yang sah.
+/// Clamp a scroll position into the valid range.
 pub fn clamp_scroll(offset: f32, max: f32) -> f32 {
     offset.clamp(0.0, max.max(0.0))
 }
 
-/// Simpangan di luar batas: negatif di atas/kiri, positif di bawah/kanan, nol
-/// di dalam.
+/// Displacement past the bounds: negative at the top/left, positive at the
+/// bottom/right, zero while inside.
 pub fn overshoot(offset: f32, max: f32) -> f32 {
     if offset < 0.0 {
         offset
@@ -67,7 +67,7 @@ pub fn overshoot(offset: f32, max: f32) -> f32 {
     }
 }
 
-/// Tepi terdekat untuk sebuah posisi — tujuan pantulan kembali.
+/// The nearest edge for a position — where the rubber band bounces back to.
 pub fn nearest_bound(offset: f32, max: f32) -> f32 {
     clamp_scroll(offset, max)
 }
@@ -76,16 +76,17 @@ pub fn nearest_bound(offset: f32, max: f32) -> f32 {
 // Rubber band
 // ---------------------------------------------------------------------------
 
-/// Simpangan maksimum yang diizinkan di luar tepi (`L` pada rumus di atas).
+/// Maximum displacement allowed past an edge (`L` in the formula above).
 pub fn overscroll_limit(viewport: f32, coefficient: f32) -> f32 {
     (viewport * coefficient).max(0.0)
 }
 
-/// Faktor peredam untuk **selisih** guliran saat isi sudah melewati tepi.
+/// Damping factor for a scroll **delta** once the content is past an edge.
 ///
-/// 1 tepat di tepi (bergerak bebas), 0 di simpangan maksimum (tidak bisa
-/// ditarik lagi). Inilah `f'` dari rumus Apple, dinyatakan dalam simpangan yang
-/// sedang terlihat sehingga tidak perlu mengingat jarak tarik mentah.
+/// 1 exactly at the edge (free movement), 0 at maximum displacement (nothing
+/// left to pull). This is `f'` from Apple's formula, expressed in terms of the
+/// displacement currently visible, so nothing has to remember the raw pull
+/// distance.
 pub fn rubber_band_factor(overshoot: f32, viewport: f32, coefficient: f32) -> f32 {
     let limit = overscroll_limit(viewport, coefficient);
     if limit <= 0.0 {
@@ -95,9 +96,9 @@ pub fn rubber_band_factor(overshoot: f32, viewport: f32, coefficient: f32) -> f3
     (1.0 - y) * (1.0 - y)
 }
 
-/// Bentuk tertutup rumus Apple: jarak tarik mentah → simpangan yang terlihat.
+/// Closed form of Apple's formula: raw pull distance → visible displacement.
 ///
-/// Tandanya ikut tanda `raw`.
+/// The sign follows the sign of `raw`.
 pub fn rubber_band_offset(raw: f32, viewport: f32, coefficient: f32) -> f32 {
     let limit = overscroll_limit(viewport, coefficient);
     if limit <= 0.0 {
@@ -107,17 +108,17 @@ pub fn rubber_band_offset(raw: f32, viewport: f32, coefficient: f32) -> f32 {
     (limit * x / (x + limit)).copysign(raw)
 }
 
-/// Kebalikan [`rubber_band_offset`]: simpangan yang terlihat → jarak tarik
-/// mentah yang menghasilkannya.
+/// Inverse of [`rubber_band_offset`]: visible displacement → the raw pull
+/// distance that produced it.
 ///
-/// Inilah yang membuat rubber band **bebas dari ukuran langkah**. Event
-/// guliran datang sebagai selisih sebesar puluhan poin, bukan sebagai
-/// pergerakan infinitesimal; mengalikan selisih sebesar itu dengan
-/// [`rubber_band_factor`] akan menyimpang jauh dari kurva (dan di tepi, di mana
-/// faktornya masih 1, tidak meredam sama sekali). Jadi yang dilakukan
-/// [`apply_delta`] adalah kembali ke jarak tarik mentah, menambahkan
-/// selisihnya di sana, lalu memetakannya kembali — hasilnya sama persis dengan
-/// menarik jari sejauh itu, seberapa pun kasar sampelnya.
+/// This is what makes the rubber band **step-size independent**. Scroll events
+/// arrive as deltas tens of points wide, not as infinitesimal movement;
+/// multiplying a delta that large by [`rubber_band_factor`] drifts well off the
+/// curve (and right at the edge, where the factor is still 1, damps nothing at
+/// all). So what [`apply_delta`] does instead is go back to the raw pull
+/// distance, add the delta there, and map it forward again — the result is
+/// exactly what dragging a finger that far would give, however coarse the
+/// sampling.
 pub fn rubber_band_raw(offset: f32, viewport: f32, coefficient: f32) -> f32 {
     let limit = overscroll_limit(viewport, coefficient);
     let y = offset.abs();
@@ -127,15 +128,15 @@ pub fn rubber_band_raw(offset: f32, viewport: f32, coefficient: f32) -> f32 {
     (limit * y / (limit - y)).copysign(offset)
 }
 
-/// Terapkan satu selisih guliran, dengan rubber band di luar tepi.
+/// Apply one scroll delta, with rubber banding past the edges.
 ///
-/// Tiga aturan yang harus benar bersama, dan urutannya penting:
+/// Three rules that have to hold together, and the order matters:
 ///
-/// 1. Bagian gerakan yang **kembali** ke dalam batas tidak pernah diredam —
-///    isi yang sedang melar harus mengikuti jari 1:1 saat ditarik pulang.
-/// 2. Bagian yang berada **di dalam** batas bergerak 1:1.
-/// 3. Sisanya, yang keluar batas, diredam [`rubber_band_factor`] dan tidak
-///    pernah melewati [`overscroll_limit`].
+/// 1. The part of the movement that travels **back** into bounds is never
+///    damped — stretched content must follow the finger 1:1 on the way home.
+/// 2. The part that lands **inside** the bounds moves 1:1.
+/// 3. Whatever is left, out past the edge, is damped by [`rubber_band_factor`]
+///    and never passes [`overscroll_limit`].
 pub fn apply_delta(current: f32, delta: f32, max: f32, viewport: f32, coefficient: f32) -> f32 {
     if !delta.is_finite() || delta == 0.0 {
         return current;
@@ -144,7 +145,7 @@ pub fn apply_delta(current: f32, delta: f32, max: f32, viewport: f32, coefficien
     let mut pos = current;
     let mut sisa = delta;
 
-    // 1. Pulang dulu: simpangan yang ada dihabiskan tanpa redaman.
+    // 1. Head home first: any existing displacement is spent without damping.
     if pos < 0.0 && sisa > 0.0 {
         let langkah = sisa.min(-pos);
         pos += langkah;
@@ -158,7 +159,7 @@ pub fn apply_delta(current: f32, delta: f32, max: f32, viewport: f32, coefficien
         return pos;
     }
 
-    // 2. Di dalam batas: 1:1.
+    // 2. Inside the bounds: 1:1.
     if pos >= 0.0 && pos <= max {
         let ruang = if sisa > 0.0 { max - pos } else { pos };
         let langkah = sisa.abs().min(ruang) * sisa.signum();
@@ -169,7 +170,7 @@ pub fn apply_delta(current: f32, delta: f32, max: f32, viewport: f32, coefficien
         return pos;
     }
 
-    // 3. Keluar batas: lewat kurva, bukan lewat perkalian per langkah.
+    // 3. Past the edge: along the curve, not by a per-step multiplication.
     let (batas, arah) = if sisa > 0.0 {
         (max, 1.0f32)
     } else {
@@ -189,38 +190,40 @@ pub fn apply_delta(current: f32, delta: f32, max: f32, viewport: f32, coefficien
 // Scrollbar
 // ---------------------------------------------------------------------------
 
-/// Geometri thumb scrollbar pada sumbu guliran, koordinat lokal wadah.
+/// Scrollbar thumb geometry along the scroll axis, in container-local
+/// coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Thumb {
-    /// Jarak dari tepi awal wadah ke awal thumb.
+    /// Distance from the container's leading edge to the start of the thumb.
     pub offset: f32,
-    /// Panjang thumb pada sumbu guliran.
+    /// Thumb length along the scroll axis.
     pub length: f32,
 }
 
 impl Thumb {
-    /// Ujung thumb.
+    /// The far end of the thumb.
     pub fn end(self) -> f32 {
         self.offset + self.length
     }
 
-    /// Benar bila `pos` (koordinat sumbu guliran) berada di atas thumb.
+    /// True when `pos` (a scroll-axis coordinate) falls on the thumb.
     pub fn contains(self, pos: f32) -> bool {
         pos >= self.offset && pos <= self.end()
     }
 }
 
-/// Geometri thumb untuk keadaan guliran tertentu.
+/// Thumb geometry for a given scroll state.
 ///
-/// `None` berarti tidak ada yang bisa digulir — dan berarti juga tidak ada
-/// scrollbar yang boleh digambar sama sekali.
+/// `None` means there is nothing to scroll — and therefore that no scrollbar
+/// may be drawn at all.
 ///
-/// Dua sifat yang ditiru dari macOS:
+/// Two behaviours borrowed from macOS:
 ///
-/// - Panjang thumb sebanding dengan **porsi isi yang terlihat**, tapi tidak
-///   pernah lebih pendek dari `min_length` (hit target, HIG).
-/// - Saat isi melar melewati tepi, thumb **menyusut** menempel di tepi itu —
-///   umpan balik yang membuat rubber band terbaca, bukan terasa seperti bug.
+/// - Thumb length is proportional to the **visible fraction of the content**,
+///   but never shorter than `min_length` (hit target, HIG).
+/// - When the content stretches past an edge, the thumb **shrinks** while
+///   staying stuck to that edge — the feedback that makes rubber banding read
+///   as deliberate rather than as a bug.
 pub fn thumb(viewport: f32, content: f32, offset: f32, min_length: f32) -> Option<Thumb> {
     if viewport <= 0.0 || content <= viewport + EPS {
         return None;
@@ -251,10 +254,10 @@ pub fn thumb(viewport: f32, content: f32, offset: f32, min_length: f32) -> Optio
     })
 }
 
-/// Kebalikan [`thumb`]: posisi thumb yang diseret → posisi guliran.
+/// Inverse of [`thumb`]: a dragged thumb position → a scroll position.
 ///
-/// Dipakai saat pengguna menyeret scrollbar langsung. Selalu di dalam batas —
-/// menyeret bar tidak pernah menghasilkan rubber band, persis seperti AppKit.
+/// Used when the user drags the scrollbar directly. Always in bounds —
+/// dragging the bar never produces a rubber band, exactly as in AppKit.
 pub fn scroll_for_thumb(viewport: f32, content: f32, thumb_offset: f32, min_length: f32) -> f32 {
     let Some(t) = thumb(viewport, content, 0.0, min_length) else {
         return 0.0;
@@ -268,45 +271,44 @@ pub fn scroll_for_thumb(viewport: f32, content: f32, thumb_offset: f32, min_leng
 }
 
 // ---------------------------------------------------------------------------
-// Langkah keyboard & scroll-to
+// Keyboard steps & scroll-to
 // ---------------------------------------------------------------------------
 
-/// Berapa jauh satu Page Up/Down menggulir.
+/// How far a single Page Up/Down scrolls.
 ///
-/// Satu layar penuh **dikurangi satu baris**: konvensi yang sama di macOS,
-/// Windows, dan setiap browser — mata butuh satu baris tumpang tindih untuk
-/// menemukan kembali tempatnya.
+/// One full screen **minus one line**: the same convention as macOS, Windows,
+/// and every browser — the eye needs a line of overlap to find its place again.
 pub fn page_step(viewport: f32, line: f32) -> f32 {
     (viewport - line.max(0.0)).max(viewport * 0.5).max(0.0)
 }
 
-/// Posisi guliran terkecil yang membuat rentang `[start, start + extent]`
-/// terlihat penuh, dengan `padding` di tepinya.
+/// The smallest scroll position that makes the range `[start, start + extent]`
+/// fully visible, with `padding` at its edges.
 ///
-/// Sudah terlihat = tidak bergerak sama sekali. Inilah aturan yang membuat
-/// `scroll_into_view` tidak melompat-lompat saat fokus berpindah di antara
-/// baris yang sudah sama-sama terlihat.
+/// Already visible = do not move at all. That rule is what keeps
+/// `scroll_into_view` from hopping about as focus moves between items that are
+/// already both on screen.
 pub fn scroll_to_reveal(offset: f32, viewport: f32, start: f32, extent: f32, padding: f32) -> f32 {
     let atas = start - padding;
     let bawah = start + extent.max(0.0) + padding;
     if atas < offset {
         atas
     } else if bawah > offset + viewport {
-        // Isi yang lebih tinggi dari viewport diratakan ke tepi awalnya:
-        // melihat awal sebuah baris panjang selalu lebih berguna daripada
-        // melihat ujungnya.
+        // Content taller than the viewport is aligned to its leading edge:
+        // seeing the start of a long item is always more useful than
+        // seeing its end.
         (bawah - viewport).min(atas)
     } else {
         offset
     }
 }
 
-/// Kecepatan guliran dari sepasang sampel event, poin logis per detik.
+/// Scroll velocity from a pair of event samples, in logical points per second.
 ///
-/// Inersia trackpad datang dari OS sebagai rentetan selisih (INTEGRASI-NATIVE
-/// §3), bukan sebagai kecepatan. Ini yang mengubahnya kembali menjadi kecepatan
-/// supaya bisa diserahkan ke spring saat isi membentur tepi — handoff yang
-/// dijanjikan §3.5, hanya dengan sumber yang berbeda dari jari.
+/// Trackpad inertia arrives from the OS as a stream of deltas (INTEGRASI-NATIVE
+/// §3), not as a velocity. This turns it back into one so it can be handed off
+/// to the spring when the content hits an edge — the handoff promised by §3.5,
+/// only with a different source than a finger.
 pub fn velocity_from(delta: f32, dt: std::time::Duration) -> f32 {
     let dt = dt.as_secs_f32();
     if dt <= 0.0 || !delta.is_finite() {
@@ -348,7 +350,7 @@ mod tests {
         assert_eq!(rubber_band_factor(limit, VIEWPORT, RUBBER_BAND), 0.0);
         assert_eq!(rubber_band_factor(limit * 2.0, VIEWPORT, RUBBER_BAND), 0.0);
 
-        // Monoton turun, dan tidak pernah keluar dari 0..1.
+        // Monotonically decreasing, and never outside 0..1.
         let mut sebelumnya = f0;
         for i in 1..=40 {
             let f = rubber_band_factor(limit * i as f32 / 40.0, VIEWPORT, RUBBER_BAND);
@@ -356,7 +358,8 @@ mod tests {
             assert!(f <= sebelumnya, "faktor naik di langkah {i}");
             sebelumnya = f;
         }
-        // Tanda simpangan tidak berpengaruh: melar ke atas dan ke bawah sama.
+        // The sign of the displacement makes no difference: stretching up and
+        // stretching down behave identically.
         assert_eq!(
             rubber_band_factor(-30.0, VIEWPORT, RUBBER_BAND),
             rubber_band_factor(30.0, VIEWPORT, RUBBER_BAND)
@@ -375,18 +378,18 @@ mod tests {
     fn simpangan_tidak_pernah_melewati_batasnya() {
         let limit = overscroll_limit(VIEWPORT, RUBBER_BAND);
         assert_eq!(limit, VIEWPORT * RUBBER_BAND);
-        // Tarikan sebesar apa pun berhenti di limit.
+        // Any pull, however large, stops at the limit.
         assert!(rubber_band_offset(1.0e6, VIEWPORT, RUBBER_BAND) < limit);
         assert!(rubber_band_offset(1.0e6, VIEWPORT, RUBBER_BAND) > limit * 0.99);
-        // Tanda ikut arah tarikan.
+        // The sign follows the direction of the pull.
         assert!(rubber_band_offset(-100.0, VIEWPORT, RUBBER_BAND) < 0.0);
-        // Awalnya nyaris 1:1 — isi harus terasa menempel di jari.
+        // Nearly 1:1 at first — the content must feel stuck to the finger.
         let kecil = rubber_band_offset(1.0, VIEWPORT, RUBBER_BAND);
         assert!(kecil > 0.99 && kecil < 1.0, "{kecil}");
     }
 
-    /// Faktor per-langkah dan bentuk tertutupnya harus **rumus yang sama**:
-    /// menjumlahkan langkah-langkah kecil harus mendarat di `f(x)`.
+    /// The per-step factor and the closed form must be **the same formula**:
+    /// summing up small steps has to land on `f(x)`.
     #[test]
     fn integral_faktor_sama_dengan_bentuk_tertutup() {
         let langkah = 0.05f32;
@@ -410,8 +413,8 @@ mod tests {
             let kembali = rubber_band_raw(y, VIEWPORT, RUBBER_BAND);
             assert!((kembali - raw).abs() < 0.01, "{raw} -> {y} -> {kembali}");
         }
-        // Di limit (dan seterusnya) tarikannya tak hingga — itu jawaban yang
-        // benar, dan `apply_delta` menanganinya sebagai "berhenti di limit".
+        // At the limit (and beyond) the pull is infinite — which is the right
+        // answer, and `apply_delta` handles it as "stop at the limit".
         let limit = overscroll_limit(VIEWPORT, RUBBER_BAND);
         assert!(rubber_band_raw(limit, VIEWPORT, RUBBER_BAND).is_infinite());
         assert!(rubber_band_raw(-3.0, VIEWPORT, RUBBER_BAND) < 0.0);
@@ -419,9 +422,9 @@ mod tests {
 
     #[test]
     fn redaman_tidak_bergantung_ukuran_langkah() {
-        // Satu langkah 100 poin harus mendarat di tempat yang sama dengan
-        // seratus langkah 1 poin. Inilah yang gagal kalau faktor per-langkah
-        // dipakai apa adanya untuk selisih sebesar event guliran.
+        // One 100-point step must land in the same place as a hundred 1-point
+        // steps. This is what breaks if the per-step factor is applied as-is
+        // to deltas the size of a scroll event.
         let max = 600.0;
         let sekali = apply_delta(600.0, 100.0, max, VIEWPORT, RUBBER_BAND);
         let mut bertahap = 600.0;
@@ -439,7 +442,7 @@ mod tests {
         let max = 600.0;
         assert_eq!(apply_delta(0.0, 120.0, max, VIEWPORT, RUBBER_BAND), 120.0);
         assert_eq!(apply_delta(120.0, -50.0, max, VIEWPORT, RUBBER_BAND), 70.0);
-        // Tepat sampai tepi tanpa redaman.
+        // Right up to the edge with no damping.
         assert_eq!(apply_delta(590.0, 10.0, max, VIEWPORT, RUBBER_BAND), 600.0);
     }
 
@@ -457,11 +460,11 @@ mod tests {
     #[test]
     fn kembali_dari_simpangan_tidak_pernah_diredam() {
         let max = 600.0;
-        // Sedang melar 40 poin di atas; tarikan 40 poin harus mendarat pas di 0.
+        // Stretched 40 points past the top; a 40-point pull must land exactly on 0.
         assert_eq!(apply_delta(-40.0, 40.0, max, VIEWPORT, RUBBER_BAND), 0.0);
-        // Lebih dari itu: sisanya masuk ke wilayah normal, tetap 1:1.
+        // Anything beyond that: the remainder enters normal territory, still 1:1.
         assert_eq!(apply_delta(-40.0, 60.0, max, VIEWPORT, RUBBER_BAND), 20.0);
-        // Simetris di ujung bawah.
+        // Symmetric at the bottom end.
         assert_eq!(apply_delta(640.0, -40.0, max, VIEWPORT, RUBBER_BAND), 600.0);
     }
 
@@ -489,22 +492,22 @@ mod tests {
         assert!((t.length - 200.0).abs() < 1e-3, "{t:?}");
         assert_eq!(t.offset, 0.0);
 
-        // Di ujung bawah thumb menempel ke tepi akhir.
+        // At the bottom end the thumb sits flush with the trailing edge.
         let t = thumb(400.0, 800.0, 400.0, 10.0).expect("bisa digulir");
         assert!((t.end() - 400.0).abs() < 1e-3, "{t:?}");
 
-        // Di tengah, tepat di tengah jalurnya.
+        // Halfway down, exactly halfway along its track.
         let t = thumb(400.0, 800.0, 200.0, 10.0).expect("bisa digulir");
         assert!((t.offset - 100.0).abs() < 1e-3, "{t:?}");
     }
 
     #[test]
     fn thumb_tidak_pernah_lebih_pendek_dari_hit_target() {
-        // Isi 100× viewport: proporsional akan menghasilkan 4 poin — tidak bisa
-        // diseret siapa pun.
+        // Content 100× the viewport: proportional sizing would give 4 points —
+        // undraggable by anyone.
         let t = thumb(400.0, 40_000.0, 0.0, 44.0).expect("bisa digulir");
         assert!(t.length >= 44.0, "{t:?}");
-        // Viewport yang lebih pendek dari hit target tetap masuk akal.
+        // A viewport shorter than the hit target still gives a sane result.
         let t = thumb(30.0, 300.0, 0.0, 44.0).expect("bisa digulir");
         assert!(t.length <= 30.0, "{t:?}");
     }
@@ -519,7 +522,7 @@ mod tests {
         let bawah = thumb(400.0, 800.0, 460.0, 10.0).expect("bisa digulir");
         assert!(bawah.length < normal.length);
         assert!((bawah.end() - 400.0).abs() < 1e-3, "{bawah:?}");
-        // Tidak pernah menyusut di bawah hit target.
+        // Never shrinks below the hit target.
         let ekstrem = thumb(400.0, 800.0, -1000.0, 44.0).expect("bisa digulir");
         assert!(ekstrem.length >= 44.0);
     }
@@ -534,7 +537,7 @@ mod tests {
                 "{offset} -> {t:?} -> {kembali}"
             );
         }
-        // Seretan di luar jalur dijepit, bukan menghasilkan posisi liar.
+        // Drags outside the track are clamped, not turned into wild positions.
         assert_eq!(scroll_for_thumb(400.0, 800.0, -100.0, 44.0), 0.0);
         assert_eq!(scroll_for_thumb(400.0, 800.0, 10_000.0, 44.0), 400.0);
         assert_eq!(scroll_for_thumb(400.0, 300.0, 50.0, 44.0), 0.0);
@@ -543,20 +546,20 @@ mod tests {
     #[test]
     fn satu_halaman_menyisakan_satu_baris_tumpang_tindih() {
         assert_eq!(page_step(400.0, 20.0), 380.0);
-        // Viewport mungil tidak boleh menghasilkan langkah nol/negatif.
+        // A tiny viewport must never produce a zero or negative step.
         assert_eq!(page_step(30.0, 20.0), 15.0);
         assert!(page_step(0.0, 20.0) >= 0.0);
     }
 
     #[test]
     fn scroll_to_reveal_diam_bila_sudah_terlihat() {
-        // Baris di tengah viewport: tidak ada alasan bergerak.
+        // An item in the middle of the viewport: no reason to move.
         assert_eq!(scroll_to_reveal(100.0, 400.0, 200.0, 40.0, 8.0), 100.0);
-        // Di atas layar → naik sampai tepi atas + padding.
+        // Above the screen → scroll up to the top edge + padding.
         assert_eq!(scroll_to_reveal(300.0, 400.0, 100.0, 40.0, 8.0), 92.0);
-        // Di bawah layar → turun sampai ujungnya masuk + padding.
+        // Below the screen → scroll down until its end fits + padding.
         assert_eq!(scroll_to_reveal(0.0, 400.0, 500.0, 40.0, 8.0), 148.0);
-        // Isi lebih tinggi dari viewport: awalnya yang diprioritaskan.
+        // Content taller than the viewport: its start takes priority.
         assert_eq!(scroll_to_reveal(0.0, 100.0, 50.0, 400.0, 0.0), 50.0);
     }
 

@@ -1,14 +1,13 @@
-//! Uji `table` — dijalankan lewat [`AppRuntime`] yang sama dengan aplikasi
-//! sungguhan.
+//! `table` tests — driven through the same [`AppRuntime`] a real app uses.
 //!
-//! Alasannya sama dengan uji `list`: `table()` **adalah** sebuah komponen, dan
-//! yang paling ingin dibuktikan justru siklusnya — gulir → `sync` menerbitkan
-//! posisi → rebuild membangun jendela baru → layout menempatkannya. Uji yang
-//! berhenti di satu `reconcile` tidak akan pernah melihat bagian itu, dan
-//! bagian itulah yang membuat seratus ribu baris mungkin.
+//! The reasoning matches the `list` tests: `table()` **is** a component, and
+//! what most needs proving is its cycle — scroll → `sync` publishes the
+//! position → rebuild produces a new window → layout places it. A test that
+//! stops at a single `reconcile` never sees that part, and that part is what
+//! makes a hundred thousand rows possible.
 //!
-//! Aritmetika murninya (lebar kolom, seleksi berentang) diuji di modulnya
-//! masing-masing; di sini yang diuji adalah **perilakunya di dalam pohon**.
+//! The pure arithmetic (column widths, ranged selection) is tested in its own
+//! modules; what is tested here is **behavior inside the tree**.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -34,8 +33,8 @@ const VIEWPORT: Size = Size::new(600.0, 440.0);
 const EXTENT: f32 = 44.0;
 const HEADER: f32 = 32.0;
 
-/// Kolom uji: satu tetap, dua auto — cukup untuk menguji resize maupun
-/// pembagian sisa lebar.
+/// Test columns: one fixed, two auto — enough to exercise both resizing and
+/// the sharing out of leftover width.
 fn kolom() -> Vec<Column> {
     vec![
         col("No.").fixed(100.0),
@@ -44,7 +43,7 @@ fn kolom() -> Vec<Column> {
     ]
 }
 
-/// Berapa sel dibangun, dan untuk baris mana saja.
+/// How many cells were built, and for which rows.
 #[derive(Default)]
 struct Jejak {
     dibangun: RefCell<Vec<(usize, usize)>>,
@@ -81,7 +80,7 @@ impl Uji {
         self.ui.frame();
     }
 
-    /// Selesaikan seluruh animasi seketika lalu jalankan frame sampai diam.
+    /// Settle every animation at once, then run frames until idle.
     fn tuntas(&mut self) {
         for _ in 0..10 {
             self.ui.animate(|tree, _| {
@@ -117,12 +116,12 @@ impl Uji {
             .expect("TableHeaderBox ada di pohon")
     }
 
-    /// Berapa baris yang benar-benar menjadi node di pohon.
+    /// How many rows actually became nodes in the tree.
     fn baris_di_pohon(&self) -> usize {
         hitung::<TableRowBox>(self.ui.tree(), self.ui.tree().root())
     }
 
-    /// Berapa sel yang benar-benar menjadi node di pohon (termasuk judul).
+    /// How many cells actually became nodes in the tree (headers included).
     fn sel_di_pohon(&self) -> usize {
         hitung::<TableCellBox>(self.ui.tree(), self.ui.tree().root())
     }
@@ -150,7 +149,7 @@ impl Uji {
         self.tuntas();
     }
 
-    /// Titik tengah baris `i` dalam koordinat global, kolom `k`.
+    /// Center of row `i`, column `k`, in global coordinates.
     fn titik_baris(&self, i: usize, k: usize) -> Point {
         let body = self.body();
         let kotak = body.cell_rect(i, k);
@@ -161,7 +160,7 @@ impl Uji {
         )
     }
 
-    /// Titik di dalam judul kolom `k`.
+    /// A point inside the header of column `k`.
     fn titik_header(&self, k: usize) -> Point {
         let h = self.header();
         let widths = h.column_widths();
@@ -176,7 +175,7 @@ impl Uji {
         )
     }
 
-    /// Titik tepat di batas antara kolom `k` dan `k + 1`.
+    /// The point exactly on the boundary between columns `k` and `k + 1`.
     fn titik_pegangan(&self, k: usize) -> Point {
         let h = self.header();
         let widths = h.column_widths();
@@ -214,7 +213,7 @@ impl Uji {
         self.klik_mod(titik, 1, Modifiers::NONE);
     }
 
-    /// Seret dari `dari` ke `ke`, satu langkah per titik antara.
+    /// Drag from `dari` to `ke`, one step per intermediate point.
     fn seret(&mut self, dari: Point, ke: Point, langkah: usize) {
         self.jam += Duration::from_secs(2);
         self.ui.dispatch(&Event::Pointer(PointerEvent::new(
@@ -243,7 +242,7 @@ impl Uji {
         self.tuntas();
     }
 
-    /// Tab sampai tabel yang memegang fokus.
+    /// Press Tab until the table holds focus.
     fn fokus_ke_tabel(&mut self) {
         for _ in 0..8 {
             if self.body().is_focused() {
@@ -264,7 +263,7 @@ fn hitung<T: silka_core::tree::RenderNode>(tree: &RenderTree, id: NodeId) -> usi
             .sum::<usize>()
 }
 
-/// Bangun sebuah tabel uji; `hias` memasang sifat tambahannya.
+/// Build a test table; `hias` applies any extra traits on top.
 fn uji(theme: Theme, count: usize, hias: impl Fn(TableBuilder) -> TableBuilder + 'static) -> Uji {
     let state = Rc::new(Cell::new(None::<TableState>));
     let jejak = Rc::new(Jejak::default());
@@ -286,7 +285,7 @@ fn uji(theme: Theme, count: usize, hias: impl Fn(TableBuilder) -> TableBuilder +
         let untuk_sort = u.clone();
         let b = table(&fonts, &theme, st, kolom(), count, move |baris, kol| {
             untuk_sel.catat(baris, kol);
-            // Sel apa adanya: yang diuji tabelnya, bukan isinya.
+            // A bare-bones cell: the table is under test, not its contents.
             View::from(fixed(40.0, 16.0).label(format!("sel {baris}:{kol}")))
         })
         .row_extent(EXTENT)
@@ -308,8 +307,8 @@ fn uji(theme: Theme, count: usize, hias: impl Fn(TableBuilder) -> TableBuilder +
         urutan,
         jam: Duration::ZERO,
     };
-    // Frame pertama memakai tebakan tinggi jendela; frame berikutnya
-    // menyusutkannya ke ukuran sebenarnya (lihat `VIEWPORT_HINT`).
+    // The first frame uses the guessed viewport height; the next one shrinks
+    // it to the real size (see `VIEWPORT_HINT`).
     uji.tuntas();
     uji
 }
@@ -319,8 +318,8 @@ fn polos(count: usize) -> Uji {
 }
 
 // ---------------------------------------------------------------------------
-// Virtualisasi — janji utama komponen ini, dan alasan modul ini menumpang
-// infrastruktur `list` alih-alih menumbuhkan yang kedua.
+// Virtualization — the core promise of this component, and the reason this
+// module rides on the `list` infrastructure instead of growing a second one.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -342,7 +341,7 @@ fn seratus_ribu_baris_hanya_menjadi_belasan_node() {
     );
     assert_eq!(u.body().metrics().count, 100_000);
 
-    // Ukuran jendela **tidak** tumbuh bersama data.
+    // The window size **does not** grow with the data.
     let kecil = polos(60);
     assert_eq!(kecil.baris_di_pohon(), u.baris_di_pohon());
     assert_eq!(kecil.sel_di_pohon(), u.sel_di_pohon());
@@ -358,9 +357,9 @@ fn sel_hanya_dibangun_untuk_baris_yang_terlihat() {
 
     let pertama = u.body().first();
     let terakhir = pertama + u.body().materialized();
-    // Tidak satu pun sel dibangun untuk baris di luar jendela — itulah
-    // seluruh janji virtualisasi, diuji pada pemanggilan `cell` itu sendiri
-    // dan bukan pada jumlah node hasilnya.
+    // Not one cell is built for a row outside the window — that is the whole
+    // promise of virtualization, tested on the `cell` calls themselves rather
+    // than on the node count they produce.
     for (baris, kolom) in &dibangun {
         assert!(
             *baris + DEFAULT_OVERSCAN + 1 >= pertama && *baris <= terakhir + DEFAULT_OVERSCAN,
@@ -375,12 +374,12 @@ fn menggulir_jauh_tidak_membengkakkan_pohon() {
     let mut u = polos(100_000);
     let awal = u.sel_di_pohon();
 
-    // Guliran panjang berkali-kali: inilah "scroll harus tetap mulus" yang
-    // diuji tanpa mata — jumlah node yang dibangun tidak boleh tumbuh sedikit
-    // pun sepanjang seratus ribu baris.
+    // Many long scrolls in a row: this is "scrolling must stay smooth" tested
+    // without eyes — the number of nodes built must not grow one bit across a
+    // hundred thousand rows.
     let terlihat = ((VIEWPORT.height - HEADER) / EXTENT).ceil() as usize;
-    // Batasnya adalah viewport + cadangan di dua sisi + baris judul — dan itu
-    // **tidak** mengandung satu pun suku yang tumbuh bersama jumlah data.
+    // The bound is viewport + overscan on both sides + the header row — and it
+    // contains **no** term that grows with the amount of data.
     let batas = (terlihat + 2 * DEFAULT_OVERSCAN + 2) * 3 + 3;
     let mut maksimum = awal;
     for _ in 0..40 {
@@ -398,7 +397,7 @@ fn menggulir_jauh_tidak_membengkakkan_pohon() {
          ({awal} → {maksimum}, batas {batas})"
     );
 
-    // Dan kembali ke atas juga tidak menyisakan apa pun.
+    // And returning to the top leaves nothing behind either.
     u.state().scroll_to(0.0);
     u.tuntas();
     assert_eq!(u.body().first(), 0);
@@ -408,8 +407,8 @@ fn menggulir_jauh_tidak_membengkakkan_pohon() {
 #[test]
 fn membangun_satu_frame_seratus_ribu_baris_tidak_menyentuh_datanya() {
     let mut u = polos(100_000);
-    // Lompat ke tengah: yang dibangun tetap hanya jendelanya, dan indeksnya
-    // ada di sekitar tujuan — bukan menyusur dari nol.
+    // Jump to the middle: still only the window is built, and its indices sit
+    // around the destination — no walking there from zero.
     u.jejak.ambil();
     u.state().scroll_to_row(50_000, 100_000);
     u.tuntas();
@@ -424,8 +423,8 @@ fn membangun_satu_frame_seratus_ribu_baris_tidak_menyentuh_datanya() {
         dibangun.iter().any(|(b, _)| (49_900..50_100).contains(b)),
         "jendela tidak mendarat di sekitar baris tujuan"
     );
-    // Yang paling penting: **tidak ada** baris di antara asal dan tujuan yang
-    // pernah dibangun. Lompatan lima puluh ribu baris tidak menyusuri datanya.
+    // Most important of all: **no** row between origin and destination is ever
+    // built. A fifty-thousand-row jump does not walk through the data.
     assert!(
         !dibangun.iter().any(|(b, _)| (200..49_000).contains(b)),
         "tabel menyusuri data di antara asal dan tujuan"
@@ -436,7 +435,7 @@ fn membangun_satu_frame_seratus_ribu_baris_tidak_menyentuh_datanya() {
 fn tabel_memakai_metrik_yang_sama_dengan_daftar() {
     let u = polos(1_000);
     let m = u.body().metrics();
-    // Bukan tipe kembar: ini benar-benar `ListMetrics` (aturan urutan #4).
+    // Not a twin type: this really is `ListMetrics` (ordering rule #4).
     let langsung = crate::list::ListMetrics {
         count: 1_000,
         extent: EXTENT,
@@ -449,7 +448,7 @@ fn tabel_memakai_metrik_yang_sama_dengan_daftar() {
 }
 
 // ---------------------------------------------------------------------------
-// Kolom: lebar, resize, geser, sort
+// Columns: width, resize, reorder, sort
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -462,7 +461,7 @@ fn kolom_auto_mengisi_lebar_yang_tersisa() {
         (column::total_width(&widths) - VIEWPORT.width).abs() < 1.0,
         "tabel tidak mengisi lebar wadahnya: {widths:?}"
     );
-    // Header menyelesaikan lebar yang sama persis — dua node, satu fungsi.
+    // The header resolves to exactly the same widths — two nodes, one function.
     assert_eq!(u.header().column_widths(), widths);
 }
 
@@ -479,11 +478,11 @@ fn menyeret_pegangan_melebarkan_kolom_dan_menyimpannya() {
         (sesudah[0] - (sebelum[0] + 60.0)).abs() < 2.0,
         "lebar kolom tidak mengikuti jari: {sebelum:?} → {sesudah:?}"
     );
-    // Lebarnya tersimpan di state, jadi ia bertahan lintas rebuild.
+    // The width is stored in state, so it survives across rebuilds.
     assert!(u.state().width_of(0).is_some());
-    // Kolom auto menyerap selisihnya: tabel tetap selebar wadahnya.
+    // The auto columns absorb the difference: the table still fills its container.
     assert!((sesudah.iter().sum::<f32>() - VIEWPORT.width).abs() < 1.0);
-    // Header tetap sejalan dengan barisnya.
+    // The header stays in step with its rows.
     assert_eq!(u.header().column_widths(), sesudah);
 }
 
@@ -501,7 +500,7 @@ fn resize_tidak_pernah_menembus_lebar_minimum() {
 #[test]
 fn kursor_berubah_saat_penunjuk_mendekati_batas_kolom() {
     let mut u = polos(50);
-    // Di tengah judul kolom: kursor biasa.
+    // In the middle of a column header: the ordinary cursor.
     let tengah = u.titik_header(1);
     u.ui.dispatch(&Event::Pointer(PointerEvent::new(
         PointerPhase::Move,
@@ -511,8 +510,8 @@ fn kursor_berubah_saat_penunjuk_mendekati_batas_kolom() {
     u.tuntas();
     assert_eq!(u.ui.router().cursor(), CursorIcon::Default);
 
-    // Di batas antar kolom: pegangan resize mengumumkan dirinya sebelum
-    // pengguna menekan apa pun — itulah satu-satunya cara ia bisa ditemukan.
+    // On a column boundary: the resize handle announces itself before the user
+    // presses anything — that is the only way it can be discovered.
     let pegangan = u.titik_pegangan(0);
     u.ui.dispatch(&Event::Pointer(PointerEvent::new(
         PointerPhase::Move,
@@ -538,7 +537,7 @@ fn menyeret_judul_kolom_memindahkan_urutannya() {
         vec![1, 2, 0],
         "kolom pertama tidak pindah ke belakang"
     );
-    // Kolom yang pindah membawa lebarnya sendiri.
+    // A column that moves takes its own width with it.
     assert_eq!(u.body().columns()[2].source, 0);
     assert_eq!(u.body().column_widths()[2], 100.0);
 }
@@ -561,7 +560,7 @@ fn klik_judul_kolom_membalik_arah_urutan() {
     u.klik(judul);
     assert_eq!(u.state().sort(), Some(SortBy::descending(2)));
 
-    // Kolom lain selalu mulai dari menaik.
+    // Another column always starts out ascending.
     u.klik(u.titik_header(0));
     assert_eq!(u.state().sort(), Some(SortBy::ascending(0)));
 
@@ -579,8 +578,8 @@ fn klik_judul_kolom_membalik_arah_urutan() {
 #[test]
 fn kolom_yang_dikunci_tidak_bisa_diurutkan_maupun_diseret() {
     let mut u = uji(Theme::cupertino(Appearance::Light), 50, |b| b);
-    // Ganti definisinya lewat builder tidak mungkin dari sini, jadi yang
-    // diuji adalah lapisan murninya: kolom terkunci tidak punya pegangan.
+    // Swapping the definitions through the builder is not possible from here,
+    // so the pure layer is what gets tested: a locked column has no handle.
     let cols: Vec<ColumnLayout> = u
         .body()
         .columns()
@@ -597,7 +596,7 @@ fn kolom_yang_dikunci_tidak_bisa_diurutkan_maupun_diseret() {
 }
 
 // ---------------------------------------------------------------------------
-// Seleksi
+// Selection
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -640,7 +639,7 @@ fn perintah_klik_menambah_baris_tanpa_menghapus_yang_lain() {
     assert_eq!(sel.len(), 3);
     assert!(sel.contains(1) && sel.contains(4) && sel.contains(6));
 
-    // Sekali lagi = melepas.
+    // Once more = deselect.
     let titik = u.titik_baris(4, 0);
     u.klik_mod(titik, 1, Modifiers::COMMAND);
     assert!(!u.body().selection().contains(4));
@@ -673,13 +672,13 @@ fn seleksi_terbit_ke_state_dan_bertahan_lintas_rebuild() {
     let mut u = polos(500);
     u.klik(u.titik_baris(3, 0));
     assert!(u.state().peek_selection().contains(3));
-    // Rebuild penuh (guliran) tidak menghapusnya.
+    // A full rebuild (scrolling) does not clear it.
     u.gulir(EXTENT * 3.0);
     assert!(u.body().selection().contains(3));
 }
 
 // ---------------------------------------------------------------------------
-// Keyboard: antar baris **dan** antar sel
+// Keyboard: between rows **and** between cells
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -751,7 +750,7 @@ fn perintah_a_memilih_seluruh_baris_sebagai_satu_rentang() {
         1,
         "⌘A tidak boleh melahirkan seratus ribu entri"
     );
-    // Dan pohonnya tetap sekecil semula.
+    // And the tree stays as small as it was.
     assert!(u.baris_di_pohon() < 40);
 }
 
@@ -787,7 +786,7 @@ fn page_down_melompat_sehalaman_penuh() {
 }
 
 // ---------------------------------------------------------------------------
-// Sticky header, empty state, sel kustom
+// Sticky header, empty state, custom cells
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -835,15 +834,15 @@ fn tabel_kosong_menampilkan_empty_state() {
         "empty state tidak muncul:\n{}",
         pohon.dump()
     );
-    // Judul kolom tetap ada: tabel kosong tetap harus bisa dibaca strukturnya.
+    // The column headers remain: an empty table must still read structurally.
     assert!(pohon.find_label("Nominal").is_some());
 }
 
 #[test]
 fn sel_boleh_berisi_widget_apa_pun() {
-    // `fixed(...).label(...)` sudah membuktikan sel menerima view sembarang;
-    // yang diuji di sini adalah bahwa isinya benar-benar sampai ke pohon a11y
-    // di dalam sel, bukan menggantikannya.
+    // `fixed(...).label(...)` already proves a cell accepts an arbitrary view;
+    // what is tested here is that the content really reaches the a11y tree
+    // inside the cell rather than replacing it.
     let u = polos(100);
     let pohon = u.ui.access_tree();
     let sel = pohon
@@ -860,7 +859,7 @@ fn sel_boleh_berisi_widget_apa_pun() {
 }
 
 // ---------------------------------------------------------------------------
-// AccessKit — bagian dari kontrak widget, bukan susulan (§3.8)
+// AccessKit — part of the widget contract, not an afterthought (§3.8)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -893,12 +892,12 @@ fn tabel_barisnya_dan_selnya_terbaca_screen_reader() {
         .entries()
         .iter()
         .any(|e| e.node.role == AccessRole::Cell));
-    // Judul kolom ikut terbaca, sebagai sel di dalam baris judul.
+    // The column headers are read too, as cells inside the header row.
     assert!(pohon.find_label("Pihak").is_some());
 }
 
 // ---------------------------------------------------------------------------
-// Dua preset, dark mode, reduced-motion
+// Both presets, dark mode, reduced motion
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -913,8 +912,8 @@ fn benar_di_kedua_preset_dan_kedua_appearance() {
                 "tabel kosong di {preset:?} {appearance:?}"
             );
             assert!(u.body().selection().contains(1));
-            // Tidak ada satu pun angka warna di modul tabel: semua yang
-            // digambar harus bisa ditelusuri ke token theme.
+            // Not a single hardcoded color in the table module: everything
+            // painted must trace back to a theme token.
             let warna: Vec<_> =
                 u.ui.scene()
                     .commands()
@@ -934,8 +933,8 @@ fn reduced_motion_menaruh_sorotan_langsung_di_tempatnya() {
     let mut u = polos(1_000);
     u.ui.set_motion(Motion::Reduced);
     u.klik(u.titik_baris(1, 0));
-    // Satu detak saja sudah cukup: sorotan dekoratif tidak meluncur di bawah
-    // reduced-motion (§3.5).
+    // A single tick is enough: decorative highlights do not glide under
+    // reduced motion (§3.5).
     u.ui.animate(crate::advance);
     u.ui.frame();
     assert!(
@@ -964,8 +963,8 @@ fn tinggi_baris_dinaikkan_ke_hit_target_hig() {
         "baris yang bisa dipilih tidak boleh lebih pendek dari 44pt"
     );
 
-    // Tabel tampilan murni — tanpa seleksi **dan** tanpa aktivasi — bebas
-    // memakai baris serapat apa pun: tidak ada yang perlu dikenai jari.
+    // A display-only table — no selection **and** no activation — is free to
+    // use rows as tight as it likes: nothing there has to be hit by a finger.
     let fonts = Fonts::bundled_only();
     let theme = Theme::cupertino(Appearance::Dark);
     let mut padat = app(move |_cx| {
@@ -994,16 +993,16 @@ fn tinggi_baris_dinaikkan_ke_hit_target_hig() {
 }
 
 // ---------------------------------------------------------------------------
-// Performa: seratus ribu baris, dan angkanya harus tetap datar
+// Performance: a hundred thousand rows, and the numbers must stay flat
 // ---------------------------------------------------------------------------
 
-/// Guliran menyusuri seratus ribu baris dengan **biaya per frame yang datar**.
+/// Scrolling across a hundred thousand rows at a **flat per-frame cost**.
 ///
-/// Bukan uji jam dinding — waktu di CI tidak pernah stabil, dan gate yang
-/// flaky akan dimatikan orang dalam sebulan. Yang diukur adalah besaran yang
-/// benar-benar menentukan mulus atau tidaknya: berapa sel yang dibangun ulang
-/// per frame, dan apakah angka itu bergantung pada seberapa jauh kita sudah
-/// menggulir. Selama ia datar, frame time-nya datar juga (§9.5).
+/// Not a wall-clock test — CI timing is never stable, and a flaky gate gets
+/// switched off by somebody within a month. What is measured is the quantity
+/// that actually decides whether scrolling is smooth: how many cells are
+/// rebuilt per frame, and whether that number depends on how far we have
+/// scrolled. As long as it stays flat, frame time stays flat too (§9.5).
 #[test]
 fn biaya_per_frame_tidak_tumbuh_bersama_jarak_guliran() {
     let mut u = polos(100_000);
@@ -1021,8 +1020,8 @@ fn biaya_per_frame_tidak_tumbuh_bersama_jarak_guliran() {
     let terkecil = *per_frame.iter().min().unwrap();
     let terbesar = *per_frame.iter().max().unwrap();
     assert!(terkecil > 0, "tidak ada satu pun sel dibangun");
-    // Frame terakhir (baris ke-100.000) tidak boleh lebih mahal daripada
-    // frame pertama (baris ke-2.000).
+    // The last frame (row 100,000) must not cost more than the first one
+    // (row 2,000).
     assert!(
         terbesar <= terkecil * 2,
         "biaya per frame tumbuh bersama jarak guliran: {per_frame:?}"
@@ -1034,12 +1033,12 @@ fn biaya_per_frame_tidak_tumbuh_bersama_jarak_guliran() {
     assert_eq!(u.body().first() + u.body().materialized(), 100_000);
 }
 
-/// Probe frame-time manual: seratus ribu baris, lima ratus frame guliran.
+/// Manual frame-time probe: a hundred thousand rows, five hundred scroll frames.
 ///
-/// `#[ignore]` dengan sengaja — jam dinding di CI tidak pernah stabil, dan
-/// gate perf yang flaky akan dimatikan orang dalam sebulan (§9.5). Yang
-/// menjaga regresi adalah uji di atasnya; yang ini untuk dijalankan tangan
-/// saat ada yang curiga:
+/// `#[ignore]` deliberately — CI wall-clock timing is never stable, and a flaky
+/// perf gate gets switched off by somebody within a month (§9.5). Regressions
+/// are guarded by the test above; this one is meant to be run by hand whenever
+/// someone gets suspicious:
 ///
 /// ```text
 /// cargo test -p silka-widgets --release --lib probe_frame_time -- --ignored --nocapture
@@ -1054,8 +1053,8 @@ fn probe_frame_time_seratus_ribu_baris() {
     let mut terburuk = Duration::ZERO;
     const FRAME: usize = 500;
     for i in 0..FRAME {
-        // Satu "notch" roda per frame, terus-menerus — beban terberat yang
-        // realistis: setiap frame membangun ulang jendela barisnya.
+        // One wheel "notch" per frame, continuously — the heaviest realistic
+        // load: every frame rebuilds its row window.
         u.ui.dispatch(&Event::Scroll(ScrollEvent {
             id: PointerId::MOUSE,
             position: Point::new(10.0, 200.0),
@@ -1082,8 +1081,8 @@ fn probe_frame_time_seratus_ribu_baris() {
         u.body().materialized(),
         u.sel_di_pohon()
     );
-    // Anggaran satu frame 120 Hz adalah 8,3 ms untuk **seluruh** aplikasi;
-    // batas longgar ini hanya menangkap kegagalan besar, bukan regresi halus.
+    // The 120 Hz frame budget is 8.3 ms for the **whole** app; this loose
+    // bound only catches gross failures, not subtle regressions.
     assert!(
         rata < Duration::from_millis(8),
         "rata-rata {rata:?} per frame — terlalu mahal untuk 120 Hz"
