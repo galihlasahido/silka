@@ -7,6 +7,7 @@ members = [
     "crates/core",
     "crates/theme",
     "crates/widgets",
+    "crates/chart",
     "crates/platform",
     "examples/gallery",
 ]
@@ -26,6 +27,7 @@ silka-text = { path = "crates/text" }
 silka-core = { path = "crates/core" }
 silka-theme = { path = "crates/theme" }
 silka-widgets = { path = "crates/widgets" }
+silka-chart = { path = "crates/chart" }
 silka-platform = { path = "crates/platform" }
 
 # Dependensi eksternal terpilih (REKOMENDASI §3) — dikunci di sini agar
@@ -70,3 +72,26 @@ taffy             = { version = "0.13", default-features = false, features = ["s
 # tidak pernah ada dua pohon accesskit di satu binary.
 accesskit         = "0.24"
 accesskit_winit   = "0.33"
+
+# ---------------------------------------------------------------------------
+# Build profiles
+#
+# Rationale: the dev profile defaults to full debuginfo, which dominates link
+# time and made target/ grow past 16 GB. `line-tables-only` keeps file and line
+# numbers in panic backtraces — the part we actually read — while dropping the
+# variable-level DWARF we never inspect. Linking gets noticeably cheaper, which
+# matters because the whole workspace shares a single target directory and cargo
+# locks it exclusively: every second saved on a build is a second no other build
+# spends queueing behind it.
+[profile.dev]
+debug = "line-tables-only"
+
+# Dependencies are compiled once and rarely re-linked, so they carry no
+# debuginfo at all: their internals are not what we step through.
+[profile.dev.package."*"]
+debug = false
+
+# Tests are the hot loop of this project; keep them identical to dev so nothing
+# is rebuilt when switching between `cargo check` and `cargo test`.
+[profile.test]
+debug = "line-tables-only"

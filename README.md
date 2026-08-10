@@ -58,6 +58,7 @@ smooth motion is the framework's identity, not a property of one theme.
 | `core` | Signals, arena-backed render tree, constraint layout, animation, input, accessibility |
 | `theme` | Semantic tokens and theme presets |
 | `widgets` | The component library |
+| `chart` | Line, area, bar, and sparkline charts on the same tokens and the same overlay system |
 | `platform` | Window shell, application lifecycle, and OS integration |
 
 Widget code never touches GPU types directly. Everything goes through the
@@ -78,7 +79,7 @@ cargo run -p silka-gallery
 ```
 
 The gallery showcases the available components and their variants, with a theme
-switcher and dark mode toggle.
+switcher and dark mode toggle. `--page chart` opens the chart catalogue.
 
 ## License
 

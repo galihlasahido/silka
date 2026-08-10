@@ -1,0 +1,19 @@
+[package]
+name = "silka-chart"
+description = "Pustaka chart: line/bar/area/sparkline di atas token semantik, abstraksi paint, dan spring"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+silka-core.workspace = true
+silka-theme.workspace = true
+silka-paint.workspace = true
+silka-text.workspace = true
+# The tooltip **rides** the Phase 2 overlay system instead of growing a popup of
+# its own (`KOMPONEN.md` working rule #3), and axis labels are drawn through the
+# same text leaf every other component uses — hence the dependency on the widget
+# catalogue. The arrow only ever points this way: `silka-widgets` must never
+# depend on this crate.
+silka-widgets.workspace = true

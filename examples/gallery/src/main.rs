@@ -35,6 +35,7 @@
 //! cargo run -p silka-gallery -- --page pilihan
 //! cargo run -p silka-gallery -- --page gulir
 //! cargo run -p silka-gallery -- --page tabel
+//! cargo run -p silka-gallery -- --page chart
 //! ```
 //!
 //! Available pages: `teks` (typography specimen, the default), `kartu`
@@ -53,6 +54,7 @@
 
 mod button;
 mod cards;
+mod chart;
 mod checkbox;
 mod counter;
 mod dialog;
@@ -228,6 +230,18 @@ fn main() -> Result<(), PlatformError> {
                 silka_widgets::advance,
             );
         }
+        Halaman::Chart => {
+            // Two `advance` functions, because charts live in their own crate
+            // and `silka-widgets` must not learn about them. The buttons on the
+            // page belong to the widget catalogue, the marks belong to
+            // `silka-chart`, and a single frame drives both (§3.5).
+            let untuk_view = fonts.clone();
+            return run_app_with(
+                config.glyphs(fonts.shared()),
+                move |cx| chart::halaman(cx, &untuk_view),
+                |tree, tick| silka_widgets::advance(tree, tick) | silka_chart::advance(tree, tick),
+            );
+        }
         Halaman::Gulir => {
             // Scrolling is a spring like the rest — rubber banding, the bounce,
             // and the scrollbar fade are all stepped by `advance` once per
@@ -269,6 +283,7 @@ fn main() -> Result<(), PlatformError> {
                 | Halaman::Pilihan
                 | Halaman::Gulir
                 | Halaman::Tabel
+                | Halaman::Chart
                 | Halaman::Daftar => typography::scene(&mut mesin, frame.theme(), frame.size()),
             }
         })
@@ -337,6 +352,11 @@ enum Halaman {
     /// steps, a two-thumb range variant, full keyboard support, and a thumb
     /// that catches up via a spring (`KOMPONEN.md` Tier 2).
     Slider,
+    /// The `silka-chart` catalog: line, area, grouped bars, stacked horizontal
+    /// bars, and sparklines — with a colorblind-safe categorical palette,
+    /// locale-aware axis labels, spring data transitions, and a tooltip riding
+    /// the overlay system.
+    Chart,
 }
 
 struct Opsi {
@@ -391,6 +411,7 @@ impl Opsi {
                             "daftar" | "list" => Halaman::Daftar,
                             "tabel" | "table" => Halaman::Tabel,
                             "centang" | "checkbox" => Halaman::Centang,
+                            "chart" | "grafik" | "bagan" => Halaman::Chart,
                             "kolom-teks" | "text_field" | "text-field" => Halaman::KolomTeks,
                             _ => Halaman::Teks,
                         };

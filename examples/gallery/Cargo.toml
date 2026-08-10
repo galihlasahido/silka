@@ -16,6 +16,7 @@ silka-renderer.workspace = true
 
 [dependencies]
 silka-widgets.workspace = true
+silka-chart.workspace = true
 silka-core.workspace = true
 silka-theme.workspace = true
 silka-platform.workspace = true

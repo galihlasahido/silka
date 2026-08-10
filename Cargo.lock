@@ -2135,6 +2135,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "silka-chart"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
+]
+
+[[package]]
 name = "silka-core"
 version = "0.1.0"
 dependencies = [
@@ -2148,6 +2159,7 @@ dependencies = [
 name = "silka-gallery"
 version = "0.1.0"
 dependencies = [
+ "silka-chart",
  "silka-core",
  "silka-paint",
  "silka-platform",
