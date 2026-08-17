@@ -25,7 +25,7 @@ use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::signals::Signal;
 use silka_core::view::{div, fixed, interactive, View};
 use silka_theme::{ColorToken, FontToken, Preset, RadiusToken, ShadowToken, SpaceToken, Theme};
-use silka_widgets::{text, Fonts};
+use silka_widgets::{text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Kosakata utility";
@@ -67,14 +67,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .gap_8()
         .p_8()
         .child(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .font(FontToken::Title2)
                 .font_semibold()
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text(fonts, keterangan(t.preset))
+            text_in(fonts, keterangan(t.preset))
                 .text_base()
                 .text_color(ColorToken::SecondaryLabel)
                 .max_width(t.space(120.0)),
@@ -110,7 +110,7 @@ fn bagian(fonts: &Fonts, judul: &str, isi: View) -> View {
         .items_start()
         .gap_3()
         .child(
-            text(fonts, judul)
+            text_in(fonts, judul)
                 .font(FontToken::Caption1)
                 .font_semibold()
                 .text_color(ColorToken::TertiaryLabel)
@@ -122,7 +122,7 @@ fn bagian(fonts: &Fonts, judul: &str, isi: View) -> View {
 
 /// A small caption under a specimen.
 fn nama(fonts: &Fonts, teks: &str) -> View {
-    text(fonts, teks)
+    text_in(fonts, teks)
         .text_xs()
         .text_color(ColorToken::TertiaryLabel)
         .single_line()
@@ -249,14 +249,14 @@ fn tile(
             .px_5()
             .py_4()
             .child(
-                text(fonts, label)
+                text_in(fonts, label)
                     .text_sm()
                     .font_semibold()
                     .text_color(ColorToken::Label)
                     .single_line(),
             )
             .child(
-                text(fonts, keterangan)
+                text_in(fonts, keterangan)
                     .text_xs()
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),

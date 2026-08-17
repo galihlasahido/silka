@@ -36,7 +36,7 @@ use silka_core::view::{column, constrained, row, Builder, LayoutProps, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{range_slider, slider, text, Fonts};
+use silka_widgets::{range_slider_in, slider_in, text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Slider";
@@ -70,7 +70,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     let isi = column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.body_size * 2.0)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(-0.02)
@@ -78,7 +78,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Seret, klik di track, atau Tab lalu tekan panah. Nilainya \
                  mendarat di undakan; thumb-nya menyusul lewat spring.",
@@ -113,7 +113,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<LayoutProps> {
     row([
         View::from(
-            text(fonts, nama)
+            text_in(fonts, nama)
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.label)
@@ -121,7 +121,7 @@ fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<Layout
                 .role(AccessRole::Container),
         ),
         View::from(
-            text(fonts, nilai)
+            text_in(fonts, nilai)
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -141,7 +141,7 @@ fn baris_volume(fonts: &Fonts, volume: Signal<f32>) -> View {
         column([
             View::from(kepala(&fonts, &t, VOLUME, format!("{v:.0}%"))),
             View::from(
-                slider(&t, v)
+                slider_in(&t, v)
                     .range(0.0..=100.0)
                     .label(VOLUME)
                     .on_change(move |x| volume.set(x)),
@@ -162,7 +162,7 @@ fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
         column([
             View::from(kepala(&fonts, &t, UKURAN, format!("{v:.0} pt"))),
             View::from(
-                slider(&t, v)
+                slider_in(&t, v)
                     .range(9.0..=32.0)
                     .step(1.0)
                     .label(UKURAN)
@@ -171,7 +171,7 @@ fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
             // A live example: the text really is the size of the slider's
             // value.
             View::from(
-                text(&fonts, "Ukuran teks mengikuti nilai di atas.")
+                text_in(&fonts, "Ukuran teks mengikuti nilai di atas.")
                     .size(v)
                     .color(t.color.label)
                     .single_line()
@@ -193,7 +193,7 @@ fn baris_harga(fonts: &Fonts, min: Signal<f32>, max: Signal<f32>) -> View {
         column([
             View::from(kepala(&fonts, &t, HARGA, format!("{a:.0} – {b:.0}"))),
             View::from(
-                range_slider(&t, a, b)
+                range_slider_in(&t, a, b)
                     .range(0.0..=1000.0)
                     .step(50.0)
                     .label(HARGA)
@@ -214,7 +214,7 @@ fn baris_mati(fonts: &Fonts, t: &Theme) -> View {
     column([
         View::from(kepala(fonts, t, MATI, "60".to_string())),
         View::from(
-            slider(t, 60.0)
+            slider_in(t, 60.0)
                 .range(0.0..=100.0)
                 .label(MATI)
                 .disabled(true),

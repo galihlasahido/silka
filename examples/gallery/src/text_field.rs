@@ -30,7 +30,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{text, text_field, Fonts};
+use silka_widgets::{text_field_in, text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Text Field";
@@ -62,7 +62,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -70,7 +70,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Caret dan seleksi berjalan per grapheme cluster, klik ganda \
                  menyeleksi kata, dan komposisi IME dirender inline bergaris \
@@ -97,7 +97,7 @@ fn baris(fonts: &Fonts, t: &Theme, label: &str, kolom: View) -> View {
     row([
         View::from(constrained(
             BoxConstraints::new(t.space(28.0), t.space(28.0), 0.0, f32::INFINITY),
-            text(fonts, label)
+            text_in(fonts, label)
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -141,7 +141,7 @@ fn formulir(
                 f,
                 &t,
                 KOLOM_NAMA,
-                text_field(f, &t, nama.get())
+                text_field_in(f, &t, nama.get())
                     .key("nama")
                     .placeholder("Nama lengkap")
                     .label(KOLOM_NAMA)
@@ -153,7 +153,7 @@ fn formulir(
                 f,
                 &t,
                 KOLOM_SUREL,
-                text_field(f, &t, surel.get())
+                text_field_in(f, &t, surel.get())
                     .key("surel")
                     .placeholder("nama@contoh.id")
                     .label(KOLOM_SUREL)
@@ -165,7 +165,7 @@ fn formulir(
                 f,
                 &t,
                 KOLOM_KUNCI,
-                text_field(f, &t, KUNCI)
+                text_field_in(f, &t, KUNCI)
                     .key("kunci")
                     .label(KOLOM_KUNCI)
                     .read_only(true)
@@ -175,7 +175,7 @@ fn formulir(
                 f,
                 &t,
                 KOLOM_MATI,
-                text_field(f, &t, "")
+                text_field_in(f, &t, "")
                     .key("mati")
                     .placeholder("Belum tersedia")
                     .label(KOLOM_MATI)
@@ -212,7 +212,7 @@ fn gema(fonts: &Fonts, nama: Signal<String>, surel: Signal<String>, terkirim: Si
         } else {
             isi
         };
-        text(&fonts, isi)
+        text_in(&fonts, isi)
             .size(t.typography.body_size)
             .color(t.color.secondary_label)
             .single_line()

@@ -305,10 +305,15 @@ pub mod access;
 pub mod animation;
 pub mod app;
 mod callback;
+pub mod date;
+pub mod hot;
 pub mod input;
+pub mod locale;
+pub mod recover;
 pub mod scheduler;
 pub mod signals;
 pub mod styling;
+pub mod task;
 pub mod tree;
 pub mod view;
 
@@ -320,13 +325,17 @@ pub use animation::{
     Animatable, AnimationDriver, Motion, MotionRole, Propagator, Spring, SpringValue, Tick,
     Tolerance,
 };
-pub use app::{app, component, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};
+pub use app::{app, component, current_tasks, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};
 pub use callback::Callback;
+pub use date::{days_in_month, is_leap_year, Date, TimeUnit};
+pub use hot::{patch_screen, register_screen, screen_view, HotTheme, ScreenFn};
 pub use input::{
     hit_test, CursorIcon, Event, EventCtx, FocusDirection, FocusManager, FocusPolicy, HitBehavior,
     HitShape, ImeEvent, ImeRequest, InputResponse, InputRouter, KeyCode, KeyEvent, Modifiers,
     NamedKey, PointerButton, PointerEvent, PointerPhase, ScrollEvent, Velocity, VelocityTracker,
 };
+pub use locale::{CompactUnit, CurrencyPosition, DateOrder, Locale};
+pub use recover::{catch, guard_view, guard_view_or, install_hook, on_crash, PanicReport};
 pub use scheduler::{
     ClockSource, Dirty, FrameLogger, FrameScheduler, FrameStart, FrameStats, FrameTiming,
     RefreshEstimator, Vsync, Wake,
@@ -334,13 +343,16 @@ pub use scheduler::{
 pub use signals::{
     current_scope, list, scope, untracked, use_signal, Key, Runtime, ScopeId, Signal, SignalId,
 };
+pub use task::{
+    use_resource, Cancel, Load, Notifier, Spawner, TaskHandle, TaskId, Tasks, ThreadSpawner,
+};
 pub use tree::{
-    BoxConstraints, ContainerStyle, CrossAlign, Decoration, ItemStyle, LayoutCtx, MainAlign,
-    NodeId, PaintCtx, RenderNode, RenderTree, TextDirection, Track,
+    Alignment, BoxConstraints, ContainerStyle, CrossAlign, Decoration, ItemStyle, LayoutCtx,
+    MainAlign, NodeId, PaintCtx, RenderNode, RenderTree, StackFit, TextDirection, Track,
 };
 pub use view::{
-    active_theme, container, div, reconcile, with_theme, DiffStats, Margined, Padded, TextStyled,
-    View, ViewNode,
+    active_theme, align, aspect_ratio, center, container, div, reconcile, stack, with_theme,
+    DiffStats, Margined, Padded, TextStyled, View, ViewNode,
 };
 
 /// Compiles and runs every Rust example in this crate's `README.md`.

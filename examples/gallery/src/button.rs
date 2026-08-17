@@ -27,7 +27,7 @@ use silka_core::view::{column, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button, button_variant, text, ButtonVariant, Fonts};
+use silka_widgets::{button_in, button_variant_in, text_in, ButtonVariant, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Button";
@@ -60,7 +60,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -69,7 +69,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Lima varian di atas token semantik. Hover, tekan, dan Tab: setiap \
                  perpindahan keadaan berjalan lewat spring yang bisa di-retarget, \
@@ -103,7 +103,7 @@ fn varian(fonts: &Fonts, t: &Theme, terakhir: Signal<String>) -> View {
         .zip(VARIAN)
         .map(|(v, label)| {
             let nama = label.to_string();
-            button_variant(fonts, t, label, v)
+            button_variant_in(fonts, t, label, v)
                 .key(v.name())
                 .on_press(move || terakhir.set(nama.clone()))
                 .into()
@@ -127,9 +127,9 @@ fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let memuat = sibuk.get();
         row([
-            View::from(button(&fonts, &t, TOMBOL_MATI).disabled(true)),
+            View::from(button_in(&fonts, &t, TOMBOL_MATI).disabled(true)),
             View::from(
-                button(&fonts, &t, TOMBOL_SIMPAN)
+                button_in(&fonts, &t, TOMBOL_SIMPAN)
                     .loading(memuat)
                     .on_press(move || {
                         // A loading button refuses activation; this only
@@ -138,7 +138,7 @@ fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
                     }),
             ),
             View::from(
-                button_variant(
+                button_variant_in(
                     &fonts,
                     &t,
                     if memuat { "Selesai" } else { TOMBOL_SIBUK },
@@ -168,7 +168,7 @@ fn status(fonts: &Fonts, terakhir: Signal<String>) -> View {
         } else {
             format!("Terakhir ditekan: {isi}")
         };
-        text(&fonts, teks)
+        text_in(&fonts, teks)
             .size(t.typography.body_size)
             .color(t.color.secondary_label)
             .single_line()

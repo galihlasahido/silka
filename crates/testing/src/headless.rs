@@ -131,6 +131,22 @@ impl Headless {
         scale: f64,
         glyphs: &mut dyn GlyphSource,
     ) -> Image {
+        self.capture_with_sources(scene, size, scale, glyphs, &mut silka_paint::NoImages)
+    }
+
+    /// Draw a scene **including its text and its bitmaps**.
+    ///
+    /// Both sources belong to the application for the same reason: a test that
+    /// built its own atlas would be measuring a second, parallel stack rather than
+    /// the one the app actually draws with.
+    pub fn capture_with_sources(
+        &mut self,
+        scene: &Scene,
+        size: Size,
+        scale: f64,
+        glyphs: &mut dyn GlyphSource,
+        images: &mut dyn silka_paint::ImageSource,
+    ) -> Image {
         let geometry = SurfaceGeometry::from_logical(size, scale);
         let key = TargetKey {
             width: geometry.physical_width(),
@@ -148,7 +164,7 @@ impl Headless {
         };
         let raw = self.targets[index]
             .1
-            .render_with_glyphs(&self.gpu, scene, glyphs)
+            .render_with_sources(&self.gpu, scene, glyphs, images)
             .expect("render headless");
         to_image(&raw)
     }

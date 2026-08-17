@@ -179,7 +179,7 @@ fn uji(theme: Theme, count: usize, hias: impl Fn(ListBuilder) -> ListBuilder + '
         s.set(Some(st));
         let untuk_baris = j.clone();
         let untuk_aksi = a.clone();
-        let b = list(&theme, st, count, move |i| {
+        let b = list_in(&theme, st, count, move |i| {
             untuk_baris.catat(i);
             // A plain row: what is under test is the list, not its content.
             View::from(fixed(320.0, EXTENT).label(format!("baris {i}")))
@@ -316,18 +316,20 @@ fn hit_target_baris_minimal_44pt_walau_diminta_lebih_rapat() {
     let baris = |_: usize| View::from(fixed(320.0, 20.0));
 
     // A selectable list: the row height is raised to the HIG hit target.
-    let dipilih = list(&t, st, 50, baris).item_extent(20.0);
+    let dipilih = list_in(&t, st, 50, baris).item_extent(20.0);
     assert_eq!(dipilih.extent_final(), crate::MIN_HIT_TARGET);
 
     // Activatable even though not selectable: still a control.
-    let diaktifkan = list(&t, st, 50, baris)
+    let diaktifkan = list_in(&t, st, 50, baris)
         .item_extent(20.0)
         .selectable(false)
         .on_activate(|_| {});
     assert_eq!(diaktifkan.extent_final(), crate::MIN_HIT_TARGET);
 
     // A display-only list may pack as tightly as it likes.
-    let padat = list(&t, st, 50, baris).item_extent(20.0).selectable(false);
+    let padat = list_in(&t, st, 50, baris)
+        .item_extent(20.0)
+        .selectable(false);
     assert_eq!(padat.extent_final(), 20.0);
 
     // And what the node actually uses is the same number.
@@ -715,7 +717,7 @@ fn data_yang_menyusut_tidak_meninggalkan_guliran_di_ruang_kosong() {
         let st = use_list_state();
         s.set(Some(st));
         View::from(
-            list(&t, st, n.get(), move |i| {
+            list_in(&t, st, n.get(), move |i| {
                 View::from(fixed(320.0, EXTENT).label(format!("baris {i}")))
             })
             .item_extent(EXTENT),

@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The bundle description for the flagship example, `examples/dashboard`.
+
+  Two keys here are not cosmetic and are the reason this file is checked in
+  rather than generated with defaults:
+
+    * `CFBundleIdentifier` is what the notification centre, the keychain and
+      the update feed all key on. It must match `Feed`'s `app` field exactly,
+      or `silka_dist::update::choose` refuses the feed — deliberately, because
+      a server handing out someone else's feed should be loud.
+
+    * `LSMinimumSystemVersion` must match the `minimum_os.macos` floor the feed
+      publishes. If the plist says 11.0 and the feed says 12.0, the update is
+      offered to machines that cannot launch it.
+
+  `silka_platform::association::AppIdentity::info_plist()` generates the same
+  shape from code when an application prefers to declare its file associations
+  and URL schemes in Rust. This file is the hand-written equivalent for a build
+  that does not.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+
+	<key>CFBundleExecutable</key>
+	<string>silka-dashboard</string>
+
+	<key>CFBundleIdentifier</key>
+	<string>dev.silka.dashboard</string>
+
+	<key>CFBundleName</key>
+	<string>Silka Dashboard</string>
+
+	<key>CFBundleDisplayName</key>
+	<string>Silka Dashboard</string>
+
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+
+	<!-- Both are rewritten by the release workflow from the git tag. -->
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+
+	<!--
+	  Retina, and not by accident: without this key AppKit hands the window a
+	  backing store at 1x and every glyph silka renders is resampled.
+	-->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+
+	<!-- Matches `minimum_os.macos` in the update feed. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+
+	<!--
+	  The application is not a background agent: it owns a Dock tile, which
+	  `silka_platform::dock` needs in order to put a badge on it.
+	-->
+	<key>LSUIElement</key>
+	<false/>
+
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+
+	<key>NSHumanReadableCopyright</key>
+	<string>MIT OR Apache-2.0</string>
+</dict>
+</plist>

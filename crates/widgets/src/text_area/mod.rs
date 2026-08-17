@@ -9,7 +9,7 @@
 //! # let catatan = rt.signal(String::new());
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
-//! text_area(&fonts, &t, catatan.get())
+//! text_area_in(&fonts, &t, catatan.get())
 //!     .placeholder("Tulis catatan…")
 //!     .label("Catatan")
 //!     .auto_grow(3, 12)
@@ -99,7 +99,7 @@ use silka_theme::Theme;
 use crate::button::MIN_HIT_TARGET;
 use crate::editing::TextCallback;
 use crate::fonts::Fonts;
-use crate::scroll_view::{self, scroll_view, ScrollView, Scrollbar};
+use crate::scroll_view::{self, scroll_view_in, ScrollView, Scrollbar};
 
 pub use body::{BodyColors, TextAreaBody};
 pub use frame::{FrameStyle, TextAreaFrame};
@@ -355,19 +355,19 @@ impl ViewNode for TextAreaFrameProps {
 ///
 /// ```
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{text_area, Fonts};
+/// use silka_widgets::{text_area_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // `rows` fixes the height; `auto_grow` lets it breathe between two bounds.
 /// // They answer the same question, so the later call wins.
-/// let fixed = text_area(&fonts, &theme, "").rows(4);
-/// let growing = text_area(&fonts, &theme, "").auto_grow(1, 6);
+/// let fixed = text_area_in(&fonts, &theme, "").rows(4);
+/// let growing = text_area_in(&fonts, &theme, "").auto_grow(1, 6);
 /// # let _ = (fixed, growing);
 ///
 /// // Read-only keeps the caret, the selection and copying; only editing goes.
-/// let readonly = text_area(&fonts, &theme, "log output").read_only(true);
+/// let readonly = text_area_in(&fonts, &theme, "log output").read_only(true);
 /// # let _ = readonly;
 /// ```
 /// A Dart-style `text_area` builder (§2.5).
@@ -383,6 +383,24 @@ pub struct TextArea {
     key: Option<Key>,
 }
 
+/// A multi-line text editor — `text_area` (`KOMPONEN.md` Tier 2).
+///
+/// ```
+/// use silka_widgets::text_area;
+///
+/// let notes = text_area("").placeholder("Notes…").auto_grow(1, 6);
+/// # let _ = notes;
+/// ```
+///
+/// Use [`text_area_in`] outside a build pass.
+pub fn text_area(value: impl Into<String>) -> TextArea {
+    text_area_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        value,
+    )
+}
+
 /// A multi-line text area — the `text_area` component (`KOMPONEN.md` Tier 2).
 ///
 /// Every value comes from `theme`; `fonts` is the app's text engine. The
@@ -393,7 +411,7 @@ pub struct TextArea {
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::text_area::TabBehavior;
-/// use silka_widgets::{text_area, Fonts};
+/// use silka_widgets::{text_area_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -402,7 +420,7 @@ pub struct TextArea {
 ///
 /// // A comment box that grows with its contents up to a ceiling, then
 /// // scrolls — the shape most multi-line inputs actually want.
-/// let comment = text_area(&fonts, &theme, body.get())
+/// let comment = text_area_in(&fonts, &theme, body.get())
 ///     .placeholder("Write a reply")
 ///     .label("Reply")
 ///     .auto_grow(2, 8)
@@ -411,13 +429,13 @@ pub struct TextArea {
 ///
 /// // A code box: fixed height, a line-number gutter, and Tab that indents.
 /// // Even then ⇧Tab still walks focus backwards, so it is never a trap.
-/// let code = text_area(&fonts, &theme, "fn main() {}")
+/// let code = text_area_in(&fonts, &theme, "fn main() {}")
 ///     .rows(12)
 ///     .line_numbers(true)
 ///     .tab(TabBehavior::InsertTab);
 /// # let _ = code;
 /// ```
-pub fn text_area(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> TextArea {
+pub fn text_area_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> TextArea {
     let t = theme;
     let link = AreaLink::new();
     let style = TextStyle::new()
@@ -644,7 +662,7 @@ impl From<TextArea> for View {
         // accessibility action all come from the Tier 1 widget. It is not
         // focusable here because the text body already is — one field, one Tab
         // stop.
-        let gulir = scroll_view(&a.theme, isi)
+        let gulir = scroll_view_in(&a.theme, isi)
             .vertical()
             .scrollbar(a.scrollbar)
             .line_height(baris)

@@ -28,8 +28,8 @@
 //! arithmetic, colour numbers, and any placement code for the tooltip.
 
 use silka_chart::format::{Locale, NumberFormat};
-use silka_chart::tooltip::{tooltip_overlay, ChartHover};
-use silka_chart::{area_chart, bar_chart, line_chart, sparkline, ChartStyle, Date};
+use silka_chart::tooltip::{tooltip_overlay_in, ChartHover};
+use silka_chart::{area_chart_in, bar_chart_in, line_chart_in, sparkline_in, ChartStyle, Date};
 use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
@@ -37,7 +37,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button, button_variant, overlay_layer, text, ButtonVariant, Fonts};
+use silka_widgets::{button_in, button_variant_in, overlay_layer, text_in, ButtonVariant, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Chart";
@@ -232,7 +232,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     // Content first, the tooltip after: this order **is** the stacking order,
     // and the panel's position belongs entirely to the overlay system.
     overlay_layer(konten)
-        .overlay(tooltip_overlay(
+        .overlay(tooltip_overlay_in(
             fonts,
             &t,
             &ChartStyle::from_theme(&t),
@@ -245,7 +245,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 fn judul(fonts: &Fonts, t: &Theme) -> View {
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -253,7 +253,7 @@ fn judul(fonts: &Fonts, t: &Theme) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Empat jenis mark di satu halaman, semuanya menumpang token \
                  tema yang sama dan sistem overlay yang sama. Arahkan penunjuk \
@@ -283,17 +283,17 @@ fn kendali(
     let isi = terisi.get();
     let label_isi = if isi { TOMBOL_KOSONG } else { TOMBOL_ISI };
     row([
-        View::from(button(fonts, t, TOMBOL_DATA).on_press(move || seed.set(seed.get() + 1))),
+        View::from(button_in(fonts, t, TOMBOL_DATA).on_press(move || seed.set(seed.get() + 1))),
         View::from(
-            button_variant(fonts, t, label_isi, ButtonVariant::Secondary)
+            button_variant_in(fonts, t, label_isi, ButtonVariant::Secondary)
                 .on_press(move || terisi.set(!terisi.get())),
         ),
         View::from(
-            button_variant(fonts, t, TOMBOL_LOCALE, ButtonVariant::Ghost)
+            button_variant_in(fonts, t, TOMBOL_LOCALE, ButtonVariant::Ghost)
                 .on_press(move || idx_locale.set(idx_locale.get() + 1)),
         ),
         View::from(
-            text(fonts, l.tag)
+            text_in(fonts, l.tag)
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.accent)
@@ -335,7 +335,7 @@ fn garis(
     let data = if kosong { Vec::new() } else { harian(seed) };
     kotak(
         t,
-        line_chart(fonts, t, data)
+        line_chart_in(fonts, t, data)
             .key("garis")
             .x(|d: &Hari| d.tanggal)
             .y_named("Masuk", |d: &Hari| d.masuk)
@@ -363,7 +363,7 @@ fn area(
     let data = if kosong { Vec::new() } else { saldo(seed) };
     kotak(
         t,
-        area_chart(fonts, t, data)
+        area_chart_in(fonts, t, data)
             .key("area")
             .x(|d: &Hari| d.tanggal)
             .y_named("Saldo", |d: &Hari| d.masuk)
@@ -389,7 +389,7 @@ fn batang(
     let data = if kosong { Vec::new() } else { kuartalan(seed) };
     kotak(
         t,
-        bar_chart(fonts, t, data)
+        bar_chart_in(fonts, t, data)
             .key("batang")
             .x_label(|d: &Kuartal| d.nama.clone())
             .y_named("Pendapatan", |d: &Kuartal| d.pendapatan)
@@ -418,7 +418,7 @@ fn tumpuk(
     let data = if kosong { Vec::new() } else { biaya(seed) };
     kotak(
         t,
-        bar_chart(fonts, t, data)
+        bar_chart_in(fonts, t, data)
             .key("tumpuk")
             .x_label(|d: &Biaya| d.nama.clone())
             .y_named("Tetap", |d: &Biaya| d.tetap)
@@ -455,20 +455,20 @@ fn percikan(fonts: &Fonts, t: &Theme, l: Locale, seed: u64, kosong: bool) -> Vie
             let terakhir = nilai.last().copied().unwrap_or(0.0);
             row([
                 View::from(
-                    text(fonts, *nama)
+                    text_in(fonts, *nama)
                         .size(t.typography.footnote.size)
                         .color(t.color.secondary_label)
                         .single_line(),
                 ),
                 View::from(constrained(
                     BoxConstraints::new(t.space(24.0), t.space(24.0), t.space(6.0), t.space(6.0)),
-                    sparkline(fonts, t, nilai)
+                    sparkline_in(fonts, t, nilai)
                         .key(format!("percikan-{i}"))
                         .animated(true)
                         .empty(""),
                 )),
                 View::from(
-                    text(fonts, NumberFormat::Compact.format(terakhir, &l))
+                    text_in(fonts, NumberFormat::Compact.format(terakhir, &l))
                         .size(t.typography.footnote.size)
                         .weight(FontWeight::SEMIBOLD)
                         .color(t.color.label)

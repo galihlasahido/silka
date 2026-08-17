@@ -36,7 +36,7 @@
 //!     col("Amount").fixed(160.0).trailing(),
 //! ];
 //!
-//! table(&fonts, &t, state, columns, 100_000, |_row, _column| View::from(fixed(80.0, 20.0)))
+//! table_in(&fonts, &t, state, columns, 100_000, |_row, _column| View::from(fixed(80.0, 20.0)))
 //!     .row_extent(44.0)
 //!     .striped()
 //!     .label("Transactions")
@@ -112,7 +112,7 @@ pub use node::{
 pub use selection::{Selection, SelectionMode};
 pub use state::{use_table_state, TableState};
 pub use view::{
-    table, TableBuilder, TableCellProps, TableHeaderProps, TableProps, TableRowProps,
+    table, table_in, TableBuilder, TableCellProps, TableHeaderProps, TableProps, TableRowProps,
     DEFAULT_OVERSCAN, DEFAULT_ROW_EXTENT, VIEWPORT_HINT,
 };
 

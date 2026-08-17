@@ -32,7 +32,7 @@ use silka_core::view::{column, constrained, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{text, text_area, Fonts, TabBehavior};
+use silka_widgets::{text_area_in, text_in, Fonts, TabBehavior};
 
 /// The page title.
 pub const JUDUL: &str = "Text Area";
@@ -65,7 +65,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -74,7 +74,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Ketik kalimat panjang: teks melipat mengikuti lebar, bukan \
                  menggulir ke samping. Tahan panah bawah melewati baris \
@@ -101,7 +101,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 fn kolom(fonts: &Fonts, t: &Theme, label: &str, area: View) -> View {
     column([
         View::from(
-            text(fonts, label)
+            text_in(fonts, label)
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.secondary_label)
@@ -138,7 +138,7 @@ fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<
                 f,
                 &t,
                 CATATAN,
-                text_area(f, &t, catatan.get())
+                text_area_in(f, &t, catatan.get())
                     .key("catatan")
                     .placeholder("Tulis catatan rapat…")
                     .label(CATATAN)
@@ -153,7 +153,7 @@ fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<
                 f,
                 &t,
                 KODE,
-                text_area(f, &t, ISI_KODE)
+                text_area_in(f, &t, ISI_KODE)
                     .key("kode")
                     .label(KODE)
                     .rows(6)
@@ -167,7 +167,7 @@ fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<
                 f,
                 &t,
                 SYARAT,
-                text_area(f, &t, ISI_SYARAT)
+                text_area_in(f, &t, ISI_SYARAT)
                     .key("syarat")
                     .label(SYARAT)
                     .rows(4)
@@ -204,7 +204,7 @@ fn gema(fonts: &Fonts, catatan: Signal<String>, terkirim: Signal<u32>) -> View {
         } else {
             teks
         };
-        text(&fonts, teks)
+        text_in(&fonts, teks)
             .size(t.typography.footnote.size)
             .color(t.color.secondary_label)
             .single_line()

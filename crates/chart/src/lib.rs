@@ -22,14 +22,14 @@
 //! ```
 //! # use silka_widgets::Fonts;
 //! # use silka_theme::{Appearance, Theme};
-//! use silka_chart::{bar_chart, format::{Locale, NumberFormat}};
+//! use silka_chart::{bar_chart_in, format::{Locale, NumberFormat}};
 //!
 //! # let fonts = Fonts::bundled_only();
 //! # let theme = Theme::cupertino(Appearance::Dark);
 //! struct Bulan { nama: &'static str, masuk: f64, keluar: f64 }
 //! # let data = vec![Bulan { nama: "Jan", masuk: 1.2e6, keluar: 8.0e5 }];
 //!
-//! bar_chart(&fonts, &theme, data)
+//! bar_chart_in(&fonts, &theme, data)
 //!     .x_label(|d: &Bulan| d.nama.to_string())
 //!     .y_named("Masuk", |d: &Bulan| d.masuk)
 //!     .y_named("Keluar", |d: &Bulan| d.keluar)
@@ -73,9 +73,9 @@
 //!
 //! ## Acknowledged debt
 //!
-//! `silka-paint` has no stroke command yet, so a line is rasterised into boxes
-//! ([`stroke`]) — the same bargain [`silka_widgets::check_dots`] struck, and it
-//! collapses to a single command the day the SDF stroke lands. And the
+//! A line is now a real [`silka_paint::Stroke`] — one command per series,
+//! rasterised from a distance field — and what is left in [`stroke`] is the area
+//! *fill*, which is not a stroke at all. The
 //! accessibility role is [`Image`](silka_core::access::AccessRole::Image) with
 //! a description, because `silka-core`'s role vocabulary has no chart role;
 //! adding one touches the platform adapter too, so it is a change to make
@@ -118,8 +118,13 @@ pub use palette::{ChartPalette, CATEGORICAL_LEN};
 pub use scale::{BandScale, LinearScale};
 pub use style::ChartStyle;
 pub use ticks::TimeUnit;
-pub use tooltip::{tooltip, tooltip_overlay, ChartHover, HoverEntry};
-pub use view::{area_chart, bar_chart, line_chart, sparkline, ChartBuilder, ChartProps};
+pub use tooltip::{
+    tooltip, tooltip_in, tooltip_overlay, tooltip_overlay_in, ChartHover, HoverEntry,
+};
+pub use view::{
+    area_chart, area_chart_in, bar_chart, bar_chart_in, line_chart, line_chart_in, sparkline,
+    sparkline_in, ChartBuilder, ChartProps,
+};
 
 /// Compiles and runs every Rust example in this crate's `README.md`.
 ///

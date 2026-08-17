@@ -12,7 +12,7 @@ use silka_core::input::{
 };
 use silka_core::tree::{NodeId, RenderTree};
 use silka_core::view::reconcile;
-use silka_paint::{Command, Scene};
+use silka_paint::{Command, Scene, Transform};
 use silka_theme::{Appearance, Preset};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -64,6 +64,18 @@ fn kotak_gambar(scene: &Scene) -> Vec<Quad> {
             _ => None,
         })
         .collect()
+}
+
+/// The transform of the press bracket, if the frame has one at all.
+///
+/// At rest there is none: `PaintCtx::with_transform` emits no command for an
+/// identity matrix, which is what keeps an idle button exactly as cheap as it was
+/// before scale-on-press became a real transform.
+fn transform_tekan(scene: &Scene) -> Option<Transform> {
+    scene.commands().iter().find_map(|c| match c {
+        Command::PushTransform(t) => Some(*t),
+        _ => None,
+    })
 }
 
 fn warna_teks(scene: &Scene) -> Vec<Color> {
@@ -121,7 +133,7 @@ fn klik(router: &mut InputRouter, tree: &mut RenderTree, p: Point) {
 fn hit_target_minimal_44pt_di_kedua_sumbu() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let tree = pohon(button(&f, &t, "Ok"));
+    let tree = pohon(button_in(&f, &t, "Ok"));
     let ukuran = tree.size(id_tombol(&tree));
     assert!(
         ukuran.height >= MIN_HIT_TARGET && ukuran.width >= MIN_HIT_TARGET,
@@ -135,7 +147,7 @@ fn warna_dan_bentuk_sudut_selalu_datang_dari_token() {
     for preset in Preset::ALL {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let t = Theme::new(preset, appearance);
-            let mut tree = pohon(button(&f, &t, "Simpan"));
+            let mut tree = pohon(button_in(&f, &t, "Simpan"));
             let s = scene(&mut tree);
 
             let kotak = kotak_gambar(&s);
@@ -157,7 +169,7 @@ fn setiap_varian_memakai_perannya_sendiri_di_kedua_preset() {
     for preset in Preset::ALL {
         let t = Theme::new(preset, Appearance::Dark);
         for varian in ButtonVariant::ALL {
-            let gaya = button_variant(&f, &t, varian.name(), varian).style();
+            let gaya = button_variant_in(&f, &t, varian.name(), varian).style();
             match varian {
                 ButtonVariant::Primary => {
                     assert_eq!(gaya.rest, t.color.accent);
@@ -187,7 +199,12 @@ fn setiap_varian_memakai_perannya_sendiri_di_kedua_preset() {
 fn varian_link_dibacakan_sebagai_tautan() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let tree = pohon(button_variant(&f, &t, "Selengkapnya", ButtonVariant::Link));
+    let tree = pohon(button_variant_in(
+        &f,
+        &t,
+        "Selengkapnya",
+        ButtonVariant::Link,
+    ));
     let a11y = tree.access_tree(None);
     let e = a11y
         .find_label("Selengkapnya")
@@ -202,7 +219,7 @@ fn varian_link_dibacakan_sebagai_tautan() {
 fn ghost_diam_tidak_menghasilkan_perintah_gambar_sama_sekali() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button_variant(&f, &t, "Ghost", ButtonVariant::Ghost));
+    let mut tree = pohon(button_variant_in(&f, &t, "Ghost", ButtonVariant::Ghost));
     assert!(
         kotak_gambar(&scene(&mut tree)).is_empty(),
         "latar transparan tanpa border tidak boleh membebani scene"
@@ -217,7 +234,7 @@ fn ghost_diam_tidak_menghasilkan_perintah_gambar_sama_sekali() {
 fn labelnya_dibacakan_sekali_sebagai_tombol() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let tree = pohon(button(&f, &t, "Simpan"));
+    let tree = pohon(button_in(&f, &t, "Simpan"));
     let a11y = tree.access_tree(None);
 
     let e = a11y
@@ -245,7 +262,7 @@ fn labelnya_dibacakan_sekali_sebagai_tombol() {
 fn tombol_mati_tetap_dibacakan_tapi_tanpa_aksi() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let tree = pohon(button(&f, &t, "Kirim").disabled(true));
+    let tree = pohon(button_in(&f, &t, "Kirim").disabled(true));
     let a11y = tree.access_tree(None);
     let e = a11y.find_label("Kirim").unwrap();
     assert!(e.node.disabled, "screen reader harus tahu ia dimmed");
@@ -263,7 +280,7 @@ fn klik_memanggil_on_press_lewat_lapisan_input() {
     let t = tema();
     let n = Rc::new(Cell::new(0u32));
     let catat = n.clone();
-    let mut tree = pohon(button(&f, &t, "Tambah").on_press(move || catat.set(catat.get() + 1)));
+    let mut tree = pohon(button_in(&f, &t, "Tambah").on_press(move || catat.set(catat.get() + 1)));
     let p = titik_tengah(&tree);
     let mut router = InputRouter::new();
     klik(&mut router, &mut tree, p);
@@ -277,7 +294,7 @@ fn tekan_lalu_tarik_keluar_membatalkan_klik() {
     let t = tema();
     let n = Rc::new(Cell::new(0u32));
     let catat = n.clone();
-    let mut tree = pohon(button(&f, &t, "Tambah").on_press(move || catat.set(catat.get() + 1)));
+    let mut tree = pohon(button_in(&f, &t, "Tambah").on_press(move || catat.set(catat.get() + 1)));
     let dalam = titik_tengah(&tree);
     let luar = Point::new(RUANG.width - 1.0, RUANG.height - 1.0);
 
@@ -313,7 +330,7 @@ fn keyboard_mengaktifkan_dan_menumbuhkan_cincin_fokus() {
     let t = tema();
     let n = Rc::new(Cell::new(0u32));
     let catat = n.clone();
-    let mut tree = pohon(button(&f, &t, "Simpan").on_press(move || catat.set(catat.get() + 1)));
+    let mut tree = pohon(button_in(&f, &t, "Simpan").on_press(move || catat.set(catat.get() + 1)));
     let id = id_tombol(&tree);
 
     let mut router = InputRouter::new();
@@ -353,7 +370,7 @@ fn tombol_mati_tidak_bisa_diklik_tapi_tetap_menyerap_penunjuk() {
     let n = Rc::new(Cell::new(0u32));
     let catat = n.clone();
     let mut tree = pohon(
-        button(&f, &t, "Kirim")
+        button_in(&f, &t, "Kirim")
             .disabled(true)
             .on_press(move || catat.set(catat.get() + 1)),
     );
@@ -371,7 +388,7 @@ fn tombol_yang_sedang_memuat_menolak_aktivasi() {
     let n = Rc::new(Cell::new(0u32));
     let catat = n.clone();
     let mut tree = pohon(
-        button(&f, &t, "Kirim")
+        button_in(&f, &t, "Kirim")
             .loading(true)
             .on_press(move || catat.set(catat.get() + 1)),
     );
@@ -396,7 +413,7 @@ fn tombol_yang_sedang_memuat_menolak_aktivasi() {
 fn hover_menggeser_latar_lewat_spring_bukan_lompat() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Simpan"));
+    let mut tree = pohon(button_in(&f, &t, "Simpan"));
     let diam = tombol(&tree).background();
     assert_eq!(diam, t.color.accent);
 
@@ -435,10 +452,10 @@ fn hover_menggeser_latar_lewat_spring_bukan_lompat() {
 }
 
 #[test]
-fn tekanan_mengempiskan_latar_dan_kembali_saat_dilepas() {
+fn tekanan_mengecilkan_seluruh_tombol_dan_kembali_saat_dilepas() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Simpan"));
+    let mut tree = pohon(button_in(&f, &t, "Simpan"));
     let id = id_tombol(&tree);
     let p = titik_tengah(&tree);
     let mut router = InputRouter::new();
@@ -456,13 +473,41 @@ fn tekanan_mengempiskan_latar_dan_kembali_saat_dilepas() {
     maju_sampai_diam(&mut tree, Motion::Full);
     assert_eq!(tombol(&tree).press_progress(), 1.0);
 
-    let ditekan = kotak_gambar(&scene(&mut tree))[0].clone();
+    let s = scene(&mut tree);
     let penuh = tree.size(id);
+    // The press is a REAL transform, so the label shrinks with the background
+    // instead of staying at full size inside a deflated box.
+    let t_tekan = transform_tekan(&s).expect("scale-on-press harus jadi transform");
     assert!(
-        ditekan.rect.size.width < penuh.width && ditekan.rect.size.height < penuh.height,
-        "scale-on-press harus terlihat: {ditekan:?} vs {penuh:?}"
+        t_tekan.a < 1.0 && t_tekan.d < 1.0,
+        "harus mengecil: {t_tekan:?}"
     );
-    // The hit area does **not** shrink with it: a finger must not lose the
+    assert!(t_tekan.a > 0.8, "dan hanya sedikit: {t_tekan:?}");
+    // A uniform scale with no rotation and no shear: a button must not appear to
+    // slide or tilt while it is held.
+    assert!((t_tekan.a - t_tekan.d).abs() < 1e-6, "{t_tekan:?}");
+    assert!(t_tekan.is_axis_aligned(), "{t_tekan:?}");
+    // The label is INSIDE the bracket — which is the whole point: the old
+    // "deflate the background rect" version left the text at full size.
+    let mulai = s
+        .commands()
+        .iter()
+        .position(|c| matches!(c, Command::PushTransform(_)))
+        .expect("ada push");
+    let selesai = s
+        .commands()
+        .iter()
+        .position(|c| matches!(c, Command::PopTransform))
+        .expect("ada pop");
+    assert!(
+        s.commands()[mulai..selesai]
+            .iter()
+            .any(|c| matches!(c, Command::GlyphRun(_))),
+        "label harus ikut mengecil"
+    );
+    // The drawn box itself stays full size — the matrix is what shrinks it.
+    assert_eq!(kotak_gambar(&s)[0].rect.size, penuh);
+    // The hit area does **not** shrink either: a finger must not lose the
     // button in the middle of a press.
     assert_eq!(tree.size(id), penuh);
 
@@ -475,15 +520,19 @@ fn tekanan_mengempiskan_latar_dan_kembali_saat_dilepas() {
     );
     maju_sampai_diam(&mut tree, Motion::Full);
     assert_eq!(tombol(&tree).press_progress(), 0.0);
-    let lepas = kotak_gambar(&scene(&mut tree))[0].clone();
-    assert_eq!(lepas.rect.size, penuh);
+    let lepas = scene(&mut tree);
+    assert_eq!(kotak_gambar(&lepas)[0].rect.size, penuh);
+    assert!(
+        transform_tekan(&lepas).is_none(),
+        "tombol yang diam tidak boleh menyisakan perintah transform"
+    );
 }
 
 #[test]
 fn retarget_di_tengah_gerakan_tidak_pernah_melompat() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Simpan"));
+    let mut tree = pohon(button_in(&f, &t, "Simpan"));
     let p = titik_tengah(&tree);
     let mut router = InputRouter::new();
 
@@ -522,11 +571,11 @@ fn mengganti_state_lewat_diff_juga_berjalan_lewat_spring() {
     let f = Fonts::bundled_only();
     let t = tema();
     let mut tree = RenderTree::new();
-    reconcile(&mut tree, button(&f, &t, "Kirim"));
+    reconcile(&mut tree, button_in(&f, &t, "Kirim"));
     tree.layout(BoxConstraints::loose(RUANG));
-    let gaya = button(&f, &t, "Kirim").style();
+    let gaya = button_in(&f, &t, "Kirim").style();
 
-    let stat = reconcile(&mut tree, button(&f, &t, "Kirim").disabled(true));
+    let stat = reconcile(&mut tree, button_in(&f, &t, "Kirim").disabled(true));
     assert_eq!(stat.created, 0, "node yang sama, hanya propsnya berganti");
     tree.layout(BoxConstraints::loose(RUANG));
     assert_eq!(tombol(&tree).background(), gaya.rest, "belum berpindah");
@@ -540,7 +589,7 @@ fn rebuild_tidak_menyapu_keadaan_yang_sedang_disentuh_pengguna() {
     let f = Fonts::bundled_only();
     let t = tema();
     let mut tree = RenderTree::new();
-    reconcile(&mut tree, button(&f, &t, "Tambah"));
+    reconcile(&mut tree, button_in(&f, &t, "Tambah"));
     tree.layout(BoxConstraints::loose(RUANG));
     let p = titik_tengah(&tree);
 
@@ -559,14 +608,14 @@ fn rebuild_tidak_menyapu_keadaan_yang_sedang_disentuh_pengguna() {
     assert!(tombol(&tree).is_pressed() && tombol(&tree).is_hovered());
 
     // A rebuild triggered by another signal — the user's finger is still down.
-    reconcile(&mut tree, button(&f, &t, "Tambah"));
+    reconcile(&mut tree, button_in(&f, &t, "Tambah"));
     assert!(
         tombol(&tree).is_pressed() && tombol(&tree).is_hovered(),
         "diff tidak boleh menghapus keadaan runtime"
     );
 
     // But disabling it really does have to clear them.
-    reconcile(&mut tree, button(&f, &t, "Tambah").disabled(true));
+    reconcile(&mut tree, button_in(&f, &t, "Tambah").disabled(true));
     assert!(!tombol(&tree).is_pressed() && !tombol(&tree).is_hovered());
 }
 
@@ -578,8 +627,8 @@ fn rebuild_tidak_menyapu_keadaan_yang_sedang_disentuh_pengguna() {
 fn memuat_menyembunyikan_label_tanpa_mengubah_lebar() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let biasa = pohon(button(&f, &t, "Kirim sekarang"));
-    let sibuk = pohon(button(&f, &t, "Kirim sekarang").loading(true));
+    let biasa = pohon(button_in(&f, &t, "Kirim sekarang"));
+    let sibuk = pohon(button_in(&f, &t, "Kirim sekarang").loading(true));
     assert_eq!(
         biasa.size(id_tombol(&biasa)),
         sibuk.size(id_tombol(&sibuk)),
@@ -605,7 +654,7 @@ fn memuat_menyembunyikan_label_tanpa_mengubah_lebar() {
 fn denyut_titik_menahan_frame_tetap_datang_dan_diam_saat_reduced_motion() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Kirim").loading(true));
+    let mut tree = pohon(button_in(&f, &t, "Kirim").loading(true));
 
     // Indeterminate indicator: there is always a next frame…
     for _ in 0..50 {
@@ -628,7 +677,7 @@ fn denyut_titik_menahan_frame_tetap_datang_dan_diam_saat_reduced_motion() {
 
     // …unless the user asked for reduced motion: the dots are still there,
     // simply motionless, and the GPU may sleep.
-    let mut diam = pohon(button(&f, &t, "Kirim").loading(true));
+    let mut diam = pohon(button_in(&f, &t, "Kirim").loading(true));
     assert!(!maju(&mut diam, Motion::Reduced));
     let sebelum = kotak_gambar(&scene(&mut diam))[1].background.a;
     for _ in 0..30 {
@@ -657,7 +706,7 @@ fn opasitas_titik_berdenyut_tapi_tidak_pernah_hilang() {
 fn reduced_motion_mematikan_hiasan_tapi_menjaga_yang_menjelaskan() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Simpan"));
+    let mut tree = pohon(button_in(&f, &t, "Simpan"));
     let p = titik_tengah(&tree);
     let mut router = InputRouter::new();
     router.dispatch(
@@ -677,8 +726,12 @@ fn reduced_motion_mematikan_hiasan_tapi_menjaga_yang_menjelaskan() {
     assert_eq!(tombol(&tree).press_progress(), 0.0);
     // State color explains something: it still reaches its destination.
     assert_eq!(tombol(&tree).background(), t.color.accent_pressed);
-    let kotak = kotak_gambar(&scene(&mut tree));
-    assert_eq!(kotak[0].rect.size, tree.size(id_tombol(&tree)));
+    let s = scene(&mut tree);
+    assert_eq!(kotak_gambar(&s)[0].rect.size, tree.size(id_tombol(&tree)));
+    assert!(
+        transform_tekan(&s).is_none(),
+        "reduced motion: tidak ada pengecilan sama sekali"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -689,7 +742,7 @@ fn reduced_motion_mematikan_hiasan_tapi_menjaga_yang_menjelaskan() {
 fn settle_menyelesaikan_semuanya_seketika() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Simpan"));
+    let mut tree = pohon(button_in(&f, &t, "Simpan"));
     let p = titik_tengah(&tree);
     let mut router = InputRouter::new();
     router.dispatch(
@@ -706,7 +759,7 @@ fn settle_menyelesaikan_semuanya_seketika() {
 fn pohon_tanpa_animasi_tidak_meminta_frame_sama_sekali() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let mut tree = pohon(button(&f, &t, "Simpan"));
+    let mut tree = pohon(button_in(&f, &t, "Simpan"));
     let tick = Tick::manual(FRAME, Motion::Full);
     assert_eq!(crate::motion::advance(&mut tree, &tick), Dirty::NONE);
     assert!(!tick.is_active(), "idle harus benar-benar nol kerja");

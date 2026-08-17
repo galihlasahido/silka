@@ -44,8 +44,8 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::menu::{cmd, cmd_shift, item, menu, separator, MenuEntry, MenuState};
-use silka_widgets::{overlay_layer, text, Fonts};
+use silka_widgets::menu::{cmd, cmd_shift, item, menu_in, separator, MenuEntry, MenuState};
+use silka_widgets::{overlay_layer, text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Menu & menu konteks";
@@ -145,18 +145,18 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let konteks = use_signal(MenuState::new);
     let terakhir = use_signal(|| String::from("—"));
 
-    let m_tampilan = menu(fonts, &t, isi_tampilan())
+    let m_tampilan = menu_in(fonts, &t, isi_tampilan())
         .label(LABEL_TAMPILAN)
         .key("menu-tampilan")
         .bind(tampilan)
         .on_activate(move |id| terakhir.set(id.to_string()));
-    let m_filter = menu(fonts, &t, isi_filter())
+    let m_filter = menu_in(fonts, &t, isi_filter())
         .label(LABEL_FILTER)
         .key("menu-filter")
         .chip(true)
         .bind(filter)
         .on_activate(move |id| terakhir.set(id.to_string()));
-    let m_konteks = menu(fonts, &t, isi_konteks())
+    let m_konteks = menu_in(fonts, &t, isi_konteks())
         .label(LABEL_KANVAS)
         .key("menu-konteks")
         .bind(konteks)
@@ -195,14 +195,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 fn kanvas(fonts: &Fonts, t: &Theme) -> View {
     let isi = column([
         View::from(
-            text(fonts, "Klik kanan di sini")
+            text_in(fonts, "Klik kanan di sini")
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.label)
                 .single_line(),
         ),
         View::from(
-            text(fonts, "Shift+F10 membukanya lewat papan ketik.")
+            text_in(fonts, "Shift+F10 membukanya lewat papan ketik.")
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line(),
@@ -225,7 +225,7 @@ fn kanvas(fonts: &Fonts, t: &Theme) -> View {
 /// The content behind the overlay layer: title, the two triggers, the canvas,
 /// and the "last chosen" line that proves a click really ran something.
 fn konten(fonts: &Fonts, t: &Theme, pemicu: View, kanvas: View, terakhir: String) -> View {
-    let judul = text(fonts, JUDUL)
+    let judul = text_in(fonts, JUDUL)
         .size(t.typography.body_size * 2.0)
         .weight(FontWeight::SEMIBOLD)
         // Negative tracking at large sizes — an SF habit (§3.6).
@@ -233,7 +233,7 @@ fn konten(fonts: &Fonts, t: &Theme, pemicu: View, kanvas: View, terakhir: String
         .color(t.color.label)
         .single_line();
 
-    let keterangan = text(
+    let keterangan = text_in(
         fonts,
         "Menu di dalam aplikasi: digambar sendiri, bertema, beranimasi spring. \
          Menu global macOS dan menu tray bukan ini — itu milik silka-platform. \
@@ -251,7 +251,7 @@ fn konten(fonts: &Fonts, t: &Theme, pemicu: View, kanvas: View, terakhir: String
         pemicu,
         kanvas,
         View::from(
-            text(fonts, format!("Terakhir dipilih: {terakhir}"))
+            text_in(fonts, format!("Terakhir dipilih: {terakhir}"))
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.accent)

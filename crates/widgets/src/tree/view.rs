@@ -43,7 +43,7 @@ use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::list::ListMetrics;
-use crate::scroll_view::{scroll_view, Scrollbar, ScrollbarStyle};
+use crate::scroll_view::{scroll_view_in, Scrollbar, ScrollbarStyle};
 use crate::table::{Selection, SelectionMode};
 
 use super::geometry::{TreeGap, TreeMetrics, TreeWindow};
@@ -293,6 +293,17 @@ pub struct TreeBuilder {
     gap_spring: Spring,
 }
 
+/// A virtualized outline view — `tree` (`KOMPONEN.md` Tier 5).
+///
+/// Use [`tree_in`] outside a build pass.
+pub fn tree<S, F>(state: TreeState, children: S, item: F) -> TreeBuilder
+where
+    S: TreeSource + 'static,
+    F: Fn(&TreeRow) -> View + 'static,
+{
+    tree_in(&crate::ambient::active_theme(), state, children, item)
+}
+
 /// A virtualized hierarchical list — the `tree` component (`KOMPONEN.md`
 /// Tier 5, the counterpart of `NSOutlineView`).
 ///
@@ -315,7 +326,7 @@ pub struct TreeBuilder {
 ///     Some(_) => Vec::new(),
 /// };
 ///
-/// tree(&t, state, children, move |row| View::from(text(&fonts, row.label.to_string())))
+/// tree_in(&t, state, children, move |row| View::from(text_in(&fonts, row.label.to_string())))
 ///     .row_extent(28.0)
 ///     .guides(t.space(0.25))
 ///     .label("Files")
@@ -326,7 +337,7 @@ pub struct TreeBuilder {
 /// `theme` is the source of every value it uses (§2.6, §2.7); `state` is what
 /// makes the scroll position, the open nodes, and the selection survive
 /// rebuilds ([`super::use_tree_state`]).
-pub fn tree<S, F>(theme: &Theme, state: TreeState, children: S, item: F) -> TreeBuilder
+pub fn tree_in<S, F>(theme: &Theme, state: TreeState, children: S, item: F) -> TreeBuilder
 where
     S: TreeSource + 'static,
     F: Fn(&TreeRow) -> View + 'static,
@@ -705,7 +716,7 @@ impl TreeBuilder {
         })
         .children(children);
 
-        let mut wadah = scroll_view(&self.theme, isi)
+        let mut wadah = scroll_view_in(&self.theme, isi)
             .background(self.container.background)
             .corners(self.container.corners)
             .border(self.container.border_width, self.container.border_color)

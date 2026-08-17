@@ -44,7 +44,11 @@ use crate::color::Color;
 use crate::corner::Corners;
 use crate::geometry::Rect;
 use crate::glyph::GlyphRun;
+use crate::image::ImageQuad;
+use crate::layer::Layer;
 use crate::shadow::{Shadow, ShadowPair};
+use crate::stroke::Stroke;
+use crate::transform::Transform;
 
 /// The set of draw commands for one frame, plus the background color.
 ///
@@ -160,6 +164,118 @@ impl Scene {
         self.push(quad)
     }
 
+    /// Draws `f`'s commands under an affine transform.
+    ///
+    /// The bracket is balanced by construction, and a wrapper that turns out to
+    /// contain nothing is rolled back — an empty `PushTransform`/`PopTransform`
+    /// pair is not a command, it is garbage the backend would have to walk. An
+    /// identity transform is not emitted at all, so an animation at rest costs
+    /// nothing.
+    ///
+    /// ```
+    /// use silka_paint::{Color, Command, Quad, Rect, Scene, Transform};
+    ///
+    /// let mut scene = Scene::new(Color::BLACK);
+    /// let box_rect = Rect::new(0.0, 0.0, 120.0, 44.0);
+    ///
+    /// // Scale-on-press: the WHOLE subtree shrinks, label included.
+    /// scene.with_transform(Transform::scale_around(box_rect.center(), 0.96, 0.96), |s| {
+    ///     s.push(Quad::new(box_rect).background(Color::hex(0x0A84FF)));
+    /// });
+    /// assert_eq!(scene.len(), 3);
+    /// assert!(matches!(scene.commands()[0], Command::PushTransform(_)));
+    ///
+    /// // At rest, the transform disappears entirely.
+    /// scene.reset(Color::BLACK);
+    /// scene.with_transform(Transform::IDENTITY, |s| {
+    ///     s.push(Quad::new(box_rect).background(Color::WHITE));
+    /// });
+    /// assert_eq!(scene.len(), 1);
+    ///
+    /// // And an empty subtree leaves nothing behind.
+    /// scene.reset(Color::BLACK);
+    /// scene.with_transform(Transform::uniform_scale(0.5), |_| {});
+    /// assert!(scene.is_empty());
+    /// ```
+    pub fn with_transform(
+        &mut self,
+        transform: Transform,
+        f: impl FnOnce(&mut Scene),
+    ) -> &mut Self {
+        if transform.is_identity() {
+            // An animation at rest: the subtree is drawn as-is, with no command
+            // for the backend to walk.
+            f(self);
+            return self;
+        }
+        if !transform.is_invertible() {
+            // Collapsed to zero area, or fed a NaN by a spring that overshot into
+            // nonsense: the subtree cannot produce a pixel, so it is dropped
+            // rather than turned into degenerate geometry (§9.7).
+            return self;
+        }
+        let before = self.commands.len();
+        self.commands.push(Command::PushTransform(transform));
+        f(self);
+        if self.commands.len() == before + 1 {
+            self.commands.truncate(before);
+        } else {
+            self.commands.push(Command::PopTransform);
+        }
+        self
+    }
+
+    /// Draws `f`'s commands into a layer, then composites it.
+    ///
+    /// Rolled back when empty, and skipped entirely when the layer is a
+    /// pass-through ([`Layer::is_pass_through`]) — so wrapping a subtree
+    /// defensively costs nothing, and an invisible layer costs nothing at all.
+    ///
+    /// ```
+    /// use silka_paint::{Color, Command, Layer, Quad, Rect, Scene};
+    ///
+    /// let bounds = Rect::new(0.0, 0.0, 260.0, 720.0);
+    /// let mut scene = Scene::new(Color::BLACK);
+    ///
+    /// scene.with_layer(Layer::new(bounds).blur(24.0), |s| {
+    ///     s.push(Quad::new(bounds).background(Color::WHITE.with_alpha(0.6)));
+    /// });
+    /// assert!(matches!(scene.commands()[0], Command::PushLayer(_)));
+    /// assert!(matches!(scene.commands()[2], Command::PopLayer));
+    ///
+    /// // A group with nothing to do is drawn inline: no layer, no texture.
+    /// scene.reset(Color::BLACK);
+    /// scene.with_layer(Layer::new(bounds), |s| {
+    ///     s.push(Quad::new(bounds).background(Color::WHITE));
+    /// });
+    /// assert_eq!(scene.len(), 1);
+    ///
+    /// // A layer faded to nothing skips its contents completely.
+    /// scene.reset(Color::BLACK);
+    /// scene.with_layer(Layer::new(bounds).opacity(0.0), |s| {
+    ///     s.push(Quad::new(bounds).background(Color::WHITE));
+    /// });
+    /// assert!(scene.is_empty());
+    /// ```
+    pub fn with_layer(&mut self, layer: Layer, f: impl FnOnce(&mut Scene)) -> &mut Self {
+        if !layer.is_visible() {
+            return self;
+        }
+        if layer.is_pass_through() {
+            f(self);
+            return self;
+        }
+        let before = self.commands.len();
+        self.commands.push(Command::PushLayer(layer));
+        f(self);
+        if self.commands.len() == before + 1 {
+            self.commands.truncate(before);
+        } else {
+            self.commands.push(Command::PopLayer);
+        }
+        self
+    }
+
     /// True when there are no commands yet (the frame is just a clear).
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
@@ -225,6 +341,41 @@ pub enum Command {
     PushClip(Rect),
     /// Restores the clip to what it was before the last [`Command::PushClip`].
     PopClip,
+    /// A stroked polyline — a real line, with width, caps, and joins.
+    ///
+    /// The command that replaced two workarounds at once: chart series
+    /// rasterised into one box per pixel column, and checkmarks stamped out of a
+    /// dozen round quads. See the [`crate::stroke`] module.
+    Stroke(Stroke),
+    /// A bitmap from an [`ImageSource`](crate::ImageSource) — photos, icons,
+    /// avatars.
+    ///
+    /// Like [`Command::GlyphRun`], it carries only a handle plus geometry: no
+    /// decoding, no file paths, no formats (see the [`crate::image`] module).
+    Image(ImageQuad),
+    /// Applies an affine transform to the following commands, until
+    /// [`Command::PopTransform`].
+    ///
+    /// The matrix is **absolute** (window space in, window space out) and has
+    /// already been composed with any enclosing transform, so a backend needs no
+    /// matrix stack beyond remembering what to restore. Fragment-level geometry
+    /// (corner radii, border widths, shadow sigmas, stroke widths) stays in
+    /// untransformed local units — the transform maps positions only, which is
+    /// what makes rotation free of special cases.
+    PushTransform(Transform),
+    /// Restores the transform in force before the last
+    /// [`Command::PushTransform`].
+    PopTransform,
+    /// Renders the following commands into an offscreen texture, then composites
+    /// it — group opacity, blur, and true repaint boundaries
+    /// (see the [`crate::layer`] module).
+    ///
+    /// A layer that answers `true` from [`Layer::is_pass_through`] costs nothing:
+    /// the backend draws its contents inline.
+    PushLayer(Layer),
+    /// Ends the layer opened by the last [`Command::PushLayer`] and composites
+    /// it into its parent.
+    PopLayer,
 }
 
 impl From<Quad> for Command {
@@ -242,6 +393,18 @@ impl From<ShadowQuad> for Command {
 impl From<GlyphRun> for Command {
     fn from(r: GlyphRun) -> Self {
         Command::GlyphRun(r)
+    }
+}
+
+impl From<Stroke> for Command {
+    fn from(s: Stroke) -> Self {
+        Command::Stroke(s)
+    }
+}
+
+impl From<ImageQuad> for Command {
+    fn from(i: ImageQuad) -> Self {
+        Command::Image(i)
     }
 }
 
@@ -387,6 +550,7 @@ impl ShadowQuad {
 mod tests {
     use super::*;
     use crate::corner::CornerStyle;
+    use crate::geometry::Point;
 
     #[test]
     fn scene_baru_hanya_berisi_clear() {
@@ -527,6 +691,142 @@ mod tests {
         s.push_all(&salinan);
         assert_eq!(s.len(), 3);
         assert!(matches!(s.commands()[1], Command::PushClip(_)));
+    }
+
+    // ---- The four commands that unblocked the component catalogue ---------
+
+    #[test]
+    fn stroke_masuk_scene_sebagai_perintah_sendiri() {
+        use crate::stroke::{LineCap, Stroke};
+
+        let mut s = Scene::new(Color::BLACK);
+        let mut garis = Stroke::new(Color::hex(0x0A84FF), 2.0).cap(LineCap::Round);
+        garis.extend([
+            Point::new(0.0, 10.0),
+            Point::new(20.0, 4.0),
+            Point::new(40.0, 16.0),
+        ]);
+        s.push(garis);
+        match &s.commands()[0] {
+            Command::Stroke(g) => {
+                assert_eq!(g.segment_count(), 2, "satu perintah, bukan dua puluh kotak");
+                assert_eq!(g.cap, LineCap::Round);
+            }
+            lain => panic!("bukan stroke: {lain:?}"),
+        }
+    }
+
+    #[test]
+    fn image_masuk_scene_sebagai_perintah_sendiri() {
+        use crate::image::{ImageId, ImageQuad};
+
+        let mut s = Scene::new(Color::BLACK);
+        s.push(ImageQuad::new(
+            Rect::new(0.0, 0.0, 32.0, 32.0),
+            ImageId::from_raw(4),
+        ));
+        match &s.commands()[0] {
+            Command::Image(i) => assert_eq!(i.image, ImageId::from_raw(4)),
+            lain => panic!("bukan image: {lain:?}"),
+        }
+    }
+
+    #[test]
+    fn with_transform_membungkus_dan_menyeimbangkan() {
+        use crate::transform::Transform;
+
+        let mut s = Scene::new(Color::BLACK);
+        let kotak = Rect::new(0.0, 0.0, 120.0, 44.0);
+        s.with_transform(Transform::scale_around(kotak.center(), 0.96, 0.96), |s| {
+            s.push(Quad::new(kotak).background(Color::WHITE));
+            s.push(Quad::new(Rect::new(8.0, 8.0, 40.0, 12.0)).background(Color::BLACK));
+        });
+        assert_eq!(s.len(), 4);
+        assert!(matches!(s.commands()[0], Command::PushTransform(_)));
+        assert!(matches!(s.commands()[3], Command::PopTransform));
+    }
+
+    #[test]
+    fn transform_identitas_tidak_menghasilkan_perintah() {
+        use crate::transform::Transform;
+
+        let mut s = Scene::new(Color::BLACK);
+        s.with_transform(Transform::IDENTITY, |s| {
+            s.push(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0)).background(Color::WHITE));
+        });
+        assert_eq!(s.len(), 1, "animasi diam harus gratis");
+        assert!(matches!(s.commands()[0], Command::Quad(_)));
+    }
+
+    #[test]
+    fn transform_runtuh_membuang_isinya() {
+        use crate::transform::Transform;
+
+        let mut s = Scene::new(Color::BLACK);
+        s.with_transform(Transform::scale(0.0, 1.0), |s| {
+            s.push(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0)).background(Color::WHITE));
+        });
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn pembungkus_transform_kosong_dibatalkan() {
+        use crate::transform::Transform;
+
+        let mut s = Scene::new(Color::BLACK);
+        s.with_transform(Transform::uniform_scale(0.5), |_| {});
+        assert!(s.is_empty(), "pembungkus tanpa isi bukan perintah");
+    }
+
+    #[test]
+    fn with_layer_membungkus_hanya_kalau_ada_gunanya() {
+        use crate::layer::Layer;
+
+        let kotak = Rect::new(0.0, 0.0, 260.0, 720.0);
+        let isi = |s: &mut Scene| {
+            s.push(Quad::new(kotak).background(Color::WHITE));
+        };
+
+        // Blur: a real layer.
+        let mut s = Scene::new(Color::BLACK);
+        s.with_layer(Layer::new(kotak).blur(24.0), isi);
+        assert_eq!(s.len(), 3);
+        assert!(matches!(s.commands()[0], Command::PushLayer(_)));
+        assert!(matches!(s.commands()[2], Command::PopLayer));
+
+        // Pass-through: drawn inline, no texture, no extra pass.
+        let mut s = Scene::new(Color::BLACK);
+        s.with_layer(Layer::new(kotak), isi);
+        assert_eq!(s.len(), 1);
+
+        // Faded to nothing: not drawn at all.
+        let mut s = Scene::new(Color::BLACK);
+        s.with_layer(Layer::new(kotak).opacity(0.0), isi);
+        assert!(s.is_empty());
+
+        // Empty contents: the wrapper is rolled back.
+        let mut s = Scene::new(Color::BLACK);
+        s.with_layer(Layer::new(kotak).blur(10.0), |_| {});
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn layer_dan_transform_boleh_bersarang() {
+        use crate::layer::Layer;
+        use crate::transform::Transform;
+
+        let kotak = Rect::new(0.0, 0.0, 100.0, 100.0);
+        let mut s = Scene::new(Color::BLACK);
+        s.with_layer(Layer::new(kotak).opacity(0.5), |s| {
+            s.with_transform(Transform::rotate_around(kotak.center(), 0.2), |s| {
+                s.push(Quad::new(kotak).background(Color::WHITE));
+            });
+        });
+        // PushLayer, PushTransform, Quad, PopTransform, PopLayer.
+        assert_eq!(s.len(), 5);
+        assert!(matches!(s.commands()[1], Command::PushTransform(_)));
+        assert!(matches!(s.commands()[3], Command::PopTransform));
+        assert!(matches!(s.commands()[4], Command::PopLayer));
     }
 
     #[test]

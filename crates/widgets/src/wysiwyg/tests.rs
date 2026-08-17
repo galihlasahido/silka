@@ -71,7 +71,7 @@ impl Uji {
     fn dengan(dok: Document) -> Self {
         let f = fonts();
         let t = tema();
-        Self::baru(wysiwyg(&f, &t, dok).label("Naskah").rows(8))
+        Self::baru(wysiwyg_in(&f, &t, dok).label("Naskah").rows(8))
     }
 
     fn badan(&self) -> &WysiwygBody {
@@ -309,7 +309,7 @@ fn keadaan_toolbar_memantulkan_gaya_di_posisi_caret() {
     let f = fonts();
     let t = tema();
     let mut u = Uji::baru(
-        wysiwyg(&f, &t, dok)
+        wysiwyg_in(&f, &t, dok)
             .label("Naskah")
             .rows(6)
             .on_state(move |s| *salinan.borrow_mut() = s.clone()),
@@ -335,7 +335,7 @@ fn perintah_k_meminta_dialog_tautan_bukan_membuatnya_sendiri() {
     let f = fonts();
     let t = tema();
     let mut u = Uji::baru(
-        wysiwyg(&f, &t, Document::from_plain("halo"))
+        wysiwyg_in(&f, &t, Document::from_plain("halo"))
             .label("Naskah")
             .rows(6)
             .on_link(move || *hitung.borrow_mut() += 1),
@@ -490,7 +490,7 @@ fn salin_menghasilkan_dua_rasa_dan_yang_kaya_bisa_ditempel_lagi() {
         ),
     ]);
     let mut u = Uji::baru(
-        wysiwyg(&f, &t, dok)
+        wysiwyg_in(&f, &t, dok)
             .label("Naskah")
             .rows(8)
             .on_copy(move |c| *salinan.borrow_mut() = c.clone()),
@@ -567,7 +567,7 @@ fn editor_read_only_bisa_dibaca_tapi_tidak_bisa_diubah() {
     let f = fonts();
     let t = tema();
     let mut u = Uji::baru(
-        wysiwyg(&f, &t, naskah())
+        wysiwyg_in(&f, &t, naskah())
             .label("Naskah")
             .rows(6)
             .read_only(true),
@@ -602,7 +602,7 @@ fn benar_di_kedua_preset_dan_kedua_mode() {
             assert_eq!(gaya.text, t.color.label);
             assert_eq!(gaya.link, t.color.accent);
             assert_eq!(gaya.code_corners, t.corners(t.radius.sm));
-            let mut u = Uji::baru(wysiwyg(&f, &t, naskah()).label("Naskah").rows(6));
+            let mut u = Uji::baru(wysiwyg_in(&f, &t, naskah()).label("Naskah").rows(6));
             u.ketik("x");
             assert_eq!(u.dokumen().block(0).text(), "xJudul");
         }
@@ -613,7 +613,7 @@ fn benar_di_kedua_preset_dan_kedua_mode() {
 fn editor_tumbuh_bersama_isinya_sampai_batas() {
     let f = fonts();
     let t = tema();
-    let e = wysiwyg(&f, &t, Document::new()).auto_grow(2, 6);
+    let e = wysiwyg_in(&f, &t, Document::new()).auto_grow(2, 6);
     let (min, max) = e.height_range();
     assert!(min < max, "auto_grow punya jangkauan: {min}..{max}");
     assert!(min >= crate::button::MIN_HIT_TARGET, "tetap bisa disentuh");

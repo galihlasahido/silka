@@ -325,7 +325,7 @@ impl TreeState {
 /// rt.build_root(|| {
 ///     let state = use_tree_state();
 ///     let children = |_parent: Option<TreeKey>| vec![TreeNode::leaf(1, "lib.rs")];
-///     tree(&t, state, children, |_row| View::from(fixed(200.0, 28.0)));
+///     tree_in(&t, state, children, |_row| View::from(fixed(200.0, 28.0)));
 /// });
 /// ```
 pub fn use_tree_state() -> TreeState {

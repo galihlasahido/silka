@@ -32,7 +32,7 @@ use silka_paint::{Color, Corners, Insets, ShadowPair};
 use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
-use crate::scroll_view::{scroll_view, Scrollbar, ScrollbarStyle};
+use crate::scroll_view::{scroll_view_in, Scrollbar, ScrollbarStyle};
 
 use super::geometry::ListMetrics;
 use super::node::{ListBody, ListRowBox, ListStyle, RowAction};
@@ -221,6 +221,26 @@ pub struct ListBuilder {
     spring: Spring,
 }
 
+/// A virtualized list — `list` (`KOMPONEN.md` Tier 1).
+///
+/// `state` is what makes the scroll position and the selection survive a
+/// rebuild ([`super::use_list_state`]); everything else it needs — the theme —
+/// is ambient (§2.5):
+///
+/// ```ignore
+/// let state = use_list_state();
+/// list(state, rows.len(), move |i| View::from(text(rows[i].clone())))
+///     .selection(SelectionMode::Single)
+/// ```
+///
+/// Use [`list_in`] outside a build pass.
+pub fn list<F>(state: ListState, count: usize, item: F) -> ListBuilder
+where
+    F: Fn(usize) -> View + 'static,
+{
+    list_in(&crate::ambient::active_theme(), state, count, item)
+}
+
 /// A virtualized list — the `list` component (`KOMPONEN.md` Tier 1).
 ///
 /// `item` is called **only** for rows that are actually visible, so `count`
@@ -236,7 +256,7 @@ pub struct ListBuilder {
 /// let state = ListState::new(&rt);
 ///
 /// // A hundred thousand rows; only the visible dozen ever call `item`.
-/// list(&t, state, 100_000, |_i| View::from(fixed(240.0, 44.0)))
+/// list_in(&t, state, 100_000, |_i| View::from(fixed(240.0, 44.0)))
 ///     .item_extent(44.0)
 ///     .separators(t.space(0.25))
 ///     .label("Transactions")
@@ -246,7 +266,7 @@ pub struct ListBuilder {
 /// `theme` is the source of every value it uses (§2.6, §2.7); `state` is what
 /// makes the scroll position and selection survive across rebuilds
 /// ([`super::use_list_state`]).
-pub fn list<F>(theme: &Theme, state: ListState, count: usize, item: F) -> ListBuilder
+pub fn list_in<F>(theme: &Theme, state: ListState, count: usize, item: F) -> ListBuilder
 where
     F: Fn(usize) -> View + 'static,
 {
@@ -525,7 +545,7 @@ impl ListBuilder {
         })
         .children(children);
 
-        let mut wadah = scroll_view(&self.theme, isi)
+        let mut wadah = scroll_view_in(&self.theme, isi)
             .background(self.container.background)
             .corners(self.container.corners)
             .border(self.container.border_width, self.container.border_color)

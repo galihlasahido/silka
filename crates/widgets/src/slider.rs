@@ -5,19 +5,19 @@
 //! ```
 //! # use silka_core::signals::Runtime;
 //! # use silka_theme::{Appearance, Theme};
-//! use silka_widgets::{range_slider, slider};
+//! use silka_widgets::{range_slider_in, slider_in};
 //!
 //! # let rt = Runtime::new();
 //! # let volume = rt.signal(40.0f32);
 //! # let t = Theme::cupertino(Appearance::Dark);
-//! slider(&t, volume.get())
+//! slider_in(&t, volume.get())
 //!     .range(0.0..=100.0)
 //!     .step(5.0)
 //!     .label("Volume")
 //!     .on_change(move |v| volume.set(v));
 //!
 //! // Two thumbs: price ranges, working hours, table filters.
-//! range_slider(&t, 20.0, 80.0).range(0.0..=100.0).label("Harga");
+//! range_slider_in(&t, 20.0, 80.0).range(0.0..=100.0).label("Harga");
 //! ```
 //!
 //! Unlike [`mod@crate::button`], a slider is **not** a composition over
@@ -449,14 +449,14 @@ fn teks_angka(v: f32) -> String {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{range_slider, Slider};
+/// use silka_widgets::{range_slider_in, Slider};
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(
 ///     &mut tree,
-///     range_slider(&theme, 20.0, 80.0)
+///     range_slider_in(&theme, 20.0, 80.0)
 ///         .range(0.0..=100.0)
 ///         .step(5.0)
 ///         .label("Price"),
@@ -1135,10 +1135,10 @@ impl RenderNode for Slider {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::slider;
+/// use silka_widgets::slider_in;
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
-/// let build = |v: f32| slider(&theme, v).range(0.0..=100.0).label("Volume");
+/// let build = |v: f32| slider_in(&theme, v).range(0.0..=100.0).label("Volume");
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(&mut tree, build(20.0));
@@ -1262,6 +1262,27 @@ fn props(theme: &Theme, values: [f32; MAX_THUMBS], thumbs: usize) -> SliderProps
     }
 }
 
+/// A single-thumb value slider — `slider` (`KOMPONEN.md` Tier 2).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_widgets::slider;
+///
+/// let rt = Runtime::new();
+/// let volume = rt.signal(35.0f32);
+///
+/// let control = slider(volume.get())
+///     .range(0.0..=100.0)
+///     .label("Volume")
+///     .on_change(move |v| volume.set(v));
+/// # let _ = control;
+/// ```
+///
+/// Use [`slider_in`] outside a build pass.
+pub fn slider(value: f32) -> SliderBuilder {
+    slider_in(&crate::ambient::active_theme(), value)
+}
+
 /// A one-thumb slider — a Dart-style constructor (§2.5).
 ///
 /// Its default range is `0.0..=1.0` like SwiftUI; change it with
@@ -1270,24 +1291,38 @@ fn props(theme: &Theme, values: [f32; MAX_THUMBS], thumbs: usize) -> SliderProps
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::slider;
+/// use silka_widgets::slider_in;
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 /// let rt = Runtime::new();
 /// let volume = rt.signal(35.0f32);
 ///
-/// let control = slider(&theme, volume.get())
+/// let control = slider_in(&theme, volume.get())
 ///     .range(0.0..=100.0)
 ///     .step(5.0)
 ///     .label("Volume")
 ///     .on_change(move |v| volume.set(v));
 /// # let _ = control;
 /// ```
-pub fn slider(theme: &Theme, value: f32) -> SliderBuilder {
+pub fn slider_in(theme: &Theme, value: f32) -> SliderBuilder {
     SliderBuilder {
         key: None,
         props: props(theme, [value, value], 1),
     }
+}
+
+/// A two-thumb range slider — a price filter, a date window.
+///
+/// ```
+/// use silka_widgets::range_slider;
+///
+/// let filter = range_slider(20.0, 80.0).range(0.0..=100.0).label("Price");
+/// # let _ = filter;
+/// ```
+///
+/// Use [`range_slider_in`] outside a build pass.
+pub fn range_slider(start: f32, end: f32) -> SliderBuilder {
+    range_slider_in(&crate::ambient::active_theme(), start, end)
 }
 
 /// A two-thumb slider (the range variant, `KOMPONEN.md`).
@@ -1295,7 +1330,7 @@ pub fn slider(theme: &Theme, value: f32) -> SliderBuilder {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::range_slider;
+/// use silka_widgets::range_slider_in;
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 /// let rt = Runtime::new();
@@ -1303,14 +1338,14 @@ pub fn slider(theme: &Theme, value: f32) -> SliderBuilder {
 ///
 /// // Two thumbs, one control — and a callback that reports both, because
 /// // "the lower one moved" is never the whole story.
-/// let filter = range_slider(&theme, price.get().0, price.get().1)
+/// let filter = range_slider_in(&theme, price.get().0, price.get().1)
 ///     .range(0.0..=100.0)
 ///     .step(5.0)
 ///     .label("Price")
 ///     .on_range_change(move |lo, hi| price.set((lo, hi)));
 /// # let _ = filter;
 /// ```
-pub fn range_slider(theme: &Theme, start: f32, end: f32) -> SliderBuilder {
+pub fn range_slider_in(theme: &Theme, start: f32, end: f32) -> SliderBuilder {
     SliderBuilder {
         key: None,
         props: props(theme, [start, end], 2),
@@ -1327,17 +1362,17 @@ pub fn range_slider(theme: &Theme, start: f32, end: f32) -> SliderBuilder {
 /// use silka_core::animation::Spring;
 /// use silka_core::signals::Key;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::slider;
+/// use silka_widgets::slider_in;
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // Stepped by default where it matters, and explicitly continuous where a
 /// // step would be a lie — a colour picker has no natural increment.
-/// let stepped = slider(&theme, 3.0).range(1.0..=5.0).step(1.0).label("Rating");
-/// let smooth = slider(&theme, 0.5).continuous().label("Hue");
+/// let stepped = slider_in(&theme, 3.0).range(1.0..=5.0).step(1.0).label("Rating");
+/// let smooth = slider_in(&theme, 0.5).continuous().label("Hue");
 ///
 /// // The rest of the vocabulary.
-/// let full = slider(&theme, 0.5)
+/// let full = slider_in(&theme, 0.5)
 ///     .label("Opacity")
 ///     .disabled(false)
 ///     .spring(Spring::smooth())
@@ -1448,7 +1483,7 @@ impl core::fmt::Debug for SliderBuilder {
 /// use silka_core::view::{column, reconcile, View};
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::slider;
+/// use silka_widgets::slider_in;
 /// use silka_widgets::slider::sliders;
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -1459,8 +1494,8 @@ impl core::fmt::Debug for SliderBuilder {
 /// reconcile(
 ///     &mut tree,
 ///     column([
-///         View::from(slider(&theme, 0.2).label("Volume")),
-///         View::from(slider(&theme, 0.8).label("Brightness")),
+///         View::from(slider_in(&theme, 0.2).label("Volume")),
+///         View::from(slider_in(&theme, 0.8).label("Brightness")),
 ///     ]),
 /// );
 /// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
@@ -1497,11 +1532,11 @@ fn kumpulkan(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
 /// # use silka_core::view::reconcile;
 /// # use silka_paint::Size;
 /// # use silka_theme::{Appearance, Theme};
-/// use silka_widgets::slider::{apply_access_action, slider, sliders};
+/// use silka_widgets::slider::{apply_access_action, slider_in, sliders};
 ///
 /// let t = Theme::cupertino(Appearance::Dark);
 /// let mut tree = RenderTree::new();
-/// reconcile(&mut tree, slider(&t, 50.0).range(0.0..=100.0).step(5.0));
+/// reconcile(&mut tree, slider_in(&t, 50.0).range(0.0..=100.0).step(5.0));
 /// tree.layout(BoxConstraints::tight(Size::new(320.0, 44.0)));
 ///
 /// let target = sliders(&tree)[0];
@@ -1649,7 +1684,7 @@ mod tests {
     fn hit_target_minimal_44pt_walau_tracknya_setipis_4pt() {
         let t = tema();
         let mut tree = RenderTree::new();
-        reconcile(&mut tree, slider(&t, 0.5));
+        reconcile(&mut tree, slider_in(&t, 0.5));
         // Loose constraints: the node picks its own height.
         tree.layout(BoxConstraints::loose(Size::new(320.0, 400.0)));
         let id = sliders(&tree)[0];
@@ -1664,7 +1699,7 @@ mod tests {
     #[test]
     fn node_a11y_slider_membawa_nilai_dan_aksi() {
         let t = tema();
-        let tree = pohon(slider(&t, 42.0).range(0.0..=100.0).label("Volume"));
+        let tree = pohon(slider_in(&t, 42.0).range(0.0..=100.0).label("Volume"));
         let a11y = tree.access_tree(None);
         let e = a11y
             .find_label("Volume")
@@ -1681,7 +1716,7 @@ mod tests {
     #[test]
     fn slider_dimatikan_dibacakan_dimmed_dan_tidak_bisa_difokuskan() {
         let t = tema();
-        let tree = pohon(slider(&t, 0.5).label("Mati").disabled(true));
+        let tree = pohon(slider_in(&t, 0.5).label("Mati").disabled(true));
         let a11y = tree.access_tree(None);
         let e = a11y.find_label("Mati").unwrap();
         assert!(e.node.disabled);
@@ -1701,7 +1736,7 @@ mod tests {
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut tree = pohon(slider(&t, 0.5));
+                let mut tree = pohon(slider_in(&t, 0.5));
                 let mut scene = Scene::new(t.color.background);
                 tree.paint_into(&mut scene);
 
@@ -1737,7 +1772,7 @@ mod tests {
     fn nilai_menentukan_lebar_isian() {
         let t = tema();
         let lebar = |v: f32| {
-            let mut tree = pohon(slider(&t, v).range(0.0..=100.0));
+            let mut tree = pohon(slider_in(&t, v).range(0.0..=100.0));
             let mut scene = Scene::new(t.color.background);
             tree.paint_into(&mut scene);
             scene
@@ -1763,7 +1798,7 @@ mod tests {
         let catat = Rc::new(RefCell::new(Vec::<f32>::new()));
         let tulis = catat.clone();
         let mut tree = pohon(
-            slider(&t, 0.0)
+            slider_in(&t, 0.0)
                 .range(0.0..=100.0)
                 .on_change(move |v| tulis.borrow_mut().push(v)),
         );
@@ -1784,7 +1819,7 @@ mod tests {
     #[test]
     fn drag_mengikuti_jari_dan_berhenti_di_tepi() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 50.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 50.0).range(0.0..=100.0));
         let mut router = InputRouter::new();
         let g = geometri(&tree);
 
@@ -1804,7 +1839,7 @@ mod tests {
     #[test]
     fn menggenggam_thumb_tidak_membuat_nilainya_melompat() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 50.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 50.0).range(0.0..=100.0));
         let mut router = InputRouter::new();
         let g = geometri(&tree);
 
@@ -1824,7 +1859,7 @@ mod tests {
     #[test]
     fn keyboard_menggeser_nilai_dan_menghormati_step() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 50.0).range(0.0..=100.0).step(5.0));
+        let mut tree = pohon(slider_in(&t, 50.0).range(0.0..=100.0).step(5.0));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
         router.focus_node(&mut tree, Some(id));
@@ -1848,7 +1883,7 @@ mod tests {
     #[test]
     fn keyboard_kontinu_melangkah_satu_persen_rentang() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=200.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=200.0));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
         router.focus_node(&mut tree, Some(id));
@@ -1861,7 +1896,7 @@ mod tests {
         let t = tema();
         let mut tree = RenderTree::new();
         tree.set_direction(TextDirection::Rtl);
-        reconcile(&mut tree, slider(&t, 50.0).range(0.0..=100.0).step(10.0));
+        reconcile(&mut tree, slider_in(&t, 50.0).range(0.0..=100.0).step(10.0));
         tree.layout(BoxConstraints::loose(RUANG));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
@@ -1880,7 +1915,7 @@ mod tests {
     #[test]
     fn modifier_dibiarkan_lewat_agar_pintasan_aplikasi_tidak_ditelan() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 50.0).range(0.0..=100.0).step(5.0));
+        let mut tree = pohon(slider_in(&t, 50.0).range(0.0..=100.0).step(5.0));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
         router.focus_node(&mut tree, Some(id));
@@ -1897,7 +1932,7 @@ mod tests {
     #[test]
     fn slider_mati_tidak_bergerak_oleh_apa_pun() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 50.0).range(0.0..=100.0).disabled(true));
+        let mut tree = pohon(slider_in(&t, 50.0).range(0.0..=100.0).disabled(true));
         let mut router = InputRouter::new();
         let g = geometri(&tree);
         let p = titik(&tree, g.thumb_x(0.9, TextDirection::Ltr));
@@ -1908,7 +1943,7 @@ mod tests {
     #[test]
     fn fokus_menggambar_cincin_di_thumb_aktif() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.5).label("Fokus"));
+        let mut tree = pohon(slider_in(&t, 0.5).label("Fokus"));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
 
@@ -1937,7 +1972,7 @@ mod tests {
         let catat = Rc::new(RefCell::new((0.0f32, 0.0f32)));
         let tulis = catat.clone();
         let mut tree = pohon(
-            range_slider(&t, 20.0, 80.0)
+            range_slider_in(&t, 20.0, 80.0)
                 .range(0.0..=100.0)
                 .on_range_change(move |a, b| *tulis.borrow_mut() = (a, b)),
         );
@@ -1957,7 +1992,7 @@ mod tests {
     #[test]
     fn range_memilih_thumb_terdekat_dari_titik_tekan() {
         let t = tema();
-        let mut tree = pohon(range_slider(&t, 20.0, 80.0).range(0.0..=100.0));
+        let mut tree = pohon(range_slider_in(&t, 20.0, 80.0).range(0.0..=100.0));
         let mut router = InputRouter::new();
         let g = geometri(&tree);
 
@@ -1973,7 +2008,7 @@ mod tests {
     fn nilai_range_dibacakan_sebagai_dua_angka() {
         let t = tema();
         let tree = pohon(
-            range_slider(&t, 20.0, 80.0)
+            range_slider_in(&t, 20.0, 80.0)
                 .range(0.0..=100.0)
                 .label("Harga"),
         );
@@ -1987,7 +2022,7 @@ mod tests {
     #[test]
     fn spring_bergerak_saat_dipompa_lalu_berhenti_sendiri() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=100.0).step(10.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=100.0).step(10.0));
         let tick = |ms: u64| Tick::manual(Duration::from_millis(ms), Motion::Full);
 
         // First frame: the pump is wired up, nothing is moving yet.
@@ -2025,7 +2060,7 @@ mod tests {
         // application is the value, not the thumb position: neither may lag a
         // frame behind just because a spring is still running.
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=100.0));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
         router.focus_node(&mut tree, Some(id));
@@ -2049,7 +2084,7 @@ mod tests {
     #[test]
     fn reduced_motion_membuang_pembesaran_thumb_tapi_tetap_menggerakkan_nilai() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=100.0));
         let tick_penuh = Tick::manual(Duration::from_millis(16), Motion::Full);
         advance(&mut tree, &tick_penuh);
 
@@ -2074,7 +2109,7 @@ mod tests {
         assert_eq!(n.lift[0].position(), 1.0, "keadaan tetap terbaca");
 
         // …but motion that explains the value keeps running (without bounce).
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=100.0));
         advance(&mut tree, &tick_penuh);
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
@@ -2088,7 +2123,7 @@ mod tests {
     #[test]
     fn spring_bisa_di_retarget_di_tengah_gerakan() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=100.0));
         let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
         advance(&mut tree, &tick);
         let mut router = InputRouter::new();
@@ -2115,7 +2150,7 @@ mod tests {
     #[test]
     fn settle_menyelesaikan_semuanya_seketika() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 0.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 0.0).range(0.0..=100.0));
         let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
         advance(&mut tree, &tick);
         let mut router = InputRouter::new();
@@ -2133,9 +2168,9 @@ mod tests {
     #[test]
     fn nilai_dari_aplikasi_menang_kecuali_saat_jari_menempel() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 10.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 10.0).range(0.0..=100.0));
         // Rebuild with a new value: the node follows.
-        reconcile(&mut tree, slider(&t, 70.0).range(0.0..=100.0));
+        reconcile(&mut tree, slider_in(&t, 70.0).range(0.0..=100.0));
         tree.layout(BoxConstraints::loose(RUANG));
         assert_eq!(node(&tree).value(), 70.0);
 
@@ -2151,7 +2186,7 @@ mod tests {
             ),
         );
         let sedang = node(&tree).value();
-        reconcile(&mut tree, slider(&t, 70.0).range(0.0..=100.0));
+        reconcile(&mut tree, slider_in(&t, 70.0).range(0.0..=100.0));
         tree.layout(BoxConstraints::loose(RUANG));
         assert_eq!(node(&tree).value(), sedang);
     }
@@ -2159,13 +2194,16 @@ mod tests {
     #[test]
     fn rebuild_tidak_menghapus_keadaan_interaksi() {
         let t = tema();
-        let mut tree = pohon(slider(&t, 50.0).range(0.0..=100.0));
+        let mut tree = pohon(slider_in(&t, 50.0).range(0.0..=100.0));
         let mut router = InputRouter::new();
         let id = sliders(&tree)[0];
         router.focus_node(&mut tree, Some(id));
         assert!(node(&tree).is_focused());
 
-        reconcile(&mut tree, slider(&t, 50.0).range(0.0..=100.0).label("Baru"));
+        reconcile(
+            &mut tree,
+            slider_in(&t, 50.0).range(0.0..=100.0).label("Baru"),
+        );
         tree.layout(BoxConstraints::loose(RUANG));
         assert!(node(&tree).is_focused(), "fokus hilang saat rebuild");
         assert_eq!(sliders(&tree)[0], id, "node diganti, bukan diperbarui");
@@ -2177,7 +2215,7 @@ mod tests {
         let catat = Rc::new(RefCell::new(Vec::<f32>::new()));
         let tulis = catat.clone();
         let mut tree = pohon(
-            slider(&t, 50.0)
+            slider_in(&t, 50.0)
                 .range(0.0..=100.0)
                 .step(5.0)
                 .on_change(move |v| tulis.borrow_mut().push(v)),

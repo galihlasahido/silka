@@ -16,7 +16,9 @@ use silka_core::tree::CrossAlign;
 use silka_core::view::{column, expanded, View};
 use silka_text::FontWeight;
 use silka_theme::{RadiusToken, Theme};
-use silka_widgets::{col, table, text, use_table_state, Column, Fonts, SortBy, SortDirection};
+use silka_widgets::{
+    col, table_in, text_in, use_table_state, Column, Fonts, SortBy, SortDirection,
+};
 
 use crate::data;
 use crate::kit;
@@ -109,7 +111,7 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts) -> View {
     let empty_fonts = fonts.clone();
     let theme = t;
 
-    let body = table(
+    let body = table_in(
         fonts,
         &t,
         state,
@@ -152,24 +154,24 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// and there is no special cell type to learn.
 fn cell(fonts: &Fonts, t: &Theme, i: usize, column: usize) -> View {
     match column {
-        0 => text(fonts, data::contract(i))
+        0 => text_in(fonts, data::contract(i))
             .size(t.typography.footnote.size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.tertiary_label)
             .single_line()
             .into(),
-        1 => text(fonts, data::party(i))
+        1 => text_in(fonts, data::party(i))
             .size(t.typography.body_size)
             .color(t.color.label)
             .single_line()
             .into(),
-        2 => text(fonts, data::date(data::value_date(i)))
+        2 => text_in(fonts, data::date(data::value_date(i)))
             .size(t.typography.footnote.size)
             .color(t.color.secondary_label)
             .single_line()
             .into(),
         3 => kit::badge(fonts, t, data::status(i)),
-        _ => text(fonts, data::rupiah(data::amount(i)))
+        _ => text_in(fonts, data::rupiah(data::amount(i)))
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.label)
@@ -180,7 +182,7 @@ fn cell(fonts: &Fonts, t: &Theme, i: usize, column: usize) -> View {
 
 fn empty_state(fonts: &Fonts, t: &Theme) -> View {
     column([View::from(
-        text(fonts, EMPTY)
+        text_in(fonts, EMPTY)
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line(),

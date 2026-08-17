@@ -33,6 +33,9 @@
 //! | Border | per-instance width; a ring between two SDF isolines |
 //! | Ambient + key shadow | two gaussian-blurred instances behind the box |
 //! | **Glyph** | textured instance: atlas UV + run color from theme tokens |
+//! | **Stroke** | one capsule instance per polyline segment (width, caps, joins) |
+//! | **Image** | textured instance from the image atlas, tinted and corner-masked |
+//! | **Transform** | a per-instance 2×2 matrix; the fragment stage stays in local space |
 //!
 //! Because it is all data, there are **no shader variants** and no WGSL is
 //! assembled at runtime. Anti-aliasing is derived from screen-space
@@ -67,6 +70,28 @@
 //! are never eaten) and clamps to the surface bounds (a scissor outside those
 //! bounds is a wgpu validation error). Batches whose rect is empty are skipped
 //! entirely.
+//!
+//! ### Transform
+//!
+//! `Command::PushTransform`/`PopTransform` become a **per-instance 2×2 matrix**.
+//! Only vertex positions are mapped by it; the fragment stage keeps working in
+//! untransformed local units, so corner radii, border widths, shadow sigmas, and
+//! stroke widths need no scaling and rotation needs no special case. Even the
+//! anti-aliasing follows for free, because it is derived from screen-space
+//! derivatives of the local coordinate. The one thing that cannot rotate is a
+//! clip: a scissor rect is axis-aligned by construction, so a clip inside a
+//! rotated subtree grows to its bounding box — conservative, which is the only
+//! safe direction for a clip.
+//!
+//! ### Layer
+//!
+//! `Command::PushLayer`/`PopLayer` are the one place a frame stops being a single
+//! draw call, and deliberately so: "render this subtree to a texture, blur it,
+//! then composite it" *is* several passes. The pass order is computed on the CPU
+//! (`instance::FrameStep`) where it can be tested without a GPU, and executed by
+//! one shared frame walker — targets are pooled by nesting depth, so sibling
+//! layers reuse one texture. The blur is a dual-Kawase down/up chain; a layer with
+//! full opacity and no effect is drawn inline and costs nothing at all.
 //!
 //! The same path is available without a window through [`Gpu::headless`] +
 //! [`OffscreenTarget`] — the foundation for visual golden/snapshot tests in CI
@@ -112,9 +137,12 @@
 mod atlas;
 mod error;
 mod format;
+mod frame;
 mod geometry;
 mod gpu;
+mod images;
 mod instance;
+mod layer;
 mod offscreen;
 mod pipeline;
 mod surface;

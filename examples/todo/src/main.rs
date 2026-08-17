@@ -34,7 +34,8 @@ use silka_core::view::{constrained, div, expanded, View};
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, ShadowToken, Theme};
 use silka_widgets::{
-    advance, button, button_variant, checkbox, text, text_field, ButtonVariant, Fonts,
+    active_fonts, advance, button, button_variant, checkbox, install_fonts, text, text_field,
+    ButtonVariant, Fonts,
 };
 
 use model::Tugas;
@@ -167,6 +168,9 @@ fn main() -> Result<(), PlatformError> {
     // expensive and the glyph atlas has to be shared, so the same glyph is
     // never rasterised twice (§3.3).
     let fonts = Fonts::new();
+    // One line, once: from here on every constructor finds the engine by
+    // itself, which is what lets the view below read like Dart (§2.5).
+    install_fonts(&fonts);
 
     let config = window(NAMA_APLIKASI)
         .size(520.0, 640.0)
@@ -179,11 +183,10 @@ fn main() -> Result<(), PlatformError> {
         // every label renders blank.
         .glyphs(fonts.shared());
 
-    let untuk_view = fonts.clone();
     // `advance` ticks every widget's springs once per frame. The event loop
     // still sleeps as soon as they settle — animation does not break the
     // "render only when dirty" promise (§3.5).
-    run_app_with(config, move |cx| aplikasi(cx, &untuk_view), advance)
+    run_app_with(config, aplikasi, advance)
 }
 
 /// `--preset tailwind` picks the other first-party preset (§2.7).
@@ -218,12 +221,12 @@ pub fn preset_dari_argumen(args: impl Iterator<Item = String>) -> Preset {
 /// Read in the root scope: theme and scale factor. Everything that changes
 /// while the app runs is read **below** this, inside components, so typing a
 /// letter never rebuilds the page.
-pub fn aplikasi(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn aplikasi(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterised at the real screen resolution; the logical sizes
     // below never change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // Two pieces of state, and that is the entire application state.
     let daftar = use_signal(model::contoh);
@@ -234,7 +237,7 @@ pub fn aplikasi(cx: &BuildCtx, fonts: &Fonts) -> View {
         .p_8()
         .child(constrained(
             BoxConstraints::new(0.0, t.space(LEBAR_KARTU), 0.0, f32::INFINITY),
-            kartu(fonts, &t, daftar, masukan),
+            kartu(daftar, masukan),
         ))
         .into()
 }
@@ -245,7 +248,7 @@ pub fn aplikasi(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// `ShadowToken::Md`); the ambient theme turns it into a number while the view
 /// is being built, which is why the same code is correct in both presets and in
 /// both appearances (§2.6, §2.7).
-fn kartu(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) -> View {
+fn kartu(daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) -> View {
     div()
         .gap_5()
         .p_6()
@@ -255,14 +258,14 @@ fn kartu(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signal<S
         .border_color(ColorToken::Separator)
         .elevation(ShadowToken::Md)
         .child(
-            text(fonts, JUDUL)
+            text(JUDUL)
                 .font(FontToken::Title2)
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
-        .child(formulir(fonts, t, daftar, masukan))
-        .child(isi(fonts, t, daftar))
-        .child(kaki(fonts, t, daftar))
+        .child(formulir(daftar, masukan))
+        .child(isi(daftar))
+        .child(kaki(daftar))
         .into()
 }
 
@@ -271,17 +274,14 @@ fn kartu(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signal<S
 /// It is the only place `masukan` is read, so a keystroke rebuilds this row and
 /// nothing else. The field keeps its caret, its selection, and its IME
 /// composition across those rebuilds because its [`Key`] is stable (§2.5).
-fn formulir(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) -> View {
-    let fonts = fonts.clone();
-    let tema = *t;
-    component("formulir", move |cx| {
-        let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(tema);
+fn formulir(daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) -> View {
+    component("formulir", move |_cx| {
         div()
             .flex()
             .items_center()
             .gap_3()
             .child(expanded(
-                text_field(&fonts, &t, masukan.get())
+                text_field(masukan.get())
                     .key("baru")
                     .label(KOLOM_BARU)
                     .placeholder("Apa yang mau dikerjakan?")
@@ -290,7 +290,7 @@ fn formulir(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signa
                     // citizen (`KOMPONEN.md` Definition of Done).
                     .on_submit(move |_| kirim(daftar, masukan)),
             ))
-            .child(button(&fonts, &t, TOMBOL_TAMBAH).on_press(move || kirim(daftar, masukan)))
+            .child(button(TOMBOL_TAMBAH).on_press(move || kirim(daftar, masukan)))
             .into()
     })
 }
@@ -298,17 +298,14 @@ fn formulir(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signa
 /// The task rows, as **their own component**: ticking a box rebuilds this list
 /// and leaves the input field — and whatever is being typed into it —
 /// untouched.
-fn isi(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>) -> View {
-    let fonts = fonts.clone();
-    let tema = *t;
-    component("isi", move |cx| {
-        let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(tema);
+fn isi(daftar: Signal<Vec<Tugas>>) -> View {
+    component("isi", move |_cx| {
         let tugas = daftar.get();
         if tugas.is_empty() {
             return div()
                 .py_4()
                 .child(
-                    text(&fonts, KOSONG)
+                    text(KOSONG)
                         .text_base()
                         .text_color(ColorToken::TertiaryLabel),
                 )
@@ -316,7 +313,7 @@ fn isi(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>) -> View {
         }
         div()
             .gap_1()
-            .children(tugas.iter().map(|tg| baris(&fonts, &t, daftar, tg)))
+            .children(tugas.iter().map(|tg| baris(daftar, tg)))
             .into()
     })
 }
@@ -326,7 +323,7 @@ fn isi(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>) -> View {
 /// The key is the task's id, not its position — that is what keeps the widget
 /// state (a half-finished spring, the focus ring) attached to the *task* when a
 /// row above it is deleted.
-fn baris(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, tugas: &Tugas) -> View {
+fn baris(daftar: Signal<Vec<Tugas>>, tugas: &Tugas) -> View {
     let id = tugas.id;
     let kunci = Key::num(id as i64);
     div()
@@ -338,13 +335,13 @@ fn baris(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, tugas: &Tugas) ->
             // The label belongs to the checkbox: clicking the words toggles the
             // box, and a screen reader announces the task once, not twice
             // (§3.8).
-            checkbox(fonts, t, tugas.judul.clone())
+            checkbox(tugas.judul.clone())
                 .key(kunci)
                 .checked(tugas.selesai)
                 .on_toggle(move |on| daftar.update(|d| model::setel_selesai(d, id, on))),
         ))
         .child(
-            button_variant(fonts, t, TOMBOL_HAPUS, ButtonVariant::Ghost)
+            button_variant(TOMBOL_HAPUS, ButtonVariant::Ghost)
                 .key(Key::num(-(id as i64) - 1))
                 .on_press(move || daftar.update(|d| model::hapus(d, id))),
         )
@@ -352,11 +349,8 @@ fn baris(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, tugas: &Tugas) ->
 }
 
 /// The footer: the count on the left, the cleanup button on the right.
-fn kaki(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>) -> View {
-    let fonts = fonts.clone();
-    let tema = *t;
-    component("kaki", move |cx| {
-        let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(tema);
+fn kaki(daftar: Signal<Vec<Tugas>>) -> View {
+    component("kaki", move |_cx| {
         let tugas = daftar.get();
         let ada_selesai = model::jumlah_selesai(&tugas) > 0;
         div()
@@ -365,13 +359,13 @@ fn kaki(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>) -> View {
             .justify_between()
             .gap_3()
             .child(
-                text(&fonts, model::ringkasan(&tugas))
+                text(model::ringkasan(&tugas))
                     .text_sm()
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),
             )
             .child(
-                button_variant(&fonts, &t, TOMBOL_BERSIHKAN, ButtonVariant::Secondary)
+                button_variant(TOMBOL_BERSIHKAN, ButtonVariant::Secondary)
                     .disabled(!ada_selesai)
                     .on_press(move || daftar.update(model::bersihkan)),
             )
@@ -486,9 +480,10 @@ mod tests {
 
     /// The app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| aplikasi(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+        // The deterministic engine becomes *the* engine for this thread, so the
+        // constructors under test resolve to the same atlas the assertions read.
+        install_fonts(fonts);
+        headless_app(theme, aplikasi).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// A node's rectangle **according to the accessibility tree** — so the tests

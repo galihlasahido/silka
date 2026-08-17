@@ -47,6 +47,17 @@ pub enum ShellEvent {
     Menu(MenuActivation),
     /// The user did something to the tray icon.
     Tray(TrayActivation),
+    /// A background task has a result waiting (REKOMENDASI §9.6).
+    ///
+    /// Sent from a worker thread by the notifier
+    /// [`silka_core::task::Tasks`] was given, and it carries nothing: the
+    /// payload is already in the channel, and all the event loop has to do is
+    /// turn one more frame so
+    /// [`Tasks::deliver`](silka_core::task::Tasks::deliver) runs. Without it a
+    /// result that arrives while the window sits idle would wait for the next
+    /// mouse move, which is the difference between "loads instantly" and "loads
+    /// when you wiggle the cursor".
+    Wake,
 }
 
 impl From<accesskit_winit::Event> for ShellEvent {
@@ -82,6 +93,10 @@ impl From<TrayActivation> for ShellEvent {
 pub fn forward_native_events(proxy: EventLoopProxy<ShellEvent>) {
     static SEKALI: std::sync::Once = std::sync::Once::new();
     SEKALI.call_once(move || {
+        // Also remembered for [`wake_notifier`]: the async bridge (§9.6) needs a
+        // way to poke this loop from a worker thread, and this is the one place
+        // in the process that holds a proxy.
+        let _ = PROXY.set(Mutex::new(proxy.clone()));
         let menu = Mutex::new(proxy.clone());
         muda::MenuEvent::set_event_handler(Some(move |e: muda::MenuEvent| {
             let aktivasi = MenuActivation::new(e.id().0.clone());
@@ -104,9 +119,47 @@ pub fn forward_native_events(proxy: EventLoopProxy<ShellEvent>) {
     });
 }
 
+/// The process-wide proxy, remembered by [`forward_native_events`].
+static PROXY: std::sync::OnceLock<Mutex<EventLoopProxy<ShellEvent>>> = std::sync::OnceLock::new();
+
+/// A `Send + Sync` closure that makes the event loop turn one more frame.
+///
+/// This is what [`silka_core::task::Tasks::notify_with`] wants: it is called on
+/// a **worker** thread the instant a task's result reaches the channel, and it
+/// must do nothing except wake the loop (§9.6).
+///
+/// It is safe to build before a window exists — the proxy is looked up on every
+/// call, so a notifier handed out at startup starts working the moment the event
+/// loop is running, and quietly does nothing before that or after shutdown.
+///
+/// ```
+/// use silka_platform::wake_notifier;
+///
+/// // No event loop in a unit test: calling it is a no-op rather than a panic.
+/// let wake = wake_notifier();
+/// wake();
+/// ```
+pub fn wake_notifier() -> impl Fn() + Send + Sync + 'static {
+    || {
+        if let Some(proxy) = PROXY.get() {
+            if let Ok(p) = proxy.lock() {
+                // The loop being gone is the normal shutdown race.
+                let _ = p.send_event(ShellEvent::Wake);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wake_notifier_tanpa_event_loop_tidak_panik() {
+        let wake = wake_notifier();
+        wake();
+        wake();
+    }
 
     #[test]
     fn aktivasi_menu_masuk_sebagai_shell_event() {

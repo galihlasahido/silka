@@ -27,10 +27,12 @@
 //!
 //! macOS reads the real settings ([`macos`]): `AppleAccentColor` and
 //! `AppleHighlightColor` from the global domain, `reduceMotion` and
-//! `reduceTransparency` from `com.apple.universalaccess`. Windows and Linux
-//! have no reader yet — the keys are named in [`macos`]'s counterpart comment
-//! below — so on those systems the framework defaults apply until one is
-//! written. On **every** platform the environment overrides
+//! `reduceTransparency` from `com.apple.universalaccess`. Windows reads
+//! **reduce transparency** (through
+//! [`crate::titlebar::system_reduces_transparency`]) and nothing else yet;
+//! Linux reads nothing. The keys the missing readers would use are named in
+//! the comments beside them, and until they exist the framework defaults apply
+//! rather than a guess. On **every** platform the environment overrides
 //! ([`settings_from_env`]) win, which is what makes a CI run reproducible and
 //! lets a designer check the reduced-motion pass without touching their own
 //! system settings.
@@ -139,13 +141,24 @@ impl SystemSettings {
         macos::read(appearance)
     }
 
-    // Windows: `HKCU\Software\Microsoft\Windows\DWM\ColorizationColor` +
-    // `SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)` +
-    // `HKCU\…\Themes\Personalize\EnableTransparency`.
+    // Windows reads the one setting that has a reader
+    // ([`crate::titlebar::system_reduces_transparency`], which is
+    // `HKCU\…\Themes\Personalize\EnableTransparency`). The accent
+    // (`HKCU\Software\Microsoft\Windows\DWM\ColorizationColor`) and reduce
+    // motion (`SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)`) still have
+    // none, so they stay at their defaults rather than being guessed.
+    #[cfg(target_os = "windows")]
+    fn from_os(_appearance: silka_theme::Appearance) -> Self {
+        Self {
+            transparency: Transparency::from_reduced(crate::titlebar::system_reduces_transparency()),
+            ..Self::DEFAULT
+        }
+    }
+
     // Linux: `org.gnome.desktop.interface accent-color` /
     // `gtk-enable-animations` over D-Bus (XDG settings portal).
-    // Neither reader exists yet; the defaults are honest until one does.
-    #[cfg(not(target_os = "macos"))]
+    // No reader exists yet; the defaults are honest until one does.
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     fn from_os(_appearance: silka_theme::Appearance) -> Self {
         Self::DEFAULT
     }

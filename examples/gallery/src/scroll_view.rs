@@ -30,7 +30,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button, button_variant, scroll_view, text, ButtonVariant, Fonts};
+use silka_widgets::{button_in, button_variant_in, scroll_view_in, text_in, ButtonVariant, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Scroll view";
@@ -69,7 +69,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -77,7 +77,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Gulir melewati ujungnya: isinya melar makin berat lalu memantul \
                  pulang — rubber band ala macOS. Momentum trackpad datang dari OS \
@@ -92,7 +92,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         daftar(fonts, &t, tujuan),
         kendali(fonts, &t, tujuan),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Keyboard: Tab ke daftar, lalu ↑ ↓ · Page Up/Down · Home/End · Spasi.",
             )
@@ -126,7 +126,7 @@ fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
                 t.space(TINGGI_LANGKAH),
                 t.space(TINGGI_LANGKAH),
             ),
-            scroll_view(&t, isi)
+            scroll_view_in(&t, isi)
                 .label(NAMA_DAFTAR)
                 .scroll(tujuan.get())
                 .background(t.color.surface_sunken)
@@ -145,11 +145,11 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
     } else {
         t.color.surface_hover
     };
-    let kiri = text(fonts, format!("Transaksi #{:02}", i + 1))
+    let kiri = text_in(fonts, format!("Transaksi #{:02}", i + 1))
         .size(t.typography.body_size)
         .color(t.color.label)
         .single_line();
-    let kanan = text(fonts, format!("Rp {}.000", (i + 1) * 125))
+    let kanan = text_in(fonts, format!("Rp {}.000", (i + 1) * 125))
         .size(t.typography.body_size)
         .weight(FontWeight::MEDIUM)
         .color(t.color.secondary_label)
@@ -172,15 +172,15 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
 fn kendali(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
     row([
         View::from(
-            button_variant(fonts, t, TOMBOL_ATAS, ButtonVariant::Secondary)
+            button_variant_in(fonts, t, TOMBOL_ATAS, ButtonVariant::Secondary)
                 .on_press(move || tujuan.set(0.0)),
         ),
         View::from(
-            button_variant(fonts, t, TOMBOL_TENGAH, ButtonVariant::Secondary)
+            button_variant_in(fonts, t, TOMBOL_TENGAH, ButtonVariant::Secondary)
                 // Half the content height; the container clamps the rest.
                 .on_press(move || tujuan.set(BARIS as f32 * 24.0)),
         ),
-        View::from(button(fonts, t, TOMBOL_BAWAH).on_press(move || tujuan.set(f32::MAX))),
+        View::from(button_in(fonts, t, TOMBOL_BAWAH).on_press(move || tujuan.set(f32::MAX))),
     ])
     .spacing(t.space(3.0))
     .cross(CrossAlign::Center)

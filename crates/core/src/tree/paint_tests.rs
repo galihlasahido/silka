@@ -9,8 +9,8 @@
 use std::any::TypeId;
 
 use silka_paint::{
-    Color, Command, CornerStyle, Corners, Glyph, GlyphImageId, GlyphRun, Insets, Point, Quad, Rect,
-    Shadow, ShadowPair, Size,
+    Color, Command, CornerStyle, Corners, Glyph, GlyphImageId, GlyphRun, ImageId, ImageQuad,
+    Insets, Layer, Point, Quad, Rect, Shadow, ShadowPair, Size, Stroke, Transform,
 };
 
 use crate::access::{AccessNode, AccessRole};
@@ -689,4 +689,297 @@ fn offset_absolut_sama_dengan_bounds_a11y() {
     assert_eq!(tree.bounds(kedua), Rect::new(12.0, 30.0, 40.0, 20.0));
     assert_eq!(kotak(&tree.paint())[0].0, tree.bounds(kedua));
     assert_eq!(tree.global_offset(kedua), Point::new(12.0, 30.0));
+}
+
+// ---------------------------------------------------------------------------
+// Stroke, image, transform, layer
+// ---------------------------------------------------------------------------
+
+/// A node that exercises the four commands added for the component catalogue.
+/// What it draws is chosen so every assertion below can name a number.
+struct Vokabuler {
+    stroke: bool,
+    image: bool,
+    transform: bool,
+    layer: bool,
+}
+
+impl Vokabuler {
+    fn hanya(stroke: bool, image: bool, transform: bool, layer: bool) -> Self {
+        Self {
+            stroke,
+            image,
+            transform,
+            layer,
+        }
+    }
+}
+
+impl RenderNode for Vokabuler {
+    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, c: BoxConstraints) -> Size {
+        c.constrain(Size::new(40.0, 40.0))
+    }
+
+    fn paint(&self, ctx: &mut PaintCtx<'_>) {
+        let bounds = ctx.local_bounds();
+        if self.stroke {
+            let mut garis = Stroke::new(MERAH, 2.0);
+            garis.extend([Point::new(0.0, 0.0), Point::new(40.0, 40.0)]);
+            ctx.stroke(garis);
+        }
+        if self.image {
+            ctx.image(ImageQuad::new(
+                Rect::new(4.0, 4.0, 16.0, 16.0),
+                ImageId::from_raw(7),
+            ));
+        }
+        if self.transform {
+            ctx.with_transform(Transform::scale_around(bounds.center(), 0.5, 0.5), |ctx| {
+                ctx.quad(Quad::new(bounds).background(HIJAU));
+            });
+        }
+        if self.layer {
+            ctx.with_layer(Layer::new(bounds).blur(8.0), |ctx| {
+                ctx.quad(Quad::new(bounds).background(BIRU));
+            });
+        }
+    }
+
+    fn access(&self, node: &mut AccessNode) {
+        node.role = AccessRole::Container;
+    }
+}
+
+/// A `Vokabuler` node placed at (20, 20) by padding, so "local coordinates" is
+/// something the assertions can actually catch.
+fn pohon_vokabuler(node: Vokabuler) -> RenderTree {
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, pad(Insets::all(20.0), fixed(40.0, 40.0)));
+    let padding = anak(&tree, tree.root(), 0);
+    let daun = anak(&tree, padding, 0);
+    tree.remove_subtree(daun);
+    tree.insert_child(padding, 0, None, TypeId::of::<Vokabuler>(), Box::new(node));
+    tree.layout(window(400.0, 400.0));
+    tree
+}
+
+#[test]
+fn stroke_diangkat_ke_koordinat_absolut() {
+    let mut tree = pohon_vokabuler(Vokabuler::hanya(true, false, false, false));
+    let scene = tree.paint();
+    match scene.commands() {
+        [Command::Stroke(g)] => {
+            assert_eq!(g.points[0], Point::new(20.0, 20.0));
+            assert_eq!(g.points[1], Point::new(60.0, 60.0));
+            assert_eq!(g.width, 2.0);
+            assert_eq!(g.color, MERAH);
+        }
+        lain => panic!("perintah tak terduga: {lain:?}"),
+    }
+}
+
+#[test]
+fn stroke_di_luar_clip_tidak_dikirim() {
+    // A stroke whose bounds miss the viewport entirely is dropped on the CPU, the
+    // same way a glyph run is.
+    struct Jauh;
+    impl RenderNode for Jauh {
+        fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, c: BoxConstraints) -> Size {
+            c.constrain(Size::new(100.0, 400.0))
+        }
+        fn paint(&self, ctx: &mut PaintCtx<'_>) {
+            let mut garis = Stroke::new(MERAH, 2.0);
+            garis.extend([Point::new(0.0, 300.0), Point::new(100.0, 380.0)]);
+            ctx.stroke(garis);
+        }
+        fn access(&self, node: &mut AccessNode) {
+            node.role = AccessRole::Container;
+        }
+    }
+
+    let mut tree = RenderTree::new();
+    reconcile(
+        &mut tree,
+        constrained(
+            BoxConstraints::tight(Size::new(100.0, 100.0)),
+            viewport(fixed(100.0, 400.0)),
+        ),
+    );
+    let pembatas = anak(&tree, tree.root(), 0);
+    let view = anak(&tree, pembatas, 0);
+    let daun = anak(&tree, view, 0);
+    tree.remove_subtree(daun);
+    tree.insert_child(view, 0, None, TypeId::of::<Jauh>(), Box::new(Jauh));
+    tree.layout(window(400.0, 400.0));
+
+    let scene = tree.paint();
+    assert!(
+        !scene
+            .commands()
+            .iter()
+            .any(|c| matches!(c, Command::Stroke(_))),
+        "{scene:?}"
+    );
+}
+
+#[test]
+fn image_diangkat_dan_radiusnya_dijepit() {
+    let mut tree = pohon_vokabuler(Vokabuler::hanya(false, true, false, false));
+    let scene = tree.paint();
+    match scene.commands() {
+        [Command::Image(i)] => {
+            assert_eq!(i.rect, Rect::new(24.0, 24.0, 16.0, 16.0));
+            assert_eq!(i.image, ImageId::from_raw(7));
+            assert_eq!(i.tint, Color::WHITE, "gambar digambar apa adanya");
+        }
+        lain => panic!("perintah tak terduga: {lain:?}"),
+    }
+}
+
+#[test]
+fn transform_lokal_dikomposisikan_dengan_origin_node() {
+    // The node draws in local coordinates and asks to scale around its own
+    // centre; what reaches the scene is an ABSOLUTE matrix whose fixed point is
+    // that centre in window coordinates.
+    let mut tree = pohon_vokabuler(Vokabuler::hanya(false, false, true, false));
+    let scene = tree.paint();
+    match scene.commands() {
+        [Command::PushTransform(t), Command::Quad(q), Command::PopTransform] => {
+            assert_eq!(t.a, 0.5);
+            assert_eq!(t.d, 0.5);
+            // The node sits at (20,20) and is 40x40, so its centre is (40,40).
+            let tengah = Point::new(40.0, 40.0);
+            assert_eq!(t.apply(tengah), tengah);
+            // The quad itself is untouched: the matrix is what scales it.
+            assert_eq!(q.rect, Rect::new(20.0, 20.0, 40.0, 40.0));
+        }
+        lain => panic!("perintah tak terduga: {lain:?}"),
+    }
+}
+
+#[test]
+fn layer_lokal_menjadi_batas_absolut() {
+    let mut tree = pohon_vokabuler(Vokabuler::hanya(false, false, false, true));
+    let scene = tree.paint();
+    match scene.commands() {
+        [Command::PushLayer(l), Command::Quad(_), Command::PopLayer] => {
+            assert_eq!(l.bounds, Rect::new(20.0, 20.0, 40.0, 40.0));
+            assert_eq!(l.blur_radius(), 8.0);
+        }
+        lain => panic!("perintah tak terduga: {lain:?}"),
+    }
+}
+
+#[test]
+fn transform_dan_layer_bersarang_tetap_seimbang() {
+    struct Bersarang;
+    impl RenderNode for Bersarang {
+        fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, c: BoxConstraints) -> Size {
+            c.constrain(Size::new(40.0, 40.0))
+        }
+        fn paint(&self, ctx: &mut PaintCtx<'_>) {
+            let bounds = ctx.local_bounds();
+            ctx.with_transform(Transform::scale_around(bounds.center(), 0.5, 0.5), |ctx| {
+                // A transform inside a transform: the inner matrix must already
+                // include the outer one, because the backend keeps no stack of
+                // its own beyond restoring.
+                ctx.with_transform(Transform::translate(4.0, 0.0), |ctx| {
+                    ctx.quad(Quad::new(bounds).background(MERAH));
+                });
+            });
+        }
+        fn access(&self, node: &mut AccessNode) {
+            node.role = AccessRole::Container;
+        }
+    }
+
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, pad(Insets::all(20.0), fixed(40.0, 40.0)));
+    let padding = anak(&tree, tree.root(), 0);
+    let daun = anak(&tree, padding, 0);
+    tree.remove_subtree(daun);
+    tree.insert_child(
+        padding,
+        0,
+        None,
+        TypeId::of::<Bersarang>(),
+        Box::new(Bersarang),
+    );
+    tree.layout(window(400.0, 400.0));
+
+    let scene = tree.paint();
+    let matriks: Vec<Transform> = scene
+        .commands()
+        .iter()
+        .filter_map(|c| match c {
+            Command::PushTransform(t) => Some(*t),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(matriks.len(), 2);
+    // Outer: a half scale. Inner: the same scale, plus a translation that has
+    // been through it (4 points local becomes 2 on screen).
+    assert_eq!(matriks[0].a, 0.5);
+    assert_eq!(matriks[1].a, 0.5);
+    let bergeser = matriks[1].apply(Point::new(40.0, 40.0));
+    assert!((bergeser.x - 42.0).abs() < 1e-4, "{bergeser:?}");
+    assert!((bergeser.y - 40.0).abs() < 1e-4, "{bergeser:?}");
+    // And the pairs are balanced.
+    assert_eq!(
+        scene
+            .commands()
+            .iter()
+            .filter(|c| matches!(c, Command::PopTransform))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn pembungkus_kosong_dan_identitas_tidak_menghasilkan_perintah() {
+    struct Sia;
+    impl RenderNode for Sia {
+        fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, c: BoxConstraints) -> Size {
+            c.constrain(Size::new(10.0, 10.0))
+        }
+        fn paint(&self, ctx: &mut PaintCtx<'_>) {
+            // An animation at rest.
+            ctx.with_transform(Transform::IDENTITY, |ctx| {
+                ctx.quad(Quad::new(Rect::new(0.0, 0.0, 10.0, 10.0)).background(MERAH));
+            });
+            // A wrapper with nothing inside it.
+            ctx.with_transform(Transform::uniform_scale(0.5), |_| {});
+            // A layer with nothing to do.
+            ctx.with_layer(Layer::new(ctx.local_bounds()), |ctx| {
+                ctx.quad(Quad::new(Rect::new(0.0, 0.0, 4.0, 4.0)).background(BIRU));
+            });
+            // A layer scaled to nothing at all.
+            ctx.with_layer(Layer::new(ctx.local_bounds()).opacity(0.0), |ctx| {
+                ctx.quad(Quad::new(Rect::new(0.0, 0.0, 4.0, 4.0)).background(HIJAU));
+            });
+        }
+        fn access(&self, node: &mut AccessNode) {
+            node.role = AccessRole::Container;
+        }
+    }
+
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, pad(Insets::all(20.0), fixed(10.0, 10.0)));
+    let padding = anak(&tree, tree.root(), 0);
+    let daun = anak(&tree, padding, 0);
+    tree.remove_subtree(daun);
+    tree.insert_child(padding, 0, None, TypeId::of::<Sia>(), Box::new(Sia));
+    tree.layout(window(400.0, 400.0));
+
+    let scene = tree.paint();
+    // Two quads (the identity-wrapped one and the pass-through layer's), and not
+    // a single bracket command.
+    assert_eq!(kotak(&scene).len(), 2, "{scene:?}");
+    assert!(
+        scene
+            .commands()
+            .iter()
+            .all(|c| matches!(c, Command::Quad(_))),
+        "{scene:?}"
+    );
 }

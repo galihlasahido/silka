@@ -36,7 +36,7 @@ fn pohon(view: impl Into<View>) -> RenderTree {
 
 /// The standard tree: one window-height `scroll_view` holding a long column.
 fn pohon_gulir(t: &Theme) -> RenderTree {
-    pohon(scroll_view(t, fixed(320.0, TINGGI_ISI)))
+    pohon(scroll_view_in(t, fixed(320.0, TINGGI_ISI)))
 }
 
 fn id(tree: &RenderTree) -> NodeId {
@@ -130,7 +130,7 @@ fn isi_yang_muat_tidak_menelan_guliran() {
     let t = tema();
     // Content shorter than the container: nothing to scroll, and the event
     // must **bubble** so the container above it gets its turn.
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, 100.0)));
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, 100.0)));
     let mut router = InputRouter::new();
     assert!(!sv(&tree).can_scroll());
 
@@ -146,7 +146,7 @@ fn isi_yang_muat_tidak_menelan_guliran() {
 #[test]
 fn mentok_di_bawah_membiarkan_wadah_di_atasnya_mengambil_alih() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)));
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)));
     let mut router = InputRouter::new();
 
     // Get to the bottom first.
@@ -163,7 +163,7 @@ fn mentok_di_bawah_membiarkan_wadah_di_atasnya_mengambil_alih() {
 fn guliran_dijepit_saat_isi_menyusut() {
     let t = tema();
     let mut tree = RenderTree::new();
-    reconcile(&mut tree, scroll_view(&t, fixed(320.0, TINGGI_ISI)));
+    reconcile(&mut tree, scroll_view_in(&t, fixed(320.0, TINGGI_ISI)));
     tree.layout(BoxConstraints::tight(RUANG));
     let mut router = InputRouter::new();
     gulir(&mut tree, &mut router, -5000.0, ScrollPhase::Wheel, 0);
@@ -171,7 +171,7 @@ fn guliran_dijepit_saat_isi_menyusut() {
     assert_eq!(sv(&tree).offset(), 800.0);
 
     // The content shrinks to 500pt: maximum scroll is down to 100pt.
-    reconcile(&mut tree, scroll_view(&t, fixed(320.0, 500.0)));
+    reconcile(&mut tree, scroll_view_in(&t, fixed(320.0, 500.0)));
     tree.flush_layout();
     assert_eq!(sv(&tree).max_scroll(), 100.0);
     assert!(
@@ -214,7 +214,7 @@ fn gesture_melewati_tepi_melar_lalu_memantul_kembali() {
 #[test]
 fn rubber_band_bisa_dimatikan() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)).no_rubber_band());
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).no_rubber_band());
     let mut router = InputRouter::new();
 
     gulir(&mut tree, &mut router, 200.0, ScrollPhase::Began, 0);
@@ -312,7 +312,7 @@ fn keyboard_menggulir_penuh_setelah_tab() {
 #[test]
 fn wadah_yang_isinya_muat_bukan_perhentian_tab() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, 100.0)));
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, 100.0)));
     let mut router = InputRouter::new();
     tekan(&mut tree, &mut router, NamedKey::Tab, 0);
     assert_eq!(
@@ -392,10 +392,10 @@ fn scrollbar_muncul_saat_digulir_lalu_memudar_sendiri() {
 #[test]
 fn scrollbar_always_selalu_terlihat_dan_hidden_tidak_pernah() {
     let t = tema();
-    let selalu = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)).scrollbar(Scrollbar::Always));
+    let selalu = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).scrollbar(Scrollbar::Always));
     assert_eq!(sv(&selalu).bar_opacity(), 1.0);
 
-    let mut tersembunyi = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)).no_scrollbar());
+    let mut tersembunyi = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).no_scrollbar());
     assert_eq!(sv(&tersembunyi).bar_opacity(), 0.0);
     let mut router = InputRouter::new();
     gulir(&mut tersembunyi, &mut router, -120.0, ScrollPhase::Wheel, 0);
@@ -408,7 +408,7 @@ fn scrollbar_always_selalu_terlihat_dan_hidden_tidak_pernah() {
 #[test]
 fn thumb_bisa_diseret_langsung() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)).scrollbar(Scrollbar::Always));
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).scrollbar(Scrollbar::Always));
     let mut router = InputRouter::new();
 
     let t0 = sv(&tree).thumb().expect("ada thumb");
@@ -464,7 +464,7 @@ fn area_sentuh_scrollbar_minimal_44pt_walau_visualnya_tipis() {
 
     // The thumb, too, is never shorter than the hit target, however long the
     // content gets.
-    let tree = pohon(scroll_view(&t, fixed(320.0, 100_000.0)));
+    let tree = pohon(scroll_view_in(&t, fixed(320.0, 100_000.0)));
     let thumb = sv(&tree).thumb().expect("ada thumb");
     assert!(thumb.length >= MIN_HIT_TARGET, "{thumb:?}");
 }
@@ -472,7 +472,7 @@ fn area_sentuh_scrollbar_minimal_44pt_walau_visualnya_tipis() {
 #[test]
 fn hover_di_jalur_melebarkan_scrollbar_lewat_spring() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)).scrollbar(Scrollbar::Always));
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).scrollbar(Scrollbar::Always));
     let mut router = InputRouter::new();
     let tebal = |tree: &RenderTree| {
         let thumb = sv(tree).thumb().expect("ada thumb");
@@ -506,7 +506,7 @@ fn warna_dan_sudut_scrollbar_selalu_datang_dari_token() {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let t = Theme::new(preset, appearance);
             let mut tree = pohon(
-                scroll_view(&t, fixed(320.0, TINGGI_ISI))
+                scroll_view_in(&t, fixed(320.0, TINGGI_ISI))
                     .scrollbar(Scrollbar::Always)
                     .background(t.color.surface_sunken),
             );
@@ -545,7 +545,7 @@ fn warna_dan_sudut_scrollbar_selalu_datang_dari_token() {
 fn tinggi_baris_roda_datang_dari_tipografi_bukan_konstanta() {
     for preset in Preset::ALL {
         let t = Theme::new(preset, Appearance::Light);
-        let tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)));
+        let tree = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)));
         assert_eq!(
             sv(&tree).line_height,
             t.typography.body_size * t.typography.body_line_height,
@@ -589,7 +589,7 @@ fn reduced_motion_menghapus_luncuran_tapi_bukan_tujuannya() {
 #[test]
 fn node_a11y_menyebut_peran_aksi_dan_posisinya() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(320.0, TINGGI_ISI)).label("Daftar transaksi"));
+    let mut tree = pohon(scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).label("Daftar transaksi"));
     let a11y = tree.access_tree(None);
     let e = a11y
         .find_label("Daftar transaksi")
@@ -655,7 +655,7 @@ fn aksi_scroll_dari_teknologi_bantu_benar_benar_menggulir() {
 #[test]
 fn scroll_into_view_menemukan_wadah_terdekat() {
     let t = tema();
-    let mut tree = pohon(scroll_view(
+    let mut tree = pohon(scroll_view_in(
         &t,
         column((0..20).map(|_| fixed(320.0, 60.0))).spacing(0.0),
     ));
@@ -692,7 +692,7 @@ fn scroll_terkendali_hanya_berlaku_saat_angkanya_berubah() {
     let mut tree = RenderTree::new();
     reconcile(
         &mut tree,
-        scroll_view(&t, fixed(320.0, TINGGI_ISI)).scroll(0.0),
+        scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).scroll(0.0),
     );
     tree.layout(BoxConstraints::tight(RUANG));
 
@@ -706,7 +706,7 @@ fn scroll_terkendali_hanya_berlaku_saat_angkanya_berubah() {
     // The position must not be thrown back to the top.
     reconcile(
         &mut tree,
-        scroll_view(&t, fixed(320.0, TINGGI_ISI)).scroll(0.0),
+        scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).scroll(0.0),
     );
     tree.flush_layout();
     assert_eq!(sv(&tree).offset(), 300.0, "bug controlled component");
@@ -715,7 +715,7 @@ fn scroll_terkendali_hanya_berlaku_saat_angkanya_berubah() {
     // animation — not a jump.
     reconcile(
         &mut tree,
-        scroll_view(&t, fixed(320.0, TINGGI_ISI)).scroll(600.0),
+        scroll_view_in(&t, fixed(320.0, TINGGI_ISI)).scroll(600.0),
     );
     tree.flush_layout();
     assert_eq!(sv(&tree).target(), 600.0);
@@ -727,7 +727,7 @@ fn scroll_terkendali_hanya_berlaku_saat_angkanya_berubah() {
 #[test]
 fn wadah_mendatar_memakai_sumbu_yang_benar() {
     let t = tema();
-    let mut tree = pohon(scroll_view(&t, fixed(1200.0, 400.0)).horizontal());
+    let mut tree = pohon(scroll_view_in(&t, fixed(1200.0, 400.0)).horizontal());
     let mut router = InputRouter::new();
     assert_eq!(sv(&tree).max_scroll(), 1200.0 - RUANG.width);
 
@@ -752,4 +752,74 @@ fn scroll_view_adalah_relayout_boundary_dan_memotong_isinya() {
     assert!(tree.is_relayout_boundary(sv_id));
     assert!(tree.render(sv_id).expect("node hidup").clips_children());
     assert_eq!(tree.size(sv_id), RUANG, "ukurannya milik induk sepenuhnya");
+}
+
+// ---------------------------------------------------------------------------
+// RTL (§9.8, AUDIT P-6)
+// ---------------------------------------------------------------------------
+
+/// The tree above, laid out right-to-left.
+fn pohon_gulir_rtl(t: &Theme) -> RenderTree {
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, scroll_view_in(t, fixed(320.0, TINGGI_ISI)));
+    tree.set_direction(silka_core::tree::TextDirection::Rtl);
+    tree.layout(BoxConstraints::tight(RUANG));
+    tree
+}
+
+#[test]
+fn scrollbar_vertikal_pindah_sisi_di_rtl() {
+    let t = tema();
+
+    let ltr = pohon_gulir(&t);
+    let kanan = sv(&ltr).bar_region();
+    assert!(
+        kanan.origin.x > RUANG.width / 2.0,
+        "di LTR scrollbar ada di kanan: {kanan:?}"
+    );
+
+    let rtl = pohon_gulir_rtl(&t);
+    let kiri = sv(&rtl).bar_region();
+    assert_eq!(
+        kiri.origin.x, 0.0,
+        "di RTL scrollbar wajib pindah ke tepi awal baca"
+    );
+    assert_eq!(
+        kiri.size, kanan.size,
+        "hanya sisinya yang berubah, bukan ukurannya"
+    );
+}
+
+#[test]
+fn thumb_dan_jalur_ikut_pindah_di_rtl() {
+    let t = tema();
+    let rtl = pohon_gulir_rtl(&t);
+    let node = sv(&rtl);
+
+    let jalur = node.bar_track_rect();
+    assert_eq!(jalur.origin.x, 0.0);
+
+    let thumb = physics::thumb(RUANG.height, TINGGI_ISI, 0.0, 24.0).expect("ada thumb");
+    let kotak = node.thumb_rect(thumb);
+    assert!(
+        kotak.origin.x < RUANG.width / 2.0,
+        "thumb harus digambar di sisi yang sama dengan jalurnya: {kotak:?}"
+    );
+    // Inside the track, not flush against the window edge: the margin is what
+    // keeps a macOS scrollbar from touching the frame.
+    assert!(kotak.origin.x >= node.bar.margin - f32::EPSILON);
+}
+
+#[test]
+fn hit_test_scrollbar_mengikuti_sisi_di_rtl() {
+    let t = tema();
+    let rtl = pohon_gulir_rtl(&t);
+    let node = sv(&rtl);
+    let bar = node.bar_region();
+
+    // A press on the left edge lands on the bar…
+    assert!(bar.contains(Point::new(2.0, 100.0)));
+    // …and one on the right edge does not, which is the bug this closes: before
+    // it, an RTL user grabbing the visible bar hit the content instead.
+    assert!(!bar.contains(Point::new(RUANG.width - 2.0, 100.0)));
 }

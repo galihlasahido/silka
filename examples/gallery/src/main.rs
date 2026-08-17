@@ -60,6 +60,7 @@ pub mod chart;
 pub mod checkbox;
 pub mod counter;
 pub mod dialog;
+pub mod layout;
 pub mod list;
 pub mod menu;
 pub mod primitives;

@@ -11,12 +11,12 @@
 
 use silka_core::signals::Signal;
 use silka_core::tree::CrossAlign;
-use silka_core::view::{column, expanded, fixed, row, View};
+use silka_core::view::{column, row, View};
 use silka_text::FontWeight;
 use silka_theme::{Appearance, Theme};
-use silka_widgets::menu::{item, menu, separator, MenuEntry, MenuState};
+use silka_widgets::menu::{item, menu_in, separator, MenuEntry, MenuState};
 use silka_widgets::overlay::OverlayBuilder;
-use silka_widgets::{text, Fonts};
+use silka_widgets::{divider_in, spacer, text_in, Fonts, IconName};
 
 use crate::kit;
 use crate::nav::{Page, USER_EMAIL, USER_NAME};
@@ -77,13 +77,16 @@ pub fn top_bar(
     on_toggle_appearance: impl Fn() + 'static,
 ) -> TopBar {
     let dark = t.appearance == Appearance::Dark;
-    let (glyph, label) = if dark {
-        ("☀", TO_LIGHT)
+    // The symbol says where pressing goes, not where the application is — and
+    // it is a real icon now, so the a11y name is the sentence beside it rather
+    // than whatever a screen reader makes of a text glyph.
+    let (symbol, label) = if dark {
+        (IconName::Sun, TO_LIGHT)
     } else {
-        ("●", TO_DARK)
+        (IconName::Moon, TO_DARK)
     };
 
-    let account = menu(fonts, t, account_entries())
+    let account = menu_in(fonts, t, account_entries())
         .label(USER_MENU)
         .key("account-menu")
         .chip(true)
@@ -102,7 +105,7 @@ pub fn top_bar(
 
     let chip = row([
         kit::avatar(fonts, t, USER_NAME, t.space(7.0)),
-        text(fonts, USER_NAME)
+        text_in(fonts, USER_NAME)
             .size(t.typography.callout.size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.label)
@@ -113,18 +116,18 @@ pub fn top_bar(
     .cross(CrossAlign::Center);
 
     let view = row([
-        text(fonts, page.short_title())
+        text_in(fonts, page.short_title())
             .size(t.typography.title3.size)
             .weight(FontWeight::SEMIBOLD)
             .tracking(t.typography.title3.tracking)
             .color(t.color.label)
             .single_line()
             .into(),
-        // The spacer that pushes the controls to the far side: a flex child of
-        // zero size, so the layout engine owns the gap.
-        View::from(expanded(fixed(0.0, 0.0))),
-        kit::icon_button(fonts, t, glyph, label, on_toggle_appearance),
-        kit::icon_button(fonts, t, "◆", NOTIFICATIONS, || {}),
+        // The spacer that pushes the controls to the far side — the Tier 0
+        // component, so the layout engine owns the gap.
+        View::from(spacer()),
+        kit::icon_button(t, symbol, label, on_toggle_appearance),
+        kit::icon_button(t, IconName::Bell, NOTIFICATIONS, || {}),
         account.trigger_with(chip),
     ])
     .spacing(t.space(2.0))
@@ -134,7 +137,7 @@ pub fn top_bar(
     .bg(silka_theme::ColorToken::Surface);
 
     TopBar {
-        view: column([View::from(view), kit::divider(t)])
+        view: column([View::from(view), divider_in(t).into()])
             .cross(CrossAlign::Stretch)
             .into(),
         overlays: account.overlays(),

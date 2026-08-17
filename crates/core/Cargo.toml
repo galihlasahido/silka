@@ -14,6 +14,13 @@ rust-version.workspace = true
 # pass a11y-nya sendiri tetap jalan, hanya konversinya yang hilang.
 default = ["accesskit"]
 accesskit = ["dep:accesskit"]
+# Async runtime bridge (§9.6). OFF by default, and deliberately: `silka-core`
+# owns no executor, and an application that only needs a handful of concurrent
+# requests is better served by `Tasks::spawn_blocking` (one OS thread per task)
+# than by pulling a work-stealing scheduler into the binary. Turn it on and
+# `Tasks::spawn` accepts a `Future` instead of a closure; nothing else changes,
+# because the "result comes back through the channel" half is the same.
+tokio = ["dep:tokio"]
 
 [dependencies]
 silka-paint.workspace = true
@@ -25,3 +32,7 @@ silka-text.workspace = true
 silka-theme.workspace = true
 taffy.workspace = true         # widget Flex/Grid (§3.4), dipakai `tree::taffy_box` saja
 accesskit = { workspace = true, optional = true }
+# Only compiled when the `tokio` feature is on. `rt-multi-thread` is the
+# fallback runtime `Tasks::spawn` creates when the caller has none of its own;
+# `time` is what makes a timeout or a debounce inside a task possible at all.
+tokio = { workspace = true, optional = true }

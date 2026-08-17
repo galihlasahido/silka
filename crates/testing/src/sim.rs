@@ -33,7 +33,7 @@
 //! use silka_paint::Point;
 //! use silka_testing::{Case, Simulator};
 //! use silka_theme::Theme;
-//! use silka_widgets::{button, text, Fonts};
+//! use silka_widgets::{button_in, text_in, Fonts};
 //!
 //! let fonts = Fonts::bundled_only();
 //!
@@ -44,8 +44,8 @@
 //!     let count = use_signal(|| 0i32);
 //!     View::from(
 //!         column([
-//!             View::from(text(&fonts, format!("Count {}", count.get()))),
-//!             button(&fonts, &theme, "Add")
+//!             View::from(text_in(&fonts, format!("Count {}", count.get()))),
+//!             button_in(&fonts, &theme, "Add")
 //!                 .on_press(move || count.set(count.get() + 1))
 //!                 .into(),
 //!         ])

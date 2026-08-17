@@ -154,7 +154,7 @@
 //!     .unwrap();
 //! ```
 //!
-//! The one thing that is *not* optional here: [`menubar`] always ships the
+//! The one thing that is *not* optional here: [`fn@menubar`] always ships the
 //! standard macOS Edit menu, because that is what puts cut/copy/paste on the
 //! responder chain. Everything else in this milestone is polish; that one is
 //! the difference between ⌘V working and not.
@@ -199,6 +199,48 @@
 //!   not at `x = 3000` where nobody would ever find it
 //!   ([`restore_placement`]).
 //!
+//! ## Milestone `native-tail` (INTEGRASI-NATIVE §2–§5)
+//!
+//! The rest of the 90/10 tail: the parts an application reaches for once its
+//! window works. Same rule as everywhere else — no `notify-rust`, `notify` or
+//! `keyring` type is visible above the module that wraps it — and the same
+//! honesty about what is not there: a call with no backend on the current
+//! platform returns a typed error that **says which API it is waiting for**,
+//! never a silent no-op.
+//!
+//! | Module | What it covers | Backends |
+//! |---|---|---|
+//! | [`mod@drag`] | starting a drag out of the application | macOS live; Windows/Wayland named, not written |
+//! | [`notification`] | system notifications | all three (macOS needs a signed bundle) |
+//! | [`dock`] | dock badge, taskbar progress, attention | badge macOS, progress Windows, attention all three |
+//! | [`hotkey`] | global shortcuts | translation only; registration named, not written |
+//! | [`credential`] | Keychain / Credential Manager, biometrics | macOS + Windows; Linux and biometrics declined, with reasons |
+//! | [`association`] | file types, URL schemes, deep links | manifest generation + `argv` parsing, all pure |
+//! | [`instance`] | single instance with argument forwarding | all three, in `std` |
+//! | [`mod@trash`] | move to trash instead of deleting | all three |
+//! | [`recent`] | recent documents | all three |
+//! | [`share`] | open with the default application, reveal, share sheet | opening everywhere; share sheet and Quick Look declined |
+//! | [`watch`] | watching the file system | all three |
+//! | [`media`] | media keys and Now Playing | vocabulary only, backend named |
+//! | [`mod@menubar`] | the in-window menubar model for Linux | drawn, not D-Bus — the decision is in the module docs |
+//!
+//! ```no_run
+//! use silka_platform::{drag, notify, set_badge, trash, Badge, DragEffects};
+//!
+//! # fn demo(window: &silka_platform::NativeWindow, preview: silka_platform::DragPreview) {
+//! // Drag a file out of a list, into Finder or another application.
+//! let _ = drag()
+//!     .file("/tmp/report.pdf")
+//!     .allow(DragEffects::COPY)
+//!     .preview(preview)
+//!     .begin(window, silka_paint::Point::new(120.0, 48.0));
+//!
+//! let _ = set_badge(&Badge::Count(3));
+//! let _ = notify("Export finished").body("report.pdf is ready").show();
+//! let _ = trash("/tmp/scratch.txt");
+//! # }
+//! ```
+//!
 //! [`headless_app`] assembles the **exact same** [`silka_core::app::AppRuntime`]
 //! without a window and without a GPU — `run_app` itself uses it, and so do
 //! integration tests that run the same page in CI, feed it input events, and
@@ -222,18 +264,31 @@
 
 pub mod access;
 pub mod appearance;
+pub mod association;
 pub mod clipboard;
+pub mod credential;
 pub mod dialog;
+pub mod dock;
+pub mod drag;
 mod error;
 mod event;
+pub mod hotkey;
 pub mod image;
 pub mod input;
+pub mod instance;
 pub mod lifecycle;
+pub mod media;
 pub mod menu;
+pub mod menubar;
+pub mod notification;
 pub mod platform;
+pub mod recent;
+pub mod share;
 pub mod titlebar;
+pub mod trash;
 pub mod tray;
 pub mod vsync;
+pub mod watch;
 mod window;
 
 pub use access::{AccessAdapter, AccessEvent, AccessOutcome};
@@ -244,7 +299,7 @@ pub use error::PlatformError;
 
 /// The event loop's user event — the return path for every native callback
 /// that does not arrive as a window event (INTEGRASI-NATIVE §2, §3.8).
-pub use event::{forward_native_events, ShellEvent};
+pub use event::{forward_native_events, wake_notifier, ShellEvent};
 
 /// Native integration P0 (INTEGRASI-NATIVE §1–§2).
 ///
@@ -275,6 +330,18 @@ pub use titlebar::{
 };
 pub use tray::{tray, Tray, TrayActivation, TrayButton, TrayConfig, TrayError};
 pub use vsync::{VsyncClock, VsyncKind, VsyncSource};
+
+/// The rest of the native catalogue (INTEGRASI-NATIVE §2–§5).
+///
+/// Everything below is reached through its own module as well; these are the
+/// handful of names an application reaches for often enough that the extra path
+/// segment is friction rather than clarity — starting a drag, showing a
+/// notification, putting a badge on the dock, and moving a file to the trash
+/// instead of deleting it.
+pub use dock::{attention, set_badge, set_progress, Attention, Badge, DockError, Progress};
+pub use drag::{drag, DragEffect, DragEffects, DragError, DragItem, DragPreview, DragSource};
+pub use notification::{notify, Notification, NotificationError, Timeout, Urgency};
+pub use trash::{trash, TrashError};
 pub use window::{
     default_clear_color, headless_app, run_app, run_app_with, window, FrameContext, WindowConfig,
 };

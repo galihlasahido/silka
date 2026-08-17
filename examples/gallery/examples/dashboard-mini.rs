@@ -21,7 +21,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
-use silka_chart::bar_chart;
+use silka_chart::bar_chart_in;
 use silka_chart::format::{Locale, NumberFormat};
 use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::scheduler::Dirty;
@@ -32,7 +32,7 @@ use silka_paint::Insets;
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, Theme};
 use silka_widgets::{
-    button, col, table, text, use_table_state, ButtonVariant, Column, Fonts, TableState,
+    button_in, col, table_in, text_in, use_table_state, ButtonVariant, Column, Fonts, TableState,
 };
 
 const TITLE: &str = "Dashboard";
@@ -205,13 +205,13 @@ fn app(
     let for_press = inbox.clone();
     let head = row([
         View::from(
-            text(fonts, TITLE)
+            text_in(fonts, TITLE)
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
         ),
         View::from(
-            button(fonts, &t, REFRESH)
+            button_in(fonts, &t, REFRESH)
                 .variant(ButtonVariant::Secondary)
                 .disabled(data.with(|d| *d == Load::Loading))
                 .on_press(move || {
@@ -229,7 +229,7 @@ fn app(
 
     let body = data.with(|d| match d {
         Load::Loading => View::from(
-            text(fonts, LOADING)
+            text_in(fonts, LOADING)
                 .text_color(ColorToken::SecondaryLabel)
                 .single_line(),
         ),
@@ -282,13 +282,13 @@ fn card(fonts: &Fonts, label: &str, value: String) -> View {
         .border_1()
         .border_color(ColorToken::Separator)
         .child(
-            text(fonts, label)
+            text_in(fonts, label)
                 .text_xs()
                 .text_color(ColorToken::SecondaryLabel)
                 .single_line(),
         )
         .child(
-            text(fonts, value)
+            text_in(fonts, value)
                 .font(FontToken::Title3)
                 .text_color(ColorToken::Label)
                 .single_line(),
@@ -301,7 +301,7 @@ fn chart(fonts: &Fonts, t: &Theme, months: Vec<Month>) -> View {
     let (w, h) = (t.space(CHART_W), t.space(CHART_H));
     constrained(
         BoxConstraints::new(w, w, h, h),
-        bar_chart(fonts, t, months)
+        bar_chart_in(fonts, t, months)
             .key("revenue")
             .x_label(|m: &Month| m.name.clone())
             .y_named("Revenue", |m: &Month| m.revenue)
@@ -330,14 +330,14 @@ fn deals_table(fonts: &Fonts, t: &Theme, deals: Vec<Deal>, state: TableState) ->
 
     constrained(
         BoxConstraints::new(w, w, h, h),
-        table(fonts, t, state, columns, count, move |line, cell| {
+        table_in(fonts, t, state, columns, count, move |line, cell| {
             let deal = &rows[line];
             let value = match cell {
                 0 => deal.client.clone(),
                 1 => deal.region.clone(),
                 _ => NumberFormat::Compact.format(deal.amount, &Locale::EN_US),
             };
-            text(&for_cell, value)
+            text_in(&for_cell, value)
                 .text_color(match cell {
                     0 => ColorToken::Label,
                     _ => ColorToken::SecondaryLabel,

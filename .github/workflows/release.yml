@@ -1,0 +1,656 @@
+# Release pipeline for silka (SISA-PEKERJAAN §I, INTEGRASI-NATIVE §9).
+#
+# `ci.yml` proves the code is right. This proves it can be *installed*: bundled
+# for three operating systems, signed on two of them, notarized on one, and
+# described by an update feed the shipped binary can read back.
+#
+# ---------------------------------------------------------------------------
+# The one rule
+# ---------------------------------------------------------------------------
+#
+# INTEGRASI-NATIVE §9 says signing and the updater go into CI *from the first
+# flagship app*, not at the first release — "notarization that fails on release
+# day is a bad tradition that can be avoided". So this workflow runs on every
+# tag AND can be run by hand with `dry-run: true`, which does everything except
+# publish. A dry run on a Friday is how you find out the certificate expired.
+#
+# ---------------------------------------------------------------------------
+# Secrets (every one of them a repository secret; none of them ever in a file)
+# ---------------------------------------------------------------------------
+#
+#   macOS      MACOS_CERT_P12, MACOS_CERT_PASSWORD, MACOS_KEYCHAIN_PASSWORD,
+#              MACOS_SIGN_IDENTITY
+#   notarize   NOTARY_API_KEY_P8, NOTARY_API_KEY_ID, NOTARY_API_ISSUER
+#              (or NOTARY_APPLE_ID, NOTARY_PASSWORD, NOTARY_TEAM_ID)
+#   Windows    WINDOWS_CERT_PFX, WINDOWS_CERT_PASSWORD
+#              (or AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT,
+#               AZURE_SIGNING_PROFILE, AZURE_TENANT_ID, AZURE_CLIENT_ID,
+#               AZURE_CLIENT_SECRET)
+#   updater    UPDATE_SIGNING_KEY — the Ed25519 private key, PEM
+#
+# A missing secret does not silently produce an unsigned build: each job records
+# whether it signed, and `publish` refuses to release anything that did not.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the leading v (e.g. 1.4.0)"
+        required: true
+        type: string
+      channel:
+        description: "Feed channel"
+        required: false
+        default: "stable"
+        type: string
+      rollout:
+        description: "Staged rollout percentage, 0-100"
+        required: false
+        default: "25"
+        type: string
+      dry-run:
+        description: "Build, sign and notarize, but publish nothing"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_ID: dev.silka.dashboard
+  PRODUCT: Silka Dashboard
+  PACKAGE: silka-dashboard
+  BINARY: silka-dashboard
+  # Where the update feed and the artifacts are served from. The feed's `url`
+  # fields are built from this, so it has to be the address users actually
+  # reach — not the one the CI runner can reach.
+  BASE_URL: https://downloads.example.com
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # What are we building?
+  # ---------------------------------------------------------------------------
+  settings:
+    name: settings
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      channel: ${{ steps.derive.outputs.channel }}
+      rollout: ${{ steps.derive.outputs.rollout }}
+      publish: ${{ steps.derive.outputs.publish }}
+      build: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derive the version, channel and rollout
+        id: derive
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            PUBLISH="true"
+            ROLLOUT="25"
+          else
+            VERSION="${{ inputs.version }}"
+            ROLLOUT="${{ inputs.rollout }}"
+            if [ "${{ inputs.dry-run }}" = "true" ]; then PUBLISH="false"; else PUBLISH="true"; fi
+          fi
+
+          # A pre-release tag goes to the beta channel automatically. Getting
+          # this wrong in the other direction — an rc offered on stable — is the
+          # mistake `Version::is_pre_release` exists to make cheap to avoid.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.channel }}" ]; then
+            CHANNEL="${{ inputs.channel }}"
+          elif [[ "$VERSION" == *-* ]]; then
+            CHANNEL="beta"
+          else
+            CHANNEL="stable"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "rollout=$ROLLOUT" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+          echo "### Release $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| channel | $CHANNEL |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| rollout | $ROLLOUT% |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| publish | $PUBLISH |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| build | ${{ github.sha }} |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: The three places the version is written must agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.derive.outputs.version }}"
+
+          # `Cargo.toml`, `packaging/Packager.toml` and the git tag. When they
+          # drift, the bundle says one thing, the feed says another, and the
+          # updater offers an install the user already has.
+          CARGO_VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          PACKAGER_VERSION="$(grep -m1 '^version' packaging/Packager.toml | cut -d'"' -f2)"
+
+          echo "tag: $VERSION  Cargo.toml: $CARGO_VERSION  Packager.toml: $PACKAGER_VERSION"
+          if [ "$CARGO_VERSION" != "$VERSION" ] || [ "$PACKAGER_VERSION" != "$VERSION" ]; then
+            echo "::error::version mismatch — bump Cargo.toml and packaging/Packager.toml to $VERSION before tagging"
+            exit 1
+          fi
+
+          # The macOS floor is written in three files too, and a mismatch there
+          # offers an update to a Mac that cannot launch it.
+          PLIST_FLOOR="$(grep -A1 LSMinimumSystemVersion packaging/macos/Info.plist | grep string | sed 's/.*<string>\(.*\)<\/string>.*/\1/')"
+          PACKAGER_FLOOR="$(grep -m1 'minimum-system-version' packaging/Packager.toml | cut -d'"' -f2)"
+          echo "macOS floor — Info.plist: $PLIST_FLOOR  Packager.toml: $PACKAGER_FLOOR"
+          if [ "$PLIST_FLOOR" != "$PACKAGER_FLOOR" ]; then
+            echo "::error::macOS minimum version mismatch between Info.plist and Packager.toml"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # macOS: universal binary, signed, notarized, stapled
+  # ---------------------------------------------------------------------------
+  macos:
+    name: macOS (universal)
+    needs: settings
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Do we have the signing secrets?
+        id: capability
+        shell: bash
+        env:
+          CERT: ${{ secrets.MACOS_CERT_P12 }}
+          NOTARY_KEY: ${{ secrets.NOTARY_API_KEY_P8 }}
+          NOTARY_ID: ${{ secrets.NOTARY_APPLE_ID }}
+        run: |
+          if [ -n "$CERT" ]; then echo "sign=true" >> "$GITHUB_OUTPUT"; else echo "sign=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$NOTARY_KEY" ] || [ -n "$NOTARY_ID" ]; then
+            echo "notarize=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notarize=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build both architectures
+        run: |
+          cargo build --profile dist -p "$PACKAGE" --target aarch64-apple-darwin
+          cargo build --profile dist -p "$PACKAGE" --target x86_64-apple-darwin
+
+      - name: Fuse them into one universal binary
+        run: |
+          set -euo pipefail
+          mkdir -p target/dist
+          # One file that runs natively on both architectures. Two separate
+          # downloads would work too, and would double every step below —
+          # including notarization, which is the slowest one.
+          lipo -create -output "target/dist/$BINARY" \
+            "target/aarch64-apple-darwin/dist/$BINARY" \
+            "target/x86_64-apple-darwin/dist/$BINARY"
+          lipo -info "target/dist/$BINARY"
+
+      - name: Collect symbols before anything is stripped
+        run: |
+          chmod +x .github/scripts/collect-symbols.sh
+          .github/scripts/collect-symbols.sh \
+            --binary "target/dist/$BINARY" \
+            --platform macos-universal \
+            --version "${{ needs.settings.outputs.version }}" \
+            --build "${{ needs.settings.outputs.build }}" \
+            --out symbols
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Bundle .app and .dmg
+        run: |
+          cargo packager \
+            --config packaging/Packager.toml \
+            --profile dist \
+            --formats app,dmg \
+            --out-dir dist \
+            --verbose
+
+      - name: Sign
+        if: steps.capability.outputs.sign == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          chmod +x .github/scripts/macos-sign.sh
+          # The .app first: the .dmg is a container, and signing it before its
+          # contents would seal a signature that is about to change.
+          .github/scripts/macos-sign.sh dist/*.app
+          .github/scripts/macos-sign.sh dist/*.dmg
+
+      - name: Notarize and staple
+        if: steps.capability.outputs.notarize == 'true'
+        env:
+          NOTARY_API_KEY_P8: ${{ secrets.NOTARY_API_KEY_P8 }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER: ${{ secrets.NOTARY_API_ISSUER }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: |
+          chmod +x .github/scripts/macos-notarize.sh
+          .github/scripts/macos-notarize.sh dist/*.dmg
+
+      - name: Say plainly what this build is
+        shell: bash
+        run: |
+          {
+            echo "### macOS"
+            echo ""
+            echo "- signed: ${{ steps.capability.outputs.sign }}"
+            echo "- notarized: ${{ steps.capability.outputs.notarize }}"
+            if [ "${{ steps.capability.outputs.notarize }}" != "true" ]; then
+              echo ""
+              echo "> Gatekeeper will block this build, **and system notifications will"
+              echo "> silently do nothing** — see \`silka_platform::notification::needs_bundle\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-macos
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-macos
+          path: symbols/**
+          if-no-files-found: error
+
+      - name: Record whether this platform was signed
+        shell: bash
+        run: |
+          mkdir -p attest
+          echo "macos signed=${{ steps.capability.outputs.sign }} notarized=${{ steps.capability.outputs.notarize }}" > attest/macos.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: attest-macos
+          path: attest/macos.txt
+
+  # ---------------------------------------------------------------------------
+  # Windows: MSI and NSIS, Authenticode-signed
+  # ---------------------------------------------------------------------------
+  windows:
+    name: Windows (x86_64)
+    needs: settings
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Do we have the signing secrets?
+        id: capability
+        shell: bash
+        env:
+          PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          AZURE: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+        run: |
+          if [ -n "$PFX" ] || [ -n "$AZURE" ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: cargo build --profile dist -p ${{ env.PACKAGE }}
+
+      - name: Collect symbols before anything is stripped
+        shell: bash
+        run: |
+          chmod +x .github/scripts/collect-symbols.sh
+          .github/scripts/collect-symbols.sh \
+            --binary "target/dist/$BINARY.exe" \
+            --platform windows-x86_64 \
+            --version "${{ needs.settings.outputs.version }}" \
+            --build "${{ needs.settings.outputs.build }}" \
+            --out symbols
+
+      - name: Sign the executable
+        if: steps.capability.outputs.sign == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          # The .exe is signed before it goes into an installer, and the
+          # installers are signed after they are built. Signing only the
+          # installer leaves the file SmartScreen actually inspects — the one
+          # that lands on disk — unsigned.
+          ./.github/scripts/windows-sign.ps1 -Path target/dist/${{ env.BINARY }}.exe
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager --locked
+
+      - name: Bundle .msi and the NSIS installer
+        run: |
+          cargo packager `
+            --config packaging/Packager.toml `
+            --profile dist `
+            --formats wix,nsis `
+            --out-dir dist `
+            --verbose
+
+      - name: Sign the installers
+        if: steps.capability.outputs.sign == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          ./.github/scripts/windows-sign.ps1 -Path dist/*.msi, dist/*.exe
+
+      - name: Say plainly what this build is
+        shell: bash
+        run: |
+          {
+            echo "### Windows"
+            echo ""
+            echo "- signed: ${{ steps.capability.outputs.sign }}"
+            if [ "${{ steps.capability.outputs.sign }}" != "true" ]; then
+              echo ""
+              echo "> SmartScreen will show \"Windows protected your PC\" and hide the"
+              echo "> Run button behind *More info*."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-windows
+          path: |
+            dist/*.msi
+            dist/*.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-windows
+          path: symbols/**
+          if-no-files-found: error
+
+      - name: Record whether this platform was signed
+        shell: bash
+        run: |
+          mkdir -p attest
+          echo "windows signed=${{ steps.capability.outputs.sign }}" > attest/windows.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: attest-windows
+          path: attest/windows.txt
+
+  # ---------------------------------------------------------------------------
+  # Linux: AppImage, deb, rpm
+  # ---------------------------------------------------------------------------
+  linux:
+    name: Linux (x86_64)
+    needs: settings
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # 22.04 rather than the newest image, deliberately: a binary linked
+      # against a newer glibc refuses to start on an older distribution, and
+      # there is no error message that says so in a way a user can act on. The
+      # oldest supported build environment is the only honest one.
+      - name: Install Linux build dependencies
+        run: ./.github/scripts/linux-deps.sh
+
+      - name: Install packaging tools
+        run: |
+          sudo apt-get install -y --no-install-recommends rpm file
+          cargo install cargo-packager --locked
+
+      - name: Build
+        run: cargo build --profile dist -p ${{ env.PACKAGE }}
+
+      - name: Collect symbols before anything is stripped
+        run: |
+          chmod +x .github/scripts/collect-symbols.sh
+          .github/scripts/collect-symbols.sh \
+            --binary "target/dist/$BINARY" \
+            --platform linux-x86_64 \
+            --version "${{ needs.settings.outputs.version }}" \
+            --build "${{ needs.settings.outputs.build }}" \
+            --out symbols
+
+      - name: Bundle AppImage, deb and rpm
+        run: |
+          cargo packager \
+            --config packaging/Packager.toml \
+            --profile dist \
+            --formats appimage,deb,rpm \
+            --out-dir dist \
+            --verbose
+
+      # There is no Linux equivalent of codesign here on purpose: `.deb` and
+      # `.rpm` are signed by the *repository* that serves them, not by the file,
+      # and an AppImage carries no signature format users' desktops check. What
+      # protects a Linux download is the digest and the Ed25519 signature in the
+      # update feed — which is exactly why `silka-dist` refuses an artifact with
+      # no signature the moment a verifier exists.
+      - name: Say plainly what this build is
+        run: |
+          {
+            echo "### Linux"
+            echo ""
+            echo "- packages are unsigned; integrity comes from the feed's SHA-256 + Ed25519 signature"
+            echo "- built on ubuntu-22.04, so the glibc floor is that image's"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-linux
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: symbols-linux
+          path: symbols/**
+          if-no-files-found: error
+
+      - name: Record that this platform needs no signature
+        run: |
+          mkdir -p attest
+          echo "linux signed=n/a" > attest/linux.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: attest-linux
+          path: attest/linux.txt
+
+  # ---------------------------------------------------------------------------
+  # Feed, symbols archive, GitHub release
+  # ---------------------------------------------------------------------------
+  publish:
+    name: feed + release
+    needs: [settings, macos, windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download every platform's artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Download the signing attestations
+        uses: actions/download-artifact@v4
+        with:
+          pattern: attest-*
+          path: attest
+          merge-multiple: true
+
+      - name: Refuse to publish an unsigned build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat attest/*.txt
+
+          # The gate INTEGRASI-NATIVE §9 asks for. A build that reaches users
+          # unsigned is a build that trains them to click through the warning,
+          # and on macOS it is also a build whose notifications do nothing.
+          if grep -q 'signed=false' attest/*.txt; then
+            echo "::error::at least one platform was built without a signature — set the signing secrets before releasing"
+            exit 1
+          fi
+          if grep -q 'notarized=false' attest/*.txt; then
+            echo "::error::the macOS build was not notarized — Gatekeeper will block it"
+            exit 1
+          fi
+
+      - name: Fetch the current feed, if there is one
+        continue-on-error: true
+        run: |
+          # Merging into the published feed is what keeps older releases
+          # available. A feed that lists only the newest release strands anyone
+          # whose OS is too old for it.
+          curl -fsSL "$BASE_URL/${{ needs.settings.outputs.channel }}/feed.json" -o previous-feed.json || true
+          ls -la previous-feed.json || echo "no previous feed; this is the first release on this channel"
+
+      - name: Write the private signing key to a file only this step can see
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${UPDATE_SIGNING_KEY:-}" ]; then
+            echo "::error::UPDATE_SIGNING_KEY is not set; an unsigned feed is refused by every client that has a verifier"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$UPDATE_SIGNING_KEY" > "$RUNNER_TEMP/update-signing.pem"
+
+      - name: Build the update feed
+        run: |
+          set -euo pipefail
+          chmod +x .github/scripts/make-update-feed.sh
+
+          PREVIOUS=""
+          if [ -s previous-feed.json ]; then PREVIOUS="--previous previous-feed.json"; fi
+
+          .github/scripts/make-update-feed.sh \
+            --app "$APP_ID" \
+            --version "${{ needs.settings.outputs.version }}" \
+            --channel "${{ needs.settings.outputs.channel }}" \
+            --base-url "$BASE_URL/v${{ needs.settings.outputs.version }}" \
+            --dir incoming \
+            --out feed.json \
+            --rollout "${{ needs.settings.outputs.rollout }}" \
+            --min-macos "11.0" \
+            --min-windows "10.0.19041" \
+            --sign-key "$RUNNER_TEMP/update-signing.pem" \
+            $PREVIOUS
+
+      - name: Shred the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/update-signing.pem"
+
+      - name: Show the feed in the job summary
+        run: |
+          {
+            echo "### Update feed"
+            echo ""
+            echo '```json'
+            cat feed.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Collect every platform's symbols into one archive
+        uses: actions/download-artifact@v4
+        with:
+          pattern: symbols-*
+          path: symbols
+          merge-multiple: true
+
+      - name: Pack the symbol archive
+        run: |
+          # Named for the version, because that is what a crash report six
+          # months from now will be asking for.
+          tar -czf "symbols-${{ needs.settings.outputs.version }}.tar.gz" -C symbols .
+          ls -la "symbols-${{ needs.settings.outputs.version }}.tar.gz"
+
+      - name: Publish the GitHub release
+        if: needs.settings.outputs.publish == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.settings.outputs.version }}
+          name: ${{ env.PRODUCT }} ${{ needs.settings.outputs.version }}
+          draft: true
+          prerelease: ${{ needs.settings.outputs.channel != 'stable' }}
+          files: |
+            incoming/*
+            feed.json
+            symbols-${{ needs.settings.outputs.version }}.tar.gz
+          body: |
+            Built from `${{ needs.settings.outputs.build }}`, channel
+            `${{ needs.settings.outputs.channel }}`, rolling out to
+            ${{ needs.settings.outputs.rollout }}% of installs.
+
+            The release is created as a **draft**. Two things still have to
+            happen by hand, and both are deliberate:
+
+            1. Upload `feed.json` to `${{ env.BASE_URL }}/${{ needs.settings.outputs.channel }}/feed.json`.
+               Until it is there, nobody is offered this release — which is the
+               correct state for a build nobody has smoke-tested yet.
+            2. Publish the draft.
+
+            Raising the rollout later is one edit to `rollout` in the feed.
+            Because the bucket is a hash of a stable per-install id, raising it
+            never takes the update away from someone already offered it.
+
+      - name: Say what is left to do
+        run: |
+          {
+            echo "### Still to do by hand"
+            echo ""
+            echo "1. Smoke-test the installers on a machine that has never seen this build."
+            echo "2. Upload \`feed.json\` to \`$BASE_URL/${{ needs.settings.outputs.channel }}/feed.json\`."
+            echo "3. Publish the draft release."
+            echo "4. Keep \`symbols-${{ needs.settings.outputs.version }}.tar.gz\` — a crash report without it is a list of addresses."
+          } >> "$GITHUB_STEP_SUMMARY"

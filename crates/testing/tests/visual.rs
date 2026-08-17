@@ -18,7 +18,7 @@ use silka_core::view::{column, fixed, View};
 use silka_paint::Insets;
 use silka_testing::{for_each_case, gpu_or_skip, Case, Simulator, Tolerance};
 use silka_theme::{RadiusToken, ShadowToken, Theme};
-use silka_widgets::{text, Fonts};
+use silka_widgets::{text_in, Fonts};
 
 /// A card row: three boxes that exercise radius, shadow and the accent colour —
 /// the three token families with a visual footprint.
@@ -106,10 +106,10 @@ fn teks_ikut_tertangkap_lewat_sumber_glyph() {
     let mut sim = Simulator::case(case, move |cx| {
         let theme: Theme = cx.expect_env::<silka_core::signals::Signal<Theme>>().get();
         column([
-            text(&untuk_view, "Halo, silka")
+            text_in(&untuk_view, "Halo, silka")
                 .size(28.0)
                 .color(theme.color.label),
-            text(&untuk_view, "Uji golden teks")
+            text_in(&untuk_view, "Uji golden teks")
                 .size(15.0)
                 .color(theme.color.secondary_label),
         ])

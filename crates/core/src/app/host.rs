@@ -21,6 +21,7 @@ use crate::animation::{AnimationDriver, Motion, Tick};
 use crate::input::{Event, InputRouter, Response};
 use crate::scheduler::{Dirty, FrameScheduler, FrameTiming, Wake};
 use crate::signals::{current_scope, Runtime, ScopeId, Signal};
+use crate::task::{Cancel, TaskHandle, Tasks};
 use crate::tree::{BoxConstraints, NodeId, RenderTree, TextDirection};
 use crate::view::{reconcile_children, with_theme, DiffStats, View};
 
@@ -183,6 +184,10 @@ pub(super) struct HostShared {
     wake: RefCell<Option<WakeFn>>,
     env: RefCell<Env>,
     reg: RefCell<Registry>,
+    /// The async bridge (§9.6). Lives here rather than on [`AppRuntime`] so
+    /// that a component can spawn from inside its build, where there is no
+    /// `&mut AppRuntime` to reach.
+    tasks: Tasks,
 }
 
 impl HostShared {
@@ -203,6 +208,33 @@ thread_local! {
 /// The host currently building on this thread, if any.
 pub(super) fn current_host() -> Option<Rc<HostShared>> {
     HOSTS.with(|h| h.borrow().last().cloned())
+}
+
+/// The task bridge of the application currently building on this thread.
+///
+/// This is how [`crate::task::use_resource`] finds somewhere to run its work
+/// without every component being handed a [`Tasks`]: the same thread-local
+/// stack [`super::component`] uses. `None` outside a build — and then there is
+/// genuinely no application to schedule against.
+///
+/// ```
+/// use silka_core::app::{app, component, current_tasks};
+/// use silka_core::view::{column, View};
+///
+/// // Outside a build there is no application, and saying so beats guessing.
+/// assert!(current_tasks().is_none());
+///
+/// let mut ui = app(|_cx| {
+///     View::from(column([component("row", |_cx| {
+///         assert!(current_tasks().is_some());
+///         View::from(silka_core::view::fixed(10.0, 10.0))
+///     })]))
+/// });
+/// ui.frame();
+/// assert!(current_tasks().is_none());
+/// ```
+pub fn current_tasks() -> Option<Tasks> {
+    current_host().map(|h| h.tasks.clone())
 }
 
 /// Guards the host stack — stays correct even if the user closure panics.
@@ -275,6 +307,51 @@ impl BuildCtx {
     /// build.
     pub fn env<T: Clone + 'static>(&self) -> Option<T> {
         self.host.env.borrow().get::<T>().cloned()
+    }
+
+    /// This application's async bridge (§9.6).
+    pub fn tasks(&self) -> Tasks {
+        self.host.tasks.clone()
+    }
+
+    /// Spawn blocking work whose result comes back **into this component**.
+    ///
+    /// The task is tied to the scope that is building: if the component is gone
+    /// by the time the answer arrives, `then` is dropped instead of writing into
+    /// a dead subtree, and the work's [`Cancel`] flag is raised so long work can
+    /// stop early (§9.6).
+    ///
+    /// ```
+    /// use silka_core::app::{app, component};
+    /// use silka_core::signals::use_signal;
+    /// use silka_core::view::{column, fixed, View};
+    ///
+    /// let mut ui = app(|_cx| {
+    ///     View::from(column([component("total", |cx| {
+    ///         let total = use_signal(|| 0u64);
+    ///         let once = use_signal(|| false);
+    ///         if !once.peek() {
+    ///             once.set(true);
+    ///             cx.spawn_blocking(|_cancel| (1..=10u64).sum::<u64>(), move |v| total.set(v));
+    ///         }
+    ///         View::from(fixed(40.0, 4.0 + total.get() as f32))
+    ///     })]))
+    /// })
+    /// .sized(200.0, 200.0);
+    ///
+    /// ui.frame();
+    /// ui.tasks().wait_for_idle();
+    /// // The next frame applies the payload and rebuilds only the component
+    /// // that read the signal.
+    /// assert_eq!(ui.frame().rebuilt, 1);
+    /// ```
+    pub fn spawn_blocking<T, W, F>(&self, work: W, then: F) -> TaskHandle
+    where
+        T: Send + 'static,
+        W: FnOnce(&Cancel) -> T + Send + 'static,
+        F: FnOnce(T) + 'static,
+    {
+        self.host.tasks.spawn_blocking(work, then)
     }
 
     /// Like [`BuildCtx::env`], but panics when nothing was injected.
@@ -454,6 +531,7 @@ impl AppRuntime {
             wake: RefCell::new(None),
             env: RefCell::new(Env::new()),
             reg: RefCell::new(Registry::default()),
+            tasks: Tasks::new(),
         });
 
         // **The signals → scheduler wiring** (§3.5). `Weak` so that the runtime
@@ -555,6 +633,15 @@ impl AppRuntime {
     /// The render tree the last frame produced.
     pub fn tree(&self) -> &RenderTree {
         &self.tree
+    }
+
+    /// This application's async bridge (§9.6).
+    ///
+    /// The shell installs its wake function here
+    /// ([`Tasks::notify_with`](crate::task::Tasks::notify_with)) so that a
+    /// result arriving while the window is idle still turns a frame.
+    pub fn tasks(&self) -> Tasks {
+        self.host.tasks.clone()
     }
 
     /// This application's input router.
@@ -796,6 +883,18 @@ impl AppRuntime {
     pub fn frame(&mut self) -> FrameReport {
         let mut start = self.host.scheduler.borrow_mut().begin_frame(Instant::now());
 
+        // 0. Apply whatever came back from a background task (§9.6).
+        //
+        // Before `drain_dirty`, deliberately: a continuation writes signals, so
+        // its result is rebuilt by *this* frame rather than by the next one. The
+        // sweep afterwards drops the continuations of components that died since
+        // the last frame, which is what cancels a request for a page the user
+        // has already left.
+        let delivered = self.host.tasks.deliver(&self.host.runtime);
+        if delivered > 0 {
+            self.host.tasks.sweep(&self.host.runtime);
+        }
+
         // 1. Who has to be rebuilt.
         //
         // The first frame builds the root; after that the list comes from
@@ -873,6 +972,55 @@ impl AppRuntime {
             size,
             timing,
         }
+    }
+
+    /// [`AppRuntime::frame`] behind a panic boundary (§9.7).
+    ///
+    /// This is the shell's last line of defence: a widget that panics halfway
+    /// through a build, a layout, or a paint takes the frame with it instead of
+    /// the process. What comes back is a [`PanicReport`] the shell can log,
+    /// report, and show — and, crucially, the application is still alive at that
+    /// point, so this is where state gets **saved** (signals are still readable;
+    /// the panic hook cannot touch them).
+    ///
+    /// The honest limits, spelled out in [`crate::recover`]: the render tree may
+    /// be partly diffed afterwards, so the recommended reaction to an `Err` is
+    /// "save, tell the user, restart the window", not "draw the next frame and
+    /// hope".
+    ///
+    /// ```
+    /// use silka_core::app::app;
+    /// use silka_core::signals::use_signal;
+    /// use silka_core::view::{fixed, View};
+    ///
+    /// silka_core::recover::install_hook();
+    ///
+    /// let mut ui = app(|_cx| {
+    ///     let broken = use_signal(|| false);
+    ///     if broken.get() {
+    ///         panic!("data root rusak");
+    ///     }
+    ///     View::from(fixed(80.0, 20.0))
+    /// })
+    /// .sized(200.0, 100.0);
+    ///
+    /// // A healthy frame is indistinguishable from `frame()`.
+    /// assert!(ui.frame_checked().is_ok());
+    /// ```
+    pub fn frame_checked(&mut self) -> Result<FrameReport, crate::recover::PanicReport> {
+        crate::recover::catch("frame", || self.frame())
+    }
+
+    /// [`AppRuntime::dispatch`] behind a panic boundary (§9.7).
+    ///
+    /// An `on_press` closure that unwraps a `None` is the single most common way
+    /// a desktop application dies. Here the event is dropped and the window
+    /// stays open.
+    pub fn dispatch_checked(
+        &mut self,
+        event: &Event,
+    ) -> Result<Response, crate::recover::PanicReport> {
+        crate::recover::catch("event", || self.dispatch(event))
     }
 
     /// Run the whole rebuild queue and return `(diff, how many scopes ran)`.

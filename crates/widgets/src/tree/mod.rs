@@ -40,7 +40,7 @@
 //!     Some(_) => Vec::new(),
 //! };
 //!
-//! tree(&t, state, files, move |row| View::from(text(&fonts, row.label.to_string())))
+//! tree_in(&t, state, files, move |row| View::from(text_in(&fonts, row.label.to_string())))
 //!     .row_extent(28.0)
 //!     .guides(t.space(0.25))
 //!     .label("Files")
@@ -120,12 +120,12 @@ pub use model::{
     MAX_GUIDE_DEPTH,
 };
 pub use node::{
-    chevron_dots, TreeAction, TreeBody, TreeGapBox, TreeRowBox, TreeStyle, TYPEAHEAD_PAUSE,
+    chevron_path, TreeAction, TreeBody, TreeGapBox, TreeRowBox, TreeStyle, TYPEAHEAD_PAUSE,
 };
 pub use state::{use_tree_state, TreeState};
 pub use view::{
-    tree, TreeBuilder, TreeGapProps, TreeProps, TreeRowProps, DEFAULT_OVERSCAN, DEFAULT_ROW_EXTENT,
-    VIEWPORT_HINT,
+    tree, tree_in, TreeBuilder, TreeGapProps, TreeProps, TreeRowProps, DEFAULT_OVERSCAN,
+    DEFAULT_ROW_EXTENT, VIEWPORT_HINT,
 };
 
 /// [`TreeBody`] is virtualized content just like `ListBody` and `TableBody` —

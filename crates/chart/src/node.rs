@@ -27,7 +27,7 @@
 //! data; labels above everything so a tall bar never covers its own axis.
 //!
 //! ```
-//! use silka_chart::{line_chart, ChartBox};
+//! use silka_chart::{line_chart_in, ChartBox};
 //! use silka_core::tree::{BoxConstraints, RenderTree};
 //! use silka_core::view::reconcile;
 //! use silka_paint::Size;
@@ -40,7 +40,7 @@
 //! let mut tree = RenderTree::new();
 //! reconcile(
 //!     &mut tree,
-//!     line_chart(&fonts, &theme, [10.0f64, 30.0, 20.0])
+//!     line_chart_in(&fonts, &theme, [10.0f64, 30.0, 20.0])
 //!         .numeric()
 //!         .y_named("Value", |v: &f64| *v)
 //!         .title("Throughput"),
@@ -67,7 +67,9 @@ use silka_core::access::{AccessNode, AccessRole};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick as AnimTick};
 use silka_core::input::{Event, EventCtx, HitBehavior, PointerPhase};
 use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
-use silka_paint::{Color, Corners, GlyphRun, Insets, Point, Quad, Rect, Size};
+use silka_paint::{
+    Color, Corners, GlyphRun, Insets, LineCap, LineJoin, Point, Quad, Rect, Size, Stroke,
+};
 use silka_text::{TextConstraints, TextStyle};
 use silka_widgets::Fonts;
 
@@ -610,16 +612,27 @@ impl ChartBox {
             let warna = self.style.series_color(si, series.color);
             let width = self.style.line_width;
             for titik in self.series_points(si, geometry) {
-                for r in stroke::stroke_columns(&titik, width, COLUMN_STEP) {
-                    if let Some(r) = r.intersect(plot) {
-                        ctx.quad(Quad::new(r).background(warna));
-                    }
-                }
-                // Joins and caps: as many as there are data points, which is
-                // why stamping is affordable here and not for the line itself.
-                for (p, r) in titik.iter().zip(stroke::joint_dots(&titik, width)) {
+                // ONE stroke command for the whole run. This used to be one
+                // vertical box per pixel column, with its height corrected by
+                // √(1+m²) so steep segments did not thin out; a real stroke has
+                // the right thickness by construction, and round joins mean two
+                // segments meet without a notch.
+                if titik.len() >= 2 {
+                    let mut garis = Stroke::with_capacity(warna, width, titik.len())
+                        .cap(LineCap::Round)
+                        .join(LineJoin::Round)
+                        .clip(plot);
+                    garis.extend(titik.iter().copied());
+                    ctx.stroke(garis);
+                } else if let Some(p) = titik.first() {
+                    // A run of one point is a dot, not a line — a single reading
+                    // between two gaps still has to be visible.
                     if plot.contains(*p) {
-                        ctx.quad(Quad::new(r).background(warna).corners(bulat(width)));
+                        ctx.quad(
+                            Quad::new(stroke::marker_rect(*p, width))
+                                .background(warna)
+                                .corners(bulat(width)),
+                        );
                     }
                 }
                 if self.spec.markers {

@@ -234,7 +234,7 @@ fn enter_menyisipkan_baris_baru_bukan_submit() {
     let catatan = Catatan::default();
     let kirim = Catatan::default();
     let mut u = Uji::baru(
-        text_area(&f, &t, "")
+        text_area_in(&f, &t, "")
             .on_change(catatan.rekam())
             .on_submit(kirim.rekam()),
     );
@@ -259,7 +259,7 @@ fn panah_atas_bawah_mempertahankan_kolom_yang_diinginkan() {
     let t = tema();
     // The middle line is deliberately the short one: this is exactly where a
     // naive implementation loses the column.
-    let mut u = Uji::baru(text_area(&f, &t, "panjang sekali\nab\npanjang sekali"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "panjang sekali\nab\npanjang sekali"));
     u.fokus();
     u.nama(NamedKey::Home, Modifiers::COMMAND);
     for _ in 0..10 {
@@ -296,7 +296,7 @@ fn panah_atas_bawah_mempertahankan_kolom_yang_diinginkan() {
 fn panah_atas_di_baris_pertama_ke_awal_dokumen() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS));
     u.fokus();
     u.nama(NamedKey::Home, Modifiers::COMMAND);
     u.nama(NamedKey::ArrowRight, Modifiers::NONE);
@@ -312,7 +312,7 @@ fn panah_atas_di_baris_pertama_ke_awal_dokumen() {
 fn home_end_bekerja_per_baris_dan_command_per_dokumen() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS));
     u.fokus();
     // Caret starts at the end of the document; End/Home stay on that line.
     u.nama(NamedKey::Home, Modifiers::NONE);
@@ -330,7 +330,7 @@ fn home_end_bekerja_per_baris_dan_command_per_dokumen() {
 fn seleksi_lintas_baris_menghasilkan_satu_kotak_per_baris() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS));
     u.fokus();
     u.nama(NamedKey::Home, Modifiers::COMMAND);
     for _ in 0..3 {
@@ -354,7 +354,7 @@ fn seleksi_lintas_baris_menghasilkan_satu_kotak_per_baris() {
 fn klik_tiga_kali_memilih_satu_paragraf_bukan_seluruh_dokumen() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS));
     u.fokus();
     let baris = u.badan().lines()[1];
     let titik = Point::new(10.0, baris.top + baris.height / 2.0 + 8.0);
@@ -367,7 +367,7 @@ fn klik_tiga_kali_memilih_satu_paragraf_bukan_seluruh_dokumen() {
 fn seret_melintasi_baris_memperluas_seleksi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS));
     let awal = Point::new(4.0, 10.0);
     u.tekan(awal);
     let bawah = u.badan().lines()[2];
@@ -388,7 +388,7 @@ fn teks_panjang_terlipat_mengikuti_lebar_bukan_menggulir_ke_samping() {
     let f = fonts();
     let t = tema();
     let panjang = "kalimat yang sangat panjang sekali sampai harus dilipat beberapa kali";
-    let mut u = Uji::baru(text_area(&f, &t, panjang));
+    let mut u = Uji::baru(text_area_in(&f, &t, panjang));
     let baris = u.badan().lines().to_vec();
     assert!(baris.len() > 1, "teks selebar 320pt harus terlipat");
     // Every visual line belongs to the same **source** line: wrapping is not a
@@ -416,7 +416,7 @@ fn home_di_baris_terlipat_ke_awal_baris_visual() {
     let f = fonts();
     let t = tema();
     let panjang = "kalimat yang sangat panjang sekali sampai harus dilipat beberapa kali";
-    let mut u = Uji::baru(text_area(&f, &t, panjang));
+    let mut u = Uji::baru(text_area_in(&f, &t, panjang));
     let baris = u.badan().lines().to_vec();
     u.fokus();
     // The caret starts at the end of the document, i.e. on the last visual
@@ -435,8 +435,8 @@ fn tab_secara_bawaan_memindahkan_fokus_bukan_menyisipkan() {
     let f = fonts();
     let t = tema();
     let mut u = Uji::baru(silka_core::view::column([
-        View::from(text_area(&f, &t, "").key("a")),
-        View::from(text_area(&f, &t, "").key("b")),
+        View::from(text_area_in(&f, &t, "").key("a")),
+        View::from(text_area_in(&f, &t, "").key("b")),
     ]));
     let kedua = bodies(&u.tree)[1];
     u.fokus();
@@ -458,7 +458,7 @@ fn tab_secara_bawaan_memindahkan_fokus_bukan_menyisipkan() {
 fn tab_bisa_dikonfigurasi_untuk_menyisipkan_indentasi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "").tab(TabBehavior::InsertTab));
+    let mut u = Uji::baru(text_area_in(&f, &t, "").tab(TabBehavior::InsertTab));
     u.fokus();
     let r = u.nama(NamedKey::Tab, Modifiers::NONE);
     assert_eq!(u.teks(), "\t");
@@ -478,8 +478,8 @@ fn fokus_bisa_keluar_lewat_tab_ke_widget_berikutnya() {
     reconcile(
         &mut tree,
         silka_core::view::column([
-            View::from(text_area(&f, &t, "").key("a")),
-            View::from(text_area(&f, &t, "").key("b")),
+            View::from(text_area_in(&f, &t, "").key("a")),
+            View::from(text_area_in(&f, &t, "").key("b")),
         ]),
     );
     tree.layout(BoxConstraints::loose(Size::new(320.0, 600.0)));
@@ -504,7 +504,7 @@ fn fokus_bisa_keluar_lewat_tab_ke_widget_berikutnya() {
 fn tinggi_tetap_tidak_ikut_tumbuh_saat_isi_bertambah() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "").rows(3));
+    let mut u = Uji::baru(text_area_in(&f, &t, "").rows(3));
     let awal = u.tinggi();
     u.fokus();
     for _ in 0..10 {
@@ -519,7 +519,7 @@ fn tinggi_tetap_tidak_ikut_tumbuh_saat_isi_bertambah() {
 fn auto_grow_tumbuh_bersama_isi_lalu_berhenti_di_batas() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "").auto_grow(2, 5));
+    let mut u = Uji::baru(text_area_in(&f, &t, "").auto_grow(2, 5));
     let kecil = u.tinggi();
     u.fokus();
 
@@ -538,7 +538,7 @@ fn auto_grow_tumbuh_bersama_isi_lalu_berhenti_di_batas() {
         besar <= u.badan().lines().len() as f32 * 100.0,
         "sanity: tinggi tidak meledak"
     );
-    let (_, maks) = text_area(&f, &t, "").auto_grow(2, 5).height_range();
+    let (_, maks) = text_area_in(&f, &t, "").auto_grow(2, 5).height_range();
     assert!(
         (besar - maks).abs() < 0.5,
         "tinggi {besar} harus berhenti di batas {maks}"
@@ -550,7 +550,7 @@ fn auto_grow_tumbuh_bersama_isi_lalu_berhenti_di_batas() {
 fn auto_grow_menyusut_lagi_saat_isi_dihapus() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "satu\ndua\ntiga\nempat\nlima").auto_grow(1, 8));
+    let mut u = Uji::baru(text_area_in(&f, &t, "satu\ndua\ntiga\nempat\nlima").auto_grow(1, 8));
     let besar = u.tinggi();
     u.fokus();
     u.tombol(KeyCode::Character('a'), Modifiers::COMMAND);
@@ -571,7 +571,7 @@ fn auto_grow_menyusut_lagi_saat_isi_dihapus() {
 fn caret_yang_keluar_layar_menarik_gulirannya_kembali() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "").rows(3));
+    let mut u = Uji::baru(text_area_in(&f, &t, "").rows(3));
     u.fokus();
     for i in 0..20 {
         u.ketik(&format!("baris{i}"));
@@ -611,8 +611,8 @@ fn caret_yang_keluar_layar_menarik_gulirannya_kembali() {
 fn nomor_baris_menyisakan_ruang_dan_menggambar_satu_angka_per_baris_sumber() {
     let f = fonts();
     let t = tema();
-    let tanpa = Uji::baru(text_area(&f, &t, EMPAT_BARIS));
-    let mut dengan = Uji::baru(text_area(&f, &t, EMPAT_BARIS).line_numbers(true));
+    let tanpa = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS));
+    let mut dengan = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS).line_numbers(true));
     assert_eq!(tanpa.badan().gutter_width(), 0.0);
     assert!(dengan.badan().gutter_width() > 0.0);
 
@@ -625,7 +625,7 @@ fn baris_terlipat_tidak_mendapat_nomor_sendiri() {
     let f = fonts();
     let t = tema();
     let panjang = "kalimat yang sangat panjang sekali sampai harus dilipat beberapa kali";
-    let mut u = Uji::baru(text_area(&f, &t, panjang).line_numbers(true));
+    let mut u = Uji::baru(text_area_in(&f, &t, panjang).line_numbers(true));
     assert!(u.badan().lines().len() > 1, "harus terlipat");
     assert_eq!(
         u.glyph_runs(),
@@ -638,7 +638,7 @@ fn baris_terlipat_tidak_mendapat_nomor_sendiri() {
 fn placeholder_tampil_saat_kosong_dan_hilang_saat_diketik() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "").placeholder("Tulis catatan"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "").placeholder("Tulis catatan"));
     assert!(u.badan().shows_placeholder());
     u.fokus();
     u.ketik("a");
@@ -656,7 +656,7 @@ fn preedit_ime_terlihat_tapi_belum_sampai_ke_aplikasi() {
     let f = fonts();
     let t = tema();
     let catatan = Catatan::default();
-    let mut u = Uji::baru(text_area(&f, &t, "").on_change(catatan.rekam()));
+    let mut u = Uji::baru(text_area_in(&f, &t, "").on_change(catatan.rekam()));
     u.fokus();
     u.ime(ImeEvent::Enabled);
     u.ime(ImeEvent::Preedit {
@@ -692,7 +692,7 @@ fn preedit_ime_terlihat_tapi_belum_sampai_ke_aplikasi() {
 fn read_only_boleh_diseleksi_tapi_tidak_bisa_diubah() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS).read_only(true));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS).read_only(true));
     u.fokus();
     u.ketik("x");
     u.nama(NamedKey::Enter, Modifiers::NONE);
@@ -707,7 +707,7 @@ fn read_only_boleh_diseleksi_tapi_tidak_bisa_diubah() {
 fn kolom_mati_tidak_menerima_fokus_tapi_tetap_dibacakan() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "isi").disabled(true).label("Catatan"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "isi").disabled(true).label("Catatan"));
     u.fokus();
     u.ketik("x");
     assert_eq!(u.teks(), "isi");
@@ -726,7 +726,7 @@ fn kolom_mati_tidak_menerima_fokus_tapi_tetap_dibacakan() {
 fn node_a11y_berperan_multiline_dan_melaporkan_caret() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, EMPAT_BARIS).label("Catatan"));
+    let mut u = Uji::baru(text_area_in(&f, &t, EMPAT_BARIS).label("Catatan"));
     u.fokus();
     u.nama(NamedKey::Home, Modifiers::COMMAND);
     for _ in 0..2 {
@@ -756,7 +756,7 @@ fn caret_dilaporkan_dalam_karakter_bukan_byte() {
     let t = tema();
     // "日本" is two characters but six bytes: a screen reader counts the
     // former.
-    let mut u = Uji::baru(text_area(&f, &t, "日本").label("Catatan"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "日本").label("Catatan"));
     u.fokus();
     let pohon = u.tree.access_tree(Some(u.id));
     let s = pohon
@@ -773,7 +773,7 @@ fn teknologi_bantu_bisa_mengganti_isi_lewat_set_value() {
     let f = fonts();
     let t = tema();
     let catatan = Catatan::default();
-    let mut u = Uji::baru(text_area(&f, &t, "lama").on_change(catatan.rekam()));
+    let mut u = Uji::baru(text_area_in(&f, &t, "lama").on_change(catatan.rekam()));
     let permintaan = AccessActionRequest {
         target: u.id,
         action: AccessAction::SetValue,
@@ -794,7 +794,7 @@ fn latar_dan_sudut_datang_dari_token_di_kedua_preset() {
     for preset in [Preset::Cupertino, Preset::Tailwind] {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let t = Theme::new(preset, appearance);
-            let mut u = Uji::baru(text_area(&f, &t, "isi"));
+            let mut u = Uji::baru(text_area_in(&f, &t, "isi"));
             let s = u.scene();
             let quad = s
                 .commands()
@@ -817,7 +817,7 @@ fn latar_dan_sudut_datang_dari_token_di_kedua_preset() {
 fn cincin_fokus_tumbuh_lewat_spring_lalu_pohon_kembali_diam() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "isi"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "isi"));
     u.fokus();
 
     let bingkai = u.bingkai();
@@ -859,7 +859,7 @@ fn cincin_fokus_tumbuh_lewat_spring_lalu_pohon_kembali_diam() {
 fn reduced_motion_sampai_ke_tujuan_tanpa_memantul() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "isi"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "isi"));
     u.fokus();
     let bingkai = u.bingkai();
     let mut tertinggi: f32 = 0.0;
@@ -895,7 +895,7 @@ fn reduced_motion_sampai_ke_tujuan_tanpa_memantul() {
 fn settle_menyelesaikan_semua_transisi_sekaligus() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "isi"));
+    let mut u = Uji::baru(text_area_in(&f, &t, "isi"));
     u.fokus();
     crate::settle(&mut u.tree);
     assert!(!is_animating(&u.tree));
@@ -909,14 +909,14 @@ fn settle_menyelesaikan_semua_transisi_sekaligus() {
 fn rebuild_dengan_nilai_props_sama_tidak_melempar_caret_ke_belakang() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, ""));
+    let mut u = Uji::baru(text_area_in(&f, &t, ""));
     u.fokus();
     u.ketik("halo");
     u.nama(NamedKey::Home, Modifiers::NONE);
 
     // The app rebuilds for an unrelated reason: the props still say "" because
     // this area is uncontrolled.
-    reconcile(&mut u.tree, View::from(text_area(&f, &t, "")));
+    reconcile(&mut u.tree, View::from(text_area_in(&f, &t, "")));
     u.tata();
     assert_eq!(u.teks(), "halo", "isi tidak boleh ditimpa props yang sama");
     assert_eq!(u.badan().selection().focus, 0, "caret tidak dilempar");
@@ -932,8 +932,11 @@ fn rebuild_dengan_nilai_props_sama_tidak_melempar_caret_ke_belakang() {
 fn nilai_baru_dari_aplikasi_tetap_menimpa_isi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_area(&f, &t, "lama"));
-    reconcile(&mut u.tree, View::from(text_area(&f, &t, "baru\nsekali")));
+    let mut u = Uji::baru(text_area_in(&f, &t, "lama"));
+    reconcile(
+        &mut u.tree,
+        View::from(text_area_in(&f, &t, "baru\nsekali")),
+    );
     u.tata();
     assert_eq!(u.teks(), "baru\nsekali");
     assert_eq!(u.badan().lines().len(), 2);

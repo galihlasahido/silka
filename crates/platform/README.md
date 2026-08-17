@@ -66,6 +66,49 @@ One thing here is not optional: `menubar` always ships the standard macOS Edit
 menu, because that is what puts cut/copy/paste on the responder chain. The rest
 of this list is polish; that one is the difference between ⌘V working and not.
 
+## The rest of the native tail
+
+Once the window works, this is what an application reaches for next. Same rule
+as everywhere else — no `notify-rust`, `notify` or `keyring` type is visible
+above the module that wraps it — and the same honesty about what is missing: a
+call with no backend on the current platform returns a typed error that **says
+which API it is waiting for**, never a silent no-op.
+
+```rust,no_run
+use silka_platform::{drag, notify, set_badge, trash, Badge, DragEffects, DragPreview, NativeWindow};
+
+fn demo(window: &NativeWindow, preview: DragPreview) {
+    // Drag a row out of the application, into Finder or another app.
+    let _ = drag()
+        .file("/tmp/report.pdf")
+        .text("report.pdf")
+        .allow(DragEffects::COPY)
+        .preview(preview)
+        .begin(window, silka_paint::Point::new(120.0, 48.0));
+
+    let _ = set_badge(&Badge::Count(3));
+    let _ = notify("Export finished").body("report.pdf is ready").show();
+    // Recoverable, not destroyed.
+    let _ = trash("/tmp/scratch.txt");
+}
+```
+
+| Module | What it covers | Backends |
+|---|---|---|
+| `drag` | starting a drag out of the application | macOS live; Windows/Wayland named, not written |
+| `notification` | system notifications | all three (macOS needs a signed bundle) |
+| `dock` | dock badge, taskbar progress, attention | badge macOS, progress Windows, attention all three |
+| `hotkey` | global shortcuts | translation only; registration named, not written |
+| `credential` | Keychain / Credential Manager, biometrics | macOS + Windows; Linux and biometrics declined, with reasons |
+| `association` | file types, URL schemes, deep links | manifest generation + `argv` parsing, all pure |
+| `instance` | single instance with argument forwarding | all three, in `std` |
+| `trash` | move to trash instead of deleting | all three |
+| `recent` | recent documents | all three |
+| `share` | open with default app, reveal, share sheet | opening everywhere; share sheet and Quick Look declined |
+| `watch` | watching the file system | all three |
+| `media` | media keys and Now Playing | vocabulary only, backend named |
+| `menubar` | the in-window menubar model for Linux | drawn, not D-Bus — the decision is in the module docs |
+
 ## The escape hatch is an official contract
 
 An application must be able to drop to the platform level without waiting for

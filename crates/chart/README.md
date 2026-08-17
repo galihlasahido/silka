@@ -12,7 +12,7 @@ chart.
 | Contract | Where it is honored here |
 | --- | --- |
 | Semantic tokens, dual preset, no hard-coded colors or sizes | `style::ChartStyle` — every value resolves through the theme |
-| The paint abstraction; wgpu is never named | `stroke` turns a polyline into `silka-paint` boxes |
+| The paint abstraction; wgpu is never named | a series is one `silka-paint` `Stroke`; `stroke` fills areas with boxes |
 | Spring animation, retargetable, reduced-motion aware | data transitions in `node::ChartBox::advance` |
 | An AccessKit node as part of the widget contract | `node::ChartBox::summary` — a description, not a bare "image" |
 | The overlay system is built once and ridden by all | `tooltip()` returns an `OverlayBuilder`; it computes no positions |
@@ -73,8 +73,9 @@ addition to this crate rather than a change to it.
 
 ## Acknowledged debt
 
-`silka-paint` has no stroke command yet, so a line is rasterized into boxes;
-that collapses into one command the day the SDF stroke lands. The accessibility
+A line is a real `silka-paint` stroke — one command per series, rasterized from
+a distance field — and what remains in `stroke` is the area *fill*, which is not
+a stroke at all. The accessibility
 role is `Image` with a description, because the role vocabulary in `silka-core`
 has no chart role — adding one touches the platform adapter too, so it is a
 change to make deliberately rather than in passing.

@@ -4,27 +4,20 @@
 //! ```
 //! # use silka_core::signals::Runtime;
 //! # use silka_core::view::column;
-//! # use silka_theme::{Appearance, Theme};
-//! # use silka_widgets::{overlay_layer, Fonts};
+//! # use silka_widgets::overlay_layer;
 //! use silka_widgets::menu::{item, menu, separator, MenuState};
 //!
 //! # let rt = Runtime::new();
-//! # let fonts = Fonts::bundled_only();
-//! # let t = Theme::cupertino(Appearance::Dark);
 //! let state = rt.signal(MenuState::new());
 //!
-//! let m = menu(
-//!     &fonts,
-//!     &t,
-//!     [
-//!         item("view.zoom_in", "Perbesar").into(),
-//!         item("view.zoom_out", "Perkecil").into(),
-//!         separator(),
-//!         item("view.mode", "Tampilan")
-//!             .submenu([item("view.list", "Daftar").radio(true)])
-//!             .into(),
-//!     ],
-//! )
+//! let m = menu([
+//!     item("view.zoom_in", "Perbesar").into(),
+//!     item("view.zoom_out", "Perkecil").into(),
+//!     separator(),
+//!     item("view.mode", "Tampilan")
+//!         .submenu([item("view.list", "Daftar").radio(true)])
+//!         .into(),
+//! ])
 //! .label("Tampilan")
 //! .bind(state)
 //! .on_activate(|id| println!("dipilih: {id}"));
@@ -127,7 +120,7 @@ use crate::fonts::Fonts;
 use crate::overlay::{
     overlay, Align, Anchor, Barrier, Dismiss, OverlayBuilder, OverlayLayer, Placement, Side,
 };
-use crate::text::text;
+use crate::text::text_in;
 
 pub use item::{
     triangle_columns, MenuRowBox, MenuRowProps, MenuRowStyle, MenuSeparatorBox, MenuSeparatorProps,
@@ -204,17 +197,41 @@ pub struct Menu {
     shortcut_style: ShortcutStyle,
     spring: Spring,
     focus: FocusPolicy,
+    min_width: Option<f32>,
     bound: Option<Signal<MenuState>>,
     on_intent: Option<MenuHandler>,
     on_activate: Option<ActivateCallback>,
     key: String,
 }
 
+/// An in-app menu — `context_menu` (`KOMPONEN.md` Tier 3).
+///
+/// ```
+/// use silka_widgets::menu::{item, menu, separator};
+///
+/// let m = menu([
+///     item("view.zoom_in", "Zoom In").into(),
+///     separator(),
+///     item("view.mode", "View").into(),
+/// ])
+/// .label("View");
+/// # let _ = m;
+/// ```
+///
+/// Use [`menu_in`] outside a build pass.
+pub fn menu<E: Into<MenuEntry>>(entries: impl IntoIterator<Item = E>) -> Menu {
+    menu_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        entries,
+    )
+}
+
 /// An in-app menu: a dropdown behind a button/chip, or a context menu behind a
 /// right-click (`KOMPONEN.md` Tier 3).
 ///
 /// `fonts` is the application's text engine, `theme` the source of every value.
-pub fn menu<E: Into<MenuEntry>>(
+pub fn menu_in<E: Into<MenuEntry>>(
     fonts: &Fonts,
     theme: &Theme,
     entries: impl IntoIterator<Item = E>,
@@ -232,6 +249,7 @@ pub fn menu<E: Into<MenuEntry>>(
         // bounce (WWDC23).
         spring: Spring::snappy(),
         focus: FocusPolicy::FOCUSABLE,
+        min_width: None,
         bound: None,
         on_intent: None,
         on_activate: None,
@@ -293,6 +311,17 @@ impl Menu {
     /// The spring that drives state transitions (`smooth`/`snappy`/`bouncy`).
     pub fn spring(mut self, spring: Spring) -> Self {
         self.spring = spring;
+        self
+    }
+
+    /// A floor under the **root** panel's width.
+    ///
+    /// Menus size themselves to their longest label, which is right for a menu
+    /// and wrong for a list of suggestions hanging under a text field: there,
+    /// the panel has an edge to line up with. [`mod@crate::combo_box`] passes the
+    /// field's width here.
+    pub fn min_width(mut self, width: f32) -> Self {
+        self.min_width = (width.is_finite() && width > 0.0).then_some(width);
         self
     }
 
@@ -492,7 +521,11 @@ impl Menu {
     /// The panel width of the level at `depth`, in logical points.
     ///
     /// Measured with the same text engine that will later draw the labels, so
-    /// nowhere is a glyph width ever guessed (§3.3, §3.4).
+    /// nowhere is a glyph width ever guessed (§3.3, §3.4). The **root** panel is
+    /// additionally never narrower than [`Menu::min_width`] — what a
+    /// [`mod@crate::combo_box`] uses to make its suggestion list line up with the
+    /// field above it. Submenus are unaffected: they hang beside their parent
+    /// and have nothing to line up with.
     pub fn level_width(&self, depth: usize) -> f32 {
         let t = &self.theme;
         let gaya = self.row_style(depth);
@@ -513,7 +546,12 @@ impl Menu {
                 .unwrap_or(0.0);
             isi = isi.max(ikon + self.measure(it.label()) + pintasan);
         }
-        (isi + gaya.leading + gaya.trailing + gaya.padding.horizontal() + t.space(2.0)).ceil()
+        let lebar =
+            (isi + gaya.leading + gaya.trailing + gaya.padding.horizontal() + t.space(2.0)).ceil();
+        match self.min_width {
+            Some(w) if depth == 0 => lebar.max(w),
+            _ => lebar,
+        }
     }
 
     /// The handler that turns intent into new state.
@@ -556,7 +594,7 @@ impl Menu {
         } else {
             t.color.label
         };
-        let isi = text(&self.fonts, label)
+        let isi = text_in(&self.fonts, label)
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(warna)
@@ -749,7 +787,7 @@ impl Menu {
         let mut anak: Vec<View> = Vec::with_capacity(4);
         if let Some(ikon) = it.icon_text() {
             anak.push(
-                text(&self.fonts, ikon)
+                text_in(&self.fonts, ikon)
                     .size(t.typography.body_size)
                     .color(warna)
                     .single_line()
@@ -758,7 +796,7 @@ impl Menu {
             );
         }
         anak.push(
-            text(&self.fonts, it.label())
+            text_in(&self.fonts, it.label())
                 .size(t.typography.body_size)
                 .color(warna)
                 .single_line()
@@ -771,7 +809,7 @@ impl Menu {
         anak.push(expanded(fixed(0.0, 0.0)).into());
         if let Some(s) = it.accelerator() {
             anak.push(
-                text(&self.fonts, s.display(self.shortcut_style))
+                text_in(&self.fonts, s.display(self.shortcut_style))
                     .size(t.typography.body_size)
                     .color(if it.is_enabled() {
                         t.color.tertiary_label

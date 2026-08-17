@@ -19,6 +19,9 @@ variant:
 | Border | per-instance width; a ring between two SDF isolines |
 | Ambient + key shadow | two gaussian-blurred instances behind the box |
 | Glyph | textured instance: atlas UV plus the run color |
+| Stroke | one capsule instance per polyline segment — width, caps, joins |
+| Image | textured instance from the image atlas, tinted and corner-masked |
+| Transform | a per-instance 2x2 matrix; the fragment stage stays in local space |
 
 Because it is all data, **no WGSL is ever assembled at runtime** — the lesson
 Impeller paid for. Anti-aliasing comes from screen-space derivatives, so it is
@@ -28,6 +31,13 @@ parameter.
 `Command::PushClip`/`PopClip` become GPU scissor rects: the scene is split into
 `(clip rect, instance range)` batches in command order, so a UI without
 clipping stays a single draw call and one scroll view adds two.
+
+`Command::PushLayer`/`PopLayer` are the one place a frame stops being a single
+draw call, and deliberately so: "render this subtree to a texture, blur it, then
+composite it" *is* several passes. The pass order is computed on the CPU, where
+it is tested without a GPU; targets are pooled by nesting depth, so sibling
+layers share one texture. The blur is a dual-Kawase down/up chain, and a layer
+with full opacity and no effect is drawn inline at no cost at all.
 
 ## Example
 

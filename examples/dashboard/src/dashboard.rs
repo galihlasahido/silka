@@ -12,7 +12,7 @@
 
 use silka_chart::format::NumberFormat;
 use silka_chart::tooltip::ChartHover;
-use silka_chart::{area_chart, ChartPalette};
+use silka_chart::{area_chart_in, ChartPalette};
 use silka_core::app::BuildCtx;
 use silka_core::signals::Signal;
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
@@ -130,12 +130,12 @@ fn list_cards(fonts: &Fonts, t: &Theme, nav_state: TreeState, page_signal: Signa
 }
 
 fn akad_card(fonts: &Fonts, t: &Theme, nav_state: TreeState, page_signal: Signal<Page>) -> View {
-    let mut children = vec![
-        kit::card_header(fonts, t, AKAD_CARD, VIEW_ALL, move || {
-            nav::go_to(nav_state, page_signal, Page::Contracts)
-        }),
-        kit::divider(t),
-    ];
+    // No `divider_in` after the header any more: the hairline belongs to
+    // `card_header` itself, which is what stops a header and the rows under it
+    // from ending up two points apart.
+    let mut children = vec![kit::card_header(fonts, t, AKAD_CARD, VIEW_ALL, move || {
+        nav::go_to(nav_state, page_signal, Page::Contracts)
+    })];
     for a in data::AKAD {
         children.push(kit::list_row(
             fonts,
@@ -145,7 +145,7 @@ fn akad_card(fonts: &Fonts, t: &Theme, nav_state: TreeState, page_signal: Signal
             kit::trailing_text(fonts, t, &data::date(data::day(a.day_offset))),
         ));
     }
-    kit::card(children)
+    kit::card(fonts, t, Some(AKAD_CARD), children)
 }
 
 fn disbursement_card(
@@ -154,12 +154,13 @@ fn disbursement_card(
     nav_state: TreeState,
     page_signal: Signal<Page>,
 ) -> View {
-    let mut children = vec![
-        kit::card_header(fonts, t, DISBURSEMENT_CARD, VIEW_ALL, move || {
-            nav::go_to(nav_state, page_signal, Page::Transactions)
-        }),
-        kit::divider(t),
-    ];
+    let mut children = vec![kit::card_header(
+        fonts,
+        t,
+        DISBURSEMENT_CARD,
+        VIEW_ALL,
+        move || nav::go_to(nav_state, page_signal, Page::Transactions),
+    )];
     for d in data::DISBURSEMENTS {
         children.push(kit::list_row(
             fonts,
@@ -169,15 +170,20 @@ fn disbursement_card(
             kit::badge(fonts, t, d.status),
         ));
     }
-    kit::card(children)
+    kit::card(fonts, t, Some(DISBURSEMENT_CARD), children)
 }
 
 /// The disbursement trend — the chart that proves `silka-chart` survives being
 /// used by an application rather than by its own demo page.
 fn trend_chart(fonts: &Fonts, t: &Theme, hover: Signal<Option<ChartHover>>) -> View {
     let data = data::trend();
+    // No landmark name: the chart inside is already an `AccessRole::Image`
+    // carrying `CHART_NAME`, and a group of the same name around it would be
+    // announced twice.
     kit::padded_card(
+        fonts,
         t,
+        None,
         [constrained(
             BoxConstraints::new(
                 0.0,
@@ -185,7 +191,7 @@ fn trend_chart(fonts: &Fonts, t: &Theme, hover: Signal<Option<ChartHover>>) -> V
                 t.space(CHART_STEPS),
                 t.space(CHART_STEPS),
             ),
-            area_chart(fonts, t, data)
+            area_chart_in(fonts, t, data)
                 .key("trend")
                 .x(|d: &TrendPoint| d.date)
                 .y_named("Disbursed", |d: &TrendPoint| d.disbursed)
@@ -237,11 +243,13 @@ fn quick_links(
         .collect();
 
     kit::padded_card(
+        fonts,
         t,
+        Some(QUICK_CARD),
         [
             View::from(
                 row([View::from(
-                    silka_widgets::text(fonts, QUICK_CARD)
+                    silka_widgets::text_in(fonts, QUICK_CARD)
                         .size(t.typography.headline.size)
                         .weight(silka_text::FontWeight::SEMIBOLD)
                         .tracking(t.typography.headline.tracking)

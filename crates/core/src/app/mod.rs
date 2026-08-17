@@ -89,4 +89,4 @@ mod host;
 mod tests;
 
 pub use component::{component, ComponentBox, ComponentProps};
-pub use host::{app, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};
+pub use host::{app, current_tasks, AppRuntime, BuildCtx, Env, FrameReport, ScaleFactor};

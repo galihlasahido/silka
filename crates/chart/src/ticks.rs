@@ -141,10 +141,15 @@ pub fn zero_based_domain(min: f64, max: f64, target: usize) -> (f64, f64) {
 // Time
 // ---------------------------------------------------------------------------
 
-/// The granularity a time axis is labelled at.
+/// The granularity a time axis is labelled at — re-exported from
+/// [`silka_core::date`].
 ///
 /// Time ticks snap to calendar boundaries rather than to a round number of
-/// days, because "every 30 days" and "every month" are not the same axis.
+/// days, because "every 30 days" and "every month" are not the same axis. The
+/// enum itself moved into `silka-core` alongside [`crate::date::Date`], because
+/// [`silka_core::locale::Locale::date`] has to be able to answer at each
+/// granularity and a `calendar` in `silka-widgets` cannot depend on a chart.
+/// Generating the ticks stays here: that really is a chart's own arithmetic.
 ///
 /// ```
 /// use silka_chart::ticks::{time_ticks, TimeUnit};
@@ -164,52 +169,7 @@ pub fn zero_based_domain(min: f64, max: f64, target: usize) -> (f64, f64) {
 /// assert_eq!(unit, TimeUnit::Month);
 /// assert!(ticks.iter().all(|d| Date::from_days(*d as i64).day == 1));
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum TimeUnit {
-    /// Individual days.
-    Day,
-    /// Whole weeks, snapped to Monday.
-    Week,
-    /// Whole months, snapped to the 1st.
-    Month,
-    /// Whole quarters.
-    Quarter,
-    /// Whole years.
-    Year,
-}
-
-impl TimeUnit {
-    /// The unit that gives roughly `target` labels over a span of `days`.
-    ///
-    /// The thresholds are the ones a reader would pick by hand: a fortnight
-    /// wants day marks, a quarter wants weeks, two years want months.
-    pub fn for_span(days: f64, target: usize) -> TimeUnit {
-        let target = target.max(2) as f64;
-        let per_tick = days / target;
-        if per_tick <= 1.5 {
-            TimeUnit::Day
-        } else if per_tick <= 10.0 {
-            TimeUnit::Week
-        } else if per_tick <= 45.0 {
-            TimeUnit::Month
-        } else if per_tick <= 130.0 {
-            TimeUnit::Quarter
-        } else {
-            TimeUnit::Year
-        }
-    }
-
-    /// A short name for debug output and tests.
-    pub const fn name(self) -> &'static str {
-        match self {
-            TimeUnit::Day => "day",
-            TimeUnit::Week => "week",
-            TimeUnit::Month => "month",
-            TimeUnit::Quarter => "quarter",
-            TimeUnit::Year => "year",
-        }
-    }
-}
+pub use silka_core::date::TimeUnit;
 
 /// Tick positions on a time axis, as **day numbers** (see [`crate::date`]).
 ///

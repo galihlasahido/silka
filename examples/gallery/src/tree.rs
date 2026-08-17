@@ -32,13 +32,13 @@ use std::rc::Rc;
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use silka_core::view::{column, constrained, expanded, fixed, row, View};
+use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    button, button_variant, text, tree, use_tree_state, ButtonVariant, Fonts, TreeKey, TreeNode,
-    TreeRow, TreeState,
+    button_in, button_variant_in, spacer, text_in, tree_in, use_tree_state, ButtonVariant, Fonts,
+    TreeKey, TreeNode, TreeRow, TreeState,
 };
 
 /// The page title.
@@ -200,7 +200,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -208,7 +208,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Lima puluh ribu berkas dalam seribu folder, dan hanya belasan \
                  baris yang pernah menjadi node — memakai ulang virtualisasi \
@@ -291,7 +291,7 @@ fn pohon(
             t.space(TINGGI_LANGKAH),
             t.space(TINGGI_LANGKAH),
         ),
-        tree(t, state, sumber, move |r| baris(&untuk_baris, &theme, r))
+        tree_in(t, state, sumber, move |r| baris(&untuk_baris, &theme, r))
             .row_extent(TINGGI_BARIS)
             .guides(t.space(0.25))
             .multi_selection()
@@ -322,7 +322,7 @@ fn pohon(
 /// Called **only** for rows that are actually visible — that is virtualization's
 /// promise, and that is why fifty thousand files are allowed here.
 fn baris(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
-    let judul = text(fonts, r.label.to_string())
+    let judul = text_in(fonts, r.label.to_string())
         .size(t.typography.body_size)
         .weight(if r.expandable {
             FontWeight::MEDIUM
@@ -342,9 +342,9 @@ fn baris(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
         View::from(judul),
         // A spacer: the right-hand column is always trailing-aligned, without a
         // single layout number on this page.
-        View::from(expanded(fixed(0.0, 0.0))),
+        View::from(spacer()),
         View::from(
-            text(fonts, keterangan)
+            text_in(fonts, keterangan)
                 .size(t.typography.footnote.size)
                 .color(t.color.tertiary_label)
                 .single_line(),
@@ -359,7 +359,7 @@ fn baris(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
 /// What an empty tree shows instead of a blank box.
 fn kosong(fonts: &Fonts, t: &Theme) -> View {
     column([View::from(
-        text(fonts, KOSONG)
+        text_in(fonts, KOSONG)
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line(),
@@ -384,7 +384,7 @@ fn kendali(
     let ada = terisi.get();
 
     row([
-        View::from(button(fonts, t, TOMBOL_SEMUA).on_press(move || {
+        View::from(button_in(fonts, t, TOMBOL_SEMUA).on_press(move || {
             // "Expand all" loads first and then opens: a single rebuild, and —
             // deliberately — no height animation (§3.5, `open_many`).
             untuk_semua.borrow_mut().muat_semua(semua_folder());
@@ -392,18 +392,22 @@ fn kendali(
             state.open_many(semua_folder());
         })),
         View::from(
-            button_variant(fonts, t, TOMBOL_TUTUP, ButtonVariant::Secondary).on_press(move || {
-                state.collapse_all();
-            }),
+            button_variant_in(fonts, t, TOMBOL_TUTUP, ButtonVariant::Secondary).on_press(
+                move || {
+                    state.collapse_all();
+                },
+            ),
         ),
         View::from(
-            button_variant(fonts, t, TOMBOL_JAUH, ButtonVariant::Secondary).on_press(move || {
-                let baris = state.flat().len();
-                state.scroll_to_row(baris.saturating_sub(11_000), baris);
-            }),
+            button_variant_in(fonts, t, TOMBOL_JAUH, ButtonVariant::Secondary).on_press(
+                move || {
+                    let baris = state.flat().len();
+                    state.scroll_to_row(baris.saturating_sub(11_000), baris);
+                },
+            ),
         ),
         View::from(
-            button_variant(
+            button_variant_in(
                 fonts,
                 t,
                 if ada { TOMBOL_KOSONG } else { TOMBOL_ISI },
@@ -442,7 +446,7 @@ fn status(
             .get()
             .map(|k| format!("dibuka {}", nama(k)))
             .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text(
+        text_in(
             &fonts,
             format!(
                 "Baris terlihat: {terlihat} · folder dimuat: {} · terpilih: {terpilih} · {aktif}",

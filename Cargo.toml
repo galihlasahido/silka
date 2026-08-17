@@ -9,6 +9,7 @@ members = [
     "crates/widgets",
     "crates/chart",
     "crates/platform",
+    "crates/dist",
     "crates/testing",
     "examples/gallery",
     "examples/todo",
@@ -32,6 +33,7 @@ silka-theme = { path = "crates/theme" }
 silka-widgets = { path = "crates/widgets" }
 silka-chart = { path = "crates/chart" }
 silka-platform = { path = "crates/platform" }
+silka-dist = { path = "crates/dist" }
 silka-testing = { path = "crates/testing" }
 
 # Dependensi eksternal terpilih (REKOMENDASI §3) — dikunci di sini agar
@@ -65,7 +67,9 @@ objc2-app-kit     = { version = "0.3", default-features = false, features = ["st
 # `silka_platform::platform::windows`. Versi dikunci sama dengan yang sudah
 # dipakai `accesskit_windows` di pohon ini agar tidak pernah ada dua pohon
 # binding Win32 dalam satu binary. Hanya dikompilasi di target Windows.
-windows           = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell"] }
+# `Win32_System_Registry` dipakai `system_reduces_transparency()` (§6);
+# `Win32_System_Com` dipakai taskbar progress lewat `ITaskbarList3` (§2).
+windows           = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Registry", "Win32_System_Com"] }
 
 # Escape hatch Linux (INTEGRASI-NATIVE §8) — zbus untuk D-Bus (portal, global
 # menu, notifikasi lanjutan). Versi dikunci sama dengan yang dipakai
@@ -82,6 +86,14 @@ fontdb            = { version = "0.23", default-features = false }  # versi waji
 # (§3.3). Versi dikunci sama dengan yang sudah dipakai cosmic-text agar tidak
 # ada dua pohon tabel Unicode di satu binary.
 unicode-segmentation = "1.13"
+
+# Async runtime (§9.6) — OPTIONAL and off by default, behind the `tokio`
+# feature of `silka-core`. The framework owns no executor: the default bridge is
+# one OS thread per task, which is the honest shape for a desktop UI. This exists
+# so an application that already lives in tokio (an HTTP client, a database
+# pool) can hand its futures straight to `Tasks::spawn` instead of wrapping each
+# one in `block_on`.
+tokio             = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "macros"] }
 
 # Flex/Grid layout (§3.4) — HANYA di crates/core, dan di sana pun hanya di
 # dalam satu modul (`tree::taffy_box`). Kosakata gaya milik kita sendiri
@@ -105,6 +117,18 @@ tray-icon         = "0.24"
 rfd               = "0.17"    # dialog file/pesan; di Linux lewat XDG portal (ramah Flatpak)
 arboard           = "3.6"     # clipboard teks + gambar
 window-vibrancy   = "0.6"     # blur behind-window: NSVisualEffectView / acrylic / mica
+
+# Ekor native lanjutan (INTEGRASI-NATIVE §2, §5) — HANYA di crates/platform,
+# aturan batas yang sama: `silka_platform::{notification, watch, credential}`
+# adalah kosakata kita sendiri, tipe crate ini tidak pernah terlihat di atasnya.
+notify-rust       = "4.17"    # notifikasi sistem: UNUserNotification / toast / D-Bus
+notify            = "8"       # menonton berkas: FSEvents / ReadDirectoryChanges / inotify
+# Penyimpanan kredensial. Fitur native WAJIB disebut: tanpa `apple-native` /
+# `windows-native`, keyring 3.x diam-diam memakai penyimpanan **mock** di
+# memori. Linux sengaja TIDAK memakai crate ini sama sekali (lihat
+# `credential.rs`): backend Secret Service butuh libdbus saat build, dan
+# kernel keyring tidak bertahan setelah reboot.
+keyring           = { version = "3", default-features = false, features = ["apple-native", "windows-native"] }
 
 # Accessibility (§3.8) — output first-class dari render tree, bukan susulan.
 # `accesskit` (kosakata node) hidup di crates/core di balik modul `access`;
@@ -136,3 +160,28 @@ debug = false
 # is rebuilt when switching between `cargo check` and `cargo test`.
 [profile.test]
 debug = "line-tables-only"
+
+# The profile the release pipeline builds (docs/RELEASE.md, SISA-PEKERJAAN §I).
+#
+# Separate from `release` on purpose: `release` is what the frame-time gate in CI
+# measures, and a regression gate whose build settings move underneath it stops
+# being a regression gate. This one is free to be slow to build.
+[profile.dist]
+inherits = "release"
+
+# Full debug info, kept in the binary long enough for
+# `.github/scripts/collect-symbols.sh` to extract it into the symbol archive.
+# Without this a Windows build produces no useful PDB and every crash report
+# from a shipped build is a list of addresses nobody can read (§I5).
+debug = "full"
+strip = "none"
+
+# Cross-crate inlining across a workspace this size is worth the link time here,
+# where it is paid once per release rather than once per `cargo test`.
+lto = "thin"
+codegen-units = 1
+
+# Load-bearing, not a default worth relying on: `silka_core::recover` is built
+# on `catch_unwind`, and `panic = "abort"` would turn every error boundary
+# (§9.7) into a process exit — silently, with the code still compiling.
+panic = "unwind"

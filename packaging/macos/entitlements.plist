@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements for a Developer ID build — the one distributed outside the Mac
+  App Store, notarized, and updated by silka-dist.
+
+  The rule this file follows: an entitlement is a hole in the hardened runtime,
+  so every key here has to earn its place in a comment. A build that asks for
+  `allow-unsigned-executable-memory` "just in case" is a build whose hardened
+  runtime protects nothing.
+
+  What is deliberately NOT here:
+
+    * com.apple.security.cs.allow-jit — silka has no JIT. wgpu's shader
+      compilation happens in the GPU driver, not in our address space.
+    * com.apple.security.cs.disable-library-validation — we load no third-party
+      plug-ins. Turning this on would let any signed-by-anyone dylib into the
+      process, which is the exact attack the hardened runtime exists to stop.
+    * com.apple.security.app-sandbox — Developer ID builds are not sandboxed.
+      The Mac App Store variant is, and it lives in entitlements.mas.plist.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Required by the updater. `swap_in_place` renames the running .app aside
+	  and moves the staged one in; without this the relauncher is denied by the
+	  hardened runtime when it touches a bundle it did not create.
+	-->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!--
+	  Required by the updater as well: fetching the feed and the artifact.
+	  Harmless on a Developer ID build (there is no sandbox to escape), and
+	  present so this file and the App Store one stay legible side by side.
+	-->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

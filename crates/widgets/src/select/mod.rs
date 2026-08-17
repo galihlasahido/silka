@@ -11,7 +11,7 @@
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! let state = rt.signal(SelectState::with_selected(0));
 //!
-//! let mata_uang = select(&fonts, &t, ["IDR", "USD", "EUR"])
+//! let mata_uang = select_in(&fonts, &t, ["IDR", "USD", "EUR"])
 //!     .label("Mata uang")
 //!     .bind(state);
 //!
@@ -82,7 +82,7 @@ use silka_theme::Theme;
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 use crate::overlay::{overlay, Align, Anchor, Barrier, Dismiss, OverlayBuilder, Placement, Side};
-use crate::text::text;
+use crate::text::text_in;
 
 pub use option::{SelectOption, SelectOptionProps, SelectOptionStyle};
 pub use state::{SelectIntent, SelectState};
@@ -154,10 +154,28 @@ pub struct Select {
     key: Option<Key>,
 }
 
+/// A single choice out of a list — `select` (`KOMPONEN.md` Tier 2).
+///
+/// ```
+/// use silka_widgets::select;
+///
+/// let currency = select(["IDR", "USD", "EUR"]).label("Currency");
+/// # let _ = currency;
+/// ```
+///
+/// Use [`select_in`] outside a build pass.
+pub fn select<S: Into<String>>(options: impl IntoIterator<Item = S>) -> Select {
+    select_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        options,
+    )
+}
+
 /// A single choice out of a list — the `select` component (`KOMPONEN.md`).
 ///
 /// `fonts` is the app's text engine, `theme` the source of every value.
-pub fn select<S: Into<String>>(
+pub fn select_in<S: Into<String>>(
     fonts: &Fonts,
     theme: &Theme,
     options: impl IntoIterator<Item = S>,
@@ -479,7 +497,7 @@ impl Select {
             // The placeholder is dimmer than real content.
             t.color.tertiary_label
         };
-        let isi = text(&self.fonts, self.display_text())
+        let isi = text_in(&self.fonts, self.display_text())
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(warna)
@@ -531,7 +549,7 @@ impl Select {
             .map(|(i, label)| {
                 let terpilih = self.state.selected == Some(i);
                 let disorot = self.state.open && self.state.highlight == i;
-                let isi = text(&self.fonts, label)
+                let isi = text_in(&self.fonts, label)
                     .size(t.typography.body_size)
                     .weight(FontWeight::REGULAR)
                     .color(if terpilih {

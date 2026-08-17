@@ -8,7 +8,7 @@
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! # let rt = Runtime::new();
 //! # let count = rt.signal(0i32);
-//! button(&fonts, &t, "Tambah").on_press(move || count.set(count.get() + 1));
+//! button_in(&fonts, &t, "Tambah").on_press(move || count.set(count.get() + 1));
 //! ```
 //!
 //! A button is a **composition**, not a new primitive: what is assembled
@@ -39,11 +39,11 @@
 //! only when dirty" (§3.5) can only be promised if **one** party knows
 //! whether anything is still moving.
 //!
-//! Technical debt we know about and do not hide: "scale-on-press" is drawn as
-//! the **background box shrinking**, not as a true transform, because the
-//! paint layer (§3.2) has no transform command yet — which is why the label
-//! inside does not shrink along with it. The moment that command exists, the
-//! very same spring drives it; the API shape in this file does not change.
+//! "Scale-on-press" is a **real transform** ([`silka_paint::Transform`]): the
+//! whole surface — background, shadow, and label — shrinks together under one
+//! matrix. It used to be the background box deflating on its own, which left the
+//! label at full size; the spring that drove that is the same spring driving this,
+//! and the API in this file did not change when the paint command arrived.
 
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
@@ -56,12 +56,14 @@ use silka_core::signals::Key;
 use silka_core::tree::{BoxConstraints, CrossAlign, LayoutCtx, MainAlign, PaintCtx, RenderNode};
 use silka_core::view::{constrained, row, Builder, View, ViewNode};
 use silka_core::Callback;
-use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
+use silka_paint::{
+    Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size, Transform,
+};
 use silka_text::FontWeight;
 use silka_theme::{Appearance, Theme};
 
 use crate::fonts::Fonts;
-use crate::text::text;
+use crate::text::text_in;
 
 /// Minimum size of a control's touch area, in logical points (Apple HIG).
 ///
@@ -75,7 +77,7 @@ use crate::text::text;
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button, Fonts, MIN_HIT_TARGET};
+/// use silka_widgets::{button_in, Fonts, MIN_HIT_TARGET};
 ///
 /// assert_eq!(MIN_HIT_TARGET, 44.0);
 ///
@@ -84,7 +86,7 @@ use crate::text::text;
 ///
 /// // Even a one-character label produces a target a finger can hit.
 /// let mut tree = RenderTree::new();
-/// reconcile(&mut tree, button(&fonts, &theme, "x"));
+/// reconcile(&mut tree, button_in(&fonts, &theme, "x"));
 /// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
 ///
 /// let id = tree.children(tree.root())[0];
@@ -437,13 +439,13 @@ impl ButtonStyle {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button, ButtonBox, Fonts};
+/// use silka_widgets::{button_in, ButtonBox, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// let mut tree = RenderTree::new();
-/// reconcile(&mut tree, button(&fonts, &theme, "Save").on_press(|| {}));
+/// reconcile(&mut tree, button_in(&fonts, &theme, "Save").on_press(|| {}));
 /// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
 ///
 /// let id = tree.children(tree.root())[0];
@@ -680,16 +682,22 @@ impl ButtonBox {
         }
     }
 
-    /// The background box this frame: shrinks along with the press spring.
-    fn kotak_latar(&self, bounds: Rect) -> (Rect, Corners) {
-        let kempis = (self.press_t.position() * self.style.press_travel)
-            .clamp(0.0, bounds.size.min_side() * 0.25);
-        let kotak = bounds.deflate(Insets::all(kempis));
-        let radii = (self.style.corners.radii.max() - kempis).max(0.0);
-        (
-            kotak,
-            Corners::new(CornerRadii::all(radii), self.style.corners.style),
-        )
+    /// The scale factor for this frame's press animation.
+    ///
+    /// `press_travel` keeps its original meaning — how far the button's edge moves
+    /// inwards, in logical points — and is converted into a scale here, so the
+    /// tuning that was chosen when this was a deflating rectangle still holds.
+    ///
+    /// Returning a scale rather than a smaller box is the whole point: a
+    /// [`Transform`] shrinks the label along with the background, which the old
+    /// "deflate the rect" version could not do.
+    pub fn press_scale(&self, bounds: Rect) -> f32 {
+        let sisi = bounds.size.min_side();
+        if sisi <= 0.0 {
+            return 1.0;
+        }
+        let kempis = (self.press_t.position() * self.style.press_travel).clamp(0.0, sisi * 0.25);
+        ((sisi - kempis * 2.0) / sisi).clamp(0.5, 1.0)
     }
 
     /// The three "loading" indicator dot rects, in local coordinates.
@@ -730,26 +738,62 @@ impl RenderNode for ButtonBox {
         constraints.constrain(size)
     }
 
-    /// The background (shrinking with the spring), then the focus ring, then
-    /// the contents, then the loading indicator on top of everything.
+    /// Inside one press transform: the background, the contents, and the loading
+    /// indicator. Then the focus ring, outside it.
+    ///
+    /// The ring is deliberately **outside** the transform: focus says where the
+    /// keyboard is, and an indicator that pulses with every press would be harder
+    /// to follow, not easier. Everything that belongs to the button's own surface
+    /// is inside it, label included.
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
         let bounds = ctx.local_bounds();
-        let (kotak, corners) = self.kotak_latar(bounds);
+        let skala = self.press_scale(bounds);
         let bg = self.bg.position();
         let border = self.style.border_for();
         let ada_border = self.style.border_width > 0.0 && border.a > 0.0;
-        if bg.a > 0.0 || ada_border || self.style.shadows.is_visible() {
-            let quad = Quad::new(kotak)
-                .background(bg)
-                .corners(corners)
-                .border(self.style.border_width, border);
-            // The shadow shrinks with the button because it is computed from
-            // the same box — there is no second geometry that could drift.
-            ctx.shadowed(quad, self.style.shadows);
-        }
+        let ada_latar = bg.a > 0.0 || ada_border || self.style.shadows.is_visible();
+        let memuat = self.style.state.loading;
+        let fase = self.pulse.position();
 
-        // The focus ring is drawn **outside** the node's box so it never
-        // covers the label (AppKit habit), and it grows with a spring.
+        // ONE transform around the whole surface: background, shadow, label, and
+        // indicator shrink together. At rest the scale is 1 and `with_transform`
+        // emits no command at all, so a button that is not being pressed costs
+        // exactly what it always did.
+        ctx.with_transform(
+            Transform::scale_around(bounds.center(), skala, skala),
+            |ctx| {
+                if ada_latar {
+                    let quad = Quad::new(bounds)
+                        .background(bg)
+                        .corners(self.style.corners)
+                        .border(self.style.border_width, border);
+                    // The shadow scales with the button because it is derived from
+                    // the same box under the same matrix — there is no second
+                    // geometry that could drift.
+                    ctx.shadowed(quad, self.style.shadows);
+                }
+
+                ctx.paint_children();
+
+                if memuat {
+                    let bentuk =
+                        Corners::uniform(self.style.dot_size / 2.0, self.style.corners.style);
+                    for (i, kotak) in self.titik(bounds).into_iter().enumerate() {
+                        let alpha = self.style.dot.a * dot_opacity(fase, i);
+                        ctx.quad(
+                            Quad::new(kotak)
+                                .background(self.style.dot.with_alpha(alpha))
+                                .corners(bentuk),
+                        );
+                    }
+                }
+            },
+        );
+
+        // The focus ring is drawn **outside** the node's box so it never covers
+        // the label (AppKit habit), and it grows with a spring. Being outside the
+        // box, drawing it after the surface changes nothing about what is visible
+        // — and it keeps the ring itself steady while the button is pressed.
         let ring = self.ring_t.position().clamp(0.0, 1.0);
         if ring > 0.0 && self.style.focus_ring_width > 0.0 && self.style.focus_ring.a > 0.0 {
             let tebal = self.style.focus_ring_width * ring;
@@ -766,21 +810,6 @@ impl RenderNode for ButtonBox {
                             .focus_ring
                             .with_alpha(self.style.focus_ring.a * ring),
                     ),
-                );
-            }
-        }
-
-        ctx.paint_children();
-
-        if self.style.state.loading {
-            let fase = self.pulse.position();
-            let bentuk = Corners::uniform(self.style.dot_size / 2.0, self.style.corners.style);
-            for (i, kotak) in self.titik(bounds).into_iter().enumerate() {
-                let alpha = self.style.dot.a * dot_opacity(fase, i);
-                ctx.quad(
-                    Quad::new(kotak)
-                        .background(self.style.dot.with_alpha(alpha))
-                        .corners(bentuk),
                 );
             }
         }
@@ -928,34 +957,40 @@ impl RenderNode for ButtonBox {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button, Fonts};
+/// use silka_widgets::{button_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// let mut tree = RenderTree::new();
-/// reconcile(&mut tree, button(&fonts, &theme, "Save"));
+/// reconcile(&mut tree, button_in(&fonts, &theme, "Save"));
 /// tree.layout(BoxConstraints::tight(Size::new(320.0, 200.0)));
 ///
 /// // An identical rebuild reuses the node and reports nothing changed…
-/// let same = reconcile(&mut tree, button(&fonts, &theme, "Save"));
+/// let same = reconcile(&mut tree, button_in(&fonts, &theme, "Save"));
 /// assert!(same.is_noop());
 ///
 /// // …while a changed label updates the very same node rather than
 /// // replacing it, so the springs inside it keep running.
-/// let changed = reconcile(&mut tree, button(&fonts, &theme, "Saved"));
+/// let changed = reconcile(&mut tree, button_in(&fonts, &theme, "Saved"));
 /// assert_eq!(changed.replaced, 0);
 /// assert!(changed.updated > 0);
 /// ```
+///
+/// Its fields are `pub(crate)` rather than private: [`mod@crate::icon_button`]
+/// is the same button with a symbol instead of a label, and letting it fill
+/// these in is what stops a second copy of the interaction contract from
+/// existing. They stay closed to applications, which build buttons through
+/// [`button()`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct ButtonProps {
-    style: ButtonStyle,
-    label: Option<String>,
-    role: AccessRole,
-    toggled: Option<bool>,
-    focus: FocusPolicy,
-    spring: Spring,
-    on_press: Option<Callback>,
+    pub(crate) style: ButtonStyle,
+    pub(crate) label: Option<String>,
+    pub(crate) role: AccessRole,
+    pub(crate) toggled: Option<bool>,
+    pub(crate) focus: FocusPolicy,
+    pub(crate) spring: Spring,
+    pub(crate) on_press: Option<Callback>,
 }
 
 impl ViewNode for ButtonProps {
@@ -1026,17 +1061,17 @@ impl ViewNode for ButtonProps {
 /// use silka_core::signals::Key;
 /// use silka_core::animation::Spring;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button, ButtonVariant, Fonts};
+/// use silka_widgets::{button_in, ButtonVariant, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // Order in the chain does not matter, because nothing is resolved until
 /// // the builder becomes a view.
-/// let a = button(&fonts, &theme, "Delete")
+/// let a = button_in(&fonts, &theme, "Delete")
 ///     .variant(ButtonVariant::Destructive)
 ///     .disabled(true);
-/// let b = button(&fonts, &theme, "Delete")
+/// let b = button_in(&fonts, &theme, "Delete")
 ///     .disabled(true)
 ///     .variant(ButtonVariant::Destructive);
 /// assert_eq!(a.style(), b.style());
@@ -1044,7 +1079,7 @@ impl ViewNode for ButtonProps {
 /// // The rest of the vocabulary: a toggle that announces its on/off state,
 /// // a slower spring, a keyboard-skipping decoration, and a stable identity
 /// // so a reorder moves the node instead of rebuilding it.
-/// let bold = button(&fonts, &theme, "B")
+/// let bold = button_in(&fonts, &theme, "B")
 ///     .variant(ButtonVariant::Ghost)
 ///     .toggled(true)
 ///     .spring(Spring::smooth())
@@ -1070,12 +1105,63 @@ pub struct Button {
 
 /// A text-labelled button — the `button` component (`KOMPONEN.md` Tier 2).
 ///
+/// The shape §2.5 promised: a constructor, then a method chain. The text
+/// engine comes from [`crate::active_fonts`] and every value from the ambient
+/// theme, so neither is written down.
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_widgets::{button, ButtonVariant};
+///
+/// let rt = Runtime::new();
+/// let saving = rt.signal(false);
+///
+/// let save = button("Save")
+///     .on_press(move || saving.set(true))
+///     .loading(saving.get());
+/// # let _ = save;
+///
+/// // A destructive action differs by one word, not by a second widget.
+/// let delete = button("Delete").variant(ButtonVariant::Destructive);
+/// # let _ = delete;
+/// ```
+///
+/// Use [`button_in`] when the view is built outside a build pass and the
+/// handles have to be spelled out.
+pub fn button(label: impl Into<String>) -> Button {
+    button_variant(label, ButtonVariant::default())
+}
+
+/// [`button`] with an explicit variant.
+///
+/// Useful when the variant is computed rather than written down — a toolbar
+/// that builds its buttons from data, or the gallery sweeping all five.
+///
+/// ```
+/// use silka_widgets::{button_variant, ButtonVariant};
+///
+/// // Every variant, from the one list that defines them.
+/// for variant in ButtonVariant::ALL {
+///     let _ = button_variant(variant.name(), variant);
+/// }
+/// ```
+pub fn button_variant(label: impl Into<String>, variant: ButtonVariant) -> Button {
+    button_variant_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        label,
+        variant,
+    )
+}
+
+/// [`button`] with the text engine and theme passed explicitly.
+///
 /// `fonts` is the application's text engine, `theme` the source of every value.
 ///
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button, ButtonVariant, Fonts};
+/// use silka_widgets::{button_in, ButtonVariant, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -1084,7 +1170,7 @@ pub struct Button {
 ///
 /// // The Dart-style shape: a constructor, then a method chain. Optional
 /// // properties are methods, never a struct of `Option`s at the call site.
-/// let save = button(&fonts, &theme, "Save")
+/// let save = button_in(&fonts, &theme, "Save")
 ///     .on_press(move || saving.set(true))
 ///     .loading(saving.get());
 ///
@@ -1093,7 +1179,7 @@ pub struct Button {
 /// assert_eq!(save.style().rest, theme.color.accent);
 ///
 /// // A destructive action differs by one word, not by a second widget.
-/// let delete = button(&fonts, &theme, "Delete")
+/// let delete = button_in(&fonts, &theme, "Delete")
 ///     .variant(ButtonVariant::Destructive)
 ///     .on_press(|| {});
 /// assert_eq!(delete.style().rest, theme.color.destructive);
@@ -1101,13 +1187,13 @@ pub struct Button {
 /// // Disabled is a state, not a different button: it is still announced to a
 /// // screen reader, just dimmed and unactivatable. The variant's palette is
 /// // unchanged — what changes is which entry of it gets drawn.
-/// let unavailable = button(&fonts, &theme, "Publish").disabled(true);
+/// let unavailable = button_in(&fonts, &theme, "Publish").disabled(true);
 /// let style = unavailable.style();
 /// assert_eq!(style.rest, theme.color.accent);
 /// assert_ne!(style.disabled, style.rest);
 /// ```
-pub fn button(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Button {
-    button_variant(fonts, theme, label, ButtonVariant::default())
+pub fn button_in(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Button {
+    button_variant_in(fonts, theme, label, ButtonVariant::default())
 }
 
 /// [`button`] with an explicit variant.
@@ -1117,23 +1203,23 @@ pub fn button(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Button 
 ///
 /// ```
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button_variant, ButtonVariant, Fonts};
+/// use silka_widgets::{button_variant_in, ButtonVariant, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // Every variant, from the one list that defines them.
 /// for variant in ButtonVariant::ALL {
-///     let b = button_variant(&fonts, &theme, variant.name(), variant);
+///     let b = button_variant_in(&fonts, &theme, variant.name(), variant);
 ///     let _ = b.style();
 /// }
 ///
 /// // A ghost button has no background until it is hovered — which is what
 /// // makes it usable inside a dense toolbar or a list row.
-/// let ghost = button_variant(&fonts, &theme, "More", ButtonVariant::Ghost);
+/// let ghost = button_variant_in(&fonts, &theme, "More", ButtonVariant::Ghost);
 /// assert_eq!(ghost.style().rest.a, 0.0);
 /// ```
-pub fn button_variant(
+pub fn button_variant_in(
     fonts: &Fonts,
     theme: &Theme,
     label: impl Into<String>,
@@ -1228,7 +1314,7 @@ impl From<Button> for View {
         let style = b.variant.style(&t, b.state);
         let warna_teks = b.variant.foreground(&t, b.state);
 
-        let isi = row([text(&b.fonts, &b.label)
+        let isi = row([text_in(&b.fonts, &b.label)
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(warna_teks)

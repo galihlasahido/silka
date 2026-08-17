@@ -26,12 +26,13 @@
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use silka_core::view::{column, constrained, expanded, fixed, row, View};
+use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    button, button_variant, list, text, use_list_state, ButtonVariant, Fonts, ListState,
+    button_in, button_variant_in, list_in, spacer, text_in, use_list_state, ButtonVariant, Fonts,
+    ListState,
 };
 
 /// The page title.
@@ -71,7 +72,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -79,7 +80,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Seratus ribu baris, dan hanya belasan di antaranya yang pernah \
                  menjadi node. Gulir sejauh apa pun: yang dibangun selalu \
@@ -119,7 +120,7 @@ fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usiz
             t.space(TINGGI_LANGKAH),
             t.space(TINGGI_LANGKAH),
         ),
-        list(t, state, BARIS, move |i| baris(&untuk_baris, &theme, i))
+        list_in(t, state, BARIS, move |i| baris(&untuk_baris, &theme, i))
             .item_extent(TINGGI_BARIS)
             .sticky_header(t.space(TINGGI_HEADER_LANGKAH), move || {
                 judul_kolom(&untuk_header, &theme)
@@ -139,16 +140,16 @@ fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usiz
 /// Called **only** for visible rows — that is virtualization's promise, and
 /// that is why `BARIS` is allowed to be a hundred thousand.
 fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
-    let nomor = text(fonts, format!("#{:06}", i + 1))
+    let nomor = text_in(fonts, format!("#{:06}", i + 1))
         .size(t.typography.footnote.size)
         .weight(FontWeight::MEDIUM)
         .color(t.color.tertiary_label)
         .single_line();
-    let nama = text(fonts, format!("Transaksi {}", nama_pihak(i)))
+    let nama = text_in(fonts, format!("Transaksi {}", nama_pihak(i)))
         .size(t.typography.body_size)
         .color(t.color.label)
         .single_line();
-    let nominal = text(fonts, format!("Rp {}.000", (i % 900 + 100) * 125))
+    let nominal = text_in(fonts, format!("Rp {}.000", (i % 900 + 100) * 125))
         .size(t.typography.body_size)
         .weight(FontWeight::MEDIUM)
         .color(t.color.secondary_label)
@@ -159,7 +160,7 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
         View::from(nama),
         // A spacer: the amount column is always right-aligned, without a
         // single layout number on this page.
-        View::from(expanded(fixed(0.0, 0.0))),
+        View::from(spacer()),
         View::from(nominal),
     ])
     .spacing(t.space(3.0))
@@ -185,14 +186,14 @@ fn nama_pihak(i: usize) -> &'static str {
 fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
     row([
         View::from(
-            text(fonts, "No.")
+            text_in(fonts, "No.")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
                 .single_line(),
         ),
         View::from(
-            text(fonts, "Pihak")
+            text_in(fonts, "Pihak")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
@@ -200,9 +201,9 @@ fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
         ),
         // A spacer: the amount column is always right-aligned, without a
         // single layout number on this page.
-        View::from(expanded(fixed(0.0, 0.0))),
+        View::from(spacer()),
         View::from(
-            text(fonts, "Nominal")
+            text_in(fonts, "Nominal")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
@@ -221,10 +222,11 @@ fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
 fn kendali(fonts: &Fonts, t: &Theme, state: ListState) -> View {
     row([
         View::from(
-            button(fonts, t, TOMBOL_TENGAH).on_press(move || state.scroll_to_item(50_000, BARIS)),
+            button_in(fonts, t, TOMBOL_TENGAH)
+                .on_press(move || state.scroll_to_item(50_000, BARIS)),
         ),
         View::from(
-            button_variant(fonts, t, TOMBOL_AWAL, ButtonVariant::Secondary)
+            button_variant_in(fonts, t, TOMBOL_AWAL, ButtonVariant::Secondary)
                 .on_press(move || state.scroll_to(0.0)),
         ),
     ])
@@ -247,7 +249,7 @@ fn status(fonts: &Fonts, state: ListState, dibuka: Signal<Option<usize>>) -> Vie
             .get()
             .map(|i| format!("dibuka #{:06}", i + 1))
             .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text(&fonts, format!("Terpilih: {terpilih} · {aktif}"))
+        text_in(&fonts, format!("Terpilih: {terpilih} · {aktif}"))
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line()

@@ -28,7 +28,7 @@ use silka_core::view::{column, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{switch, switch_only, text, Fonts};
+use silka_widgets::{switch_in, switch_only_in, text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Switch";
@@ -65,7 +65,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -74,7 +74,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Jangan cuma diklik — tekan thumb-nya lalu seret. Ia mengikuti \
                  jari 1:1, warnanya berganti tepat saat melewati tengah, dan saat \
@@ -110,7 +110,7 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
 
         let mut anak: Vec<View> = Vec::with_capacity(RADIO.len() + 2);
         anak.push(
-            switch(&fonts, &t, MODE_PESAWAT)
+            switch_in(&fonts, &t, MODE_PESAWAT)
                 .key("pesawat")
                 .on(pesawat)
                 // Turned on = every radio off; turned off = they all come
@@ -120,7 +120,7 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
         );
         for (i, label) in RADIO.into_iter().enumerate() {
             anak.push(
-                switch(&fonts, &t, label)
+                switch_in(&fonts, &t, label)
                     .key(label)
                     .on(nilai[i])
                     .on_change(move |v| {
@@ -130,7 +130,7 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
             );
         }
         anak.push(
-            text(&fonts, ringkasan(&nilai))
+            text_in(&fonts, ringkasan(&nilai))
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -160,9 +160,9 @@ pub fn ringkasan(radio: &[bool]) -> String {
 /// **announced** as dimmed, not hidden (§3.8).
 fn mati(fonts: &Fonts, t: &Theme) -> View {
     row([
-        View::from(switch(fonts, t, MATI).disabled(true)),
-        View::from(switch(fonts, t, TERKUNCI).on(true).disabled(true)),
-        View::from(switch_only(t).label(TANPA_LABEL).on(true)),
+        View::from(switch_in(fonts, t, MATI).disabled(true)),
+        View::from(switch_in(fonts, t, TERKUNCI).on(true).disabled(true)),
+        View::from(switch_only_in(t).label(TANPA_LABEL).on(true)),
     ])
     .spacing(t.space(6.0))
     .cross(CrossAlign::Center)

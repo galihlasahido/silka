@@ -60,6 +60,7 @@ smooth motion is the framework's identity, not a property of one theme.
 | `widgets` | The component library |
 | `chart` | Line, area, bar, and sparkline charts on the same tokens and the same overlay system |
 | `platform` | Window shell, application lifecycle, and OS integration |
+| `dist` | Shipping: update feeds, download verification, staged installs, crash reports |
 
 Widget code never touches GPU types directly. Everything goes through the
 `paint` layer, so the rendering backend can be swapped without changing a
@@ -80,6 +81,18 @@ cargo run -p silka-gallery
 
 The gallery showcases the available components and their variants, with a theme
 switcher and dark mode toggle. `--page chart` opens the chart catalogue.
+
+## Shipping an application
+
+Bundling, code signing, notarization, the update feed, and crash symbols are a
+pipeline, not an afterthought: `.github/workflows/release.yml` builds and signs
+for all three platforms, and [`docs/RELEASE.md`](docs/RELEASE.md) walks a release
+from an empty Apple Developer account to a published feed.
+
+The half that runs inside the shipped binary — which update applies, whether the
+download is the file the feed described, what happens at the next restart — is
+the `dist` crate, and it has no dependencies on purpose: an updater is the one
+component that cannot be repaired by an update.
 
 ## License
 

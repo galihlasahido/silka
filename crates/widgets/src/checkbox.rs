@@ -10,7 +10,7 @@
 //! # let rt = Runtime::new();
 //! let aktif = rt.signal(false);
 //!
-//! checkbox(&fonts, &t, "Sinkronkan otomatis")
+//! checkbox_in(&fonts, &t, "Sinkronkan otomatis")
 //!     .checked(aktif.get())
 //!     .on_toggle(move |v| aktif.set(v));
 //! ```
@@ -28,20 +28,17 @@
 //!    (HIG) — and the label is clickable too, like `<label for>` on the web
 //!    and a switch-type `NSButton` in AppKit.
 //!
-//! ## How the check is drawn without a "stroke" command
+//! ## How the check is drawn
 //!
-//! `silka-paint` today knows rounded boxes, glyphs, and shadows (§3.2) —
-//! there is no stroke primitive, and no rotation. The check is therefore
-//! assembled from a chain of overlapping round-ended boxes ([`check_dots`]):
-//! a round pen stamped densely along a path. The result is identical to a
-//! round-capped stroke, it costs a dozen or so quads, and its geometry is
-//! pure CPU so it can be tested without a GPU.
+//! As a **stroke** ([`silka_paint::Stroke`]): the path from [`check_path`], a
+//! width, and round caps and joins — one draw command for the whole tick,
+//! rasterised from a distance field. It used to be a round pen *stamped* along
+//! that path a dozen times over, because the paint layer had no stroke
+//! primitive; when the primitive arrived, the geometry function stayed and only
+//! the drawing call changed.
 //!
-//! That is **acknowledged technical debt**, not an accident: the moment the
-//! paint layer grows its own SDF stroke command, [`check_dots`] becomes a
-//! single command and not one line outside this file changes. What was
-//! deliberately not taken: rendering a "✓" glyph would hold the check's shape
-//! hostage to whichever font happens to be installed, **and** would make
+//! What was deliberately not taken: rendering a "✓" glyph would hold the check's
+//! shape hostage to whichever font happens to be installed, **and** would make
 //! animating the stroke impossible.
 //!
 //! ## Definition of Done (`KOMPONEN.md`)
@@ -78,13 +75,15 @@ use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
 use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
 use silka_core::view::{Builder, View, ViewNode};
-use silka_paint::{Color, CornerRadii, CornerStyle, Corners, Insets, Point, Quad, Rect, Size};
+use silka_paint::{
+    Color, CornerRadii, Corners, Insets, LineCap, LineJoin, Point, Quad, Rect, Size, Stroke,
+};
 use silka_text::FontWeight;
 use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
-use crate::text::text;
+use crate::text::text_in;
 
 // ---------------------------------------------------------------------------
 // State
@@ -437,49 +436,42 @@ impl CheckboxStyle {
 /// box side, not a single stamp leaves the box (tested).
 const JALUR: [(f32, f32); 3] = [(0.22, 0.52), (0.42, 0.72), (0.78, 0.30)];
 
-/// Upper bound on the number of pen stamps in a single check.
-///
-/// Not a matter of quality but of guarantee: a box that is (because of a
-/// custom theme or a bug) thousands of points across must not turn one small
-/// widget into thousands of draw commands.
-const MAX_JEJAK: usize = 64;
-
-/// The pen centre points along the check stroke, up to `progress`.
+/// The check path inside `box_rect`, truncated at `progress`.
 ///
 /// This is the whole "animasi centang" (`KOMPONEN.md`) in a testable form:
-/// `progress` 0 produces nothing, 1 produces the full stroke that **ends
-/// exactly** at the end of the path, and anything in between is a stroke
-/// being drawn. The spacing between stamps does not depend on `progress`, so
-/// the early stamps never shift as the stroke grows — the condition for the
-/// motion to read as a single pen movement rather than a flicker.
+/// `progress` 0 produces nothing, 1 produces the full path that **ends exactly**
+/// at the end of the stroke, and anything in between is a tick being drawn. The
+/// vertices already laid down never move as the stroke grows — the condition for
+/// the motion to read as one pen movement rather than a flicker.
+///
+/// It returns the path rather than the drawing, so a caller hands it straight to
+/// a [`silka_paint::Stroke`] with the width and cap of its choice.
 ///
 /// ```
 /// use silka_paint::Rect;
-/// use silka_widgets::check_dots;
+/// use silka_widgets::check_path;
 ///
 /// let box_rect = Rect::new(0.0, 0.0, 16.0, 16.0);
 ///
 /// // Unchecked really is free: not one draw command.
-/// assert!(check_dots(box_rect, 2.0, 0.0).is_empty());
+/// assert!(check_path(box_rect, 0.0).is_empty());
 ///
 /// // Mid-stroke the pen is partway along its path…
-/// let half = check_dots(box_rect, 2.0, 0.5);
-/// let full = check_dots(box_rect, 2.0, 1.0);
-/// assert!(!half.is_empty());
-/// assert!(full.len() > half.len());
+/// let half = check_path(box_rect, 0.5);
+/// let full = check_path(box_rect, 1.0);
+/// assert!(half.len() >= 2);
+/// assert_eq!(full.len(), 3, "the finished tick is two segments");
 ///
-/// // …and the stamps already laid down do not move as it continues, which is
-/// // what makes the motion read as one pen stroke instead of a flicker.
+/// // …and what is already drawn does not move as it continues.
 /// assert_eq!(half[0], full[0]);
-/// assert_eq!(half[1], full[1]);
 ///
-/// // The end is exact rather than a whole step past the path's end.
+/// // The end is exact, and inside the box.
 /// let end = *full.last().unwrap();
 /// assert!(end.x <= box_rect.max_x() && end.y <= box_rect.max_y());
 /// ```
-pub fn check_dots(box_rect: Rect, stroke: f32, progress: f32) -> Vec<Point> {
+pub fn check_path(box_rect: Rect, progress: f32) -> Vec<Point> {
     let p = progress.clamp(0.0, 1.0);
-    if p <= 0.0 || stroke <= 0.0 || box_rect.size.is_empty() {
+    if p <= 0.0 || box_rect.size.is_empty() {
         return Vec::new();
     }
     let titik: Vec<Point> = JALUR
@@ -498,18 +490,22 @@ pub fn check_dots(box_rect: Rect, stroke: f32, progress: f32) -> Vec<Point> {
         return vec![titik[0]];
     }
 
+    // Walk whole segments while they fit, then cut the last one exactly where the
+    // spring has got to — the cost is the number of vertices, not the number of
+    // pixels, which is what makes a stroke command cheaper than stamping was.
     let terlihat = total * p;
-    let langkah = (stroke * 0.35).max(total / MAX_JEJAK as f32);
-
-    let mut out = Vec::with_capacity((terlihat / langkah) as usize + 2);
-    let mut d = 0.0;
-    while d < terlihat {
-        out.push(pada_jalur(&titik, &ruas, d));
-        d += langkah;
+    let mut out = Vec::with_capacity(titik.len());
+    out.push(titik[0]);
+    let mut sudah = 0.0;
+    for (i, panjang) in ruas.iter().enumerate() {
+        if sudah + panjang <= terlihat {
+            out.push(titik[i + 1]);
+            sudah += panjang;
+        } else {
+            out.push(pada_jalur(&titik, &ruas, terlihat));
+            break;
+        }
     }
-    // The end is always exact: without this the stroke length would jump by a
-    // whole step and the motion would look jittery.
-    out.push(pada_jalur(&titik, &ruas, terlihat));
     out
 }
 
@@ -592,7 +588,7 @@ fn pada_jalur(titik: &[Point], ruas: &[f32], d: f32) -> Point {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{checkbox, CheckState, CheckboxNode, Fonts, MIN_HIT_TARGET};
+/// use silka_widgets::{checkbox_in, CheckState, CheckboxNode, Fonts, MIN_HIT_TARGET};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -600,7 +596,7 @@ fn pada_jalur(titik: &[Point], ruas: &[f32], d: f32) -> Point {
 /// let mut tree = RenderTree::new();
 /// reconcile(
 ///     &mut tree,
-///     checkbox(&fonts, &theme, "Remember me").state(CheckState::On),
+///     checkbox_in(&fonts, &theme, "Remember me").state(CheckState::On),
 /// );
 /// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
 ///
@@ -880,18 +876,6 @@ impl CheckboxNode {
             Corners::new(CornerRadii::all(radii), self.style.corners.style),
         )
     }
-
-    /// The round pen for the check stroke and the indeterminate dash.
-    ///
-    /// Its cap is **always** an arc, never `theme.radius.style`: what is
-    /// rounded here is the tip of a pen, not the corner of a surface — the
-    /// preset's squircle governs the box, not the stroke.
-    fn pena(rect: Rect, warna: Color) -> Quad {
-        Quad::new(rect).background(warna).corners(Corners::uniform(
-            rect.size.min_side() * 0.5,
-            CornerStyle::Arc,
-        ))
-    }
 }
 
 fn maju(value: &mut SpringValue<f32>, tick: &Tick) -> bool {
@@ -1006,12 +990,29 @@ impl RenderNode for CheckboxNode {
         let tebal = s.stroke * skala;
         let warna = s.mark_for(self.disabled);
 
-        for pusat in check_dots(kotak, tebal, self.check.position()) {
-            let jejak = Rect::new(pusat.x - tebal * 0.5, pusat.y - tebal * 0.5, tebal, tebal);
-            ctx.quad(Self::pena(jejak, warna));
+        // The tick: ONE stroke command for the whole path. Round caps and joins,
+        // because what is rounded here is the tip of a pen, not the corner of a
+        // surface — the preset's squircle governs the box, not the stroke.
+        let jalur = check_path(kotak, self.check.position());
+        if jalur.len() >= 2 && tebal > 0.0 && warna.a > 0.0 {
+            let mut goresan = Stroke::with_capacity(warna, tebal, jalur.len())
+                .cap(LineCap::Round)
+                .join(LineJoin::Round);
+            goresan.extend(jalur);
+            ctx.stroke(goresan);
         }
+
+        // The indeterminate dash: a single round-capped segment. Its ends are
+        // pulled in by half the width so the round caps land exactly on the box
+        // the geometry function reported.
         if let Some(garis) = dash_rect(kotak, tebal, self.dash.position()) {
-            ctx.quad(Self::pena(garis, warna));
+            let y = garis.center().y;
+            let x0 = garis.min_x() + tebal * 0.5;
+            let x1 = (garis.max_x() - tebal * 0.5).max(x0);
+            ctx.stroke(
+                Stroke::line(Point::new(x0, y), Point::new(x1, y), warna, tebal)
+                    .cap(LineCap::Round),
+            );
         }
 
         ctx.paint_children();
@@ -1162,11 +1163,11 @@ impl core::fmt::Debug for CheckboxNode {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{checkbox, CheckState, Fonts};
+/// use silka_widgets::{checkbox_in, CheckState, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
-/// let build = |state| checkbox(&fonts, &theme, "Select all").state(state);
+/// let build = |state| checkbox_in(&fonts, &theme, "Select all").state(state);
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(&mut tree, build(CheckState::Off));
@@ -1293,7 +1294,7 @@ impl ViewNode for CheckboxProps {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{checkbox, CheckState, Fonts};
+/// use silka_widgets::{checkbox_in, CheckState, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -1301,19 +1302,19 @@ impl ViewNode for CheckboxProps {
 /// let state = rt.signal(CheckState::Mixed);
 ///
 /// // The tri-state form: the widget hands back what it *is* now.
-/// let all = checkbox(&fonts, &theme, "Select all")
+/// let all = checkbox_in(&fonts, &theme, "Select all")
 ///     .state(state.get())
 ///     .on_change(move |next| state.set(next));
 ///
 /// // …and the boolean shorthand, for the ordinary two-state case.
-/// let one = checkbox(&fonts, &theme, "Remember me")
+/// let one = checkbox_in(&fonts, &theme, "Remember me")
 ///     .checked(true)
 ///     .on_toggle(|_on| {});
 /// # let _ = (all, one);
 ///
 /// // The drawn box is small, and deliberately so — the *hit* target is what
 /// // grows to 44pt, not the graphic.
-/// let style = checkbox(&fonts, &theme, "Compact").resolved_style();
+/// let style = checkbox_in(&fonts, &theme, "Compact").resolved_style();
 /// assert!(style.box_size < silka_widgets::MIN_HIT_TARGET);
 /// ```
 pub struct Checkbox {
@@ -1330,6 +1331,30 @@ pub struct Checkbox {
     key: Option<Key>,
 }
 
+/// A tri-state checkbox — the `checkbox` component (`KOMPONEN.md` Tier 2).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_widgets::{checkbox, CheckState};
+///
+/// let rt = Runtime::new();
+/// let all = rt.signal(CheckState::Indeterminate);
+///
+/// let head = checkbox("Select all")
+///     .state(all.get())
+///     .on_change(move |s| all.set(s));
+/// # let _ = head;
+/// ```
+///
+/// Use [`checkbox_in`] outside a build pass.
+pub fn checkbox(label: impl Into<String>) -> Checkbox {
+    checkbox_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        label,
+    )
+}
+
 /// A labelled checkbox.
 ///
 /// Its label is clickable **and at the same time** becomes the name announced
@@ -1341,16 +1366,33 @@ pub struct Checkbox {
 /// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
-/// checkbox(&fonts, &t, "Semua item")
+/// checkbox_in(&fonts, &t, "Semua item")
 ///     .state(CheckState::Mixed)
 ///     .on_change(|baru| println!("sekarang {}", baru.name()));
 /// ```
-pub fn checkbox(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Checkbox {
+pub fn checkbox_in(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Checkbox {
     Checkbox {
         fonts: Some(fonts.clone()),
         label: Some(label.into()),
-        ..checkbox_only(theme)
+        ..checkbox_only()
     }
+}
+
+/// A checkbox with **no** text beside it — a table's header cell, a list row.
+///
+/// It still needs a name for a screen reader, so give it one with
+/// [`Checkbox::label`]; only the drawing is suppressed.
+///
+/// ```
+/// use silka_widgets::checkbox_only;
+///
+/// let cell = checkbox_only().label("Select all").checked(true);
+/// # let _ = cell;
+/// ```
+///
+/// Use [`checkbox_only_in`] outside a build pass.
+pub fn checkbox_only() -> Checkbox {
+    checkbox_only_in(&crate::ambient::active_theme())
 }
 
 /// A checkbox with no visible label — inside a table cell, in front of a list
@@ -1364,9 +1406,9 @@ pub fn checkbox(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Check
 /// # use silka_widgets::checkbox_only;
 /// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
-/// checkbox_only(&t).label("Pilih semua").checked(true);
+/// checkbox_only_in(&t).label("Pilih semua").checked(true);
 /// ```
-pub fn checkbox_only(theme: &Theme) -> Checkbox {
+pub fn checkbox_only_in(theme: &Theme) -> Checkbox {
     Checkbox {
         fonts: None,
         theme: *theme,
@@ -1492,7 +1534,7 @@ impl From<Checkbox> for View {
                 t.color.label
             };
             builder = builder.child(
-                text(&fonts, &label)
+                text_in(&fonts, &label)
                     .size(t.typography.body_size)
                     .line_height(t.typography.body_line_height)
                     .weight(FontWeight::REGULAR)
@@ -1528,7 +1570,7 @@ mod tests {
     };
     use silka_core::tree::{BoxConstraints, RenderTree, TextDirection};
     use silka_core::view::{reconcile, View};
-    use silka_paint::{Command, Scene};
+    use silka_paint::{Command, LineCap, LineJoin, Scene};
     use silka_theme::{Appearance, Preset};
     use std::cell::Cell;
     use std::time::Duration;
@@ -1587,11 +1629,11 @@ mod tests {
     #[test]
     fn goresan_kosong_saat_belum_mulai_dan_penuh_saat_selesai() {
         let kotak = Rect::new(0.0, 0.0, 16.0, 16.0);
-        assert!(check_dots(kotak, 2.0, 0.0).is_empty());
-        assert!(check_dots(kotak, 2.0, -1.0).is_empty());
+        assert!(check_path(kotak, 0.0).is_empty());
+        assert!(check_path(kotak, -1.0).is_empty());
 
-        let penuh = check_dots(kotak, 2.0, 1.0);
-        assert!(penuh.len() > 4, "goresan terlalu jarang: {}", penuh.len());
+        let penuh = check_path(kotak, 1.0);
+        assert_eq!(penuh.len(), 3, "tiga simpul, dua ruas");
         let awal = penuh[0];
         let akhir = penuh[penuh.len() - 1];
         assert!((awal.x - 16.0 * JALUR[0].0).abs() < 1e-3);
@@ -1600,41 +1642,45 @@ mod tests {
     }
 
     #[test]
-    fn goresan_tumbuh_monoton_dan_jejak_awalnya_tidak_bergeser() {
+    fn goresan_tumbuh_monoton_dan_simpul_awalnya_tidak_bergeser() {
         let kotak = Rect::new(0.0, 0.0, 16.0, 16.0);
         let mut sebelumnya = 0usize;
-        let mut jejak_awal: Option<Vec<Point>> = None;
         for i in 0..=10 {
-            let d = check_dots(kotak, 2.0, i as f32 / 10.0);
+            let d = check_path(kotak, i as f32 / 10.0);
             assert!(d.len() >= sebelumnya, "goresan menyusut di {i}");
             sebelumnya = d.len();
-            // Every stamp but the last sits on the same grid at all times.
-            if let Some(awal) = &jejak_awal {
-                let n = awal.len();
-                assert_eq!(&d[..n], &awal[..], "jejak awal bergeser di {i}");
-            }
-            if d.len() > 1 {
-                jejak_awal = Some(d[..d.len() - 1].to_vec());
+            // Whatever is already drawn keeps its exact position: the vertices
+            // never shift, only the last one advances.
+            if d.len() >= 2 {
+                assert_eq!(
+                    d[0],
+                    check_path(kotak, 1.0)[0],
+                    "simpul awal bergeser di {i}"
+                );
             }
         }
     }
 
     #[test]
-    fn goresan_tidak_pernah_keluar_dari_kotaknya() {
+    fn goresan_tetap_di_dalam_kotaknya_termasuk_lebar_penanya() {
+        // The path leaves room for the pen's round cap: at a width of an eighth of
+        // the box, not a single pixel of the stroke leaves the box.
         let kotak = Rect::new(4.0, 6.0, 16.0, 16.0);
         let tebal = 2.0;
-        for pusat in check_dots(kotak, tebal, 1.0) {
-            assert!(pusat.x - tebal * 0.5 >= kotak.min_x() - 1e-3, "{pusat:?}");
-            assert!(pusat.x + tebal * 0.5 <= kotak.max_x() + 1e-3, "{pusat:?}");
-            assert!(pusat.y - tebal * 0.5 >= kotak.min_y() - 1e-3, "{pusat:?}");
-            assert!(pusat.y + tebal * 0.5 <= kotak.max_y() + 1e-3, "{pusat:?}");
+        for p in check_path(kotak, 1.0) {
+            assert!(p.x - tebal * 0.5 >= kotak.min_x() - 1e-3, "{p:?}");
+            assert!(p.x + tebal * 0.5 <= kotak.max_x() + 1e-3, "{p:?}");
+            assert!(p.y - tebal * 0.5 >= kotak.min_y() - 1e-3, "{p:?}");
+            assert!(p.y + tebal * 0.5 <= kotak.max_y() + 1e-3, "{p:?}");
         }
     }
 
     #[test]
-    fn kotak_raksasa_tidak_melahirkan_ribuan_perintah() {
+    fn kotak_raksasa_tetap_satu_perintah() {
+        // The stamping version cost one command per few points and needed a
+        // ceiling to stay sane. A stroke is one command whatever the size.
         let kotak = Rect::new(0.0, 0.0, 4000.0, 4000.0);
-        assert!(check_dots(kotak, 1.0, 1.0).len() <= MAX_JEJAK + 1);
+        assert_eq!(check_path(kotak, 1.0).len(), 3);
     }
 
     #[test]
@@ -1666,8 +1712,8 @@ mod tests {
         let f = Fonts::bundled_only();
         let t = tema();
         for view in [
-            View::from(checkbox(&f, &t, "Ok")),
-            View::from(checkbox_only(&t).label("Ok")),
+            View::from(checkbox_in(&f, &t, "Ok")),
+            View::from(checkbox_only_in(&t).label("Ok")),
         ] {
             let tree = pohon(view);
             let id = tree.children(tree.root())[0];
@@ -1688,14 +1734,14 @@ mod tests {
         let t = tema();
 
         let mut ltr = RenderTree::new();
-        reconcile(&mut ltr, checkbox(&f, &t, "Aktif"));
+        reconcile(&mut ltr, checkbox_in(&f, &t, "Aktif"));
         ltr.layout(BoxConstraints::loose(RUANG));
         let kotak_ltr = node(&ltr).box_rect();
         assert_eq!(kotak_ltr.min_x(), 0.0, "LTR: kotak di kiri");
 
         let mut rtl = RenderTree::new();
         rtl.set_direction(TextDirection::Rtl);
-        reconcile(&mut rtl, checkbox(&f, &t, "Aktif"));
+        reconcile(&mut rtl, checkbox_in(&f, &t, "Aktif"));
         rtl.layout(BoxConstraints::loose(RUANG));
         let id = rtl.children(rtl.root())[0];
         let kotak_rtl = rtl.node_ref::<CheckboxNode>(id).expect("node").box_rect();
@@ -1716,7 +1762,7 @@ mod tests {
             (CheckState::On, AccessToggled::On),
             (CheckState::Mixed, AccessToggled::Mixed),
         ] {
-            let tree = pohon(checkbox(&f, &t, "Notifikasi").state(state));
+            let tree = pohon(checkbox_in(&f, &t, "Notifikasi").state(state));
             let a11y = tree.access_tree(None);
             let e = a11y
                 .find_label("Notifikasi")
@@ -1740,7 +1786,7 @@ mod tests {
     fn checkbox_mati_tetap_dibacakan_tapi_tanpa_aksi() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let tree = pohon(checkbox(&f, &t, "Terkunci").checked(true).disabled(true));
+        let tree = pohon(checkbox_in(&f, &t, "Terkunci").checked(true).disabled(true));
         let a11y = tree.access_tree(None);
         let e = a11y.find_label("Terkunci").expect("tetap ada");
         assert!(e.node.disabled);
@@ -1758,7 +1804,7 @@ mod tests {
         let catat = dilihat.clone();
 
         let mut tree = pohon(
-            checkbox(&f, &t, "Aktif")
+            checkbox_in(&f, &t, "Aktif")
                 .checked(false)
                 .on_change(move |s| catat.set(Some(s))),
         );
@@ -1774,7 +1820,7 @@ mod tests {
         assert_eq!(node(&tree).activations(), 1);
 
         // Rebuild with the new state = the spring is aimed, not jumped.
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif").checked(true));
         assert_eq!(node(&tree).state(), CheckState::On);
         assert!(node(&tree).is_animating());
     }
@@ -1786,7 +1832,8 @@ mod tests {
         let n = Rc::new(Cell::new(0u32));
         let catat = n.clone();
         let mut tree = pohon(
-            checkbox(&f, &t, "Label panjang sekali").on_change(move |_| catat.set(catat.get() + 1)),
+            checkbox_in(&f, &t, "Label panjang sekali")
+                .on_change(move |_| catat.set(catat.get() + 1)),
         );
         let id = tree.children(tree.root())[0];
         let kotak = tree.bounds(id);
@@ -1805,7 +1852,7 @@ mod tests {
         let n = Rc::new(Cell::new(0u32));
         let catat = n.clone();
         let mut tree =
-            pohon(checkbox(&f, &t, "Aktif").on_change(move |_| catat.set(catat.get() + 1)));
+            pohon(checkbox_in(&f, &t, "Aktif").on_change(move |_| catat.set(catat.get() + 1)));
 
         let mut router = InputRouter::new();
         router.dispatch(
@@ -1842,7 +1889,7 @@ mod tests {
         let n = Rc::new(Cell::new(0u32));
         let catat = n.clone();
         let mut tree = pohon(
-            checkbox(&f, &t, "Terkunci")
+            checkbox_in(&f, &t, "Terkunci")
                 .disabled(true)
                 .on_change(move |_| catat.set(catat.get() + 1)),
         );
@@ -1875,7 +1922,7 @@ mod tests {
     fn lahir_tercentang_langsung_tergambar_tercentang() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let tree = pohon(checkbox(&f, &t, "Aktif").checked(true));
+        let tree = pohon(checkbox_in(&f, &t, "Aktif").checked(true));
         let n = node(&tree);
         assert!(!n.is_animating(), "kontrol tidak beranimasi masuk");
         assert_eq!(n.check_progress(), 1.0);
@@ -1886,10 +1933,10 @@ mod tests {
     fn perubahan_keadaan_menggores_centang_bertahap_lalu_berhenti() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(false));
         assert_eq!(node(&tree).check_progress(), 0.0);
 
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif").checked(true));
         assert!(node(&tree).is_animating());
 
         let mut frame = 0;
@@ -1915,8 +1962,8 @@ mod tests {
     fn dibatalkan_di_tengah_goresan_berbalik_membawa_kecepatan() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(false));
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif").checked(true));
         for _ in 0..4 {
             detak(&mut tree, Motion::Full);
         }
@@ -1924,7 +1971,7 @@ mod tests {
         assert!(tengah > 0.0 && tengah < 1.0, "belum di tengah: {tengah}");
 
         // Retarget, not a new animation: the position does not jump.
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(false));
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif").checked(false));
         assert_eq!(node(&tree).check_progress(), tengah);
         assert!(node(&tree).is_animating());
 
@@ -1942,7 +1989,7 @@ mod tests {
         let t = tema();
 
         // Decoration (the focus ring) is marked decorative: it finishes at once.
-        let mut tree = pohon(checkbox(&f, &t, "Aktif"));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif"));
         let mut router = InputRouter::new();
         router.dispatch(
             &mut tree,
@@ -1960,8 +2007,8 @@ mod tests {
 
         // What explains something (the check stroke) keeps moving — only
         // without its bounce.
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(false));
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif").checked(true));
         detak(&mut tree, Motion::Reduced);
         let p = node(&tree).check_progress();
         assert!(p > 0.0 && p < 1.0, "goresan ikut dimatikan: {p}");
@@ -1973,12 +2020,12 @@ mod tests {
         let t = tema();
 
         // Built as explanatory motion, then the application changes its mind.
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(false));
         assert_eq!(node(&tree).motion_role(), MotionRole::Essential);
 
         reconcile(
             &mut tree,
-            checkbox(&f, &t, "Aktif").checked(false).decorative(),
+            checkbox_in(&f, &t, "Aktif").checked(false).decorative(),
         );
         assert_eq!(
             node(&tree).motion_role(),
@@ -1990,7 +2037,7 @@ mod tests {
         // decorative + reduced-motion = no stroke animation at all.
         reconcile(
             &mut tree,
-            checkbox(&f, &t, "Aktif").checked(true).decorative(),
+            checkbox_in(&f, &t, "Aktif").checked(true).decorative(),
         );
         detak(&mut tree, Motion::Reduced);
         assert_eq!(
@@ -2000,7 +2047,7 @@ mod tests {
         );
 
         // The return trip too: decorative -> explanatory.
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif").checked(true));
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif").checked(true));
         assert_eq!(node(&tree).motion_role(), MotionRole::Essential);
     }
 
@@ -2010,8 +2057,8 @@ mod tests {
         let t = tema();
         // `press_t`/`ring_t` must never be promoted: neither carries any
         // information, so reduced-motion always eats them.
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").decorative());
-        reconcile(&mut tree, checkbox(&f, &t, "Aktif"));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").decorative());
+        reconcile(&mut tree, checkbox_in(&f, &t, "Aktif"));
         let n = node(&tree);
         assert_eq!(n.motion_role(), MotionRole::Essential);
         assert_eq!(n.press_t.role(), MotionRole::Decorative);
@@ -2022,7 +2069,7 @@ mod tests {
     fn tanpa_perubahan_tidak_ada_satu_frame_pun_yang_diminta() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(true));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(true));
         assert!(
             !detak(&mut tree, Motion::Full),
             "checkbox diam harus gratis"
@@ -2038,7 +2085,7 @@ mod tests {
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(true));
+                let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(true));
                 selesaikan(&mut tree);
                 let mut scene = Scene::new(t.color.background);
                 tree.paint_into(&mut scene);
@@ -2051,19 +2098,28 @@ mod tests {
                         _ => None,
                     })
                     .collect();
-                assert!(!kotak.is_empty());
-                // The box is drawn first, then the stroke stamps.
+                // The box: one quad, whose corner shape is the preset's.
+                assert_eq!(kotak.len(), 1, "{preset:?}");
                 assert_eq!(kotak[0].background, t.color.accent, "{preset:?}");
                 assert_eq!(kotak[0].corners.style, t.radius.style, "{preset:?}");
                 assert_eq!(kotak[0].border_color, t.color.accent);
 
-                let jejak = &kotak[1..];
-                assert!(jejak.len() > 4, "centang nyaris tidak tergambar");
-                for q in jejak {
-                    assert_eq!(q.background, t.color.on_accent, "{preset:?}");
-                    // The pen cap is always an arc — the preset squircle is the box's.
-                    assert_eq!(q.corners.style, CornerStyle::Arc);
-                }
+                // The tick: ONE stroke command, not a chain of stamped quads.
+                let goresan: Vec<_> = scene
+                    .commands()
+                    .iter()
+                    .filter_map(|c| match c {
+                        Command::Stroke(g) => Some(g.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                assert_eq!(goresan.len(), 1, "{preset:?}");
+                assert_eq!(goresan[0].color, t.color.on_accent, "{preset:?}");
+                assert_eq!(goresan[0].segment_count(), 2, "{preset:?}");
+                // The pen's cap is always round — the preset's squircle governs
+                // the box, not the stroke.
+                assert_eq!(goresan[0].cap, LineCap::Round);
+                assert_eq!(goresan[0].join, LineJoin::Round);
             }
         }
     }
@@ -2072,7 +2128,7 @@ mod tests {
     fn keadaan_kosong_benar_benar_gratis() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(false));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(false));
         selesaikan(&mut tree);
         let mut scene = Scene::new(t.color.background);
         tree.paint_into(&mut scene);
@@ -2082,9 +2138,13 @@ mod tests {
             .iter()
             .filter(|c| matches!(c, Command::Quad(_)))
             .count();
-        assert_eq!(
-            kotak, 1,
-            "kotak kosong = satu quad, tanpa goresan sama sekali"
+        assert_eq!(kotak, 1, "kotak kosong = satu quad");
+        assert!(
+            !scene
+                .commands()
+                .iter()
+                .any(|c| matches!(c, Command::Stroke(_))),
+            "tanpa goresan sama sekali"
         );
     }
 
@@ -2092,7 +2152,7 @@ mod tests {
     fn indeterminate_menggambar_garis_bukan_centang() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let mut tree = pohon(checkbox(&f, &t, "Semua").state(CheckState::Mixed));
+        let mut tree = pohon(checkbox_in(&f, &t, "Semua").state(CheckState::Mixed));
         selesaikan(&mut tree);
         let mut scene = Scene::new(t.color.background);
         tree.paint_into(&mut scene);
@@ -2105,10 +2165,22 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(kotak.len(), 2, "kotak + satu garis, bukan rantai centang");
-        let garis = &kotak[1];
-        assert!(garis.rect.size.width > garis.rect.size.height);
-        assert_eq!(garis.background, t.color.on_accent);
+        let goresan: Vec<_> = scene
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::Stroke(g) => Some(g.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(kotak.len(), 1, "hanya kotaknya yang berupa quad");
+        assert_eq!(goresan.len(), 1, "satu garis, bukan centang dua ruas");
+        assert_eq!(goresan[0].segment_count(), 1);
+        assert_eq!(goresan[0].color, t.color.on_accent);
+        // Horizontal: the dash grows sideways out of the centre.
+        let (a, b) = goresan[0].segments().next().unwrap();
+        assert!((a.y - b.y).abs() < 1e-3);
+        assert!(b.x >= a.x);
         // Its background stays filled, just like the checked state.
         assert_eq!(kotak[0].background, t.color.accent);
     }
@@ -2117,7 +2189,7 @@ mod tests {
     fn cincin_fokus_digambar_di_luar_kotak_agar_centang_tetap_terbaca() {
         let f = Fonts::bundled_only();
         let t = tema();
-        let mut tree = pohon(checkbox(&f, &t, "Aktif").checked(true));
+        let mut tree = pohon(checkbox_in(&f, &t, "Aktif").checked(true));
         let mut router = InputRouter::new();
         router.dispatch(
             &mut tree,

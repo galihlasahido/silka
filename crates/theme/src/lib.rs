@@ -65,6 +65,8 @@
 )]
 
 pub mod color;
+/// Development-time tooling: theme tokens in a text file (§9.1).
+pub mod dev;
 pub mod palette;
 pub mod preset;
 pub mod radius;

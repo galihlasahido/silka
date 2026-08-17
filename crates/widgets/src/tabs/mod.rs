@@ -9,24 +9,16 @@
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
-//! # use silka_theme::{Appearance, Theme};
-//! # use silka_widgets::Fonts;
 //! use silka_widgets::tabs::{tab, tabs, TabsVariant};
 //!
-//! # let fonts = Fonts::bundled_only();
-//! # let t = Theme::cupertino(Appearance::Dark);
 //! # let rt = Runtime::new();
 //! let terpilih = rt.signal(0usize);
 //!
-//! let _ = tabs(
-//!     &fonts,
-//!     &t,
-//!     [tab("Umum"), tab("Tampilan"), tab("Lanjutan").disabled(true)],
-//! )
-//! .variant(TabsVariant::Segmented)
-//! .selected(terpilih.get())
-//! .label("Pengaturan")
-//! .on_select(move |i| terpilih.set(i));
+//! let _ = tabs([tab("Umum"), tab("Tampilan"), tab("Lanjutan").disabled(true)])
+//!     .variant(TabsVariant::Segmented)
+//!     .selected(terpilih.get())
+//!     .label("Pengaturan")
+//!     .on_select(move |i| terpilih.set(i));
 //! ```
 //!
 //! ## Controlled component
@@ -77,7 +69,7 @@ use silka_text::FontWeight;
 use silka_theme::Theme;
 
 use crate::fonts::Fonts;
-use crate::text::text;
+use crate::text::text_in;
 
 pub use item::{TabBox, TabProps, TAB_TINT_MOTION};
 pub use list::{OnSelect, TabListBox, TabListProps};
@@ -174,14 +166,14 @@ impl Tab {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{tab, tabs, Fonts, TabsVariant};
+/// use silka_widgets::{tab, tabs_in, Fonts, TabsVariant};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 /// let rt = Runtime::new();
 /// let page = rt.signal(0usize);
 ///
-/// let row = tabs(&fonts, &theme, [tab("General"), tab("Network")])
+/// let row = tabs_in(&fonts, &theme, [tab("General"), tab("Network")])
 ///     .segmented()
 ///     .selected(page.get())
 ///     .label("Settings sections")
@@ -192,11 +184,11 @@ impl Tab {
 ///
 /// // A selected index past the end is clamped rather than panicking: a tab
 /// // list whose contents shrank must not take the application down.
-/// let clamped = tabs(&fonts, &theme, [tab("Only")]).selected(99);
+/// let clamped = tabs_in(&fonts, &theme, [tab("Only")]).selected(99);
 /// assert_eq!(clamped.active_index(), 0);
 ///
 /// // Switching variant swaps the tokens, not the engine.
-/// let underlined = tabs(&fonts, &theme, [tab("A"), tab("B")]).underline();
+/// let underlined = tabs_in(&fonts, &theme, [tab("A"), tab("B")]).underline();
 /// assert_eq!(underlined.resolved_style().variant, TabsVariant::Underline);
 /// ```
 /// been written out.
@@ -214,6 +206,31 @@ pub struct Tabs {
     key: Option<Key>,
 }
 
+/// A row of tabs — `tabs` (`KOMPONEN.md` Tier 3).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_widgets::{tab, tabs, TabsVariant};
+///
+/// let rt = Runtime::new();
+/// let selected = rt.signal(0usize);
+///
+/// let row = tabs([tab("General"), tab("Network"), tab("Advanced").disabled(true)])
+///     .variant(TabsVariant::Segmented)
+///     .selected(selected.get())
+///     .on_select(move |i| selected.set(i));
+/// # let _ = row;
+/// ```
+///
+/// Use [`tabs_in`] outside a build pass.
+pub fn tabs(items: impl IntoIterator<Item = Tab>) -> Tabs {
+    tabs_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        items,
+    )
+}
+
 /// A tab row holding `items`.
 ///
 /// `fonts` is the app's text engine and `theme` the source of every value —
@@ -222,7 +239,7 @@ pub struct Tabs {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{tab, tabs, Fonts};
+/// use silka_widgets::{tab, tabs_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -231,7 +248,7 @@ pub struct Tabs {
 ///
 /// // The whole row is one Tab stop; the arrow keys move *within* it, which
 /// // is what the platform conventions expect of a tab list.
-/// let row = tabs(
+/// let row = tabs_in(
 ///     &fonts,
 ///     &theme,
 ///     [tab("General"), tab("Network"), tab("Advanced").disabled(true)],
@@ -241,7 +258,7 @@ pub struct Tabs {
 ///
 /// assert_eq!(row.active_index(), 1);
 /// ```
-pub fn tabs(fonts: &Fonts, theme: &Theme, items: impl IntoIterator<Item = Tab>) -> Tabs {
+pub fn tabs_in(fonts: &Fonts, theme: &Theme, items: impl IntoIterator<Item = Tab>) -> Tabs {
     Tabs {
         fonts: fonts.clone(),
         theme: *theme,
@@ -387,7 +404,7 @@ fn tab_view(t: &Tabs, style: &TabsStyle, index: usize, item: &Tab, selected: boo
     // The label sits in a flex container that centers it — no arithmetic here
     // (§3.4). Its role is `Container` so a screen reader does not announce the
     // tab's name twice: once from the tab node, once from its text.
-    let isi = row([text(&t.fonts, &item.label)
+    let isi = row([text_in(&t.fonts, &item.label)
         .size(style.label_size)
         .weight(if selected {
             FontWeight::SEMIBOLD
@@ -471,14 +488,14 @@ fn nodes(tree: &RenderTree) -> Vec<NodeId> {
 /// # use silka_theme::{Appearance, Theme};
 /// # use silka_widgets::Fonts;
 /// # use std::time::Duration;
-/// use silka_widgets::tabs::{advance, tab, tabs};
+/// use silka_widgets::tabs::{advance, tab, tabs_in};
 ///
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
 /// let mut tree = RenderTree::new();
 /// let tick = Tick::manual(Duration::from_millis(8), Motion::Full);
 ///
-/// reconcile(&mut tree, tabs(&fonts, &t, [tab("Satu"), tab("Dua")]).selected(0));
+/// reconcile(&mut tree, tabs_in(&fonts, &t, [tab("Satu"), tab("Dua")]).selected(0));
 /// tree.layout(BoxConstraints::tight(Size::new(400.0, 60.0)));
 /// // A freshly built row is already in place: nothing is moving.
 /// assert_eq!(advance(&mut tree, &tick), Dirty::NONE);
@@ -536,7 +553,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::tabs::{is_animating, settle};
-/// use silka_widgets::{tab, tabs, Fonts};
+/// use silka_widgets::{tab, tabs_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -544,7 +561,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 /// let mut tree = RenderTree::new();
 /// reconcile(
 ///     &mut tree,
-///     tabs(&fonts, &theme, [tab("General"), tab("Network")]).selected(1),
+///     tabs_in(&fonts, &theme, [tab("General"), tab("Network")]).selected(1),
 /// );
 /// tree.layout(BoxConstraints::loose(Size::new(320.0, 44.0)));
 ///

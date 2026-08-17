@@ -35,10 +35,10 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::wysiwyg::{
-    decode, link_dialog, toolbar, wysiwyg, Block, BlockKind, Document, EditorCommand, EditorHandle,
-    EditorSnapshot, InlineStyle, Marks, Span,
+    decode, link_dialog_in, toolbar_in, wysiwyg_in, Block, BlockKind, Document, EditorCommand,
+    EditorHandle, EditorSnapshot, InlineStyle, Marks, Span,
 };
-use silka_widgets::{overlay_layer, text, Fonts, SelectState};
+use silka_widgets::{overlay_layer, text_in, Fonts, SelectState};
 
 /// The page title.
 pub const JUDUL: &str = "WYSIWYG editor";
@@ -105,13 +105,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     // button posted in the frame before it.
     let saluran = use_signal(EditorHandle::new).get();
 
-    let bar = toolbar(fonts, &t, saluran.clone(), &keadaan.get())
+    let bar = toolbar_in(fonts, &t, saluran.clone(), &keadaan.get())
         .block_state(blok)
         .on_link(move || {
             tautan_url.set(keadaan.get().link.unwrap_or_default());
             tautan_terbuka.set(true);
         });
-    let dialog = link_dialog(fonts, &t, saluran.clone(), tautan_url.get())
+    let dialog = link_dialog_in(fonts, &t, saluran.clone(), tautan_url.get())
         .open(tautan_terbuka.get())
         .text(keadaan.get().selected_text)
         .on_url(move |s| tautan_url.set(s.to_string()))
@@ -119,7 +119,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     let isi = column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -127,7 +127,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Pilih sebagian kata lalu ⌘B: rentang gayanya terpecah tepat di \
                  situ. Tekan ⌘Z setelah menghapus seleksi lintas blok — judul \
@@ -201,7 +201,7 @@ fn editor(fonts: &Fonts, t: &Theme, kabel: Kabel) -> View {
     component("editor-wysiwyg", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let tempel = saluran.clone();
-        let e = wysiwyg(&fonts, &t, naskah.get())
+        let e = wysiwyg_in(&fonts, &t, naskah.get())
             .key("naskah")
             .handle(saluran.clone())
             .label(NASKAH)
@@ -265,7 +265,7 @@ fn gema(fonts: &Fonts, keadaan: Signal<EditorSnapshot>, naskah: Signal<Document>
             "{blok} blok · {huruf} karakter · caret di {jenis} · gaya: {gaya}{}",
             if s.can_undo { " · ⌘Z tersedia" } else { "" }
         );
-        text(&fonts, teks)
+        text_in(&fonts, teks)
             .size(t.typography.footnote.size)
             .color(t.color.secondary_label)
             .single_line()

@@ -37,7 +37,7 @@ column([
 | --- | --- |
 | 0 — primitives | `text` |
 | 1 — layout | `scroll_view` (rubber banding, overlay scrollbars), `list` (virtualized) |
-| 2 — controls | `button`, `checkbox` (tri-state), `switch` / `toggle`, `slider` / `range_slider`, `select`, `text_field`, `text_area` |
+| 2 — controls | `button`, `icon_button`, `checkbox` (tri-state), `radio` / `radio_group`, `switch` / `toggle`, `slider` / `range_slider`, `stepper`, `select`, `combo_box`, `text_field`, `text_area`, `label` / `field` / `form` |
 | 3 — navigation | `tabs` (segmented / underline / enclosed), `menu` and `context_menu` |
 | 4 — overlay | `overlay` (infrastructure), `dialog` / `alert` |
 | 5 — data | `table` (virtualized, sortable, resizable), `tree` (virtualized outline) |
@@ -63,6 +63,12 @@ infrastructure instead of growing a parallel one:
 - `dialog`, `select`'s popup, `menu`, and the chart tooltip all ride `overlay`.
   Each one picks a `Placement` and a `Barrier`; not one of them computes its
   own position.
+- `icon_button` is `button`'s own render node with an `icon` inside it, not a
+  second interaction contract.
+- `combo_box` is `text_field` plus `menu` — including the menu's *state*, so a
+  suggestion list's rules about the highlight and the closing are the rules
+  already tested for every menu in the application. What it adds is one node
+  that takes the four keys the field lets through.
 
 ## Definition of done
 

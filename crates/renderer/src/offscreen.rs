@@ -6,13 +6,12 @@
 //! **exactly** the one [`crate::WindowSurface`] uses — same SDF pipeline, same
 //! sRGB format, same blending — so what is tested headless is what users see.
 
-use silka_paint::{GlyphSource, NoGlyphs, Scene, Size};
+use silka_paint::{GlyphSource, ImageSource, NoGlyphs, NoImages, Scene, Size};
 
 use crate::error::RendererError;
+use crate::frame::FrameRenderer;
 use crate::geometry::SurfaceGeometry;
 use crate::gpu::Gpu;
-use crate::instance::{fill_draw_list, ColorSpace, DrawList};
-use crate::pipeline::SdfPipeline;
 
 /// The headless target format: the same class as a window swapchain (sRGB), so
 /// the color space conversion is exercised too rather than bypassed.
@@ -114,8 +113,9 @@ pub struct OffscreenTarget {
     readback: wgpu::Buffer,
     geometry: SurfaceGeometry,
     padded_row: u32,
-    sdf: SdfPipeline,
-    list: DrawList,
+    /// The same frame implementation a window uses — that identity is the whole
+    /// reason a headless test says anything about what a user sees.
+    frame: FrameRenderer,
 }
 
 impl OffscreenTarget {
@@ -157,8 +157,7 @@ impl OffscreenTarget {
             readback,
             geometry,
             padded_row,
-            sdf: SdfPipeline::new(gpu.device(), FORMAT),
-            list: DrawList::default(),
+            frame: FrameRenderer::new(gpu.device(), FORMAT),
         })
     }
 
@@ -189,49 +188,30 @@ impl OffscreenTarget {
         scene: &Scene,
         glyphs: &mut dyn GlyphSource,
     ) -> Result<Rgba8Image, RendererError> {
-        fill_draw_list(
-            scene,
-            ColorSpace::Linear,
-            self.geometry.scale_factor() as f32,
-            glyphs,
-            &mut self.list,
-        );
-        self.sdf.prepare(
-            gpu.device(),
-            gpu.queue(),
-            self.geometry.logical_size(),
-            &self.list,
-            glyphs,
-        );
+        self.render_with_sources(gpu, scene, glyphs, &mut NoImages)
+    }
+
+    /// Draw one scene with **both** atlas sources — text and bitmaps — then read
+    /// the result back to the CPU.
+    ///
+    /// The golden-test path for images and icons: the same atlas a window would
+    /// upload is uploaded here, and the result can be counted pixel by pixel
+    /// without a display server.
+    pub fn render_with_sources(
+        &mut self,
+        gpu: &Gpu,
+        scene: &Scene,
+        glyphs: &mut dyn GlyphSource,
+        images: &mut dyn ImageSource,
+    ) -> Result<Rgba8Image, RendererError> {
+        self.frame
+            .render(gpu, &self.view, self.geometry, scene, glyphs, images);
 
         let mut encoder = gpu
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("silka.offscreen.frame"),
+                label: Some("silka.offscreen.readback"),
             });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("silka.offscreen.frame"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(crate::format::clear_color(
-                            scene.clear_color(),
-                            FORMAT,
-                        )),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            self.sdf.draw(&mut pass, &self.list, self.geometry);
-        }
-
         let width = self.geometry.physical_width();
         let height = self.geometry.physical_height();
         encoder.copy_texture_to_buffer(

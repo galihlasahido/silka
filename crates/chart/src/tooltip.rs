@@ -13,9 +13,19 @@
 //!    be placed against.
 //! 2. [`tooltip`] — the panel's *content* as an ordinary view, and
 //!    [`tooltip_overlay`] which hands that content to
-//!    [`silka_widgets::overlay::overlay`] together with an [`Anchor`] and a
-//!    [`Placement`]. Where the panel ends up, whether it flips above or below,
-//!    and how it springs in are all the overlay system's answers, unchanged.
+//!    [`silka_widgets::tooltip`], the general component. Where the panel ends
+//!    up, whether it flips above or below, how it springs in, what barrier it
+//!    uses and what role it announces are all somebody else's answers,
+//!    unchanged.
+//!
+//! ## What used to live here
+//!
+//! Until `silka-widgets` grew a `tooltip` of its own, this file assembled the
+//! overlay itself — picking the barrier, the dismissal set, the a11y role and
+//! the motion role. All four are properties of *tooltips*, not of *charts*, and
+//! a second copy of them was a second place for them to be wrong. What is left
+//! here is the only part that genuinely belongs to a chart: what the panel
+//! says.
 //!
 //! ## Why the anchor is a global rect
 //!
@@ -29,13 +39,15 @@
 //!
 //! ## The barrier
 //!
-//! [`Barrier::None`]. A tooltip must never catch the mouse passing beneath it:
-//! it would swallow the very pointer motion that keeps it alive, and the panel
-//! would flicker at exactly the moment the reader moves toward it.
+//! [`silka_widgets::overlay::Barrier::None`], and it is the general component's
+//! decision rather than this one's. A tooltip must never catch the mouse
+//! passing beneath it: it would swallow the very pointer motion that keeps it
+//! alive, and the panel would flicker at exactly the moment the reader moves
+//! toward it.
 //!
 //! ```
 //! use silka_chart::style::ChartStyle;
-//! use silka_chart::{tooltip, tooltip_overlay, ChartHover, HoverEntry};
+//! use silka_chart::{tooltip_in, tooltip_overlay_in, ChartHover, HoverEntry};
 //! use silka_paint::Rect;
 //! use silka_theme::{Appearance, Theme};
 //! use silka_widgets::Fonts;
@@ -62,7 +74,7 @@
 //!
 //! // The panel content is an ordinary view, so an application can swap it for
 //! // its own and still ride the same overlay path.
-//! let _content = tooltip(&fonts, &theme, &style, &hover);
+//! let _content = tooltip_in(&fonts, &theme, &style, &hover);
 //!
 //! // What a screen reader announces, and what a test can assert on without
 //! // going anywhere near a pixel.
@@ -73,11 +85,11 @@
 //! // `anchor()` is the common case where the overlay layer *is* the window
 //! // root; `anchor_in` converts into some other layer's coordinates.
 //! let anchor = hover.anchor();
-//! let open = tooltip_overlay(&fonts, &theme, &style, Some(&hover), anchor);
+//! let open = tooltip_overlay_in(&fonts, &theme, &style, Some(&hover), anchor);
 //!
 //! // `None` is not "skip the overlay" — it is "the overlay is closed", so its
 //! // disappearance animates instead of snapping out of existence.
-//! let closed = tooltip_overlay(&fonts, &theme, &style, None, anchor);
+//! let closed = tooltip_overlay_in(&fonts, &theme, &style, None, anchor);
 //! # let _ = (open, closed);
 //! ```
 
@@ -87,8 +99,8 @@ use silka_core::view::View;
 use silka_paint::{Color, Insets, Point, Rect};
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::overlay::{overlay, Anchor, Barrier, Dismiss, OverlayBuilder, Placement, Side};
-use silka_widgets::{text, Fonts};
+use silka_widgets::overlay::{Anchor, OverlayBuilder, Side};
+use silka_widgets::{text_in, Fonts};
 
 use crate::style::ChartStyle;
 
@@ -194,19 +206,31 @@ impl ChartHover {
     }
 }
 
+/// The tooltip panel for one hovered position.
+///
+/// Use [`tooltip_in`] outside a build pass.
+pub fn tooltip(style: &ChartStyle, hover: &ChartHover) -> View {
+    tooltip_in(
+        &silka_widgets::active_fonts(),
+        &silka_widgets::active_theme(),
+        style,
+        hover,
+    )
+}
+
 /// The tooltip panel's **content** — an ordinary view, built from tokens.
 ///
 /// Kept separate from [`tooltip_overlay`] so an application that wants its own
 /// panel (a sparkline showing a mini table, a chart showing an image) can place
 /// that content through the same overlay path instead of inventing a second
 /// one.
-pub fn tooltip(fonts: &Fonts, theme: &Theme, style: &ChartStyle, hover: &ChartHover) -> View {
+pub fn tooltip_in(fonts: &Fonts, theme: &Theme, style: &ChartStyle, hover: &ChartHover) -> View {
     use silka_core::tree::CrossAlign;
     use silka_core::view::{column, pad, row};
 
     let mut baris: Vec<View> = Vec::with_capacity(hover.entries.len() + 1);
     baris.push(
-        text(fonts, hover.title.clone())
+        text_in(fonts, hover.title.clone())
             .size(theme.typography.footnote.size)
             .weight(FontWeight::SEMIBOLD)
             .color(theme.color.label)
@@ -225,13 +249,13 @@ pub fn tooltip(fonts: &Fonts, theme: &Theme, style: &ChartStyle, hover: &ChartHo
                         .corners(theme.corners(style.swatch_size * 0.3)),
                 ),
                 View::from(
-                    text(fonts, e.name.clone())
+                    text_in(fonts, e.name.clone())
                         .size(theme.typography.footnote.size)
                         .color(theme.color.secondary_label)
                         .single_line(),
                 ),
                 View::from(
-                    text(fonts, e.text.clone())
+                    text_in(fonts, e.text.clone())
                         .size(theme.typography.footnote.size)
                         .weight(FontWeight::MEDIUM)
                         .color(theme.color.label)
@@ -258,6 +282,23 @@ pub fn tooltip(fonts: &Fonts, theme: &Theme, style: &ChartStyle, hover: &ChartHo
     .into()
 }
 
+/// The tooltip, wrapped in the overlay entry that positions and fades it.
+///
+/// Use [`tooltip_overlay_in`] outside a build pass.
+pub fn tooltip_overlay(
+    style: &ChartStyle,
+    hover: Option<&ChartHover>,
+    anchor: Anchor,
+) -> OverlayBuilder {
+    tooltip_overlay_in(
+        &silka_widgets::active_fonts(),
+        &silka_widgets::active_theme(),
+        style,
+        hover,
+        anchor,
+    )
+}
+
 /// A ready-made tooltip overlay: the panel above the hovered point, flipping at
 /// the window edge, springing in and out.
 ///
@@ -265,7 +306,7 @@ pub fn tooltip(fonts: &Fonts, theme: &Theme, style: &ChartStyle, hover: &ChartHo
 /// is closed". The entry stays in the tree so its **disappearance** animates
 /// too; that is rule #2 of the overlay module, and skipping it is what makes
 /// tooltips snap out of existence.
-pub fn tooltip_overlay(
+pub fn tooltip_overlay_in(
     fonts: &Fonts,
     theme: &Theme,
     style: &ChartStyle,
@@ -273,26 +314,24 @@ pub fn tooltip_overlay(
     anchor: Anchor,
 ) -> OverlayBuilder {
     let panel = match hover {
-        Some(h) => tooltip(fonts, theme, style, h),
+        Some(h) => tooltip_in(fonts, theme, style, h),
         // A closed tooltip still needs a panel to fade out; an empty box is the
         // cheapest one that keeps the transition honest.
         None => silka_core::view::fixed(0.0, 0.0).into(),
     };
-    overlay(panel)
+    // The barrier, the dismissal set, the `Tooltip` role and the decorative
+    // motion role all come from the general component; the only two things a
+    // chart contributes are the panel's contents and the sentence a screen
+    // reader hears.
+    silka_widgets::tooltip::tooltip_in(fonts, theme, String::new())
         .key(Key::from("chart-tooltip"))
+        .content(panel)
+        .label(hover.map(ChartHover::summary).unwrap_or_default())
         .open(hover.is_some())
         .anchor(anchor)
-        .placement(Placement::anchored(Side::Top).gap(theme.space(2.0)))
-        .no_backdrop()
-        // A tooltip must never catch the mouse passing beneath it: it would
-        // swallow the pointer motion that keeps it alive.
-        .barrier(Barrier::None)
-        .dismiss(Dismiss::NONE)
-        .role(silka_core::access::AccessRole::Tooltip)
-        .label(hover.map(ChartHover::summary).unwrap_or_default())
-        // Decorative: a tooltip's motion explains nothing, so reduced-motion
-        // removes it entirely rather than merely calming it (§3.5).
-        .decorative()
+        .side(Side::Top)
+        .gap_raw(theme.space(2.0))
+        .into()
 }
 
 #[cfg(test)]
@@ -362,13 +401,8 @@ mod tests {
         let t = Theme::cupertino(Appearance::Dark);
         let style = ChartStyle::from_theme(&t);
         let h = hover();
-        let view = overlay_layer(silka_core::view::fixed(600.0, 400.0)).overlay(tooltip_overlay(
-            &fonts,
-            &t,
-            &style,
-            Some(&h),
-            h.anchor(),
-        ));
+        let view = overlay_layer(silka_core::view::fixed(600.0, 400.0))
+            .overlay(tooltip_overlay_in(&fonts, &t, &style, Some(&h), h.anchor()));
 
         let mut tree = RenderTree::new();
         reconcile(&mut tree, view);
@@ -382,13 +416,8 @@ mod tests {
         let fonts = Fonts::bundled_only();
         let t = Theme::cupertino(Appearance::Light);
         let style = ChartStyle::from_theme(&t);
-        let view = overlay_layer(silka_core::view::fixed(600.0, 400.0)).overlay(tooltip_overlay(
-            &fonts,
-            &t,
-            &style,
-            None,
-            Anchor::None,
-        ));
+        let view = overlay_layer(silka_core::view::fixed(600.0, 400.0))
+            .overlay(tooltip_overlay_in(&fonts, &t, &style, None, Anchor::None));
         let mut tree = RenderTree::new();
         reconcile(&mut tree, view);
         tree.layout(BoxConstraints::tight(Size::new(600.0, 400.0)));
@@ -401,7 +430,7 @@ mod tests {
         let t = Theme::tailwind(Appearance::Dark);
         let style = ChartStyle::from_theme(&t);
         let mut tree = RenderTree::new();
-        reconcile(&mut tree, tooltip(&fonts, &t, &style, &hover()));
+        reconcile(&mut tree, tooltip_in(&fonts, &t, &style, &hover()));
         let ukuran = tree.layout(BoxConstraints::loose(Size::new(400.0, 300.0)));
         assert!(ukuran.width > 0.0 && ukuran.height > 0.0);
     }

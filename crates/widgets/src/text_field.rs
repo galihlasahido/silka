@@ -11,7 +11,7 @@
 //! # let nama = rt.signal(String::new());
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
-//! text_field(&fonts, &t, nama.get())
+//! text_field_in(&fonts, &t, nama.get())
 //!     .placeholder("Nama lengkap")
 //!     .label("Nama")
 //!     .on_change(move |s| nama.set(s.to_string()));
@@ -76,6 +76,7 @@ use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
 use silka_core::tree::{
     BoxConstraints, Decoration, FocusRing, LayoutCtx, NodeId, PaintCtx, RenderNode, RenderTree,
+    TextDirection,
 };
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, Corners, GlyphRun, Insets, Point, Quad, Rect, Size};
@@ -97,6 +98,32 @@ pub use crate::editing::TextCallback;
 // Node
 // ---------------------------------------------------------------------------
 
+/// What ↑ and ↓ mean inside a single-line field.
+///
+/// A one-line field has nowhere to move the caret vertically, so the keys are
+/// free — and two different controls want two different things from them. This
+/// is that choice, made explicit rather than hard-wired.
+///
+/// ```
+/// use silka_widgets::ArrowKeys;
+///
+/// // The AppKit habit, and what a field standing on its own should do.
+/// assert_eq!(ArrowKeys::default(), ArrowKeys::Caret);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum ArrowKeys {
+    /// Move the caret to the start or the end of the content — the AppKit
+    /// habit, and the default.
+    #[default]
+    Caret,
+    /// Leave them alone, so they **bubble** to an enclosing control.
+    ///
+    /// What a [`mod@crate::combo_box`] needs: inside one, ↓ opens the suggestion
+    /// list and walks it, and a field that swallowed the key first would make
+    /// that impossible.
+    Bubble,
+}
+
 /// The render node behind a text field.
 ///
 /// It draws its own text (rather than through a [`crate::text()`] child) because
@@ -108,7 +135,7 @@ pub use crate::editing::TextCallback;
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{text_field, Fonts, TextFieldBox};
+/// use silka_widgets::{text_field_in, Fonts, TextFieldBox};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -116,7 +143,7 @@ pub use crate::editing::TextCallback;
 /// let mut tree = RenderTree::new();
 /// reconcile(
 ///     &mut tree,
-///     text_field(&fonts, &theme, "Hello").placeholder("Type here"),
+///     text_field_in(&fonts, &theme, "Hello").placeholder("Type here"),
 /// );
 /// tree.layout(BoxConstraints::tight(Size::new(240.0, 44.0)));
 ///
@@ -148,6 +175,7 @@ pub struct TextFieldBox {
     label: Option<String>,
     disabled: bool,
     read_only: bool,
+    arrows: ArrowKeys,
 
     color: Color,
     placeholder_color: Color,
@@ -176,6 +204,12 @@ pub struct TextFieldBox {
     dragging: bool,
     scroll: f32,
     size: Size,
+    /// The reading direction from the last layout (§9.8, `AUDIT.md` P-6).
+    ///
+    /// The field's box is mirrored by the layout system, but where the text sits
+    /// **inside** that box is computed here, by hand — so this is the one value
+    /// that has to be carried across from `LayoutCtx`.
+    direction: TextDirection,
 
     // -- animation (§3.5) --
     hover_t: SpringValue<f32>,
@@ -353,7 +387,16 @@ impl TextFieldBox {
             self.scroll = self.scroll.clamp(0.0, maksimum);
         }
 
-        let asal = Point::new(isi.origin.x - self.scroll, atas);
+        // Where the text sits when it is **narrower** than the field: against
+        // the leading edge, which is the right-hand one in an RTL document. Once
+        // the content overflows there is no slack left and the caret-following
+        // scroll above is what decides, exactly as before (§9.8).
+        let sisip = if self.direction.is_rtl() {
+            (isi.size.width - lebar_isi).max(0.0)
+        } else {
+            0.0
+        };
+        let asal = Point::new(isi.origin.x + sisip - self.scroll, atas);
         self.caret = Rect::new(
             asal.x + caret.x,
             atas + caret.top,
@@ -557,12 +600,14 @@ impl TextFieldBox {
             match &k.code {
                 // Single line: up/down = ends of the line, the AppKit habit.
                 // This is exactly the key `text_area` reads differently, and
-                // the reason it is not in the shared half.
-                KeyCode::Named(NamedKey::ArrowUp) => {
+                // the reason it is not in the shared half. A field inside a
+                // combo box gives them up entirely ([`ArrowKeys::Bubble`]) so
+                // that the suggestion list can have them.
+                KeyCode::Named(NamedKey::ArrowUp) if self.arrows == ArrowKeys::Caret => {
                     self.edit.move_caret(Movement::LineStart, shift);
                     tertangani = true;
                 }
-                KeyCode::Named(NamedKey::ArrowDown) => {
+                KeyCode::Named(NamedKey::ArrowDown) if self.arrows == ArrowKeys::Caret => {
                     self.edit.move_caret(Movement::LineEnd, shift);
                     tertangani = true;
                 }
@@ -686,7 +731,8 @@ impl RenderNode for TextFieldBox {
         "TextField"
     }
 
-    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+        self.direction = ctx.direction();
         self.pastikan_bentuk();
         let baris = self.style.line_height_px();
         let tinggi = (baris + self.padding.vertical()).max(self.min_height);
@@ -912,11 +958,11 @@ pub fn first(tree: &RenderTree) -> Option<NodeId> {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{text_field, Fonts};
+/// use silka_widgets::{text_field_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
-/// let build = |v: &str| text_field(&fonts, &theme, v.to_string());
+/// let build = |v: &str| text_field_in(&fonts, &theme, v.to_string());
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(&mut tree, build("Hello"));
@@ -944,6 +990,7 @@ pub struct TextFieldProps {
     label: Option<String>,
     disabled: bool,
     read_only: bool,
+    arrows: ArrowKeys,
 
     color: Color,
     placeholder_color: Color,
@@ -977,6 +1024,7 @@ impl ViewNode for TextFieldProps {
             label: self.label.clone(),
             disabled: self.disabled,
             read_only: self.read_only,
+            arrows: self.arrows,
             color: self.color,
             placeholder_color: self.placeholder_color,
             disabled_color: self.disabled_color,
@@ -998,6 +1046,7 @@ impl ViewNode for TextFieldProps {
             dragging: false,
             scroll: 0.0,
             size: Size::ZERO,
+            direction: TextDirection::Ltr,
             hover_t: SpringValue::new(0.0).with_spring(self.spring),
             focus_t: SpringValue::new(0.0).with_spring(self.spring),
             layout: None,
@@ -1085,6 +1134,9 @@ impl ViewNode for TextFieldProps {
             n.read_only = self.read_only;
             dirty |= Dirty::PAINT;
         }
+        // Nothing about the pixels changes, so nothing is marked dirty: this
+        // only decides who gets ↑/↓ on the next keystroke.
+        n.arrows = self.arrows;
         if n.disabled != self.disabled {
             n.disabled = self.disabled;
             if self.disabled {
@@ -1120,14 +1172,14 @@ impl ViewNode for TextFieldProps {
 /// use silka_core::signals::Key;
 /// use silka_paint::Insets;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{text_field, Fonts};
+/// use silka_widgets::{text_field_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // Everything optional is a method, and every value it takes comes from a
 /// // token rather than from a literal in application code.
-/// let field = text_field(&fonts, &theme, "")
+/// let field = text_field_in(&fonts, &theme, "")
 ///     .placeholder("name@example.com")
 ///     .label("Email")
 ///     .padding(Insets::symmetric(theme.space(3.0), theme.space(2.0)))
@@ -1145,6 +1197,31 @@ pub struct TextField {
     key: Option<Key>,
 }
 
+/// A single-line text field — `text_field` (`KOMPONEN.md` Tier 2).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_widgets::text_field;
+///
+/// let rt = Runtime::new();
+/// let city = rt.signal(String::from("Ubud"));
+///
+/// let field = text_field(city.get())
+///     .label("City")
+///     .placeholder("Where to?")
+///     .on_change(move |s| city.set(s.to_owned()));
+/// # let _ = field;
+/// ```
+///
+/// Use [`text_field_in`] outside a build pass.
+pub fn text_field(value: impl Into<String>) -> TextField {
+    text_field_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        value,
+    )
+}
+
 /// A single-line text field — the `text_field` component (`KOMPONEN.md`
 /// Tier 2).
 ///
@@ -1153,7 +1230,7 @@ pub struct TextField {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{text_field, Fonts};
+/// use silka_widgets::{text_field_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -1163,7 +1240,7 @@ pub struct TextField {
 /// // The value is *owned by the caller*: the field is told what to display
 /// // and reports what it has become, so there is only ever one copy of the
 /// // text in the application.
-/// let search = text_field(&fonts, &theme, query.get())
+/// let search = text_field_in(&fonts, &theme, query.get())
 ///     .placeholder("Search")
 ///     .label("Search documents")
 ///     .on_change(move |text| query.set(text.to_string()))
@@ -1172,10 +1249,10 @@ pub struct TextField {
 ///
 /// // Read-only is not the same as disabled: the caret still moves, the text
 /// // is still selectable, and it can still be copied out.
-/// let readonly = text_field(&fonts, &theme, "abc-123").read_only(true);
+/// let readonly = text_field_in(&fonts, &theme, "abc-123").read_only(true);
 /// # let _ = readonly;
 /// ```
-pub fn text_field(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> TextField {
+pub fn text_field_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> TextField {
     let t = theme;
     TextField {
         props: TextFieldProps {
@@ -1195,6 +1272,7 @@ pub fn text_field(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> Tex
             label: None,
             disabled: false,
             read_only: false,
+            arrows: ArrowKeys::Caret,
             color: t.color.label,
             placeholder_color: t.color.tertiary_label,
             disabled_color: t.color.disabled_label,
@@ -1248,6 +1326,15 @@ impl TextField {
     /// The contents can be selected and copied, but not changed.
     pub fn read_only(self, read_only: bool) -> Self {
         self.map(move |x| x.read_only = read_only)
+    }
+
+    /// What ↑ and ↓ do — the caret by default, or nothing at all so that an
+    /// enclosing control can have them ([`ArrowKeys`]).
+    ///
+    /// Set to [`ArrowKeys::Bubble`] by [`mod@crate::combo_box`], and by anything
+    /// else that puts a list under a field.
+    pub fn arrow_keys(self, arrows: ArrowKeys) -> Self {
+        self.map(move |x| x.arrows = arrows)
     }
 
     /// Called every time the field's contents change — **without** the IME

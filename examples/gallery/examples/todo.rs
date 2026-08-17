@@ -20,13 +20,13 @@ use std::rc::Rc;
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign};
-use silka_core::view::{column, constrained, expanded, fixed, row, View};
+use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, Theme};
 use silka_widgets::{
-    advance, button, button_variant, checkbox, list, tab, tabs, text, text_field, use_list_state,
-    ButtonVariant, Fonts,
+    advance, button_in, button_variant_in, checkbox_in, list_in, spacer, tab, tabs_in,
+    text_field_in, text_in, use_list_state, ButtonVariant, Fonts,
 };
 
 const TITLE: &str = "Todo";
@@ -132,7 +132,7 @@ fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, TITLE)
+            text_in(fonts, TITLE)
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
@@ -161,14 +161,14 @@ fn composer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, draft: Signal<St
         row([
             View::from(constrained(
                 BoxConstraints::new(theme.space(80.0), theme.space(80.0), 0.0, f32::INFINITY),
-                text_field(&fonts, &theme, draft.get())
+                text_field_in(&fonts, &theme, draft.get())
                     .key("draft")
                     .label(FIELD_NAME)
                     .placeholder("What needs doing?")
                     .on_change(move |s| draft.set(s.to_string()))
                     .on_submit(move |_| commit()),
             )),
-            View::from(button(&fonts, &theme, ADD).on_press(commit)),
+            View::from(button_in(&fonts, &theme, ADD).on_press(commit)),
         ])
         .spacing(theme.space(2.0))
         .cross(CrossAlign::Center)
@@ -180,7 +180,7 @@ fn composer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, draft: Signal<St
 fn filters(fonts: &Fonts, t: &Theme, filter: Signal<Filter>) -> View {
     let (fonts, theme) = (fonts.clone(), *t);
     component("filters", move |_| {
-        tabs(&fonts, &theme, Filter::ALL.map(|f| tab(f.title())))
+        tabs_in(&fonts, &theme, Filter::ALL.map(|f| tab(f.title())))
             .segmented()
             .label("Filter")
             .selected(filter.get().index())
@@ -203,7 +203,7 @@ fn rows(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, filter: Signal<Filte
 
         constrained(
             BoxConstraints::new(side, side, theme.space(LIST_STEPS), theme.space(LIST_STEPS)),
-            list(&theme, state, shown.len(), move |i| {
+            list_in(&theme, state, shown.len(), move |i| {
                 task_row(&for_row, &theme, tasks, shown[i])
             })
             .item_extent(ROW_EXTENT)
@@ -213,7 +213,7 @@ fn rows(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, filter: Signal<Filte
             .corners(theme.corners(theme.radius.lg))
             .border(theme.space(0.25), theme.color.separator)
             .empty(move || {
-                text(&for_empty, "Nothing here")
+                text_in(&for_empty, "Nothing here")
                     .text_color(ColorToken::TertiaryLabel)
                     .single_line()
                     .into()
@@ -230,14 +230,14 @@ fn task_row(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, i: usize) -> Vie
     let (title, done) = tasks.with(|list| (list[i].title.clone(), list[i].done));
     row([
         View::from(
-            checkbox(fonts, t, title)
+            checkbox_in(fonts, t, title)
                 .key(format!("done-{i}"))
                 .checked(done)
                 .on_toggle(move |on| tasks.update(|list| list[i].done = on)),
         ),
-        View::from(expanded(fixed(0.0, 0.0))),
+        View::from(spacer()),
         View::from(
-            button_variant(fonts, t, DELETE, ButtonVariant::Ghost)
+            button_variant_in(fonts, t, DELETE, ButtonVariant::Ghost)
                 .key(format!("delete-{i}"))
                 .on_press(move || {
                     tasks.update(|list| {
@@ -259,12 +259,12 @@ fn footer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>) -> View {
         let (line, any_done) = tasks.with(|l| (summary(l), l.iter().any(|t| t.done)));
         row([
             View::from(
-                text(&fonts, line)
+                text_in(&fonts, line)
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),
             ),
             View::from(
-                button_variant(&fonts, &theme, CLEAR_DONE, ButtonVariant::Link)
+                button_variant_in(&fonts, &theme, CLEAR_DONE, ButtonVariant::Link)
                     .disabled(!any_done)
                     .on_press(move || tasks.update(|list| list.retain(|t| !t.done))),
             ),

@@ -11,7 +11,7 @@
 //! # let rt = Runtime::new();
 //! let wifi = rt.signal(true);
 //!
-//! switch(&fonts, &t, "Wi-Fi")
+//! switch_in(&fonts, &t, "Wi-Fi")
 //!     .on(wifi.get())
 //!     .on_change(move |nyala| wifi.set(nyala));
 //! ```
@@ -79,7 +79,7 @@ use silka_theme::{Preset, RadiusToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
-use crate::text::text;
+use crate::text::text_in;
 
 /// The velocity (fractions of the track per second) already counted as a fling.
 ///
@@ -436,13 +436,13 @@ struct Seretan {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{toggle, Fonts, SwitchNode};
+/// use silka_widgets::{toggle_in, Fonts, SwitchNode};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// let mut tree = RenderTree::new();
-/// reconcile(&mut tree, toggle(&fonts, &theme, "Wi-Fi").on(true));
+/// reconcile(&mut tree, toggle_in(&fonts, &theme, "Wi-Fi").on(true));
 /// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
 ///
 /// let id = tree.children(tree.root())[0];
@@ -1029,11 +1029,11 @@ impl core::fmt::Debug for SwitchNode {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{toggle, Fonts};
+/// use silka_widgets::{toggle_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
-/// let build = |on| toggle(&fonts, &theme, "Wi-Fi").on(on);
+/// let build = |on| toggle_in(&fonts, &theme, "Wi-Fi").on(on);
 ///
 /// let mut tree = RenderTree::new();
 /// reconcile(&mut tree, build(false));
@@ -1152,7 +1152,7 @@ impl ViewNode for SwitchProps {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{switch_only, toggle, Fonts};
+/// use silka_widgets::{switch_only_in, toggle_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
@@ -1160,7 +1160,7 @@ impl ViewNode for SwitchProps {
 /// let wifi = rt.signal(true);
 ///
 /// // The ordinary form: a label the user reads and a screen reader announces.
-/// let labelled = toggle(&fonts, &theme, "Wi-Fi")
+/// let labelled = toggle_in(&fonts, &theme, "Wi-Fi")
 ///     .on(wifi.get())
 ///     .on_change(move |on| wifi.set(on));
 /// # let _ = labelled;
@@ -1168,7 +1168,7 @@ impl ViewNode for SwitchProps {
 /// // Inside a settings row that supplies its own text, the switch stands
 /// // alone — but it still *must* be named, because an unnamed control does
 /// // not exist for a screen reader.
-/// let bare = switch_only(&theme).label("Wi-Fi").checked(true);
+/// let bare = switch_only_in(&theme).label("Wi-Fi").checked(true);
 /// # let _ = bare;
 /// ```
 /// state that may well be set later in the method chain.
@@ -1186,6 +1186,28 @@ pub struct Switch {
     key: Option<Key>,
 }
 
+/// An on/off switch with a label beside it — `switch` (`KOMPONEN.md` Tier 2).
+///
+/// ```
+/// use silka_core::signals::Runtime;
+/// use silka_widgets::switch;
+///
+/// let rt = Runtime::new();
+/// let wifi = rt.signal(true);
+///
+/// let control = switch("Wi-Fi").on(wifi.get()).on_change(move |v| wifi.set(v));
+/// # let _ = control;
+/// ```
+///
+/// Use [`switch_in`] outside a build pass.
+pub fn switch(label: impl Into<String>) -> Switch {
+    switch_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        label,
+    )
+}
+
 /// A labelled switch.
 ///
 /// Its label is clickable **and at the same time** becomes the name announced
@@ -1197,16 +1219,30 @@ pub struct Switch {
 /// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
-/// switch(&fonts, &t, "Mode pesawat")
+/// switch_in(&fonts, &t, "Mode pesawat")
 ///     .on(true)
 ///     .on_change(|nyala| println!("sekarang {nyala}"));
 /// ```
-pub fn switch(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch {
+pub fn switch_in(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch {
     Switch {
         fonts: Some(fonts.clone()),
         label: Some(label.into()),
-        ..switch_only(theme)
+        ..switch_only()
     }
+}
+
+/// [`switch`] under the second name the catalogue lists it by.
+///
+/// ```
+/// use silka_widgets::toggle;
+///
+/// let control = toggle("Wi-Fi").on(true);
+/// # let _ = control;
+/// ```
+///
+/// Use [`toggle_in`] outside a build pass.
+pub fn toggle(label: impl Into<String>) -> Switch {
+    switch(label)
 }
 
 /// Another name for [`switch`] — `KOMPONEN.md` calls this component
@@ -1214,19 +1250,37 @@ pub fn switch(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch 
 ///
 /// ```
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{switch, toggle, Fonts};
+/// use silka_widgets::{switch_in, toggle_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // The two names are the same constructor; pick whichever reads better
 /// // where you are standing.
-/// let a = toggle(&fonts, &theme, "Airplane mode").on(true);
-/// let b = switch(&fonts, &theme, "Airplane mode").on(true);
+/// let a = toggle_in(&fonts, &theme, "Airplane mode").on(true);
+/// let b = switch_in(&fonts, &theme, "Airplane mode").on(true);
 /// # let _ = (a, b);
 /// ```
-pub fn toggle(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch {
-    switch(fonts, theme, label)
+pub fn toggle_in(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch {
+    switch_in(fonts, theme, label)
+}
+
+/// A switch with **no** text beside it — a settings grid whose labels live in
+/// the left column.
+///
+/// Name it with [`Switch::label`] anyway: the label stops being drawn, not
+/// announced.
+///
+/// ```
+/// use silka_widgets::switch_only;
+///
+/// let control = switch_only().label("Wi-Fi").on(true);
+/// # let _ = control;
+/// ```
+///
+/// Use [`switch_only_in`] outside a build pass.
+pub fn switch_only() -> Switch {
+    switch_only_in(&crate::ambient::active_theme())
 }
 
 /// A switch with no visible label — inside a table cell, or at the end of a
@@ -1240,9 +1294,9 @@ pub fn toggle(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Switch 
 /// # use silka_widgets::switch_only;
 /// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
-/// switch_only(&t).label("Wi-Fi").on(true);
+/// switch_only_in(&t).label("Wi-Fi").on(true);
 /// ```
-pub fn switch_only(theme: &Theme) -> Switch {
+pub fn switch_only_in(theme: &Theme) -> Switch {
     Switch {
         fonts: None,
         theme: *theme,
@@ -1361,7 +1415,7 @@ impl From<Switch> for View {
                 t.color.label
             };
             builder = builder.child(
-                text(&fonts, &label)
+                text_in(&fonts, &label)
                     .size(t.typography.body_size)
                     .line_height(t.typography.body_line_height)
                     .weight(FontWeight::REGULAR)

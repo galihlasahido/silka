@@ -35,7 +35,7 @@ use silka_core::view::{column, constrained, row, Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button, button_variant, slider, text, ButtonVariant, Fonts};
+use silka_widgets::{button_in, button_variant_in, slider_in, text_in, ButtonVariant, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Spring";
@@ -176,7 +176,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -184,7 +184,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Empat lajur, satu tujuan yang sama. Klik di mana saja pada \
                  sebuah lajur — lalu klik lagi di seberangnya sebelum pucknya \
@@ -219,7 +219,7 @@ fn arena(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Signal
         let mut anak: Vec<View> = Vec::with_capacity(LAJUR.len() * 2);
         for l in LAJUR {
             anak.push(
-                text(&fonts, l.nama)
+                text_in(&fonts, l.nama)
                     .size(t.typography.caption1.size)
                     .color(t.color.tertiary_label)
                     .single_line()
@@ -264,14 +264,14 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
 
         let baris_durasi = row([
             View::from(
-                text(&fonts, DURASI)
+                text_in(&fonts, DURASI)
                     .size(t.typography.body_size)
                     .color(t.color.secondary_label)
                     .single_line(),
             ),
             View::from(constrained(
                 BoxConstraints::new(t.space(60.0), t.space(60.0), 0.0, f32::INFINITY),
-                slider(&t, d)
+                slider_in(&t, d)
                     .range(DURASI_MIN..=DURASI_MAKS)
                     .step(0.05)
                     .label(DURASI)
@@ -283,14 +283,14 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
 
         let baris_bounce = row([
             View::from(
-                text(&fonts, BOUNCE)
+                text_in(&fonts, BOUNCE)
                     .size(t.typography.body_size)
                     .color(t.color.secondary_label)
                     .single_line(),
             ),
             View::from(constrained(
                 BoxConstraints::new(t.space(60.0), t.space(60.0), 0.0, f32::INFINITY),
-                slider(&t, b)
+                slider_in(&t, b)
                     .range(BOUNCE_MIN..=BOUNCE_MAKS)
                     .step(0.05)
                     .label(BOUNCE)
@@ -301,13 +301,13 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
         .cross(CrossAlign::Center);
 
         let tombol = row([
-            View::from(button(&fonts, &t, KIRIM).on_press(move || target.set(1.0))),
+            View::from(button_in(&fonts, &t, KIRIM).on_press(move || target.set(1.0))),
             View::from(
-                button_variant(&fonts, &t, PULANG, ButtonVariant::Secondary)
+                button_variant_in(&fonts, &t, PULANG, ButtonVariant::Secondary)
                     .on_press(move || target.set(0.0)),
             ),
             View::from(
-                button_variant(&fonts, &t, TENGAH, ButtonVariant::Secondary)
+                button_variant_in(&fonts, &t, TENGAH, ButtonVariant::Secondary)
                     .on_press(move || target.set(0.5)),
             ),
         ])
@@ -318,7 +318,7 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
             View::from(baris_durasi),
             View::from(baris_bounce),
             View::from(
-                text(&fonts, ringkasan(Spring::new(d, b)))
+                text_in(&fonts, ringkasan(Spring::new(d, b)))
                     .size(t.typography.footnote.size)
                     .color(t.color.tertiary_label)
                     .single_line(),

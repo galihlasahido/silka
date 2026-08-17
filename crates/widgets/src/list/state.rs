@@ -262,7 +262,7 @@ impl ListState {
 /// // A hook, so it runs inside the component being built.
 /// rt.build_root(|| {
 ///     let state = use_list_state();
-///     list(&t, state, 100, |_i| View::from(fixed(240.0, 44.0))).item_extent(44.0);
+///     list_in(&t, state, 100, |_i| View::from(fixed(240.0, 44.0))).item_extent(44.0);
 /// });
 /// ```
 pub fn use_list_state() -> ListState {

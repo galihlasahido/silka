@@ -30,8 +30,8 @@ use silka_core::view::{column, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::tabs::{tab, tabs, TabsVariant};
-use silka_widgets::{text, Fonts};
+use silka_widgets::tabs::{tab, tabs_in, TabsVariant};
+use silka_widgets::{text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Tabs";
@@ -63,7 +63,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -72,7 +72,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Tiga varian, satu mesin, dan satu signal yang sama untuk \
                  ketiganya. Klik, atau Tab lalu ←/→: indikatornya meluncur \
@@ -103,13 +103,13 @@ fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let aktif = terpilih.get();
 
-        let segmented = tabs(&fonts, &t, SEGMENTED.map(tab))
+        let segmented = tabs_in(&fonts, &t, SEGMENTED.map(tab))
             .variant(TabsVariant::Segmented)
             .selected(aktif)
             .label("Rentang waktu")
             .on_select(move |i| terpilih.set(i));
 
-        let underline = tabs(
+        let underline = tabs_in(
             &fonts,
             &t,
             [
@@ -125,7 +125,7 @@ fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
         .label("Tampilan laporan")
         .on_select(move |i| terpilih.set(i));
 
-        let enclosed = tabs(&fonts, &t, ENCLOSED.map(tab))
+        let enclosed = tabs_in(&fonts, &t, ENCLOSED.map(tab))
             .variant(TabsVariant::Enclosed)
             .selected(aktif)
             .label("Sumber")
@@ -151,7 +151,7 @@ fn panel(fonts: &Fonts, terpilih: Signal<usize>) -> View {
     component("panel-tab", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let isi = PANEL[terpilih.get().min(PANEL.len() - 1)];
-        text(&fonts, isi)
+        text_in(&fonts, isi)
             .size(t.typography.body_size)
             .color(t.color.secondary_label)
             .single_line()

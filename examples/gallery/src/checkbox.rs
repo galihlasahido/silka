@@ -28,7 +28,7 @@ use silka_core::view::{column, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{checkbox, checkbox_only, text, CheckState, Fonts};
+use silka_widgets::{checkbox_in, checkbox_only_in, text_in, CheckState, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Checkbox";
@@ -84,7 +84,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -93,7 +93,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Centang satu item saja: induknya berubah menjadi garis \
                  (indeterminate), bukan centang. Klik dua kali dengan cepat — \
@@ -127,7 +127,7 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
 
         let mut anak: Vec<View> = Vec::with_capacity(ITEM.len() + 1);
         anak.push(
-            checkbox(&fonts, &t, PILIH_SEMUA)
+            checkbox_in(&fonts, &t, PILIH_SEMUA)
                 .key("semua")
                 .state(keadaan_induk(&nilai))
                 // Activating a "partial" parent means committing: everything
@@ -137,7 +137,7 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
         );
         for (i, label) in ITEM.into_iter().enumerate() {
             anak.push(
-                checkbox(&fonts, &t, label)
+                checkbox_in(&fonts, &t, label)
                     .key(label)
                     .checked(nilai[i])
                     .on_toggle(move |v| {
@@ -163,9 +163,9 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
 /// **announced** as dimmed, not hidden (§3.8).
 fn mati(fonts: &Fonts, t: &Theme) -> View {
     row([
-        View::from(checkbox(fonts, t, MATI).disabled(true)),
-        View::from(checkbox(fonts, t, TERKUNCI).checked(true).disabled(true)),
-        View::from(checkbox_only(t).label(TANPA_LABEL).checked(true)),
+        View::from(checkbox_in(fonts, t, MATI).disabled(true)),
+        View::from(checkbox_in(fonts, t, TERKUNCI).checked(true).disabled(true)),
+        View::from(checkbox_only_in(t).label(TANPA_LABEL).checked(true)),
     ])
     .spacing(t.space(6.0))
     .cross(CrossAlign::Center)

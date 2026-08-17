@@ -285,8 +285,10 @@ fn state_macos(state: MaterialState) -> window_vibrancy::NSVisualEffectState {
 
 /// Whether the OS has been asked to reduce transparency (INTEGRASI-NATIVE §6).
 ///
-/// `false` on platforms with no such setting — the honest answer, since there
-/// is nothing to respect there.
+/// Read from `NSWorkspace` on macOS and from
+/// `HKCU\…\Themes\Personalize\EnableTransparency` on Windows — the key Settings
+/// ▸ Accessibility ▸ Visual effects writes. `false` on Linux, where there is no
+/// such setting to respect; that is the honest answer rather than a guess.
 ///
 /// Read fresh on every call rather than cached: a user can turn it on while
 /// the application is running, and a cached `false` would keep the blur on for
@@ -311,8 +313,47 @@ pub fn system_reduces_transparency() -> bool {
         // would keep the blur on for the rest of the session.
         NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceTransparency()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        // Windows spells the setting the other way round: the registry says
+        // whether transparency is *enabled*, so "reduce" is its absence. A key
+        // that cannot be read at all means the default, which is transparency
+        // on — the honest reading, since a missing key is not a user asking
+        // for anything.
+        !windows_transparency_enabled().unwrap_or(true)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     false
+}
+
+/// `HKCU\…\Themes\Personalize\EnableTransparency`, or `None` when it is not
+/// there.
+///
+/// This is where Settings ▸ Accessibility ▸ Visual effects ▸ Transparency
+/// effects lands. It is read fresh on every call for the same reason as the
+/// macOS branch: the user can change it while the application is running.
+#[cfg(target_os = "windows")]
+fn windows_transparency_enabled() -> Option<bool> {
+    use windows::core::w;
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+
+    let mut value: u32 = 0;
+    let mut size: u32 = core::mem::size_of::<u32>() as u32;
+    // SAFETY: the two pointers describe a `u32` that outlives the call, and
+    // `RRF_RT_REG_DWORD` makes the API refuse to write anything else into it.
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+            w!("EnableTransparency"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some(&mut value as *mut u32 as *mut core::ffi::c_void),
+            Some(&mut size as *mut u32),
+        )
+    };
+    (status == ERROR_SUCCESS).then_some(value != 0)
 }
 
 /// Apply a material behind the window, honouring "reduce transparency".

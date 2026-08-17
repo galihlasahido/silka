@@ -15,7 +15,7 @@ use silka_core::signals::{use_signal, Signal};
 use silka_core::view::{column, View};
 use silka_testing::{Case, Simulator};
 use silka_theme::Theme;
-use silka_widgets::{button, text, Fonts};
+use silka_widgets::{button_in, text_in, Fonts};
 
 const NAIK: &str = "Tambah";
 const TURUN: &str = "Kurang";
@@ -25,13 +25,13 @@ fn halaman(fonts: &Fonts, cx: &silka_core::app::BuildCtx) -> View {
     let theme: Theme = cx.expect_env::<Signal<Theme>>().get();
     let nilai = use_signal(|| 0i32);
     column([
-        button(fonts, &theme, NAIK)
+        button_in(fonts, &theme, NAIK)
             .on_press(move || nilai.set(nilai.get() + 1))
             .into(),
-        button(fonts, &theme, TURUN)
+        button_in(fonts, &theme, TURUN)
             .on_press(move || nilai.set(nilai.get() - 1))
             .into(),
-        View::from(text(fonts, format!("Nilai {}", nilai.get()))),
+        View::from(text_in(fonts, format!("Nilai {}", nilai.get()))),
     ])
     .spacing(8.0)
     .into()
@@ -156,7 +156,7 @@ fn callback_hanya_dipanggil_sekali_per_klik() {
     let mut s = Simulator::case(Case::ALL[0], move |cx| {
         let theme: Theme = cx.expect_env::<Signal<Theme>>().get();
         let hitung = untuk_view.clone();
-        column([button(&fonts, &theme, NAIK).on_press(move || {
+        column([button_in(&fonts, &theme, NAIK).on_press(move || {
             hitung.set(hitung.get() + 1);
         })])
         .into()

@@ -27,9 +27,22 @@
 //!
 //! The vocabulary that exists today: color (with a correct sRGB→linear color
 //! space conversion), logical-point geometry, corner geometry as a parameter,
-//! and a [`Scene`] holding a list of [`Command`]s. Rasterizing `Command`s
-//! themselves belongs to the SDF shader milestone; today's backend only
-//! executes the [`Scene::clear_color`] background color.
+//! and a [`Scene`] holding a list of [`Command`]s.
+//!
+//! Four of those commands were added together because the audit found them to be
+//! one knot rather than four items — between them they unblock about eight
+//! components:
+//!
+//! | Command | Module | What it replaced |
+//! |---|---|---|
+//! | [`Stroke`] | [`stroke`] | chart lines rasterised into one box per pixel column; checkmarks stamped from a dozen round quads |
+//! | [`Transform`] | [`transform`] | "scale-on-press" that deflated a background box while its label stayed put |
+//! | [`ImageQuad`] | [`image`] | nothing — `image`, `icon`, `avatar` and `icon_button` were impossible to write |
+//! | [`Layer`] | [`layer`] | group opacity faked per box; no path at all for in-app blur |
+//!
+//! Vector icons come in through [`svg`]: one filled path, rasterised once on the
+//! CPU into a coverage mask, then stored in the same atlas as everything else so
+//! an icon beside a label still costs one draw call.
 //!
 //! ```
 //! use silka_paint::{Color, Corners, CornerStyle, Quad, Rect, Scene};
@@ -63,16 +76,26 @@ pub mod color;
 pub mod corner;
 pub mod geometry;
 pub mod glyph;
+pub mod image;
+pub mod layer;
 pub mod scene;
 pub mod shadow;
+pub mod stroke;
+pub mod svg;
+pub mod transform;
 
 pub use atlas::{AtlasRegion, GlyphFormat, GlyphPlacement, GlyphSource, NoGlyphs};
 pub use color::{linear_to_srgb, srgb_to_linear, Color};
 pub use corner::{CornerRadii, CornerStyle, Corners};
 pub use geometry::{Insets, Point, Rect, Size};
 pub use glyph::{Glyph, GlyphImageId, GlyphRun};
+pub use image::{ImageAtlas, ImageId, ImageQuad, ImageSource, NoImages};
+pub use layer::{Layer, LayerEffect};
 pub use scene::{Command, Quad, Scene, ShadowQuad};
 pub use shadow::{Shadow, ShadowPair};
+pub use stroke::{LineCap, LineJoin, Stroke, DEFAULT_MITER_LIMIT};
+pub use svg::{rasterize_path, FillRule, IconMask};
+pub use transform::Transform;
 
 /// Compiles and runs every Rust example in this crate's `README.md`.
 ///

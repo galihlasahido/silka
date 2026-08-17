@@ -244,7 +244,7 @@ impl TableState {
 /// rt.build_root(|| {
 ///     let state = use_table_state();
 ///     let columns = vec![col("No.").fixed(90.0), col("Amount").flex(1.0)];
-///     table(&fonts, &t, state, columns, 500, |_r, _c| View::from(fixed(80.0, 20.0)));
+///     table_in(&fonts, &t, state, columns, 500, |_r, _c| View::from(fixed(80.0, 20.0)));
 /// });
 /// ```
 pub fn use_table_state() -> TableState {

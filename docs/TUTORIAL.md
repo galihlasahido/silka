@@ -129,12 +129,15 @@ use silka_core::signals::Signal;
 use silka_core::view::{div, View};
 use silka_platform::{run_app, window, PlatformError};
 use silka_theme::{ColorToken, FontToken};
-use silka_widgets::{text, Fonts};
+use silka_widgets::{active_fonts, install_fonts, text, Fonts};
 
 fn main() -> Result<(), PlatformError> {
     // Satu mesin teks untuk seluruh aplikasi: atlas glyph-nya dipakai bersama,
     // jadi satu huruf tidak pernah dirasterisasi dua kali.
     let fonts = Fonts::new();
+    // Satu baris, sekali saja: sejak titik ini setiap konstruktor menemukan
+    // mesin teksnya sendiri, jadi `text("…")` tidak perlu dititipi apa pun.
+    install_fonts(&fonts);
 
     let config = window("Halo silka")
         .size(420.0, 260.0)
@@ -145,7 +148,7 @@ fn main() -> Result<(), PlatformError> {
         // semua teks kosong.
         .glyphs(fonts.shared());
 
-    run_app(config, move |cx| halaman(cx, &fonts))
+    run_app(config, halaman)
 }
 ```
 
@@ -153,11 +156,11 @@ Lalu isinya:
 
 ```rust
 /// Seluruh "aplikasi": satu sapaan di tengah.
-fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+fn halaman(cx: &BuildCtx) -> View {
     // Teks dirasterisasi pada resolusi layar sebenarnya; ukuran logis di bawah
     // tidak ikut berubah karenanya.
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     div()
         .justify_center()
@@ -165,13 +168,13 @@ fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .gap_2()
         .p_8()
         .child(
-            text(fonts, "Halo, silka")
+            text("Halo, silka")
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text(fonts, "Jendela pertamamu sudah jalan.")
+            text("Jendela pertamamu sudah jalan.")
                 .text_base()
                 .text_color(ColorToken::SecondaryLabel)
                 .single_line(),
@@ -229,7 +232,7 @@ div()
     .p_8()
     .child(constrained(
         BoxConstraints::new(0.0, t.space(LEBAR_KARTU), 0.0, f32::INFINITY),
-        kartu(fonts, &t, daftar, masukan),
+        kartu(daftar, masukan),
     ))
     .into()
 ```
@@ -301,10 +304,10 @@ Selebihnya (`hapus`, `setel_selesai`, `bersihkan`, `ringkasan`) sama polosnya �
 ### 4b. Simpan state di signal
 
 ```rust
-pub fn aplikasi(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn aplikasi(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // Dua potong state, dan itulah seluruh state aplikasi.
     let daftar = use_signal(model::contoh);
@@ -346,8 +349,7 @@ Karena itu kita membungkus tiap bagian yang membaca signal ke dalam `component()
 ///
 /// Ini satu-satunya tempat `masukan` dibaca, jadi satu ketukan tombol membangun
 /// ulang baris ini dan tidak ada yang lain.
-fn formulir(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) -> View {
-    let fonts = fonts.clone();
+fn formulir(daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) -> View {
     let tema = *t;
     component("formulir", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(tema);
@@ -356,14 +358,14 @@ fn formulir(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, masukan: Signa
             .items_center()
             .gap_3()
             .child(expanded(
-                text_field(&fonts, &t, masukan.get())
+                text_field(masukan.get())
                     .key("baru")
                     .label(KOLOM_BARU)
                     .placeholder("Apa yang mau dikerjakan?")
                     .on_change(move |s| masukan.set(s.to_string()))
                     .on_submit(move |_| kirim(daftar, masukan)),
             ))
-            .child(button(&fonts, &t, TOMBOL_TAMBAH).on_press(move || kirim(daftar, masukan)))
+            .child(button(TOMBOL_TAMBAH).on_press(move || kirim(daftar, masukan)))
             .into()
     })
 }
@@ -396,7 +398,7 @@ fn kirim(daftar: Signal<Vec<Tugas>>, masukan: Signal<String>) {
 ### 4d. Daftar tugas dan key
 
 ```rust
-fn baris(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, tugas: &Tugas) -> View {
+fn baris(daftar: Signal<Vec<Tugas>>, tugas: &Tugas) -> View {
     let id = tugas.id;
     let kunci = Key::num(id as i64);
     div()
@@ -405,13 +407,13 @@ fn baris(fonts: &Fonts, t: &Theme, daftar: Signal<Vec<Tugas>>, tugas: &Tugas) ->
         .items_center()
         .gap_2()
         .child(expanded(
-            checkbox(fonts, t, tugas.judul.clone())
+            checkbox(tugas.judul.clone())
                 .key(kunci)
                 .checked(tugas.selesai)
                 .on_toggle(move |on| daftar.update(|d| model::setel_selesai(d, id, on))),
         ))
         .child(
-            button_variant(fonts, t, TOMBOL_HAPUS, ButtonVariant::Ghost)
+            button_variant(TOMBOL_HAPUS, ButtonVariant::Ghost)
                 .key(Key::num(-(id as i64) - 1))
                 .on_press(move || daftar.update(|d| model::hapus(d, id))),
         )
@@ -493,6 +495,9 @@ seperti `button` dan `checkbox`, spring-nya sudah ada di dalam — asal aplikasi
 ```rust
 fn main() -> Result<(), PlatformError> {
     let fonts = Fonts::new();
+    // Satu baris, sekali saja: sejak titik ini setiap konstruktor menemukan
+    // mesin teksnya sendiri, jadi `text("…")` tidak perlu dititipi apa pun.
+    install_fonts(&fonts);
 
     let config = window(NAMA_APLIKASI)
         .size(520.0, 640.0)
@@ -501,11 +506,10 @@ fn main() -> Result<(), PlatformError> {
         .follow_system_appearance()
         .glyphs(fonts.shared());
 
-    let untuk_view = fonts.clone();
     // `advance` menggerakkan semua spring milik widget sekali per frame. Event
     // loop tetap tidur begitu semuanya diam — adanya animasi tidak melanggar
     // janji "render hanya saat dirty".
-    run_app_with(config, move |cx| aplikasi(cx, &untuk_view), advance)
+    run_app_with(config, aplikasi, advance)
 }
 ```
 
@@ -590,8 +594,8 @@ Dan aplikasinya — pohon view yang sama persis dengan yang tampil di jendela �
 ```rust
 /// Aplikasi yang dirakit **persis seperti `run_app_with` merakitnya**.
 fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-    let untuk_view = fonts.clone();
-    headless_app(theme, move |cx| aplikasi(cx, &untuk_view))
+    install_fonts(fonts);
+    headless_app(theme, aplikasi)
         .sized(VIEWPORT.width, VIEWPORT.height)
 }
 

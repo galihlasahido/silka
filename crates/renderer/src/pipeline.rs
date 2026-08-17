@@ -6,10 +6,11 @@
 //! squircle, border or not, box vs shadow) are **instance data** — not shader
 //! variants. Not a single code path assembles shader source at runtime.
 
-use silka_paint::{GlyphSource, Size};
+use silka_paint::{GlyphSource, ImageSource, Size};
 
 use crate::atlas::GlyphAtlasGpu;
 use crate::geometry::SurfaceGeometry;
+use crate::images::ImageAtlasGpu;
 use crate::instance::{as_bytes, DrawList, QuadInstance};
 
 /// The shader source, embedded into the binary when Rust is compiled.
@@ -36,10 +37,16 @@ pub(crate) struct SdfPipeline {
     bind_group: wgpu::BindGroup,
     instances: wgpu::Buffer,
     kapasitas: usize,
-    /// The glyph atlas on the GPU — this pipeline's only textured resource.
+    /// The glyph atlas on the GPU.
     atlas: GlyphAtlasGpu,
-    /// The atlas revision `bind_group` currently refers to.
-    atlas_revision: u64,
+    /// The image atlas on the GPU — photos, avatars, and monochrome icons.
+    images: ImageAtlasGpu,
+    /// The atlas revisions `bind_group` currently refers to, glyph and image.
+    ///
+    /// Both are needed: either atlas can grow independently, and a bind group
+    /// pointing at a replaced texture would make text or images vanish without an
+    /// error.
+    atlas_revision: (u64, u64),
 }
 
 impl SdfPipeline {
@@ -96,6 +103,19 @@ impl SdfPipeline {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // The image atlas rides in the same bind group as the glyph
+                // atlases, which is what keeps an icon beside a label inside the
+                // same single draw call.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -107,7 +127,8 @@ impl SdfPipeline {
         });
 
         let atlas = GlyphAtlasGpu::new(device, format.is_srgb());
-        let bind_group = buat_bind_group(device, &bind_group_layout, &globals, &atlas);
+        let images = ImageAtlasGpu::new(device, format.is_srgb());
+        let bind_group = buat_bind_group(device, &bind_group_layout, &globals, &atlas, &images);
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("silka.sdf.layout"),
@@ -115,13 +136,15 @@ impl SdfPipeline {
             immediate_size: 0,
         });
 
-        // Five consecutive vec4 — an exact mirror of `QuadInstance`.
+        // Six consecutive vec4 — an exact mirror of `QuadInstance`, the last one
+        // being the transform's linear part.
         let atribut = wgpu::vertex_attr_array![
             0 => Float32x4,
             1 => Float32x4,
             2 => Float32x4,
             3 => Float32x4,
             4 => Float32x4,
+            5 => Float32x4,
         ];
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -180,7 +203,7 @@ impl SdfPipeline {
         });
 
         let instances = buat_buffer_instance(device, KAPASITAS_AWAL);
-        let atlas_revision = atlas.revision();
+        let atlas_revision = (atlas.revision(), images.revision());
 
         Self {
             pipeline,
@@ -190,6 +213,7 @@ impl SdfPipeline {
             instances,
             kapasitas: KAPASITAS_AWAL,
             atlas,
+            images,
             atlas_revision,
         }
     }
@@ -206,13 +230,21 @@ impl SdfPipeline {
         viewport: Size,
         list: &DrawList,
         glyphs: &mut dyn GlyphSource,
+        images: &mut dyn ImageSource,
     ) {
         let instances = list.instances();
         self.atlas.sync(device, queue, glyphs);
-        if self.atlas.revision() != self.atlas_revision {
-            self.bind_group =
-                buat_bind_group(device, &self.bind_group_layout, &self.globals, &self.atlas);
-            self.atlas_revision = self.atlas.revision();
+        self.images.sync(device, queue, images);
+        let revisi = (self.atlas.revision(), self.images.revision());
+        if revisi != self.atlas_revision {
+            self.bind_group = buat_bind_group(
+                device,
+                &self.bind_group_layout,
+                &self.globals,
+                &self.atlas,
+                &self.images,
+            );
+            self.atlas_revision = revisi;
         }
 
         let globals = Globals {
@@ -239,10 +271,16 @@ impl SdfPipeline {
         queue.write_buffer(&self.instances, 0, as_bytes(instances));
     }
 
-    /// Record the draw calls for `list` — one per clip batch.
+    /// Record the draw calls for one **range** of `list`'s clip batches — one
+    /// `draw` per batch.
     ///
     /// `list` must be the same one handed to [`SdfPipeline::prepare`] for this
     /// frame.
+    ///
+    /// The range is what layers need: a frame containing one becomes several
+    /// render passes over different targets, and each of them draws only the
+    /// batches that belong to it. A frame without layers passes its whole range
+    /// and does exactly the work it did before layers existed.
     ///
     /// The scissor rect is **render pass state**, not a draw parameter: it is
     /// only reset when the rect genuinely changes, so a scene without clipping
@@ -250,11 +288,13 @@ impl SdfPipeline {
     /// collapses to zero (a viewport outside the surface, an inverted clip) is
     /// **skipped entirely** — drawing it unclipped would spill a scroll view's
     /// contents across the whole window.
-    pub(crate) fn draw(
+    pub(crate) fn draw_batches(
         &self,
         pass: &mut wgpu::RenderPass<'_>,
         list: &DrawList,
         geometry: SurfaceGeometry,
+        first_batch: u32,
+        last_batch: u32,
     ) {
         // A render pass starts out covering the whole attachment; its size
         // matches the surface geometry, since the attachment is configured
@@ -265,7 +305,10 @@ impl SdfPipeline {
         let mut terpasang = penuh;
         let mut siap = false;
 
-        for batch in list.batches() {
+        let batches = list.batches();
+        let mulai = (first_batch as usize).min(batches.len());
+        let selesai = (last_batch as usize).clamp(mulai, batches.len());
+        for batch in &batches[mulai..selesai] {
             let scissor = match batch.clip {
                 None => penuh,
                 Some(rect) => match geometry.scissor(rect) {
@@ -298,6 +341,7 @@ fn buat_bind_group(
     layout: &wgpu::BindGroupLayout,
     globals: &wgpu::Buffer,
     atlas: &GlyphAtlasGpu,
+    images: &ImageAtlasGpu,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("silka.sdf.bind"),
@@ -318,6 +362,10 @@ fn buat_bind_group(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: wgpu::BindingResource::Sampler(atlas.sampler()),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(images.view()),
             },
         ],
     })

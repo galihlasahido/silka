@@ -27,7 +27,7 @@ use silka_core::scheduler::{Dirty, FrameLogger, FrameScheduler, Vsync, Wake};
 use silka_core::signals::Signal;
 use silka_core::tree::RenderTree;
 use silka_core::view::View;
-use silka_paint::{Color, GlyphSource, Scene, Size};
+use silka_paint::{Color, GlyphSource, ImageSource, Scene, Size};
 use silka_renderer::{FrameOutcome, Gpu, SurfaceGeometry, WindowSurface};
 use silka_theme::{Appearance, Preset, Theme};
 use winit::application::ApplicationHandler;
@@ -235,6 +235,14 @@ type TrayFn = Box<dyn FnMut(&TrayActivation) -> Dirty>;
 /// is: all it holds is a trait from `silka-paint`.
 type GlyphsRef = Rc<RefCell<dyn GlyphSource>>;
 
+/// The image atlas source shared with the scene builder.
+///
+/// Held exactly like [`GlyphsRef`], and for exactly the same reason: the scene
+/// closure may insert a newly decoded bitmap while assembling the frame, and the
+/// backend then uploads the part that changed. `silka-platform` still knows
+/// nothing about image formats — all it holds is a trait from `silka-paint`.
+type ImagesRef = Rc<RefCell<dyn ImageSource>>;
+
 /// Window configuration, built up by method chaining.
 ///
 /// Created through [`window`]. This is the framework's front door: every
@@ -268,6 +276,7 @@ pub struct WindowConfig {
     appearance_source: AppearanceSource,
     scene_fn: Option<SceneFn>,
     glyphs: Option<GlyphsRef>,
+    images: Option<ImagesRef>,
     access_fn: Option<AccessFn>,
     access_action_fn: Option<AccessActionFn>,
     input_fn: Option<InputFn>,
@@ -319,6 +328,7 @@ pub fn window(title: impl Into<String>) -> WindowConfig {
         appearance_source: AppearanceSource::System,
         scene_fn: None,
         glyphs: None,
+        images: None,
         access_fn: None,
         access_action_fn: None,
         input_fn: None,
@@ -437,6 +447,17 @@ impl WindowConfig {
     /// and the backend has no idea what winit is.
     pub fn glyphs<G: GlyphSource + 'static>(mut self, glyphs: Rc<RefCell<G>>) -> Self {
         self.glyphs = Some(glyphs as GlyphsRef);
+        self
+    }
+
+    /// The image atlas the backend uploads bitmaps from.
+    ///
+    /// Usually the application's [`silka_paint::ImageAtlas`]. Without it,
+    /// `Command::Image` draws nothing at all — the same negative-control
+    /// behaviour a missing glyph source has, and for the same reason: drawing
+    /// nothing is honest, drawing garbage is not.
+    pub fn images<I: ImageSource + 'static>(mut self, images: Rc<RefCell<I>>) -> Self {
+        self.images = Some(images as ImagesRef);
         self
     }
 
@@ -949,6 +970,13 @@ fn sambungkan_app_with(
     mut animate: impl FnMut(&mut RenderTree, &Tick) -> Dirty + 'static,
 ) -> WindowConfig {
     let app = Rc::new(RefCell::new(headless_app(config.theme, build)));
+    // The async bridge's return path (§9.6): a task that finishes while the
+    // window is idle wakes the loop, and the next frame applies its result. The
+    // proxy does not exist yet — `wake_notifier` looks it up per call, so this
+    // is installed once, here, and starts working when the loop does.
+    app.borrow()
+        .tasks()
+        .notify_with(crate::event::wake_notifier());
 
     let untuk_frame = app.clone();
     let untuk_input = app.clone();
@@ -1042,6 +1070,7 @@ struct Shell {
     appearance_source: AppearanceSource,
     scene_fn: SceneFn,
     glyphs: Option<GlyphsRef>,
+    images: Option<ImagesRef>,
     access_fn: AccessFn,
     access_action_fn: Option<AccessActionFn>,
     input_fn: Option<InputFn>,
@@ -1107,6 +1136,7 @@ impl Shell {
                 .scene_fn
                 .unwrap_or_else(|| Box::new(latar_dari_token)),
             glyphs: config.glyphs,
+            images: config.images,
             access_fn,
             access_action_fn: config.access_action_fn,
             input_fn: config.input_fn,
@@ -1550,6 +1580,7 @@ impl Shell {
             scheduler,
             scene_fn,
             glyphs,
+            images,
             started,
             logger,
             ..
@@ -1589,16 +1620,32 @@ impl Shell {
         // Wayland wants to know before the buffer is attached; a no-op
         // elsewhere.
         state.window.pre_present_notify();
-        // The glyph atlas is borrowed ONLY while drawing — the scene closure is
-        // already done with it, so there are never two borrowers at once.
-        let hasil = match glyphs {
-            Some(g) => {
-                let mut sumber = g.borrow_mut();
+        // Both atlases are borrowed ONLY while drawing — the scene closure is
+        // already done with them, so there are never two borrowers at once.
+        let hasil = match (glyphs.as_ref(), images.as_ref()) {
+            (Some(g), Some(i)) => {
+                let mut teks = g.borrow_mut();
+                let mut gambar = i.borrow_mut();
                 state
                     .surface
-                    .render_with_glyphs(&state.gpu, &scene, &mut *sumber)
+                    .render_with_sources(&state.gpu, &scene, &mut *teks, &mut *gambar)
             }
-            None => state.surface.render(&state.gpu, &scene),
+            (Some(g), None) => {
+                let mut teks = g.borrow_mut();
+                state
+                    .surface
+                    .render_with_glyphs(&state.gpu, &scene, &mut *teks)
+            }
+            (None, Some(i)) => {
+                let mut gambar = i.borrow_mut();
+                state.surface.render_with_sources(
+                    &state.gpu,
+                    &scene,
+                    &mut silka_paint::NoGlyphs,
+                    &mut *gambar,
+                )
+            }
+            (None, None) => state.surface.render(&state.gpu, &scene),
         };
 
         // The frame is closed first whatever the outcome: the statistics of a
@@ -1663,6 +1710,10 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Access(e) => e,
             ShellEvent::Menu(a) => return self.menu(a),
             ShellEvent::Tray(a) => return self.tray_event(a),
+            // A background task delivered something (§9.6). The payload is
+            // already in the channel; one frame is all that is needed, and
+            // `AppRuntime::frame` applies it before it drains the dirty scopes.
+            ShellEvent::Wake => return self.minta(Dirty::LAYOUT | Dirty::PAINT),
         };
         let cocok = self
             .state
@@ -1951,6 +2002,22 @@ mod tests {
         // An application without text pays nothing: no atlas source, and the
         // plain `render` path is used.
         assert!(window("Tanpa teks").glyphs.is_none());
+        // Nor does one without images.
+        assert!(window("Tanpa gambar").images.is_none());
+    }
+
+    #[test]
+    fn sumber_gambar_terpasang_lewat_method_chaining() {
+        // The image atlas travels the same way the glyph atlas does: shared, not
+        // copied, so the bitmap a scene closure inserts is the one the backend
+        // uploads on the very same frame.
+        let atlas = Rc::new(RefCell::new(silka_paint::ImageAtlas::new()));
+        let config = window("Dengan gambar").images(atlas.clone());
+        let terpasang = config.images.expect("sumber gambar tersimpan");
+        assert!(Rc::ptr_eq(
+            &(atlas as Rc<RefCell<dyn ImageSource>>),
+            &terpasang
+        ));
     }
 
     #[test]

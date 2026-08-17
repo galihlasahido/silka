@@ -32,13 +32,13 @@ use std::rc::Rc;
 use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
-use silka_core::view::{column, constrained, pad, row, View};
-use silka_paint::{Color, Insets};
+use silka_core::view::{column, constrained, row, View};
+use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    button, button_variant, col, table, text, use_table_state, ButtonVariant, Column, Fonts,
-    SortBy, SortDirection, TableState,
+    badge_in, button_in, button_variant_in, col, table_in, text_in, use_table_state, BadgeTone,
+    ButtonVariant, Column, Fonts, SortBy, SortDirection, TableState,
 };
 
 /// The page title.
@@ -192,7 +192,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -200,7 +200,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Seratus ribu baris berkolom, dan hanya belasan di antaranya \
                  yang pernah menjadi node — memakai ulang virtualisasi yang \
@@ -253,7 +253,7 @@ fn tabel(
             t.space(TINGGI_LANGKAH),
             t.space(TINGGI_LANGKAH),
         ),
-        table(fonts, t, state, kolom(t), count, move |baris, kolom| {
+        table_in(fonts, t, state, kolom(t), count, move |baris, kolom| {
             let data = permutasi[baris] as usize;
             sel(&untuk_sel, &theme, data, kolom)
         })
@@ -278,19 +278,19 @@ fn tabel(
 /// cell type to learn.
 fn sel(fonts: &Fonts, t: &Theme, i: usize, kolom: usize) -> View {
     match kolom {
-        0 => text(fonts, format!("#{:06}", i + 1))
+        0 => text_in(fonts, format!("#{:06}", i + 1))
             .size(t.typography.footnote.size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.tertiary_label)
             .single_line()
             .into(),
-        1 => text(fonts, nama_pihak(i))
+        1 => text_in(fonts, nama_pihak(i))
             .size(t.typography.body_size)
             .color(t.color.label)
             .single_line()
             .into(),
         2 => badge(fonts, t, status(i)),
-        _ => text(fonts, rupiah(nominal(i)))
+        _ => text_in(fonts, rupiah(nominal(i)))
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.secondary_label)
@@ -299,31 +299,29 @@ fn sel(fonts: &Fonts, t: &Theme, i: usize, kolom: usize) -> View {
     }
 }
 
-/// The status badge — the only "graphic" on this page, and all of its colors
-/// are still tokens.
+/// The status badge — the only "graphic" on this page, and all this page still
+/// decides about it is which **tone** each status means.
+///
+/// It used to be a hand-rolled pill here (a padded, coloured, rounded box). The
+/// catalogue grew [`silka_widgets::badge_in`] precisely because this file and
+/// the ERP dashboard had each written that same pill, slightly differently.
 fn badge(fonts: &Fonts, t: &Theme, status: &str) -> View {
-    let (latar, tulisan): (Color, Color) = match status {
-        "Lunas" => (t.color.success, t.color.on_accent),
-        "Tertunda" => (t.color.warning, t.color.on_accent),
-        _ => (t.color.surface_pressed, t.color.secondary_label),
+    let tone = match status {
+        "Lunas" => BadgeTone::Success,
+        "Tertunda" => BadgeTone::Warning,
+        _ => BadgeTone::Neutral,
     };
-    pad(
-        Insets::symmetric(t.space(2.0), t.space(1.0)),
-        text(fonts, status)
-            .size(t.typography.footnote.size)
-            .weight(FontWeight::SEMIBOLD)
-            .color(tulisan)
-            .single_line(),
-    )
-    .background(latar)
-    .corners(t.corners(t.radius.sm))
-    .into()
+    badge_in(fonts, t, status)
+        .tone(tone)
+        .soft()
+        .label(format!("Status: {status}"))
+        .into()
 }
 
 /// What shows up when the table is empty.
 fn kosong(fonts: &Fonts, t: &Theme) -> View {
     column([View::from(
-        text(fonts, KOSONG)
+        text_in(fonts, KOSONG)
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line(),
@@ -339,20 +337,22 @@ fn kendali(fonts: &Fonts, t: &Theme, state: TableState, terisi: Signal<bool>) ->
     let label_isi = if isi { TOMBOL_KOSONG } else { TOMBOL_ISI };
     row([
         View::from(
-            button(fonts, t, TOMBOL_TENGAH).on_press(move || state.scroll_to_row(50_000, BARIS)),
+            button_in(fonts, t, TOMBOL_TENGAH).on_press(move || state.scroll_to_row(50_000, BARIS)),
         ),
         View::from(
-            button_variant(fonts, t, label_isi, ButtonVariant::Secondary).on_press(move || {
+            button_variant_in(fonts, t, label_isi, ButtonVariant::Secondary).on_press(move || {
                 terisi.set(!isi);
                 state.clear_selection();
             }),
         ),
         View::from(
-            button_variant(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary).on_press(move || {
-                state.reset_widths();
-                state.set_order(Vec::new());
-                state.set_sort(None);
-            }),
+            button_variant_in(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary).on_press(
+                move || {
+                    state.reset_widths();
+                    state.set_order(Vec::new());
+                    state.set_sort(None);
+                },
+            ),
         ),
     ])
     .spacing(t.space(3.0))
@@ -388,7 +388,7 @@ fn status_bar(fonts: &Fonts, state: TableState, dibuka: Signal<Option<usize>>) -
             .get()
             .map(|i| format!("dibuka #{:06}", i + 1))
             .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text(&fonts, format!("Terpilih: {terpilih} · {urut} · {aktif}"))
+        text_in(&fonts, format!("Terpilih: {terpilih} · {urut} · {aktif}"))
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line()

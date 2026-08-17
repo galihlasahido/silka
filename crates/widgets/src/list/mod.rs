@@ -21,11 +21,11 @@
 //!
 //! let f = fonts.clone();
 //! let theme = t;
-//! list(&t, state, rows.len(), move |i| View::from(text(&f, format!("Row {i}"))))
+//! list_in(&t, state, rows.len(), move |i| View::from(text_in(&f, format!("Row {i}"))))
 //!     .item_extent(44.0)
 //!     .sticky_header(32.0, {
 //!         let f = fonts.clone();
-//!         move || View::from(text(&f, "Transactions"))
+//!         move || View::from(text_in(&f, "Transactions"))
 //!     })
 //!     .separators(theme.space(0.25))
 //!     .label("Transactions")
@@ -111,7 +111,8 @@ pub use geometry::{ListMetrics, ListRange};
 pub use node::{ListBody, ListRowBox, ListStyle, RowAction};
 pub use state::{use_list_state, ListScroll, ListState};
 pub use view::{
-    list, ListBuilder, ListProps, ListRowProps, DEFAULT_OVERSCAN, DEFAULT_ROW_EXTENT, VIEWPORT_HINT,
+    list, list_in, ListBuilder, ListProps, ListRowProps, DEFAULT_OVERSCAN, DEFAULT_ROW_EXTENT,
+    VIEWPORT_HINT,
 };
 
 /// How far the selected row stays from the viewport edge when scrolled into view.

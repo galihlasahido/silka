@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Entitlements for a **Mac App Store** build (SISA-PEKERJAAN §I6).
+
+  This is a different product from the Developer ID build, not a flag on it, and
+  the differences are worth knowing before anyone tries to ship both from one
+  binary:
+
+    1. The App Sandbox is mandatory. Every file the application touches must
+       come through a user-selected path, a security-scoped bookmark, or one of
+       the container directories — `~/Library/Application Support/<bundle id>`
+       and friends. Code that opens a path it constructed itself will be denied.
+
+    2. **The updater must be compiled out.** An App Store build is updated by
+       the App Store; a build that also replaces its own bundle would be
+       rejected in review and would break the receipt if it were not. Build the
+       MAS target without whatever feature gates `silka-dist`'s update path, and
+       leave `silka-dist::crash` in — crash reports are still allowed, they just
+       have to be written inside the container.
+
+    3. The signing identities are different: `3rd Party Mac Developer
+       Application` for the bundle, `3rd Party Mac Developer Installer` for the
+       `.pkg`. A Developer ID certificate cannot sign a submission, and this
+       file cannot be signed with one.
+
+    4. There is no notarization step. App Store submissions are reviewed, not
+       notarized, and `xcrun notarytool` will reject a MAS-signed bundle.
+
+  Every key below is a request Apple will ask you to justify in review. The
+  comments are that justification, written while it is still fresh.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Mandatory for the Mac App Store. Without it the submission is rejected. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+
+	<!--
+	  Opening and saving documents the user picked in a file dialog. silka's
+	  dialogs go through `silka_platform::dialog`, which on macOS is an
+	  NSOpenPanel — the panel itself runs outside the sandbox and hands back a
+	  path this entitlement makes usable.
+	-->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!--
+	  Reopening recent documents across launches. `silka_platform::recent`
+	  records them; without security-scoped bookmarks the paths it stores are
+	  unusable on the next launch.
+	-->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
+
+	<!--
+	  Outbound HTTPS only. Needed for whatever the application itself talks to;
+	  it is NOT needed for updates in this build, because there are none.
+	  Remove this key if the application is fully offline — an unused network
+	  entitlement is a question in review with no good answer.
+	-->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

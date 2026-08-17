@@ -436,7 +436,7 @@ impl Layar {
 
     fn menu(&self) -> Menu {
         let dipilih = self.dipilih.clone();
-        menu(&self.fonts, &self.theme, isi())
+        menu_in(&self.fonts, &self.theme, isi())
             .label("Tampilan")
             .key("uji")
             .bind(self.state)
@@ -942,7 +942,7 @@ fn semua_nilai_gambar_berasal_dari_token_di_kedua_preset() {
     for preset in Preset::ALL {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let t = Theme::new(preset, appearance);
-            let m = menu(&Fonts::bundled_only(), &t, isi());
+            let m = menu_in(&Fonts::bundled_only(), &t, isi());
             let pemicu = m.trigger_style();
             assert_eq!(pemicu.rest, t.color.surface);
             assert_eq!(pemicu.hover, t.color.surface_hover);
@@ -958,11 +958,11 @@ fn semua_nilai_gambar_berasal_dari_token_di_kedua_preset() {
             // The level has both checkables and a submenu, so both gutters are
             // reserved; a level without them reserves neither.
             assert!(baris.leading > 0.0 && baris.trailing > 0.0);
-            let polos = menu(&Fonts::bundled_only(), &t, [item("a", "A")]).row_style(0);
+            let polos = menu_in(&Fonts::bundled_only(), &t, [item("a", "A")]).row_style(0);
             assert_eq!((polos.leading, polos.trailing), (0.0, 0.0));
 
             // A chip differs only in its corner radius — nothing else forks.
-            let chip = menu(&Fonts::bundled_only(), &t, isi())
+            let chip = menu_in(&Fonts::bundled_only(), &t, isi())
                 .chip(true)
                 .trigger_style();
             assert_eq!(chip.corners.radii.max(), t.radius.full);
@@ -989,7 +989,7 @@ fn menu_kosong_tidak_membuat_apa_pun_panik() {
     let state = rt.signal(MenuState::new());
     let fonts = Fonts::bundled_only();
     let t = tema();
-    let m = menu(&fonts, &t, Vec::<MenuEntry>::new())
+    let m = menu_in(&fonts, &t, Vec::<MenuEntry>::new())
         .label("Kosong")
         .bind(state)
         .open(true);
@@ -1014,7 +1014,7 @@ fn menu_kosong_tidak_membuat_apa_pun_panik() {
 #[test]
 fn gutter_dan_segitiga_tercermin_di_rtl() {
     let t = tema();
-    let gaya = menu(&Fonts::bundled_only(), &t, isi()).row_style(0);
+    let gaya = menu_in(&Fonts::bundled_only(), &t, isi()).row_style(0);
     let ltr = gaya.insets(false);
     let rtl = gaya.insets(true);
     // The mark gutter sits at the start of the line and the submenu triangle at

@@ -11,7 +11,7 @@
 //! |---|---|
 //! | A real sidebar with folding groups | [`nav`] — it is a `tree`, so the fold is a spring height animation and the keyboard already works |
 //! | An overlay-backed dropdown | [`topbar`] — the account menu flips at the window edge and dismisses on outside click/Esc without computing a coordinate |
-//! | Dark mode that really changes the application | The ☀/● button in the top bar; `app::next_theme` is what decides |
+//! | Dark mode that really changes the application | The sun/moon icon button in the top bar; `app::next_theme` is what decides |
 //! | A wrapping KPI grid on the categorical palette | [`dashboard`] — ten tiles, colour-blind-safe hues, no hex anywhere |
 //! | A chart used by an application rather than by its demo | [`dashboard`] — the daily disbursement area chart |
 //! | A virtualized table reached by navigating | [`transactions`] |

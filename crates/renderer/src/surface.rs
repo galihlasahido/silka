@@ -1,13 +1,12 @@
 //! The window surface: swapchain, resize/DPI, and executing one [`Scene`].
 
-use silka_paint::{GlyphSource, NoGlyphs, Scene, Size};
+use silka_paint::{GlyphSource, ImageSource, NoGlyphs, NoImages, Scene, Size};
 
 use crate::error::RendererError;
-use crate::format::{choose_alpha_mode, choose_surface_format, clear_color};
+use crate::format::{choose_alpha_mode, choose_surface_format};
+use crate::frame::FrameRenderer;
 use crate::geometry::SurfaceGeometry;
 use crate::gpu::Gpu;
-use crate::instance::{fill_draw_list, ColorSpace, DrawList};
-use crate::pipeline::SdfPipeline;
 
 /// The result of one attempt to draw a frame.
 ///
@@ -65,10 +64,10 @@ pub struct WindowSurface {
     config: wgpu::SurfaceConfiguration,
     geometry: SurfaceGeometry,
     configured: bool,
-    sdf: SdfPipeline,
-    /// The draw list (instances + clip batches), reused every frame — the
-    /// steady state is allocation-free (§3.5: predictable frame times).
-    list: DrawList,
+    /// The pipelines, the layer pool, and the reused draw list — the same frame
+    /// implementation the headless path uses, so what a golden test asserts is
+    /// what a user sees.
+    frame: FrameRenderer,
 }
 
 impl WindowSurface {
@@ -96,17 +95,16 @@ impl WindowSurface {
             view_formats: Vec::new(),
         };
 
-        // The pipeline is built now, not on the first frame: shader compilation
+        // The pipelines are built now, not on the first frame: shader compilation
         // is paid for up front so the first frame does not jank (§3.2).
-        let sdf = SdfPipeline::new(gpu.device(), format);
+        let frame = FrameRenderer::new(gpu.device(), format);
 
         let mut this = Self {
             surface,
             config,
             geometry,
             configured: false,
-            sdf,
-            list: DrawList::default(),
+            frame,
         };
         this.reconfigure(gpu);
         Ok(this)
@@ -172,21 +170,42 @@ impl WindowSurface {
 
     /// Draw one frame, text included.
     ///
-    /// Every command (quads, borders, shadows, **and glyphs**) runs through the
-    /// one SDF pipeline in **a single draw call** — the differences in shape
-    /// (arc/squircle, border or not, blur, textured or not) are instance data,
-    /// not shader variants. Because it is all one draw call, the scene's
-    /// command order doubles as the draw order: text sits above its background
-    /// and is never painted over.
+    /// Every command (quads, borders, shadows, glyphs, **lines**, and **bitmaps**)
+    /// runs through the one SDF pipeline in **a single draw call** — the
+    /// differences in shape (arc/squircle, border or not, blur, textured or not,
+    /// transformed or not) are instance data, not shader variants. Because it is
+    /// all one draw call, the scene's command order doubles as the draw order:
+    /// text sits above its background and is never painted over.
+    ///
+    /// Layers ([`silka_paint::Command::PushLayer`]) are the one exception, and a
+    /// deliberate one: they add a render pass per layer, because that is what
+    /// "render this subtree to a texture, then blur it" means.
     ///
     /// `glyphs` is usually `&mut TextEngine`. The contract still holds: the
     /// caller never touches a wgpu type, and the backend never knows what a
-    /// font is.
+    /// font is. Images need their own source — see
+    /// [`WindowSurface::render_with_sources`].
     pub fn render_with_glyphs(
         &mut self,
         gpu: &Gpu,
         scene: &Scene,
         glyphs: &mut dyn GlyphSource,
+    ) -> Result<FrameOutcome, RendererError> {
+        self.render_with_sources(gpu, scene, glyphs, &mut NoImages)
+    }
+
+    /// Draw one frame with **both** atlas sources: text and bitmaps.
+    ///
+    /// `images` is usually the application's [`silka_paint::ImageAtlas`]. Without
+    /// it, `Command::Image` produces no pixels at all — the same negative-control
+    /// behaviour a missing glyph source has, and for the same reason: drawing
+    /// nothing is honest, drawing garbage is not.
+    pub fn render_with_sources(
+        &mut self,
+        gpu: &Gpu,
+        scene: &Scene,
+        glyphs: &mut dyn GlyphSource,
+        images: &mut dyn ImageSource,
     ) -> Result<FrameOutcome, RendererError> {
         if !self.geometry.is_renderable() {
             return Ok(FrameOutcome::Skipped);
@@ -198,7 +217,7 @@ impl WindowSurface {
             }
         }
 
-        let frame = match self.surface.get_current_texture() {
+        let surface_frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f) => f,
             // Suboptimal: used once more, then reconfigured for the next frame
             // — this is what happens while a window is being dragged between
@@ -224,62 +243,12 @@ impl WindowSurface {
             }
         };
 
-        // The color space follows the target format: `*Srgb` does the encoding
-        // back in hardware, so the shader must write linear values.
-        let space = if self.config.format.is_srgb() {
-            ColorSpace::Linear
-        } else {
-            ColorSpace::Srgb
-        };
-        fill_draw_list(
-            scene,
-            space,
-            self.geometry.scale_factor() as f32,
-            glyphs,
-            &mut self.list,
-        );
-        self.sdf.prepare(
-            gpu.device(),
-            gpu.queue(),
-            self.geometry.logical_size(),
-            &self.list,
-            glyphs,
-        );
-
-        let view = frame
+        let view = surface_frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = gpu
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("silka.frame"),
-            });
-
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("silka.frame"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_color(
-                            scene.clear_color(),
-                            self.config.format,
-                        )),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            self.sdf.draw(&mut pass, &self.list, self.geometry);
-        }
-
-        gpu.queue().submit(Some(encoder.finish()));
-        frame.present();
+        self.frame
+            .render(gpu, &view, self.geometry, scene, glyphs, images);
+        surface_frame.present();
         Ok(FrameOutcome::Presented)
     }
 }

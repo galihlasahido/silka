@@ -21,7 +21,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use silka_chart::tooltip::{tooltip_overlay, ChartHover};
+use silka_chart::tooltip::{tooltip_overlay_in, ChartHover};
 use silka_chart::ChartStyle;
 use silka_core::animation::{Motion, Tick};
 use silka_core::app::{component, AppRuntime, BuildCtx, ScaleFactor};
@@ -32,7 +32,7 @@ use silka_core::view::{column, expanded, row, View};
 use silka_platform::{headless_app, PlatformError, WindowConfig};
 use silka_theme::{Appearance, Theme};
 use silka_widgets::menu::MenuState;
-use silka_widgets::{overlay_layer, scroll_view, text, Fonts, TreeState};
+use silka_widgets::{overlay_layer, scroll_view_in, text_in, Fonts, TreeState};
 
 use crate::kit;
 use crate::nav::{self, Page};
@@ -145,6 +145,9 @@ pub fn run(
         // Without this line the `GlyphRun` commands carry no bitmaps and every
         // page renders blank — the atlas is what crosses over to the GPU.
         .glyphs(fonts.shared())
+        // …and the same sentence for bitmaps: without it every `Command::Image`
+        // draws nothing, so the top bar's icons would simply not be there.
+        .images(silka_widgets::active_images().shared())
         .on_frame(move |ctx| {
             let mut ui = for_frame.borrow_mut();
             ui.resize(ctx.size());
@@ -200,6 +203,9 @@ fn shell(cx: &BuildCtx, fonts: &Fonts) -> View {
     let t: Theme = theme_sig.get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
+    // Icons are coverage masks tied to a pixel grid, exactly like glyphs, so
+    // the bitmap atlas needs the same number (§3.3).
+    silka_widgets::active_images().set_scale_factor(dpi.get());
 
     let page: Signal<Page> = cx.expect_env();
     let mode: Signal<AppearanceMode> = cx.expect_env();
@@ -234,7 +240,7 @@ fn shell(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     // Content first, floating panels after: the order written here **is** the
     // stacking order, and not one panel computes its own position.
-    let mut layer = overlay_layer(content).overlay(tooltip_overlay(
+    let mut layer = overlay_layer(content).overlay(tooltip_overlay_in(
         fonts,
         &t,
         &ChartStyle::from_theme(&t),
@@ -280,7 +286,9 @@ fn content(fonts: &Fonts, nav_state: TreeState, page: Signal<Page>) -> View {
             // virtualization.
             inner
         } else {
-            scroll_view(&t, inner).label(current.short_title()).into()
+            scroll_view_in(&t, inner)
+                .label(current.short_title())
+                .into()
         }
     })
 }
@@ -297,9 +305,11 @@ fn placeholder(cx: &BuildCtx, fonts: &Fonts, page: Page) -> View {
         .cross(CrossAlign::Start)
         .into(),
         kit::padded_card(
+            fonts,
             &t,
+            Some(page.title()),
             [View::from(
-                text(fonts, "Nothing here yet.")
+                text_in(fonts, "Nothing here yet.")
                     .size(t.typography.body_size)
                     .color(t.color.secondary_label)
                     .single_line(),

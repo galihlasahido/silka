@@ -91,6 +91,9 @@ impl Kelompok {
 pub enum Halaman {
     /// Tier 0: the type scale, corner shapes, and layered shadows as views.
     Primitif,
+    /// Tier 0/1: spacer, divider, stack, align/center, aspect ratio, image and
+    /// icon — the primitives every other page is quietly built out of.
+    TataLetak,
     /// The end-to-end counter — the smallest complete proof of the lifecycle.
     Counter,
     /// The card grid driven entirely through the reactive lifecycle.
@@ -135,11 +138,12 @@ pub enum Halaman {
 
 impl Halaman {
     /// Every page, in sidebar order (grouped by tier).
-    pub const SEMUA: [Halaman; 21] = [
+    pub const SEMUA: [Halaman; 22] = [
         Halaman::Counter,
         Halaman::Reaktif,
         Halaman::Utility,
         Halaman::Primitif,
+        Halaman::TataLetak,
         Halaman::Gulir,
         Halaman::Daftar,
         Halaman::Tombol,
@@ -170,6 +174,7 @@ impl Halaman {
     pub fn slug(self) -> &'static str {
         match self {
             Halaman::Primitif => "primitives",
+            Halaman::TataLetak => "layout",
             Halaman::Counter => "counter",
             Halaman::Reaktif => "reactive",
             Halaman::Utility => "utility",
@@ -198,6 +203,7 @@ impl Halaman {
     pub fn judul(self) -> &'static str {
         match self {
             Halaman::Primitif => "Teks & kontainer",
+            Halaman::TataLetak => crate::layout::JUDUL,
             Halaman::Counter => "Counter",
             Halaman::Reaktif => "Grid reaktif",
             Halaman::Utility => "Kosakata utility",
@@ -226,7 +232,7 @@ impl Halaman {
         match self {
             Halaman::Counter | Halaman::Reaktif | Halaman::Utility => Kelompok::Fondasi,
             Halaman::Primitif => Kelompok::Primitif,
-            Halaman::Gulir | Halaman::Daftar => Kelompok::Layout,
+            Halaman::TataLetak | Halaman::Gulir | Halaman::Daftar => Kelompok::Layout,
             Halaman::Tombol
             | Halaman::KolomTeks
             | Halaman::AreaTeks
@@ -278,6 +284,7 @@ impl Halaman {
     pub fn dari_nama(nama: &str) -> Option<Halaman> {
         Some(match nama {
             "primitives" | "primitif" | "dasar" => Halaman::Primitif,
+            "layout" | "tata-letak" | "tataletak" | "media" => Halaman::TataLetak,
             "counter" | "pencacah" => Halaman::Counter,
             "reactive" | "reaktif" => Halaman::Reaktif,
             "utility" | "utilitas" | "kosakata" => Halaman::Utility,
@@ -310,6 +317,7 @@ impl Halaman {
     pub fn view(self, cx: &BuildCtx, fonts: &Fonts) -> View {
         match self {
             Halaman::Primitif => crate::primitives::halaman(cx, fonts),
+            Halaman::TataLetak => crate::layout::halaman(cx, fonts),
             Halaman::Counter => crate::counter::halaman(cx, fonts),
             Halaman::Reaktif => crate::reactive::halaman(cx),
             Halaman::Utility => crate::utility::halaman(cx, fonts),

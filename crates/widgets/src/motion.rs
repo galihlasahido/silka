@@ -31,8 +31,10 @@ use silka_core::tree::{NodeId, RenderTree};
 use crate::button::ButtonBox;
 use crate::checkbox::CheckboxNode;
 use crate::overlay::OverlayEntry;
+use crate::radio::{RadioGroupBox, RadioNode};
 use crate::select::{SelectOption, SelectTrigger};
 use crate::slider::Slider;
+use crate::stepper::StepperNode;
 use crate::switch::SwitchNode;
 use crate::text_field::TextFieldBox;
 
@@ -91,6 +93,27 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     // through a single door in its own module; here it is simply handed the
     // same tick so the application still only has to call one function.
     dirty |= crate::tabs::advance(tree, tick);
+    // The Tier 3 navigation components each own a door of the same shape. Two
+    // of them (`toolbar`, `split_view`) do more than tick springs: they also
+    // **publish** what only this frame's finished layout knows — the ids a
+    // toolbar had to collapse, and the track length a divider converts a drag
+    // into a proportion with. Same seam as `list::sync_virtual`, same reason.
+    dirty |= crate::segmented_control::advance(tree, tick);
+    dirty |= crate::breadcrumb::advance(tree, tick);
+    dirty |= crate::toolbar::advance(tree, tick);
+    dirty |= crate::split_view::advance(tree, tick);
+    dirty |= crate::sidebar::advance(tree, tick);
+    dirty |= crate::command_palette::advance(tree, tick);
+    // The Tier 4 feedback components own doors of the same shape. Two of them
+    // are the only endless animations in the framework — an indeterminate
+    // progress indicator and a skeleton shimmer — and both switch themselves
+    // off under reduced motion, which is why they are allowed to exist.
+    dirty |= crate::progress::advance(tree, tick);
+    dirty |= crate::skeleton::advance(tree, tick);
+    // Toasts come with a countdown as well as a spring, and their door is the
+    // one place a widget's own timer may call back into the application: the
+    // dismissal fires **after** every borrow has ended.
+    dirty |= crate::toast::advance(tree, tick);
     // Scrolling has its own door too: besides the position spring it owns the
     // scrollbar auto-hide countdown, which has to run exactly once per frame —
     // and only its module knows when that countdown is done.
@@ -124,6 +147,17 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     // rect) that only exists once this frame's layout is settled — the same
     // seam `list::sync_virtual` uses, and for the same reason.
     dirty |= crate::menu::advance(tree, tick);
+    // A combo box owns no spring of its own — its field and its panel belong to
+    // `text_field` and `menu`, both already advanced above. What it does own is
+    // the same geometry seam the menu trigger uses: a suggestion list opened by
+    // ↓ needs the field's rect, and only this frame's finished layout has one.
+    dirty |= crate::combo_box::sync(tree);
+    // The date picker owns no spring of its own either — its field's colours
+    // ride the `RenderNode::advance` contract and its panel is the overlay
+    // system's. What it does own is the same geometry seam: a calendar opened
+    // by ↓ needs the field's rect, and only this frame's finished layout has
+    // one.
+    dirty |= crate::date_picker::sync(tree);
     for id in semua(tree) {
         // Button: only pixels change, so no layout has to run again —
         // deliberately, because hovering a button must never make the page
@@ -151,6 +185,56 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             .node_mut_ref::<CheckboxNode>(id)
             .map(|c| (c.advance(tick), c.is_animating()));
         if let Some((bergeser, bergerak)) = centang {
+            if bergeser {
+                tree.mark_needs_paint(id);
+                dirty |= Dirty::PAINT;
+            }
+            if bergerak {
+                dirty |= Dirty::ANIMATION;
+            }
+            continue;
+        }
+
+        // Radio: circle fill, ring colour, the dot growing, press shrink, and
+        // the focus ring of a *lone* radio. Everything happens inside the
+        // circle, so no neighbour moves — pixels only.
+        let radio = tree
+            .node_mut_ref::<RadioNode>(id)
+            .map(|r| (r.advance(tick), r.is_animating()));
+        if let Some((bergeser, bergerak)) = radio {
+            if bergeser {
+                tree.mark_needs_paint(id);
+                dirty |= Dirty::PAINT;
+            }
+            if bergerak {
+                dirty |= Dirty::ANIMATION;
+            }
+            continue;
+        }
+
+        // Radio group: the focus ring **gliding** from option to option. The
+        // options do not move, only the ring does, so this too is pixels only.
+        let grup = tree
+            .node_mut_ref::<RadioGroupBox>(id)
+            .map(|g| (g.advance(tick), g.is_animating()));
+        if let Some((bergeser, bergerak)) = grup {
+            if bergeser {
+                tree.mark_needs_paint(id);
+                dirty |= Dirty::PAINT;
+            }
+            if bergerak {
+                dirty |= Dirty::ANIMATION;
+            }
+            continue;
+        }
+
+        // Stepper: each half's background and the focus ring. Its width comes
+        // from the number's *area*, not from the number, so a value changing
+        // never makes the page relayout.
+        let langkah = tree
+            .node_mut_ref::<StepperNode>(id)
+            .map(|s| (s.advance(tick), s.is_animating()));
+        if let Some((bergeser, bergerak)) = langkah {
             if bergeser {
                 tree.mark_needs_paint(id);
                 dirty |= Dirty::PAINT;
@@ -257,6 +341,11 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
             }
         }
     }
+    // Last, and after the overlays above have moved: a popover's arrow is
+    // aimed from the placement the overlay settled on, which only exists once
+    // a layout has run. Same seam as `list::sync_virtual`, same reason — and
+    // like that one it converges in a frame rather than guessing.
+    dirty |= crate::popover::sync(tree);
     dirty
 }
 
@@ -292,6 +381,15 @@ pub fn is_animating(tree: &RenderTree) -> bool {
         || crate::tree::is_animating(tree)
         || crate::text_area::is_animating(tree)
         || crate::menu::is_animating(tree)
+        || crate::segmented_control::is_animating(tree)
+        || crate::breadcrumb::is_animating(tree)
+        || crate::toolbar::is_animating(tree)
+        || crate::split_view::is_animating(tree)
+        || crate::sidebar::is_animating(tree)
+        || crate::command_palette::is_animating(tree)
+        || crate::progress::is_animating(tree)
+        || crate::skeleton::is_animating(tree)
+        || crate::toast::is_animating(tree)
     {
         return true;
     }
@@ -301,6 +399,15 @@ pub fn is_animating(tree: &RenderTree) -> bool {
             || tree
                 .node_ref::<CheckboxNode>(id)
                 .is_some_and(CheckboxNode::is_animating)
+            || tree
+                .node_ref::<RadioNode>(id)
+                .is_some_and(RadioNode::is_animating)
+            || tree
+                .node_ref::<RadioGroupBox>(id)
+                .is_some_and(RadioGroupBox::is_animating)
+            || tree
+                .node_ref::<StepperNode>(id)
+                .is_some_and(StepperNode::is_animating)
             || tree
                 .node_ref::<TextFieldBox>(id)
                 .is_some_and(TextFieldBox::is_animating)
@@ -333,13 +440,13 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button, is_animating, settle, Fonts};
+/// use silka_widgets::{button_in, is_animating, settle, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// let mut tree = RenderTree::new();
-/// reconcile(&mut tree, button(&fonts, &theme, "Save"));
+/// reconcile(&mut tree, button_in(&fonts, &theme, "Save"));
 /// tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
 ///
 /// settle(&mut tree);
@@ -355,6 +462,15 @@ pub fn settle(tree: &mut RenderTree) {
     crate::tree::settle(tree);
     crate::text_area::settle(tree);
     crate::menu::settle(tree);
+    crate::segmented_control::settle(tree);
+    crate::breadcrumb::settle(tree);
+    crate::toolbar::settle(tree);
+    crate::split_view::settle(tree);
+    crate::sidebar::settle(tree);
+    crate::command_palette::settle(tree);
+    crate::progress::settle(tree);
+    crate::skeleton::settle(tree);
+    crate::toast::settle(tree);
     // The editor has no spring of its own — its frame is a `TextAreaFrame`,
     // already settled above — but its sync seam still has to run so a queued
     // toolbar command is served before a snapshot is taken.
@@ -369,6 +485,25 @@ pub fn settle(tree: &mut RenderTree) {
             .node_mut_ref::<CheckboxNode>(id)
             .map(CheckboxNode::settle);
         if centang.is_some() {
+            tree.mark_needs_paint(id);
+            continue;
+        }
+        let radio = tree.node_mut_ref::<RadioNode>(id).map(RadioNode::settle);
+        if radio.is_some() {
+            tree.mark_needs_paint(id);
+            continue;
+        }
+        let grup = tree
+            .node_mut_ref::<RadioGroupBox>(id)
+            .map(RadioGroupBox::settle);
+        if grup.is_some() {
+            tree.mark_needs_paint(id);
+            continue;
+        }
+        let langkah = tree
+            .node_mut_ref::<StepperNode>(id)
+            .map(StepperNode::settle);
+        if langkah.is_some() {
             tree.mark_needs_paint(id);
             continue;
         }
@@ -410,4 +545,8 @@ pub fn settle(tree: &mut RenderTree) {
             tree.mark_needs_layout(id);
         }
     }
+    // The arrows are re-aimed last, from the placements the overlays have just
+    // settled into — a snapshot taken before this runs would photograph an
+    // arrow pointing at where the trigger used to be.
+    let _ = crate::popover::sync(tree);
 }

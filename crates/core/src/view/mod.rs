@@ -37,6 +37,7 @@
 //! What is **not** here: an `rsx!`-style macro DSL (rejected as a foundation,
 //! §2.5) and anything that touches a wgpu type (§3.2).
 
+mod boxes;
 mod diff;
 mod interactive;
 mod primitives;
@@ -52,6 +53,10 @@ use crate::scheduler::Dirty;
 use crate::signals::Key;
 use crate::tree::RenderNode;
 
+pub use boxes::{
+    align, aspect_ratio, center, stack, AlignProps, AspectRatioProps, StackProps, ASPECT_16_9,
+    ASPECT_3_2, ASPECT_4_3, ASPECT_SQUARE,
+};
 pub use diff::{reconcile, reconcile_children, DiffStats};
 pub use interactive::{interactive, InteractiveProps};
 pub use primitives::{

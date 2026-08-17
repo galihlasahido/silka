@@ -64,7 +64,7 @@ fn hidupkan(tree: &mut RenderTree) {
 }
 
 fn tiga(fonts: &Fonts, theme: &Theme, terpilih: usize) -> Tabs {
-    tabs(
+    tabs_in(
         fonts,
         theme,
         [tab("Umum"), tab("Tampilan"), tab("Lanjutan")],
@@ -448,7 +448,7 @@ fn tab_yang_dimatikan_tidak_bisa_diklik() {
     let pilihan = Rc::new(Cell::new(usize::MAX));
     let catat = pilihan.clone();
     let mut tree = pohon(
-        tabs(
+        tabs_in(
             &f,
             &t,
             [tab("Umum"), tab("Lanjutan").disabled(true), tab("Debug")],
@@ -513,7 +513,7 @@ fn panah_melewati_tab_yang_dimatikan_dan_berhenti_di_ujung() {
     let pilihan = Rc::new(Cell::new(usize::MAX));
     let bangun = |i: usize| {
         let catat = pilihan.clone();
-        tabs(
+        tabs_in(
             &f,
             &t,
             [tab("Umum"), tab("Lanjutan").disabled(true), tab("Debug")],
@@ -610,7 +610,7 @@ fn pohon_a11y_memuat_tablist_dan_tab_dengan_keadaan_terpilih() {
     let f = fonts();
     let t = tema();
     let tree = pohon(
-        tabs(
+        tabs_in(
             &f,
             &t,
             [tab("Umum"), tab("Tampilan"), tab("Lanjutan").disabled(true)],
@@ -789,7 +789,7 @@ fn indeks_di_luar_jangkauan_dijepit_bukan_panik() {
 fn deretan_kosong_tidak_bisa_difokuskan_dan_tidak_panik() {
     let f = fonts();
     let t = tema();
-    let tree = pohon(tabs(&f, &t, []).segmented().label("Kosong"));
+    let tree = pohon(tabs_in(&f, &t, []).segmented().label("Kosong"));
     let d = daftar(&tree);
     assert!(d.is_empty());
     assert!(d.tab_rects().is_empty());

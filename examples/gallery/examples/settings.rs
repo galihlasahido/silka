@@ -25,8 +25,8 @@ use silka_paint::Insets;
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, Theme};
 use silka_widgets::{
-    advance, button_variant, checkbox, overlay_layer, select, slider, switch, text, text_field,
-    ButtonVariant, Fonts, Select, SelectState,
+    advance, button_variant_in, checkbox_in, overlay_layer, select_in, slider_in, switch_in,
+    text_field_in, text_in, ButtonVariant, Fonts, Select, SelectState,
 };
 
 const TITLE: &str = "Settings";
@@ -129,7 +129,7 @@ fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     // Built at the root because its panel belongs to the overlay layer: the
     // trigger travels down into the pane, the panel travels nowhere.
-    let picker = select(fonts, &t, ACCENTS)
+    let picker = select_in(fonts, &t, ACCENTS)
         .label(ACCENT)
         .key("accent")
         .bind(accent);
@@ -150,7 +150,7 @@ fn sidebar(fonts: &Fonts, t: &Theme, section: Signal<Section>) -> View {
     let items: Vec<View> = Section::ALL
         .into_iter()
         .map(|s| {
-            button_variant(fonts, t, s.title(), ButtonVariant::Ghost)
+            button_variant_in(fonts, t, s.title(), ButtonVariant::Ghost)
                 .key(s.title())
                 .toggled(s == section.get())
                 .on_press(move || section.set(s))
@@ -184,7 +184,7 @@ fn pane(
         Section::General => vec![
             (
                 "Display name",
-                text_field(fonts, t, s.display_name.clone())
+                text_field_in(fonts, t, s.display_name.clone())
                     .key("display-name")
                     .label("Display name")
                     .placeholder("Your name")
@@ -193,7 +193,7 @@ fn pane(
             ),
             (
                 "Startup",
-                switch(fonts, t, "Launch at login")
+                switch_in(fonts, t, "Launch at login")
                     .key("launch")
                     .on(s.launch_at_login)
                     .on_change(move |v| settings.update(|s| s.launch_at_login = v))
@@ -201,7 +201,7 @@ fn pane(
             ),
             (
                 "Menu bar",
-                checkbox(fonts, t, "Show the icon")
+                checkbox_in(fonts, t, "Show the icon")
                     .key("menu-bar")
                     .checked(s.menu_bar_icon)
                     .on_toggle(move |v| settings.update(|s| s.menu_bar_icon = v))
@@ -212,7 +212,7 @@ fn pane(
             (ACCENT, picker.trigger()),
             (
                 "Text size",
-                slider(t, s.text_size)
+                slider_in(t, s.text_size)
                     .range(11.0..=20.0)
                     .step(1.0)
                     .label("Text size")
@@ -221,7 +221,7 @@ fn pane(
             ),
             (
                 "Motion",
-                switch(fonts, t, "Reduce motion")
+                switch_in(fonts, t, "Reduce motion")
                     .key("motion")
                     .on(s.reduce_motion)
                     .on_change(move |v| settings.update(|s| s.reduce_motion = v))
@@ -231,7 +231,7 @@ fn pane(
         Section::Network => vec![
             (
                 "Proxy",
-                switch(fonts, t, "Route through a proxy")
+                switch_in(fonts, t, "Route through a proxy")
                     .key("proxy")
                     .on(s.use_proxy)
                     .on_change(move |v| settings.update(|s| s.use_proxy = v))
@@ -239,7 +239,7 @@ fn pane(
             ),
             (
                 "Host",
-                text_field(fonts, t, s.proxy_host.clone())
+                text_field_in(fonts, t, s.proxy_host.clone())
                     .key("host")
                     .label("Host")
                     .disabled(!s.use_proxy)
@@ -248,7 +248,7 @@ fn pane(
             ),
             (
                 "Port",
-                text_field(fonts, t, s.proxy_port.clone())
+                text_field_in(fonts, t, s.proxy_port.clone())
                     .key("port")
                     .label("Port")
                     .disabled(!s.use_proxy)
@@ -259,14 +259,14 @@ fn pane(
     };
 
     let mut rows = vec![View::from(
-        text(fonts, section.title())
+        text_in(fonts, section.title())
             .font(FontToken::Title2)
             .text_color(ColorToken::Label)
             .single_line(),
     )];
     rows.extend(fields.into_iter().map(|(l, c)| field(fonts, t, l, c)));
     rows.push(View::from(
-        text(fonts, status(&s))
+        text_in(fonts, status(&s))
             .text_color(match issues(&s).is_empty() {
                 true => ColorToken::SecondaryLabel,
                 false => ColorToken::Destructive,
@@ -290,7 +290,7 @@ fn field(fonts: &Fonts, t: &Theme, label: &str, control: View) -> View {
         View::from(constrained(
             BoxConstraints::new(l, l, 0.0, f32::INFINITY),
             row([View::from(
-                text(fonts, label)
+                text_in(fonts, label)
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line()
                     .role(AccessRole::Container),

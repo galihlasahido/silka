@@ -1,0 +1,19 @@
+[package]
+name = "silka-dist"
+description = "Release distribution: update feeds, staged installs, and crash report files"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# The only edge this crate has into the framework: `recover::on_crash` is where
+# a panic report is handed over, and this crate turns that report into a file on
+# disk that survives the process (REKOMENDASI §9.7, SISA-PEKERJAAN §I5).
+silka-core.workspace = true
+
+# Deliberately nothing else. Everything in here — SHA-256, the JSON reader, the
+# version ordering — is arithmetic over bytes, and an updater that pulls a
+# dependency tree is an updater that has to be updated. See README.md for the
+# one thing this crate refuses to implement itself: signature verification.

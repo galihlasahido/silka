@@ -283,7 +283,7 @@ fn uji(theme: Theme, count: usize, hias: impl Fn(TableBuilder) -> TableBuilder +
         let untuk_sel = j.clone();
         let untuk_aksi = a.clone();
         let untuk_sort = u.clone();
-        let b = table(&fonts, &theme, st, kolom(), count, move |baris, kol| {
+        let b = table_in(&fonts, &theme, st, kolom(), count, move |baris, kol| {
             untuk_sel.catat(baris, kol);
             // A bare-bones cell: the table is under test, not its contents.
             View::from(fixed(40.0, 16.0).label(format!("sel {baris}:{kol}")))
@@ -970,7 +970,7 @@ fn tinggi_baris_dinaikkan_ke_hit_target_hig() {
     let mut padat = app(move |_cx| {
         let st = use_table_state();
         View::from(
-            table(&fonts, &theme, st, kolom(), 100, |b, k| {
+            table_in(&fonts, &theme, st, kolom(), 100, |b, k| {
                 View::from(fixed(40.0, 16.0).label(format!("sel {b}:{k}")))
             })
             .row_extent(20.0)

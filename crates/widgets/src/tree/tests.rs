@@ -336,7 +336,7 @@ where
         s.set(Some(st));
         let (untuk_baris, untuk_buka, untuk_tutup, untuk_aksi) =
             (b.clone(), o.clone(), c.clone(), a.clone());
-        let bangun = tree(&theme, st, sumber.clone(), move |row| {
+        let bangun = tree_in(&theme, st, sumber.clone(), move |row| {
             untuk_baris.borrow_mut().push(row.key as usize);
             // A bare-bones row: the tree is under test, not its contents.
             View::from(fixed(40.0, 16.0).label(row.label.to_string()))
@@ -589,12 +589,13 @@ fn buka_semua_sekaligus_bukan_animasi() {
 fn chevron_berputar_bukan_berganti_gambar() {
     let mut u = polos();
     let kotak = Rect::new(0.0, 0.0, 12.0, 12.0);
-    let tutup = chevron_dots(kotak, 1.5, 0.0, false);
-    let buka = chevron_dots(kotak, 1.5, 1.0, false);
-    assert!(!tutup.is_empty() && !buka.is_empty());
+    let tutup = chevron_path(kotak, 0.0, false);
+    let buka = chevron_path(kotak, 1.0, false);
+    assert_eq!(tutup.len(), 3, "dua ruas, satu perintah");
+    assert_eq!(buka.len(), 3);
     // Closed: the tip sits on the trailing side. Open: at the bottom.
-    let ujung_tutup = tutup[tutup.len() / 2];
-    let ujung_buka = buka[buka.len() / 2];
+    let ujung_tutup = tutup[1];
+    let ujung_buka = buka[1];
     assert!(
         ujung_tutup.x > kotak.center().x,
         "chevron tertutup tidak menunjuk ke kanan"
@@ -603,18 +604,18 @@ fn chevron_berputar_bukan_berganti_gambar() {
         ujung_buka.y > kotak.center().y,
         "chevron terbuka tidak menunjuk ke bawah"
     );
-    // Every stamp stays inside its box, at every angle.
+    // Every vertex stays inside its box, at every angle.
     for i in 0..=10 {
-        for p in chevron_dots(kotak, 1.5, i as f32 / 10.0, false) {
+        for p in chevron_path(kotak, i as f32 / 10.0, false) {
             assert!(
                 p.x >= -0.01 && p.x <= 12.01 && p.y >= -0.01 && p.y <= 12.01,
-                "stempel keluar kotak di progress {i}: {p:?}"
+                "jalur keluar kotak di progress {i}: {p:?}"
             );
         }
     }
     // In a mirrored layout it points the other way.
-    let rtl = chevron_dots(kotak, 1.5, 0.0, true);
-    assert!(rtl[rtl.len() / 2].x < kotak.center().x);
+    let rtl = chevron_path(kotak, 0.0, true);
+    assert!(rtl[1].x < kotak.center().x);
 
     // And in the tree itself the rotation really is a spring.
     u.klik_mentah(u.titik_chevron(0));
@@ -1016,7 +1017,7 @@ fn tinggi_baris_dinaikkan_ke_batas_hig_untuk_pohon_yang_bisa_dipilih() {
     let rt = silka_core::signals::Runtime::new();
     let st = TreeState::new(&rt);
     let t = Theme::cupertino(Appearance::Dark);
-    let b = tree(&t, st, kecil(3, 0), |_| View::from(fixed(10.0, 10.0)))
+    let b = tree_in(&t, st, kecil(3, 0), |_| View::from(fixed(10.0, 10.0)))
         .no_selection()
         .row_extent(20.0);
     assert_eq!(b.extent_final(), 20.0);

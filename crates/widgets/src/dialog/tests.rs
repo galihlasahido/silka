@@ -173,7 +173,7 @@ fn susunan_bawaan_datang_dari_platform_bukan_dari_pemanggil() {
     // And the builder really does use it.
     let f = fonts();
     let t = tema();
-    let d = dialog(&f, &t, "Judul")
+    let d = dialog_in(&f, &t, "Judul")
         .confirm("Simpan", || {})
         .cancel("Batal", || {});
     assert_eq!(nama(&d.arranged()), nama(&harapan.arrange(d.arranged())));
@@ -186,7 +186,7 @@ fn urutan_visual_adalah_urutan_tab() {
     let f = fonts();
     let t = tema();
     let tree = buka(
-        dialog(&f, &t, "Simpan perubahan?")
+        dialog_in(&f, &t, "Simpan perubahan?")
             .order(ButtonOrder::ConfirmLast)
             .confirm("Simpan", || {})
             .cancel("Batal", || {}),
@@ -216,7 +216,7 @@ fn panel_berada_di_tengah_layer_dengan_lebar_token() {
     let f = fonts();
     let t = tema();
     let tree = buka(
-        dialog(&f, &t, "Simpan perubahan?")
+        dialog_in(&f, &t, "Simpan perubahan?")
             .message("Perubahan yang belum disimpan akan hilang.")
             .confirm("Simpan", || {})
             .cancel("Batal", || {}),
@@ -240,7 +240,7 @@ fn panel_menyempit_di_window_yang_lebih_sempit_dari_dialognya() {
     reconcile(
         &mut tree,
         overlay_layer(fixed(sempit.width, sempit.height)).overlay(
-            dialog(&f, &t, "Judul")
+            dialog_in(&f, &t, "Judul")
                 .message("Pesan yang cukup panjang supaya harus dibungkus.")
                 .open(true)
                 .confirm("Ok", || {}),
@@ -259,7 +259,7 @@ fn panel_menyempit_di_window_yang_lebih_sempit_dari_dialognya() {
 fn dialog_tanpa_aksi_tidak_menyisakan_baris_tombol_kosong() {
     let f = fonts();
     let t = tema();
-    let tree = buka(dialog(&f, &t, "Menghubungkan…").message("Mohon tunggu."));
+    let tree = buka(dialog_in(&f, &t, "Menghubungkan…").message("Mohon tunggu."));
     let a11y = tree.access_tree(None);
     assert!(
         !a11y
@@ -354,7 +354,7 @@ fn return_menjalankan_tombol_default_dari_kontrol_lain_di_dalam_dialog() {
     // exist yet; see `KolomPalsu`).
     let kolom = kolom_palsu("Nama berkas");
     let mut tree = buka(
-        dialog(&f, &t, "Simpan perubahan?")
+        dialog_in(&f, &t, "Simpan perubahan?")
             .content(kolom)
             .confirm("Simpan", tulis_simpan)
             .cancel("Batal", tulis_batal),
@@ -385,7 +385,7 @@ fn tombol_yang_terfokus_menang_atas_tombol_default() {
     let (simpan, tulis_simpan) = cacah();
     let (batal, tulis_batal) = cacah();
     let mut tree = buka(
-        dialog(&f, &t, "Simpan perubahan?")
+        dialog_in(&f, &t, "Simpan perubahan?")
             .confirm("Simpan", tulis_simpan)
             .cancel("Batal", tulis_batal),
     );
@@ -411,7 +411,7 @@ fn return_tanpa_fokus_ditangani_jaring_pengaman() {
     let f = fonts();
     let t = tema();
     let (simpan, tulis) = cacah();
-    let mut tree = buka(dialog(&f, &t, "Simpan?").confirm("Simpan", tulis));
+    let mut tree = buka(dialog_in(&f, &t, "Simpan?").confirm("Simpan", tulis));
 
     let mut router = InputRouter::new();
     // With nothing focused, the key event only reaches the root of the tree…
@@ -433,7 +433,7 @@ fn return_tidak_menyentuh_dialog_yang_tertutup() {
     let (simpan, tulis) = cacah();
     let mut tree = pohon(
         overlay_layer(fixed(LAYAR.width, LAYAR.height)).overlay(
-            dialog(&f, &t, "Simpan?")
+            dialog_in(&f, &t, "Simpan?")
                 .open(false)
                 .confirm("Simpan", tulis),
         ),
@@ -451,7 +451,7 @@ fn aksi_merusak_tidak_pernah_dijalankan_return() {
     let (hapus, tulis_hapus) = cacah();
     let (batal, tulis_batal) = cacah();
     let mut tree = buka(
-        alert(&f, &t, "Hapus 3 berkas?")
+        alert_in(&f, &t, "Hapus 3 berkas?")
             .destructive("Hapus", tulis_hapus)
             .cancel("Batal", tulis_batal),
     );
@@ -475,7 +475,7 @@ fn esc_menjalankan_aksi_batal() {
     let t = tema();
     let (batal, tulis) = cacah();
     let mut tree = buka(
-        dialog(&f, &t, "Simpan perubahan?")
+        dialog_in(&f, &t, "Simpan perubahan?")
             .confirm("Simpan", || {})
             .cancel("Batal", tulis),
     );
@@ -498,7 +498,7 @@ fn on_dismiss_eksplisit_mendahului_aksi_batal() {
     let (batal, tulis_batal) = cacah();
     let (tutup, tulis_tutup) = cacah();
     let mut tree = buka(
-        dialog(&f, &t, "Judul")
+        dialog_in(&f, &t, "Judul")
             .cancel("Batal", tulis_batal)
             .on_dismiss(tulis_tutup),
     );
@@ -513,7 +513,7 @@ fn tombol_bisa_diaktifkan_keyboard_lewat_space() {
     let f = fonts();
     let t = tema();
     let (simpan, tulis) = cacah();
-    let mut tree = buka(dialog(&f, &t, "Simpan?").confirm("Simpan", tulis));
+    let mut tree = buka(dialog_in(&f, &t, "Simpan?").confirm("Simpan", tulis));
 
     let mut router = InputRouter::new();
     // The first Tab lands on the dialog itself (where a modal takes focus,
@@ -538,14 +538,14 @@ fn klik_di_luar_menutup_dialog_tapi_tidak_menutup_alert() {
     let luar = Point::new(8.0, 8.0);
 
     let (n, tulis) = cacah();
-    let mut tree = buka(dialog(&f, &t, "Judul").cancel("Batal", tulis));
+    let mut tree = buka(dialog_in(&f, &t, "Judul").cancel("Batal", tulis));
     let mut router = InputRouter::new();
     router.dispatch(&mut tree, &tekan(luar));
     router.dispatch(&mut tree, &lepas(luar));
     assert_eq!(n.get(), 1, "dialog shadcn: klik luar = batal");
 
     let (n, tulis) = cacah();
-    let mut tree = buka(alert(&f, &t, "Hapus?").cancel("Batal", tulis));
+    let mut tree = buka(alert_in(&f, &t, "Hapus?").cancel("Batal", tulis));
     let mut router = InputRouter::new();
     router.dispatch(&mut tree, &tekan(luar));
     router.dispatch(&mut tree, &lepas(luar));
@@ -564,7 +564,7 @@ fn klik_tombol_menjalankan_aksinya_lewat_lapisan_input() {
     let f = fonts();
     let t = tema();
     let (simpan, tulis) = cacah();
-    let mut tree = buka(dialog(&f, &t, "Simpan?").confirm("Simpan", tulis));
+    let mut tree = buka(dialog_in(&f, &t, "Simpan?").confirm("Simpan", tulis));
 
     let kotak = tree
         .access_tree(None)
@@ -586,7 +586,7 @@ fn dialog_punya_peran_nama_dan_aksi_bagi_screen_reader() {
     let f = fonts();
     let t = tema();
     let tree = buka(
-        dialog(&f, &t, "Simpan perubahan?")
+        dialog_in(&f, &t, "Simpan perubahan?")
             .message("Perubahan yang belum disimpan akan hilang.")
             .confirm("Simpan", || {})
             .cancel("Batal", || {}),
@@ -628,7 +628,7 @@ fn konten_di_belakang_dialog_benar_benar_inert() {
     let t = tema();
     let konten = silka_core::view::interactive(fixed(120.0, 44.0)).label("Di belakang");
     let mut tree = pohon(
-        overlay_layer(konten).overlay(dialog(&f, &t, "Judul").open(true).confirm("Ok", || {})),
+        overlay_layer(konten).overlay(dialog_in(&f, &t, "Judul").open(true).confirm("Ok", || {})),
     );
     settle(&mut tree);
     tree.flush_layout();
@@ -650,7 +650,8 @@ fn tombol_mati_dibacakan_dimmed_dan_tidak_bisa_diklik() {
     let t = tema();
     let (n, tulis) = cacah();
     let mut tree = buka(
-        dialog(&f, &t, "Judul").action(action("Simpan").confirm().on_press(tulis).disabled(true)),
+        dialog_in(&f, &t, "Judul")
+            .action(action("Simpan").confirm().on_press(tulis).disabled(true)),
     );
 
     let a11y = tree.access_tree(None);
@@ -673,7 +674,7 @@ fn hit_target_setiap_tombol_minimal_44pt() {
     let f = fonts();
     let t = tema();
     let tree = buka(
-        dialog(&f, &t, "Judul")
+        dialog_in(&f, &t, "Judul")
             .confirm("Ok", || {})
             .cancel("Batal", || {}),
     );
@@ -699,7 +700,7 @@ fn seluruh_warna_dan_sudut_datang_dari_token_di_kedua_preset() {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let t = Theme::new(preset, appearance);
             let mut tree = buka(
-                dialog(&f, &t, "Simpan perubahan?")
+                dialog_in(&f, &t, "Simpan perubahan?")
                     .message("Perubahan yang belum disimpan akan hilang.")
                     .confirm("Simpan", || {})
                     .cancel("Batal", || {}),
@@ -757,7 +758,7 @@ fn dark_mode_mengganti_warna_panel_tanpa_menggeser_geometrinya() {
     let ukur = |appearance| {
         let t = Theme::cupertino(appearance);
         let mut tree = buka(
-            dialog(&f, &t, "Judul")
+            dialog_in(&f, &t, "Judul")
                 .message("Pesan.")
                 .confirm("Ok", || {}),
         );
@@ -805,7 +806,7 @@ fn dialog_yang_baru_terbuka_bergerak_alih_alih_melompat() {
     let t = tema();
     let mut tree = pohon(
         overlay_layer(fixed(LAYAR.width, LAYAR.height))
-            .overlay(dialog(&f, &t, "Judul").open(true).confirm("Ok", || {})),
+            .overlay(dialog_in(&f, &t, "Judul").open(true).confirm("Ok", || {})),
     );
     let id = entri(&tree);
     let mulai = panel(&tree).origin;
@@ -823,7 +824,7 @@ fn menutup_di_tengah_animasi_buka_membawa_kecepatan() {
     let t = tema();
     let mut tree = pohon(
         overlay_layer(fixed(LAYAR.width, LAYAR.height))
-            .overlay(dialog(&f, &t, "Judul").open(true).confirm("Ok", || {})),
+            .overlay(dialog_in(&f, &t, "Judul").open(true).confirm("Ok", || {})),
     );
     let id = entri(&tree);
     let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
@@ -850,7 +851,7 @@ fn reduced_motion_membuang_pantulan_tanpa_membuang_gerakan() {
     let jalankan = |motion| {
         let mut tree = pohon(
             overlay_layer(fixed(LAYAR.width, LAYAR.height)).overlay(
-                dialog(&f, &t, "Judul")
+                dialog_in(&f, &t, "Judul")
                     // The bounciest spring: if reduced-motion is right, even
                     // this one must not overshoot its target.
                     .spring(Spring::bouncy())

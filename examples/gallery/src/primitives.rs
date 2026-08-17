@@ -14,7 +14,7 @@
 //!
 //! ```text
 //! // before
-//! text(fonts, judul)
+//! text_in(fonts, judul)
 //!     .size(t.typography.caption1.size)
 //!     .weight(FontWeight::SEMIBOLD)
 //!     .tracking(t.typography.caption1.tracking)
@@ -22,7 +22,7 @@
 //!     .single_line()
 //!
 //! // after
-//! text(fonts, judul)
+//! text_in(fonts, judul)
 //!     .font(FontToken::Caption1)
 //!     .font_semibold()
 //!     .text_color(ColorToken::TertiaryLabel)
@@ -50,7 +50,7 @@ use silka_paint::{CornerStyle, Corners};
 #[cfg(test)]
 use silka_theme::TypeStyle;
 use silka_theme::{ColorToken, FontToken, RadiusToken, ShadowToken, Theme};
-use silka_widgets::{text, Fonts};
+use silka_widgets::{text_in, Fonts};
 
 /// The page title.
 pub const JUDUL: &str = "Teks & kontainer";
@@ -104,14 +104,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .gap_5()
         .p_8()
         .child(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .font(FontToken::Title2)
                 .font_semibold()
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text(
+            text_in(
                 fonts,
                 "Dua primitif Tier 0 yang dipakai semua komponen lain: satu \
                  baris teks yang mengukur dirinya sendiri, dan satu kotak yang \
@@ -132,7 +132,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
 /// A section heading.
 fn judul_bagian(fonts: &Fonts, judul: &str) -> View {
-    text(fonts, judul)
+    text_in(fonts, judul)
         .font(FontToken::Caption1)
         .font_semibold()
         .text_color(ColorToken::TertiaryLabel)
@@ -151,13 +151,13 @@ fn spesimen(fonts: &Fonts) -> View {
                 .cross(CrossAlign::Baseline)
                 .gap_3()
                 .child(
-                    text(fonts, token.name())
+                    text_in(fonts, token.name())
                         .text_xs()
                         .text_color(ColorToken::TertiaryLabel)
                         .single_line(),
                 )
                 .child(
-                    text(fonts, CONTOH)
+                    text_in(fonts, CONTOH)
                         // One call for size, line height, weight and tracking:
                         // the four properties of a typographic role travel
                         // together.
@@ -181,7 +181,7 @@ fn kartu_kartu(fonts: &Fonts, t: &Theme) -> View {
                 .items_center()
                 .gap_3()
                 .child(
-                    text(fonts, radius.name())
+                    text_in(fonts, radius.name())
                         .text_xs()
                         .text_color(ColorToken::TertiaryLabel)
                         .single_line(),

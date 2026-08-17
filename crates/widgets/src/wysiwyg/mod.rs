@@ -10,7 +10,7 @@
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! let naskah = rt.signal(Document::from_plain("Halo dunia"));
 //!
-//! wysiwyg(&fonts, &t, naskah.get())
+//! wysiwyg_in(&fonts, &t, naskah.get())
 //!     .placeholder("Tulis sesuatu…")
 //!     .label("Naskah")
 //!     .auto_grow(6, 18)
@@ -86,7 +86,7 @@ use silka_theme::Theme;
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
-use crate::scroll_view::{self, scroll_view, ScrollView, Scrollbar};
+use crate::scroll_view::{self, scroll_view_in, ScrollView, Scrollbar};
 use crate::text_area::{AreaLink, FrameStyle, TextAreaFrameProps};
 
 pub use body::WysiwygBody;
@@ -102,7 +102,7 @@ pub use state::{
     ClipCallback, Clipping, DocumentCallback, EditorCommand, EditorHandle, EditorSnapshot,
     StateCallback,
 };
-pub use toolbar::{link_dialog, toolbar, LinkDialog, Toolbar};
+pub use toolbar::{link_dialog, link_dialog_in, toolbar, toolbar_in, LinkDialog, Toolbar};
 
 use body::BodyConfig;
 
@@ -242,12 +242,32 @@ pub struct Wysiwyg {
     handle: EditorHandle,
 }
 
+/// The rich text editor — `wysiwyg_editor` (`KOMPONEN.md` Tier 6).
+///
+/// ```
+/// use silka_widgets::{wysiwyg, Document};
+///
+/// let editor = wysiwyg(Document::from_plain("Hello"))
+///     .placeholder("Write…")
+///     .rows(8);
+/// # let _ = editor;
+/// ```
+///
+/// Use [`wysiwyg_in`] outside a build pass.
+pub fn wysiwyg(document: Document) -> Wysiwyg {
+    wysiwyg_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        document,
+    )
+}
+
 /// A rich text editor — the `wysiwyg_editor` component (`KOMPONEN.md` Tier 6).
 ///
 /// Every value comes from `theme`; `fonts` is the application's text engine.
 /// The default is a ten-row box that scrolls, with a toolbar the application
 /// mounts next to it ([`mod@toolbar`]).
-pub fn wysiwyg(fonts: &Fonts, theme: &Theme, document: Document) -> Wysiwyg {
+pub fn wysiwyg_in(fonts: &Fonts, theme: &Theme, document: Document) -> Wysiwyg {
     let t = theme;
     let link = AreaLink::new();
     let handle = EditorHandle::new();
@@ -465,7 +485,7 @@ impl From<Wysiwyg> for View {
         // banding, the auto-hiding scrollbar, and the working `SCROLL` action
         // all come from the Tier 1 widget. It is not focusable here because the
         // editing body already is: one editor, one Tab stop.
-        let gulir = scroll_view(&e.theme, isi)
+        let gulir = scroll_view_in(&e.theme, isi)
             .vertical()
             .scrollbar(e.scrollbar)
             .line_height(baris)

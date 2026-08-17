@@ -48,7 +48,8 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    alert, button, button_variant, dialog, overlay_layer, text, ButtonOrder, ButtonVariant, Fonts,
+    alert_in, button_in, button_variant_in, dialog_in, overlay_layer, text_in, ButtonOrder,
+    ButtonVariant, Fonts,
 };
 
 /// The page title.
@@ -110,7 +111,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     overlay_layer(konten(fonts, &t, buka, jawaban))
         .overlay(
-            dialog(fonts, &t, JUDUL_SIMPAN)
+            dialog_in(fonts, &t, JUDUL_SIMPAN)
                 .message(
                     "Dokumen ini punya perubahan yang belum disimpan. \
                      Menutupnya sekarang akan membuang perubahan itu.",
@@ -123,14 +124,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .overlay(
             // A destructive alert: clicking outside does not close it, and
             // Return never runs "Hapus" (HIG).
-            alert(fonts, &t, JUDUL_HAPUS)
+            alert_in(fonts, &t, JUDUL_HAPUS)
                 .message("Berkas yang dihapus tidak bisa dikembalikan.")
                 .open(buka.get() == Buka::Hapus)
                 .cancel("Batal", jawab("Batal"))
                 .destructive("Hapus", jawab("Hapus")),
         )
         .overlay(
-            dialog(fonts, &t, JUDUL_WINDOWS)
+            dialog_in(fonts, &t, JUDUL_WINDOWS)
                 .message(
                     "Susunan yang sama dipaksa ke konvensi Windows: tombol \
                      default di kiri, batal di kanannya.",
@@ -147,7 +148,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>) -> View {
     column([
         View::from(
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -155,7 +156,7 @@ fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>)
                 .single_line(),
         ),
         View::from(
-            text(
+            text_in(
                 fonts,
                 "Modal dengan backdrop dim di atas sistem overlay yang sama \
                  dengan popover dan toast. Urutan tombolnya mengikuti konvensi \
@@ -167,20 +168,22 @@ fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>)
             .max_width(t.space(120.0)),
         ),
         View::from(
-            text(fonts, format!("Jawaban terakhir: {}", jawaban.get()))
+            text_in(fonts, format!("Jawaban terakhir: {}", jawaban.get()))
                 .size(t.typography.callout.size)
                 .color(t.color.tertiary_label)
                 .single_line(),
         ),
         View::from(
             row([
-                View::from(button(fonts, t, BUKA_SIMPAN).on_press(move || buka.set(Buka::Simpan))),
                 View::from(
-                    button_variant(fonts, t, BUKA_HAPUS, ButtonVariant::Destructive)
+                    button_in(fonts, t, BUKA_SIMPAN).on_press(move || buka.set(Buka::Simpan)),
+                ),
+                View::from(
+                    button_variant_in(fonts, t, BUKA_HAPUS, ButtonVariant::Destructive)
                         .on_press(move || buka.set(Buka::Hapus)),
                 ),
                 View::from(
-                    button_variant(fonts, t, BUKA_WINDOWS, ButtonVariant::Secondary)
+                    button_variant_in(fonts, t, BUKA_WINDOWS, ButtonVariant::Secondary)
                         .on_press(move || buka.set(Buka::Windows)),
                 ),
             ])

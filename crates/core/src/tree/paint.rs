@@ -35,9 +35,12 @@
 //! when something is dirty (§3.5), so a cache at the root would always miss and
 //! merely copy the whole frame twice.
 
-use silka_paint::{Color, Command, Corners, GlyphRun, Point, Quad, Rect, Scene, ShadowPair, Size};
+use silka_paint::{
+    Color, Command, Corners, GlyphRun, ImageQuad, Layer, Point, Quad, Rect, Scene, ShadowPair,
+    Size, Stroke, Transform,
+};
 
-use super::arena::{NodeId, RenderTree};
+use super::arena::{NodeId, RenderTree, TextDirection};
 // Documentation links only: this pass's contract lives on `RenderNode`.
 #[allow(unused_imports)]
 use super::arena::RenderNode;
@@ -170,6 +173,12 @@ impl Decoration {
 pub(super) struct PaintCache {
     pub(super) origin: Point,
     pub(super) clip: Option<Rect>,
+    /// The transform in force when these commands were produced.
+    ///
+    /// Checked before reuse for the same reason `origin` is: the matrices inside
+    /// the commands are **absolute**, so a subtree that is being scaled by an
+    /// animation one level up must not replay last frame's matrix.
+    pub(super) transform: Transform,
     pub(super) commands: Vec<Command>,
 }
 
@@ -226,6 +235,14 @@ pub struct PaintCtx<'a> {
     /// True while a clip wrapper is open — the guard that keeps `paint_child`
     /// inside `paint_children` from opening a second wrapper.
     clip_open: bool,
+    /// The transform in force, **absolute** and already composed with every
+    /// enclosing one.
+    ///
+    /// Kept here rather than left to the backend because the `silka-paint`
+    /// contract says a `PushTransform` carries a finished matrix: a backend then
+    /// needs no matrix stack beyond remembering what to restore, and two backends
+    /// cannot disagree about composition order.
+    transform: Transform,
 }
 
 impl PaintCtx<'_> {
@@ -237,6 +254,68 @@ impl PaintCtx<'_> {
     /// This node's size from the last layout.
     pub fn size(&self) -> Size {
         self.size
+    }
+
+    /// The document's reading direction (§9.8).
+    ///
+    /// This is what a widget that draws its **own** geometry needs: the layout
+    /// system mirrors boxes on its own, but a chevron, an arrow, a slider's
+    /// filled track, or a scrollbar's side is drawn by hand and has to be
+    /// mirrored by hand. `AUDIT.md` P-6 is precisely the gap this closes — before
+    /// it, the direction was reachable while laying out and not while painting,
+    /// so every self-drawing widget had to copy it into its own props first.
+    ///
+    /// ```
+    /// use silka_core::tree::{
+    ///     AccessNode, AccessRole, BoxConstraints, LayoutCtx, PaintCtx, RenderNode, RenderTree,
+    ///     TextDirection,
+    /// };
+    /// use silka_paint::{Color, Quad, Rect, Size};
+    ///
+    /// /// A node that draws a small marker on the **leading** edge — left in
+    /// /// LTR, right in RTL — without being told which way round it is.
+    /// #[derive(Debug)]
+    /// struct Marker;
+    ///
+    /// impl RenderNode for Marker {
+    ///     fn layout(&mut self, _cx: &mut LayoutCtx<'_>, c: BoxConstraints) -> Size {
+    ///         c.constrain(Size::new(40.0, 10.0))
+    ///     }
+    ///     fn paint(&self, cx: &mut PaintCtx<'_>) {
+    ///         let w = cx.size().width;
+    ///         let x = if cx.is_rtl() { w - 4.0 } else { 0.0 };
+    ///         cx.quad(
+    ///             Quad::new(Rect::new(x, 0.0, 4.0, cx.size().height))
+    ///                 .background(Color::WHITE),
+    ///         );
+    ///     }
+    ///     fn access(&self, node: &mut AccessNode) {
+    ///         node.role = AccessRole::Image;
+    ///     }
+    /// }
+    ///
+    /// let mut tree = RenderTree::new();
+    /// let root = tree.root();
+    /// tree.insert_child(
+    ///     root,
+    ///     0,
+    ///     None,
+    ///     std::any::TypeId::of::<Marker>(),
+    ///     Box::new(Marker),
+    /// );
+    /// tree.set_direction(TextDirection::Rtl);
+    /// tree.layout(BoxConstraints::loose(Size::new(100.0, 100.0)));
+    /// let scene = tree.paint();
+    /// assert_eq!(scene.len(), 1);
+    /// ```
+    pub fn direction(&self) -> TextDirection {
+        self.tree.direction()
+    }
+
+    /// True while the document reads right-to-left — the short form of
+    /// [`PaintCtx::direction`].
+    pub fn is_rtl(&self) -> bool {
+        self.direction().is_rtl()
     }
 
     /// This node's box in **local** coordinates: always rooted at `(0, 0)`.
@@ -333,6 +412,182 @@ impl PaintCtx<'_> {
         self
     }
 
+    /// Draw a stroked polyline (local coordinates).
+    ///
+    /// A real line — width, caps, joins — rather than a stack of boxes: one
+    /// command for the whole path, however many points it has.
+    ///
+    /// ```
+    /// use silka_core::tree::PaintCtx;
+    /// use silka_paint::{Color, LineCap, LineJoin, Point, Stroke};
+    ///
+    /// fn paint(cx: &mut PaintCtx<'_>, data: &[Point]) {
+    ///     let mut line = Stroke::with_capacity(Color::hex(0x0A84FF), 2.0, data.len())
+    ///         .cap(LineCap::Round)
+    ///         .join(LineJoin::Round);
+    ///     line.extend(data.iter().copied());
+    ///     cx.stroke(line);
+    /// }
+    /// # let _ = paint;
+    /// ```
+    pub fn stroke(&mut self, stroke: Stroke) -> &mut Self {
+        if !stroke.is_visible() {
+            return self;
+        }
+        let absolut = stroke.translated(self.origin);
+        // The bounds include the stroke's own width and its mitre allowance, so a
+        // line whose vertices sit just outside the clip is not dropped while its
+        // edge would still have been visible.
+        if let Some(b) = absolut.bounds() {
+            if terlihat(b, self.clip) {
+                self.scene.push(absolut);
+            }
+        }
+        self
+    }
+
+    /// Draw a bitmap (local coordinates).
+    ///
+    /// The handle comes from an [`silka_paint::ImageSource`] the application owns;
+    /// this layer never learns what a file or a decoder is.
+    ///
+    /// ```
+    /// use silka_core::tree::PaintCtx;
+    /// use silka_paint::{CornerStyle, Corners, ImageId, ImageQuad, Rect};
+    ///
+    /// fn paint(cx: &mut PaintCtx<'_>, avatar: ImageId) {
+    ///     cx.image(
+    ///         ImageQuad::new(Rect::new(0.0, 0.0, 32.0, 32.0), avatar)
+    ///             // radius_full: an avatar is a circle, masked by the same
+    ///             // superellipse that rounds a box.
+    ///             .corners(Corners::uniform(9999.0, CornerStyle::Arc)),
+    ///     );
+    /// }
+    /// # let _ = paint;
+    /// ```
+    pub fn image(&mut self, image: ImageQuad) -> &mut Self {
+        let absolut = ImageQuad {
+            rect: image.rect.translated(self.origin),
+            ..image
+        }
+        .normalized();
+        if absolut.is_visible() && terlihat(absolut.rect, self.clip) {
+            self.scene.push(absolut);
+        }
+        self
+    }
+
+    /// Draw `f`'s commands — **children included** — under an affine transform.
+    ///
+    /// `transform` is expressed in this node's **local** coordinates, so a widget
+    /// writes `Transform::scale_around(bounds.center(), 0.96, 0.96)` and never has
+    /// to know where on screen it ended up. Composition with any enclosing
+    /// transform happens here.
+    ///
+    /// This is what makes "scale-on-press" a real transform rather than a
+    /// background box that deflates while its label stays put: everything drawn
+    /// inside the closure shrinks together.
+    ///
+    /// An identity transform emits no command at all, and a wrapper that turns
+    /// out to contain nothing is rolled back — so an animation at rest is free.
+    ///
+    /// ```
+    /// use silka_core::tree::PaintCtx;
+    /// use silka_paint::{Color, Quad, Transform};
+    ///
+    /// fn paint(cx: &mut PaintCtx<'_>, press: f32) {
+    ///     let bounds = cx.local_bounds();
+    ///     let scale = 1.0 - 0.04 * press;
+    ///     cx.with_transform(Transform::scale_around(bounds.center(), scale, scale), |cx| {
+    ///         cx.quad(Quad::new(bounds).background(Color::hex(0x0A84FF)));
+    ///         cx.paint_children();
+    ///     });
+    /// }
+    /// # let _ = paint;
+    /// ```
+    pub fn with_transform(&mut self, transform: Transform, f: impl FnOnce(&mut Self)) -> &mut Self {
+        if transform.is_identity() {
+            f(self);
+            return self;
+        }
+        // Local → absolute → enclosing: the node's own origin is undone, the
+        // local matrix applied, the origin put back, and only then is whatever
+        // transform is already in force applied on top.
+        let absolut = Transform::translate(-self.origin.x, -self.origin.y)
+            .then(transform)
+            .then(Transform::translate(self.origin.x, self.origin.y))
+            .then(self.transform);
+        if !absolut.is_invertible() {
+            // Collapsed to zero area, or fed a NaN by a spring that overshot:
+            // nothing inside can produce a pixel (§9.7).
+            return self;
+        }
+
+        let sebelum = self.scene.len();
+        self.scene.push(Command::PushTransform(absolut));
+        let simpan = self.transform;
+        self.transform = absolut;
+        f(self);
+        self.transform = simpan;
+        if self.scene.len() == sebelum + 1 {
+            self.scene.truncate(sebelum);
+        } else {
+            self.scene.push(Command::PopTransform);
+        }
+        self
+    }
+
+    /// Draw `f`'s commands into a layer, then composite it.
+    ///
+    /// Group opacity and blur, plus a true repaint boundary on the GPU side. The
+    /// layer's bounds are given in **local** coordinates.
+    ///
+    /// A layer that changes nothing ([`Layer::is_pass_through`]) is drawn inline —
+    /// no texture, no extra render pass — so wrapping a subtree defensively costs
+    /// nothing.
+    ///
+    /// ```
+    /// use silka_core::tree::PaintCtx;
+    /// use silka_paint::{Color, Layer, Quad};
+    ///
+    /// fn paint(cx: &mut PaintCtx<'_>, fade: f32) {
+    ///     let bounds = cx.local_bounds();
+    ///     // A panel fading as ONE group: overlapping children do not show
+    ///     // through each other, which per-box opacity cannot avoid.
+    ///     cx.with_layer(Layer::new(bounds).opacity(fade), |cx| {
+    ///         cx.quad(Quad::new(bounds).background(Color::hex(0x2C2C2E)));
+    ///         cx.paint_children();
+    ///     });
+    /// }
+    /// # let _ = paint;
+    /// ```
+    pub fn with_layer(&mut self, layer: Layer, f: impl FnOnce(&mut Self)) -> &mut Self {
+        // The composite happens after the contents are rendered, in absolute
+        // space, so the bounds travel through the transform in force.
+        let absolut = Layer {
+            bounds: self
+                .transform
+                .map_rect(layer.bounds.translated(self.origin)),
+            ..layer
+        };
+        if !absolut.is_visible() {
+            return self;
+        }
+        if absolut.is_pass_through() {
+            f(self);
+            return self;
+        }
+        let sebelum = self.scene.len();
+        self.scene.push(Command::PushLayer(absolut));
+        f(self);
+        if self.scene.len() == sebelum + 1 {
+            self.scene.truncate(sebelum);
+        } else {
+            self.scene.push(Command::PopLayer);
+        }
+        self
+    }
+
     // -- children ----------------------------------------------------------
 
     /// This node's children, in draw order.
@@ -387,7 +642,14 @@ impl PaintCtx<'_> {
     }
 
     fn gambar_anak(&mut self, child: NodeId) {
-        paint_node(self.tree, self.scene, child, self.origin, self.child_clip);
+        paint_node(
+            self.tree,
+            self.scene,
+            child,
+            self.origin,
+            self.child_clip,
+            self.transform,
+        );
     }
 
     /// Wrap the children's drawing in clip commands when this node clips its
@@ -445,7 +707,7 @@ fn terlihat(rect: Rect, clip: Option<Rect>) -> bool {
 /// Run the paint pass over the whole tree into `scene`.
 pub(super) fn paint_tree(tree: &mut RenderTree, scene: &mut Scene) {
     let root = tree.root();
-    paint_node(tree, scene, root, Point::ZERO, None);
+    paint_node(tree, scene, root, Point::ZERO, None, Transform::IDENTITY);
 }
 
 fn paint_node(
@@ -454,6 +716,7 @@ fn paint_node(
     id: NodeId,
     parent_origin: Point,
     clip: Option<Rect>,
+    transform: Transform,
 ) {
     let Some((offset, size, needs_paint, boundary)) = tree.paint_geometry(id) else {
         return;
@@ -465,7 +728,7 @@ fn paint_node(
     let cacheable = boundary && tree.parent(id).is_some();
     if cacheable && !needs_paint {
         if let Some(cache) = tree.paint_cache(id) {
-            if cache.origin == origin && cache.clip == clip {
+            if cache.origin == origin && cache.clip == clip && cache.transform == transform {
                 scene.push_all(&cache.commands);
                 return;
             }
@@ -508,6 +771,7 @@ fn paint_node(
             child_clip,
             clips,
             clip_open: false,
+            transform,
         };
         render.paint(&mut ctx);
     }
@@ -516,6 +780,7 @@ fn paint_node(
     let cache = cacheable.then(|| PaintCache {
         origin,
         clip,
+        transform,
         commands: scene.commands()[awal..].to_vec(),
     });
     tree.finish_paint(id, cache);

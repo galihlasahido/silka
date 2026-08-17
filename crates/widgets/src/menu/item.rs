@@ -20,7 +20,7 @@ use silka_core::input::{
 use silka_core::scheduler::Dirty;
 use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
 use silka_core::view::ViewNode;
-use silka_paint::{Color, Corners, Insets, Point, Quad, Rect, Size};
+use silka_paint::{Color, Corners, Insets, LineCap, LineJoin, Point, Quad, Rect, Size, Stroke};
 
 use super::model::MenuMark;
 use super::state::MenuIntent;
@@ -322,18 +322,17 @@ impl RenderNode for MenuRowBox {
             let kotak = self.mark_rect(bounds);
             match self.mark {
                 Some(MenuMark::Check) => {
+                    // The same path a checkbox draws, as one stroke command:
+                    // the tick is a line, and now the paint layer can say so.
                     let tebal = (kotak.size.width / 7.0).max(1.0);
-                    for titik in crate::checkbox::check_dots(kotak, tebal, 1.0) {
-                        ctx.quad(
-                            Quad::new(Rect::new(
-                                titik.x - tebal / 2.0,
-                                titik.y - tebal / 2.0,
-                                tebal,
-                                tebal,
-                            ))
-                            .background(self.style.mark)
-                            .corners(Corners::uniform(tebal / 2.0, self.style.corners.style)),
-                        );
+                    let jalur = crate::checkbox::check_path(kotak, 1.0);
+                    if jalur.len() >= 2 {
+                        let mut goresan =
+                            Stroke::with_capacity(self.style.mark, tebal, jalur.len())
+                                .cap(LineCap::Round)
+                                .join(LineJoin::Round);
+                        goresan.extend(jalur);
+                        ctx.stroke(goresan);
                     }
                 }
                 Some(MenuMark::Radio) => {

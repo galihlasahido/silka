@@ -36,8 +36,8 @@ use silka_theme::Theme;
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 use crate::list::{ListMetrics, RowAction};
-use crate::scroll_view::{scroll_view, Scrollbar, ScrollbarStyle};
-use crate::text::text;
+use crate::scroll_view::{scroll_view_in, Scrollbar, ScrollbarStyle};
+use crate::text::text_in;
 
 use super::column::{CellAlign, Column, ColumnLayout, SortBy};
 use super::node::{
@@ -304,6 +304,23 @@ pub struct TableBuilder {
     spring: Spring,
 }
 
+/// A virtualized table — `table` (`KOMPONEN.md` Tier 5).
+///
+/// Use [`table_in`] outside a build pass.
+pub fn table<F>(state: TableState, columns: Vec<Column>, count: usize, cell: F) -> TableBuilder
+where
+    F: Fn(usize, usize) -> View + 'static,
+{
+    table_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        state,
+        columns,
+        count,
+        cell,
+    )
+}
+
 /// Virtualized table — the `table` component (`KOMPONEN.md` Tier 5).
 ///
 /// `cell` is called **only** for rows that are actually visible, so `count`
@@ -322,13 +339,13 @@ pub struct TableBuilder {
 /// let state = TableState::new(&rt);
 /// let columns = vec![col("No.").fixed(90.0), col("Amount").fixed(160.0).trailing()];
 ///
-/// table(&fonts, &t, state, columns, 100_000, |_row, _column| View::from(fixed(80.0, 20.0)))
+/// table_in(&fonts, &t, state, columns, 100_000, |_row, _column| View::from(fixed(80.0, 20.0)))
 ///     .row_extent(44.0)
 ///     .label("Transactions")
 ///     .striped()
 ///     .on_activate(|i| println!("open row {i}"));
 /// ```
-pub fn table<F>(
+pub fn table_in<F>(
     fonts: &Fonts,
     theme: &Theme,
     state: TableState,
@@ -605,10 +622,10 @@ impl TableBuilder {
     /// A header cell: the text plus room for the sort triangle.
     fn header_cell(&self, kolom: &ColumnLayout) -> View {
         let Some(def) = self.columns.get(kolom.source) else {
-            return pad(Insets::ZERO, crate::text::text(&self.fonts, "")).into();
+            return pad(Insets::ZERO, crate::text::text_in(&self.fonts, "")).into();
         };
         let t = &self.theme;
-        let judul = text(&self.fonts, def.title.clone())
+        let judul = text_in(&self.fonts, def.title.clone())
             .size(t.typography.footnote.size)
             .weight(FontWeight::SEMIBOLD)
             .tracking(t.typography.footnote.tracking)
@@ -733,7 +750,7 @@ impl TableBuilder {
         })
         .children(children);
 
-        let mut wadah = scroll_view(&self.theme, isi)
+        let mut wadah = scroll_view_in(&self.theme, isi)
             .background(self.container.background)
             .corners(self.container.corners)
             .border(self.container.border_width, self.container.border_color)

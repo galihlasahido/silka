@@ -32,6 +32,11 @@ window-vibrancy.workspace = true
 # window-vibrancy; versinya wajib sama dengan yang dipakai winit.
 raw-window-handle.workspace = true
 
+# Ekor native lanjutan (INTEGRASI-NATIVE §2, §5). Lintas platform, jadi didaftar
+# di sini; `keyring` TIDAK — lihat blok per-target di bawah.
+notify-rust.workspace = true
+notify.workspace = true
+
 # Vsync macOS: CADisplayLink lewat objc2 (§3.5), plus re-export escape hatch
 # `platform::macos` (§8). Di OS lain jalur ini tidak ada sama sekali —
 # fallback-nya `request_redraw` winit.
@@ -39,16 +44,45 @@ raw-window-handle.workspace = true
 objc2.workspace = true
 objc2-quartz-core.workspace = true
 # `NSGeometry` menambah NSPoint/NSRect — dibutuhkan reposisi traffic light.
-objc2-foundation = { workspace = true, features = ["NSGeometry"] }
+# `NSFileManager`/`NSURL`/`NSError` dipakai `trash` dan `recent` (§5);
+# `NSArray`/`NSData` dipakai drag source (§4).
+objc2-foundation = { workspace = true, features = [
+    "NSGeometry",
+    "NSArray",
+    "NSData",
+    "NSError",
+    "NSURL",
+    "NSFileManager",
+] }
 # Tambahan di atas fitur workspace, khusus pekerjaan titlebar (§1) dan
 # "reduce transparency" (§6): tombol traffic light adalah `NSButton`, dan
-# preferensi aksesibilitas dibaca dari `NSWorkspace`.
+# preferensi aksesibilitas dibaca dari `NSWorkspace`. Sisanya untuk ekor
+# native: drag source (§4), dock badge (§2), dan dokumen terakhir (§5).
 objc2-app-kit = { workspace = true, features = [
     "NSButton",
     "NSControl",
     "NSWorkspace",
     "NSAccessibility",
+    # Drag source (§4): sesi seret, item pasteboard, dan gambar previewnya.
+    "NSDragging",
+    "NSDraggingItem",
+    "NSDraggingSession",
+    "NSEvent",
+    "NSPasteboard",
+    "NSPasteboardItem",
+    "NSImage",
+    "NSImageRep",
+    "NSBitmapImageRep",
+    "NSGraphics",
+    # Dock badge (§2) dan dokumen terakhir (§5).
+    "NSDockTile",
+    "NSDocumentController",
 ] }
+
+# Keychain (§5). Fitur native disebut di workspace; Linux sengaja tidak
+# memakai crate ini sama sekali — lihat `credential.rs`.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+keyring.workspace = true
 
 # Escape hatch Windows (§8): windows-rs di-re-export apa adanya lewat
 # `platform::windows`, versi dikunci workspace.

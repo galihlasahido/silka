@@ -25,7 +25,9 @@ use silka_core::input::{
     PointerButton, PointerEvent, PointerPhase,
 };
 use silka_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
-use silka_paint::{Color, CornerRadii, CornerStyle, Corners, Insets, Point, Quad, Rect, Size};
+use silka_paint::{
+    Color, CornerRadii, Corners, Insets, LineCap, LineJoin, Point, Quad, Rect, Size, Stroke,
+};
 
 use crate::list::ListMetrics;
 use crate::table::{Selection, SelectionMode};
@@ -173,17 +175,10 @@ impl TreeStyle {
 // The chevron
 // ---------------------------------------------------------------------------
 
-/// Upper bound on the number of pen stamps in one chevron.
-///
-/// Not about quality but about guarantee: a chevron that is (through a custom
-/// theme or a bug) hundreds of points across must not turn one row into
-/// hundreds of draw commands.
-const MAX_CHEVRON_DOTS: usize = 24;
-
 /// The chevron's two arms, in units of the box side, pointing **trailing**.
 const CHEVRON_PATH: [(f32, f32); 3] = [(-0.18, -0.34), (0.20, 0.0), (-0.18, 0.34)];
 
-/// The pen centres that draw a disclosure chevron rotated by `progress`.
+/// The polyline of a disclosure chevron rotated by `progress`.
 ///
 /// `progress` 0 points along the reading direction (a closed node), 1 points
 /// straight down (an open one), and everything in between is the rotation
@@ -191,10 +186,12 @@ const CHEVRON_PATH: [(f32, f32); 3] = [(-0.18, -0.34), (0.20, 0.0), (-0.18, 0.34
 /// of a boolean.
 ///
 /// Pure, so the rotation can be tested without a GPU: at 0 the tip is on the
-/// trailing side, at 1 it is at the bottom, and at every value the stamps stay
-/// inside the box.
-pub fn chevron_dots(box_rect: Rect, stroke: f32, progress: f32, rtl: bool) -> Vec<Point> {
-    if stroke <= 0.0 || box_rect.size.is_empty() {
+/// trailing side, at 1 it is at the bottom, and at every value the path stays
+/// inside the box. The three points then go to a [`silka_paint::Stroke`]; this
+/// used to return a couple of dozen pen-stamp centres instead, because the paint
+/// layer had no stroke command.
+pub fn chevron_path(box_rect: Rect, progress: f32, rtl: bool) -> Vec<Point> {
+    if box_rect.size.is_empty() {
         return Vec::new();
     }
     let sisi = box_rect.size.min_side();
@@ -202,7 +199,7 @@ pub fn chevron_dots(box_rect: Rect, stroke: f32, progress: f32, rtl: bool) -> Ve
     let sudut = progress.clamp(0.0, 1.0) * core::f32::consts::FRAC_PI_2;
     let (sin, cos) = sudut.sin_cos();
 
-    let titik: Vec<Point> = CHEVRON_PATH
+    CHEVRON_PATH
         .iter()
         .map(|(x, y)| {
             let (x, y) = (x * sisi, y * sisi);
@@ -215,50 +212,7 @@ pub fn chevron_dots(box_rect: Rect, stroke: f32, progress: f32, rtl: bool) -> Ve
             let rx = if rtl { -rx } else { rx };
             Point::new(pusat.x + rx, pusat.y + ry)
         })
-        .collect();
-
-    let ruas: Vec<f32> = titik.windows(2).map(|w| jarak(w[0], w[1])).collect();
-    let total: f32 = ruas.iter().sum();
-    if total <= 0.0 {
-        return vec![titik[0]];
-    }
-    let langkah = (stroke * 0.35).max(total / MAX_CHEVRON_DOTS as f32);
-    let mut out = Vec::with_capacity((total / langkah) as usize + 2);
-    let mut d = 0.0;
-    while d < total {
-        out.push(pada_jalur(&titik, &ruas, d));
-        d += langkah;
-    }
-    out.push(*titik.last().expect("jalur chevron tidak pernah kosong"));
-    out
-}
-
-fn jarak(a: Point, b: Point) -> f32 {
-    ((b.x - a.x).powi(2) + (b.y - a.y).powi(2)).sqrt()
-}
-
-/// The point `d` along a polyline.
-fn pada_jalur(titik: &[Point], ruas: &[f32], d: f32) -> Point {
-    let mut sisa = d.max(0.0);
-    for (i, panjang) in ruas.iter().enumerate() {
-        if sisa <= *panjang || *panjang <= 0.0 {
-            let t = if *panjang > 0.0 { sisa / panjang } else { 0.0 };
-            return Point::new(
-                titik[i].x + (titik[i + 1].x - titik[i].x) * t,
-                titik[i].y + (titik[i + 1].y - titik[i].y) * t,
-            );
-        }
-        sisa -= panjang;
-    }
-    *titik.last().unwrap_or(&Point::ZERO)
-}
-
-/// A round-ended pen stamp.
-fn pena(rect: Rect, warna: Color) -> Quad {
-    Quad::new(rect).background(warna).corners(Corners::uniform(
-        rect.size.min_side() * 0.5,
-        CornerStyle::Arc,
-    ))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1463,14 +1417,18 @@ impl RenderNode for TreeRowBox {
             );
         }
 
-        if self.expandable && s.chevron.a > 0.0 {
+        if self.expandable && s.chevron.a > 0.0 && s.chevron_stroke > 0.0 {
             let kotak = self.chevron_rect();
-            let tebal = s.chevron_stroke;
-            for pusat in chevron_dots(kotak, tebal, self.rotate.position(), self.rtl) {
-                ctx.quad(pena(
-                    Rect::new(pusat.x - tebal / 2.0, pusat.y - tebal / 2.0, tebal, tebal),
-                    s.chevron,
-                ));
+            let jalur = chevron_path(kotak, self.rotate.position(), self.rtl);
+            if jalur.len() >= 2 {
+                // ONE stroke for the whole chevron, round-capped and
+                // round-jointed: the shape a pen stamped a couple of dozen times
+                // was only ever approximating.
+                let mut goresan = Stroke::with_capacity(s.chevron, s.chevron_stroke, jalur.len())
+                    .cap(LineCap::Round)
+                    .join(LineJoin::Round);
+                goresan.extend(jalur);
+                ctx.stroke(goresan);
             }
         }
         ctx.paint_children();

@@ -84,7 +84,7 @@ fn halaman(s: &Select) -> View {
 }
 
 fn select_uji(fonts: &Fonts, t: &Theme, state: SelectState) -> Select {
-    select(fonts, t, OPSI).label("Mata uang").state(state)
+    select_in(fonts, t, OPSI).label("Mata uang").state(state)
 }
 
 fn scene(tree: &mut RenderTree, t: &Theme) -> Scene {
@@ -250,8 +250,8 @@ fn hit_target_pemicu_dan_baris_minimal_44pt() {
 fn lebar_diukur_dari_pilihan_terpanjang() {
     let f = Fonts::bundled_only();
     let t = tema();
-    let pendek = select(&f, &t, ["A", "B"]);
-    let panjang = select(&f, &t, ["A", "Sebuah pilihan yang sangat panjang sekali"]);
+    let pendek = select_in(&f, &t, ["A", "B"]);
+    let panjang = select_in(&f, &t, ["A", "Sebuah pilihan yang sangat panjang sekali"]);
     assert!(
         panjang.width_value() > pendek.width_value(),
         "lebar harus mengikuti pilihan terpanjang: {} vs {}",
@@ -260,7 +260,7 @@ fn lebar_diukur_dari_pilihan_terpanjang() {
     );
 
     // An explicit width wins, and the trigger really is that wide.
-    let dipaksa = select(&f, &t, OPSI).width(320.0);
+    let dipaksa = select_in(&f, &t, OPSI).width(320.0);
     assert_eq!(dipaksa.width_value(), 320.0);
     let tree = pohon(sendiri(dipaksa.trigger()));
     assert_eq!(tree.size(pemicu(&tree)).width, 320.0);
@@ -460,7 +460,7 @@ impl Uji {
 
     fn select(&self) -> Select {
         let catat = self.dipilih.clone();
-        select(&self.fonts, &self.theme, OPSI)
+        select_in(&self.fonts, &self.theme, OPSI)
             .label("Mata uang")
             .bind(self.state)
             .max_visible(3)
@@ -671,7 +671,7 @@ fn select_mati_tidak_bisa_dibuka_dan_tidak_bisa_di_tab() {
     let t = tema();
     let dibuka = Rc::new(RefCell::new(0u32));
     let catat = dibuka.clone();
-    let s = select(&f, &t, OPSI)
+    let s = select_in(&f, &t, OPSI)
         .label("Mata uang")
         .selected(Some(0))
         .disabled(true)
@@ -839,7 +839,7 @@ fn daftar_panjang_dibatasi_tingginya_dan_bisa_digulir() {
     state.apply(SelectIntent::Open(Rect::default()), banyak.len(), 5);
     state.apply(SelectIntent::Highlight(19), banyak.len(), 5);
 
-    let s = select(&f, &t, banyak.clone())
+    let s = select_in(&f, &t, banyak.clone())
         .label("Panjang")
         .max_visible(5)
         .state(state);

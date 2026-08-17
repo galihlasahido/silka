@@ -50,6 +50,7 @@
 //! ```
 
 mod arena;
+mod boxes;
 mod constraints;
 mod interactive;
 #[cfg(test)]
@@ -69,6 +70,7 @@ mod tests;
 /// [`RenderNode`] contract; its home is [`crate::access`].
 pub use crate::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
 pub use arena::{AsAny, LayoutCtx, NodeId, RenderNode, RenderTree, TextDirection, TreeId};
+pub use boxes::{AlignBox, Alignment, AspectRatioBox, StackBox, StackFit};
 pub use constraints::BoxConstraints;
 pub use interactive::{FocusRing, Interactive, StateStyle};
 pub use paint::{Decoration, PaintCtx};

@@ -19,10 +19,10 @@
 //! ```
 //! # use silka_theme::{Appearance, Theme};
 //! # use silka_core::view::{column, fixed};
-//! use silka_widgets::scroll_view;
+//! use silka_widgets::scroll_view_in;
 //!
 //! # let t = Theme::cupertino(Appearance::Dark);
-//! let _ = scroll_view(&t, column((0..50).map(|_| fixed(320.0, 44.0))))
+//! let _ = scroll_view_in(&t, column((0..50).map(|_| fixed(320.0, 44.0))))
 //!     .label("Daftar transaksi");
 //! ```
 //!
@@ -52,12 +52,12 @@
 //! # use silka_paint::Size;
 //! # use silka_theme::{Appearance, Theme};
 //! # use std::time::Duration;
-//! use silka_widgets::scroll_view;
+//! use silka_widgets::scroll_view_in;
 //! use silka_widgets::scroll_view::{advance, nodes, scroll_to};
 //!
 //! # let t = Theme::cupertino(Appearance::Light);
 //! let mut tree = RenderTree::new();
-//! reconcile(&mut tree, scroll_view(&t, fixed(200.0, 2000.0)));
+//! reconcile(&mut tree, scroll_view_in(&t, fixed(200.0, 2000.0)));
 //! tree.layout(BoxConstraints::tight(Size::new(200.0, 400.0)));
 //!
 //! let sv = nodes(&tree)[0];
@@ -92,7 +92,7 @@ use silka_core::input::{
 use silka_core::scheduler::Dirty;
 use silka_core::tree::{
     Axis, BoxConstraints, Decoration, FocusRing, LayoutCtx, NodeId, PaintCtx, RenderNode,
-    RenderTree,
+    RenderTree, TextDirection,
 };
 use silka_core::view::{Builder, Decorated, View, ViewNode};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
@@ -273,6 +273,13 @@ pub struct ScrollView {
     last_scroll: Option<Duration>,
     /// The last position **the app asked for** through props (controlled).
     controlled: Option<f32>,
+    /// The reading direction from the last layout (§9.8).
+    ///
+    /// Stored here rather than read where it is needed, because the two places
+    /// that need it — drawing the scrollbar and hit-testing it — have no access
+    /// to [`LayoutCtx`], and a vertical scrollbar belongs on the **leading**
+    /// edge: right in LTR, left in RTL, the way every RTL platform draws it.
+    direction: TextDirection,
 }
 
 impl Default for ScrollView {
@@ -296,6 +303,7 @@ impl Default for ScrollView {
             corners: Corners::SHARP,
             focus_ring: None,
             label: None,
+            direction: TextDirection::Ltr,
             offset: default_offset_spring(Spring::smooth()),
             fade: SpringValue::new(0.0)
                 .with_spring(Spring::smooth())
@@ -517,7 +525,15 @@ impl ScrollView {
         match self.axis {
             Axis::Vertical => {
                 let w = tebal.min(s.width);
-                Rect::new(s.width - w, 0.0, w, s.height)
+                // The vertical bar changes sides with the reading direction; the
+                // horizontal one keeps its edge, because "bottom" is not
+                // mirrored by RTL.
+                let x = if self.direction.is_rtl() {
+                    0.0
+                } else {
+                    s.width - w
+                };
+                Rect::new(x, 0.0, w, s.height)
             }
             Axis::Horizontal => {
                 let h = tebal.min(s.height);
@@ -531,7 +547,14 @@ impl ScrollView {
         let s = self.viewport;
         let tebal = self.bar.thickness_at(self.expand.position()) + self.bar.margin * 2.0;
         match self.axis {
-            Axis::Vertical => Rect::new((s.width - tebal).max(0.0), 0.0, tebal, s.height),
+            Axis::Vertical => {
+                let x = if self.direction.is_rtl() {
+                    0.0
+                } else {
+                    (s.width - tebal).max(0.0)
+                };
+                Rect::new(x, 0.0, tebal, s.height)
+            }
             Axis::Horizontal => Rect::new(0.0, (s.height - tebal).max(0.0), s.width, tebal),
         }
     }
@@ -541,12 +564,14 @@ impl ScrollView {
         let s = self.viewport;
         let tebal = self.bar.thickness_at(self.expand.position());
         match self.axis {
-            Axis::Vertical => Rect::new(
-                (s.width - self.bar.margin - tebal).max(0.0),
-                t.offset,
-                tebal,
-                t.length,
-            ),
+            Axis::Vertical => {
+                let x = if self.direction.is_rtl() {
+                    self.bar.margin
+                } else {
+                    (s.width - self.bar.margin - tebal).max(0.0)
+                };
+                Rect::new(x, t.offset, tebal, t.length)
+            }
             Axis::Horizontal => Rect::new(
                 t.offset,
                 (s.height - self.bar.margin - tebal).max(0.0),
@@ -834,6 +859,10 @@ impl RenderNode for ScrollView {
             },
         );
         self.viewport = ukuran;
+        // RTL is a layout input, and the scrollbar is drawn by hand — so the
+        // direction has to be carried to the paint and hit-test paths (§9.8,
+        // `AUDIT.md` P-6).
+        self.direction = ctx.direction();
 
         if ctx.child_count() == 0 {
             self.content = 0.0;
@@ -1127,6 +1156,21 @@ impl ViewNode for ScrollProps {
     }
 }
 
+/// A scrolling container — `scroll_view` (`KOMPONEN.md` Tier 1).
+///
+/// ```
+/// use silka_core::view::fixed;
+/// use silka_widgets::scroll_view;
+///
+/// let page = scroll_view(fixed(320.0, 2000.0));
+/// # let _ = page;
+/// ```
+///
+/// Use [`scroll_view_in`] outside a build pass.
+pub fn scroll_view(child: impl Into<View>) -> ScrollBuilder {
+    scroll_view_in(&crate::ambient::active_theme(), child)
+}
+
 /// A scrolling container holding `child` — a Dart-style constructor (§2.5).
 ///
 /// Every value comes from `theme`: scrollbar color, thickness, corners
@@ -1136,7 +1180,7 @@ impl ViewNode for ScrollProps {
 /// ```
 /// use silka_core::view::{column, fixed, View};
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{scroll_view, Scrollbar};
+/// use silka_widgets::{scroll_view_in, Scrollbar};
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
@@ -1148,17 +1192,17 @@ impl ViewNode for ScrollProps {
 ///
 /// // Vertical by default, with a macOS-style overlay scrollbar that appears
 /// // while scrolling and fades out on its own.
-/// let list = scroll_view(&theme, content);
+/// let list = scroll_view_in(&theme, content);
 /// # let _ = list;
 ///
 /// // A horizontal strip with no visible bar. Hiding the bar is a statement
 /// // about appearance, never about capability — it still scrolls.
-/// let strip = scroll_view(&theme, fixed(2_000.0, 80.0))
+/// let strip = scroll_view_in(&theme, fixed(2_000.0, 80.0))
 ///     .horizontal()
 ///     .scrollbar(Scrollbar::Hidden);
 /// # let _ = strip;
 /// ```
-pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
+pub fn scroll_view_in(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
     ScrollBuilder {
         key: None,
         props: ScrollProps {
@@ -1191,13 +1235,13 @@ pub fn scroll_view(theme: &Theme, child: impl Into<View>) -> ScrollBuilder {
 /// ```
 /// use silka_core::view::fixed;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{scroll_view, Scrollbar};
+/// use silka_widgets::{scroll_view_in, Scrollbar};
 ///
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // Decoration reads exactly like it does on the core primitives, which is
 /// // what matters at the call site.
-/// let panel = scroll_view(&theme, fixed(400.0, 2_000.0))
+/// let panel = scroll_view_in(&theme, fixed(400.0, 2_000.0))
 ///     .vertical()
 ///     .background(theme.color.surface)
 ///     .corners(theme.corners_of(silka_theme::RadiusToken::Lg))

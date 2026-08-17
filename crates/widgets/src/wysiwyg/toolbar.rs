@@ -25,12 +25,12 @@ use silka_core::view::{row, View};
 use silka_paint::Insets;
 use silka_theme::Theme;
 
-use crate::button::{button_variant, ButtonVariant};
+use crate::button::{button_variant_in, ButtonVariant};
 use crate::dialog::{action, DialogBuilder};
 use crate::fonts::Fonts;
 use crate::overlay::OverlayBuilder;
-use crate::select::{select, Select, SelectState};
-use crate::text_field::text_field;
+use crate::select::{select_in, Select, SelectState};
+use crate::text_field::text_field_in;
 
 use super::document::{BlockKind, Marks};
 use super::state::{EditorCommand, EditorHandle, EditorSnapshot};
@@ -48,6 +48,18 @@ pub struct Toolbar {
     key: Option<Key>,
 }
 
+/// The editor toolbar that reflects what is under the caret.
+///
+/// Use [`toolbar_in`] outside a build pass.
+pub fn toolbar(handle: EditorHandle, state: &EditorSnapshot) -> Toolbar {
+    toolbar_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        handle,
+        state,
+    )
+}
+
 /// A toolbar reflecting `state` and commanding `handle`.
 ///
 /// ```
@@ -60,9 +72,9 @@ pub struct Toolbar {
 /// # let t = Theme::cupertino(Appearance::Dark);
 /// let handle = EditorHandle::new();
 /// let keadaan = rt.signal(EditorSnapshot::default());
-/// let bar = toolbar(&fonts, &t, handle.clone(), &keadaan.get());
+/// let bar = toolbar_in(&fonts, &t, handle.clone(), &keadaan.get());
 /// ```
-pub fn toolbar(
+pub fn toolbar_in(
     fonts: &Fonts,
     theme: &Theme,
     handle: EditorHandle,
@@ -121,7 +133,7 @@ impl Toolbar {
             .state
             .kind
             .and_then(|k| BlockKind::ALL.iter().position(|x| *x == k));
-        let mut s = select(
+        let mut s = select_in(
             &self.fonts,
             &self.theme,
             BlockKind::ALL.iter().map(|k| k.label()),
@@ -173,7 +185,7 @@ impl Toolbar {
     fn toggle(&self, mark: Marks) -> View {
         let aktif = self.state.marks.contains(mark);
         let handle = self.handle.clone();
-        button_variant(
+        button_variant_in(
             &self.fonts,
             &self.theme,
             mark.name(),
@@ -200,7 +212,7 @@ impl Toolbar {
         let ada = self.state.link.is_some();
         let handle = self.handle.clone();
         let buka = self.on_link.clone();
-        button_variant(
+        button_variant_in(
             &self.fonts,
             &self.theme,
             "Tautan",
@@ -227,7 +239,7 @@ impl Toolbar {
 
     fn history_button(&self, label: &str, command: EditorCommand, enabled: bool) -> View {
         let handle = self.handle.clone();
-        button_variant(&self.fonts, &self.theme, label, ButtonVariant::Ghost)
+        button_variant_in(&self.fonts, &self.theme, label, ButtonVariant::Ghost)
             .disabled(!enabled)
             .on_press(move || handle.post(command.clone()))
             .into()
@@ -263,8 +275,20 @@ pub struct LinkDialog {
     key: Option<Key>,
 }
 
+/// The "insert link" sheet behind the toolbar's link button.
+///
+/// Use [`link_dialog_in`] outside a build pass.
+pub fn link_dialog(handle: EditorHandle, url: impl Into<String>) -> LinkDialog {
+    link_dialog_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        handle,
+        url,
+    )
+}
+
 /// A link dialog for `handle`, editing `url`.
-pub fn link_dialog(
+pub fn link_dialog_in(
     fonts: &Fonts,
     theme: &Theme,
     handle: EditorHandle,
@@ -325,7 +349,7 @@ impl LinkDialog {
         let tutup_hapus = self.on_close.clone();
         let hapus_handle = self.handle.clone();
 
-        let mut kolom = text_field(&self.fonts, &t, self.url.clone())
+        let mut kolom = text_field_in(&self.fonts, &t, self.url.clone())
             .label("Alamat tautan")
             .placeholder("https://");
         if let Some(cb) = self.on_url.clone() {
@@ -338,7 +362,7 @@ impl LinkDialog {
             format!("Tautkan “{}”", self.text)
         };
 
-        let mut d = crate::dialog::dialog(&self.fonts, &t, judul)
+        let mut d = crate::dialog::dialog_in(&self.fonts, &t, judul)
             .open(self.open)
             .content(View::from(kolom))
             .action(

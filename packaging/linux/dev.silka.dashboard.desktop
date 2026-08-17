@@ -1,0 +1,23 @@
+[Desktop Entry]
+# Freedesktop entry for the flagship example.
+#
+# The file name matters: it must be `<bundle id>.desktop` for the icon, the
+# window and the notification to be associated with each other by the shell.
+# GNOME matches a window to this file through StartupWMClass, and a mismatch is
+# the usual reason an application shows up in the dock as a grey question mark.
+#
+# `silka_platform::association::AppIdentity::desktop_entry()` generates this same
+# shape from code, including escaping, when an application prefers to declare its
+# associations in Rust.
+Type=Application
+Version=1.5
+Name=Silka Dashboard
+GenericName=ERP Dashboard
+Comment=Digital-lending ERP dashboard built with silka
+Exec=silka-dashboard %U
+Icon=dev.silka.dashboard
+Terminal=false
+Categories=Office;Finance;
+Keywords=erp;dashboard;lending;silka;
+StartupNotify=true
+StartupWMClass=silka-dashboard

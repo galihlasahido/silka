@@ -44,7 +44,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{overlay_layer, select, text, Fonts, Select, SelectState};
+use silka_widgets::{overlay_layer, select_in, text_in, Fonts, Select, SelectState};
 
 /// The page title.
 pub const JUDUL: &str = "Select";
@@ -111,17 +111,17 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let negara_state = use_signal(SelectState::new);
     let periode = use_signal(|| SelectState::with_selected(1));
 
-    let s_mata_uang = select(fonts, &t, MATA_UANG)
+    let s_mata_uang = select_in(fonts, &t, MATA_UANG)
         .label(LABEL_MATA_UANG)
         .key("mata-uang")
         .bind(mata_uang);
-    let s_negara = select(fonts, &t, negara())
+    let s_negara = select_in(fonts, &t, negara())
         .label(LABEL_NEGARA)
         .placeholder("Pilih negara…")
         .max_visible(NEGARA_TERLIHAT)
         .key("negara")
         .bind(negara_state);
-    let s_periode = select(fonts, &t, PERIODE)
+    let s_periode = select_in(fonts, &t, PERIODE)
         .label(LABEL_MATI)
         .disabled(true)
         .key("periode")
@@ -159,7 +159,7 @@ pub fn ringkasan(mata_uang: &Select, negara: &Select) -> String {
 /// The content behind the overlay layer: title, three form rows, and the
 /// summary.
 fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: String) -> View {
-    let judul = text(fonts, JUDUL)
+    let judul = text_in(fonts, JUDUL)
         .size(t.typography.body_size * 2.0)
         .weight(FontWeight::SEMIBOLD)
         // Negative tracking at large sizes — an SF habit (§3.6).
@@ -167,7 +167,7 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
         .color(t.color.label)
         .single_line();
 
-    let keterangan = text(
+    let keterangan = text_in(
         fonts,
         "Klik kotaknya, atau Tab lalu tekan Space. Panah menyusuri, \
          mengetik huruf melompat ke pilihan yang cocok, Esc menutup.",
@@ -187,7 +187,7 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
         View::from(keterangan),
         View::from(column(baris).spacing(t.space(4.0))),
         View::from(
-            text(fonts, ringkasan)
+            text_in(fonts, ringkasan)
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.accent)
@@ -212,7 +212,7 @@ fn baris_form(fonts: &Fonts, t: &Theme, nama: &str, s: &Select) -> View {
     row([
         View::from(constrained(
             BoxConstraints::new(lebar_nama, lebar_nama, 0.0, f32::INFINITY),
-            text(fonts, nama)
+            text_in(fonts, nama)
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()

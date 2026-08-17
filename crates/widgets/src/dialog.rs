@@ -4,14 +4,14 @@
 //! # use silka_core::signals::Runtime;
 //! # use silka_core::view::fixed;
 //! # use silka_theme::{Appearance, Theme};
-//! use silka_widgets::{dialog, overlay_layer, Fonts};
+//! use silka_widgets::{dialog_in, overlay_layer, Fonts};
 //!
 //! # let rt = Runtime::new();
 //! # let terbuka = rt.signal(true);
 //! # let f = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! overlay_layer(fixed(800.0, 600.0).background(t.color.background)).overlay(
-//!     dialog(&f, &t, "Simpan perubahan?")
+//!     dialog_in(&f, &t, "Simpan perubahan?")
 //!         .message("Perubahan yang belum disimpan akan hilang.")
 //!         .open(terbuka.get())
 //!         .cancel("Batal", move || terbuka.set(false))
@@ -83,10 +83,10 @@ use silka_paint::{Insets, Point, Size};
 use silka_text::FontWeight;
 use silka_theme::{Theme, TypeStyle};
 
-use crate::button::{button_variant, ButtonVariant};
+use crate::button::{button_variant_in, ButtonVariant};
 use crate::fonts::Fonts;
 use crate::overlay::{overlay, Barrier, Dismiss, OverlayBuilder, OverlayEntry, Placement};
-use crate::text::{text, Text};
+use crate::text::{text_in, Text};
 
 /// Dialog panel width in **spacing scale steps** (§2.6).
 ///
@@ -377,7 +377,13 @@ impl DialogAction {
     }
 
     /// This action's callback, if any.
-    fn callback(&self) -> Option<Callback> {
+    ///
+    /// A disabled action reports `None` rather than a callback nobody may run,
+    /// so "is this button live?" is answered in one place instead of at every
+    /// call site. Public because [`mod@crate::sheet`] builds the same button
+    /// row from the same actions rather than growing a second vocabulary for
+    /// confirm/cancel/destructive.
+    pub fn callback(&self) -> Option<Callback> {
         self.on_press.clone().filter(|_| !self.disabled)
     }
 }
@@ -467,6 +473,23 @@ pub struct DialogPanelProps {
     default_action: Option<Callback>,
 }
 
+impl DialogPanelProps {
+    /// The panel props for an overlay that is `open`, with `default_action` as
+    /// the button Return runs.
+    ///
+    /// The seam [`mod@crate::sheet`] rides: a sheet is a dialog that arrives
+    /// from the top edge rather than the middle, and "Return runs the default
+    /// button, Esc runs cancel" must be the very same node in both — a second
+    /// implementation is how the two drift apart in exactly the case nobody
+    /// tests (a focused text field inside the panel).
+    pub fn new(open: bool, default_action: Option<Callback>) -> Self {
+        Self {
+            open,
+            default_action,
+        }
+    }
+}
+
 impl ViewNode for DialogPanelProps {
     fn build(&self) -> Box<dyn RenderNode> {
         Box::new(DialogPanel {
@@ -546,6 +569,27 @@ fn cari_panel(tree: &RenderTree, akar: NodeId) -> Option<NodeId> {
 // Builder
 // ---------------------------------------------------------------------------
 
+/// A modal dialog — `dialog` (`KOMPONEN.md` Tier 4).
+///
+/// ```
+/// use silka_widgets::dialog;
+///
+/// let d = dialog("Save changes?")
+///     .message("Your edits will be lost otherwise.")
+///     .confirm("Save", || {})
+///     .cancel("Cancel", || {});
+/// # let _ = d;
+/// ```
+///
+/// Use [`dialog_in`] outside a build pass.
+pub fn dialog(title: impl Into<String>) -> DialogBuilder {
+    dialog_in(
+        &crate::active_fonts(),
+        &crate::ambient::active_theme(),
+        title,
+    )
+}
+
 /// A modal dialog titled `title` — the equivalent of shadcn's `Dialog`.
 ///
 /// By default it can be dismissed with Esc **and** by clicking outside the
@@ -554,14 +598,14 @@ fn cari_panel(tree: &RenderTree, akar: NodeId) -> Option<NodeId> {
 /// ```
 /// use silka_core::signals::Runtime;
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{dialog, Fonts};
+/// use silka_widgets::{dialog_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 /// let rt = Runtime::new();
 /// let open = rt.signal(true);
 ///
-/// let sheet = dialog(&fonts, &theme, "Rename file")
+/// let sheet = dialog_in(&fonts, &theme, "Rename file")
 ///     .message("Choose a new name for this document.")
 ///     .open(open.get())
 ///     .confirm("Rename", || {})
@@ -572,7 +616,7 @@ fn cari_panel(tree: &RenderTree, akar: NodeId) -> Option<NodeId> {
 /// let arranged = sheet.arranged();
 /// assert_eq!(arranged.len(), 2);
 /// ```
-pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
+pub fn dialog_in(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
     DialogBuilder {
         fonts: fonts.clone(),
         theme: *theme,
@@ -590,6 +634,20 @@ pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogB
     }
 }
 
+/// A [`dialog`] an outside click cannot dismiss — the `NSAlert` shape.
+///
+/// ```
+/// use silka_widgets::alert;
+///
+/// let a = alert("Delete 3 files?").destructive("Delete", || {});
+/// # let _ = a;
+/// ```
+///
+/// Use [`alert_in`] outside a build pass.
+pub fn alert(title: impl Into<String>) -> DialogBuilder {
+    dialog(title).dismiss(Dismiss::ESCAPE)
+}
+
 /// A modal alert — the equivalent of `NSAlert`.
 ///
 /// It differs from [`dialog`] in exactly one way, and it is not a visual one:
@@ -599,14 +657,14 @@ pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogB
 ///
 /// ```
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{alert, Fonts};
+/// use silka_widgets::{alert_in, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
 /// // A question that has to be answered: Esc still works, but a click that
 /// // lands outside the panel does not throw the work away.
-/// let confirm = alert(&fonts, &theme, "Discard changes?")
+/// let confirm = alert_in(&fonts, &theme, "Discard changes?")
 ///     .message("This cannot be undone.")
 ///     .destructive("Discard", || {})
 ///     .cancel("Keep editing", || {})
@@ -614,8 +672,8 @@ pub fn dialog(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogB
 ///
 /// assert_eq!(confirm.arranged().len(), 2);
 /// ```
-pub fn alert(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
-    dialog(fonts, theme, title).dismiss(Dismiss::ESCAPE)
+pub fn alert_in(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBuilder {
+    dialog_in(fonts, theme, title).dismiss(Dismiss::ESCAPE)
 }
 
 /// The dialog builder.
@@ -626,12 +684,12 @@ pub fn alert(fonts: &Fonts, theme: &Theme, title: impl Into<String>) -> DialogBu
 ///
 /// ```
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{action, dialog, ButtonOrder, Dismiss, Fonts};
+/// use silka_widgets::{action, dialog_in, ButtonOrder, Dismiss, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let theme = Theme::cupertino(Appearance::Dark);
 ///
-/// let d = dialog(&fonts, &theme, "Export")
+/// let d = dialog_in(&fonts, &theme, "Export")
 ///     .message("Pick a format.")
 ///     .actions([
 ///         action("Export").confirm().on_press(|| {}),
@@ -829,7 +887,7 @@ impl DialogBuilder {
         let t = &self.theme;
         let mut baris: Vec<View> = Vec::with_capacity(2);
         baris.push(
-            gaya(text(&self.fonts, &self.title), t.typography.headline)
+            gaya(text_in(&self.fonts, &self.title), t.typography.headline)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.label)
                 // The title is announced once, from the dialog node — not
@@ -839,7 +897,7 @@ impl DialogBuilder {
         );
         if let Some(pesan) = &self.message {
             baris.push(
-                gaya(text(&self.fonts, pesan), t.typography.body)
+                gaya(text_in(&self.fonts, pesan), t.typography.body)
                     .color(t.color.secondary_label)
                     .into(),
             );
@@ -857,7 +915,7 @@ impl DialogBuilder {
             .arranged()
             .into_iter()
             .map(|a| {
-                let mut b = button_variant(&self.fonts, t, a.label(), a.variant())
+                let mut b = button_variant_in(&self.fonts, t, a.label(), a.variant())
                     .disabled(a.is_disabled());
                 if let Some(cb) = a.callback() {
                     b = b.on_press(move || cb.call());

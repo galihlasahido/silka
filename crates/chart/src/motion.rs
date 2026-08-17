@@ -42,7 +42,7 @@ use crate::node::{walk, ChartBox};
 /// ```
 /// use std::time::Duration;
 ///
-/// use silka_chart::{advance, is_animating, line_chart};
+/// use silka_chart::{advance, is_animating, line_chart_in};
 /// use silka_core::animation::{Motion, Tick};
 /// use silka_core::scheduler::Dirty;
 /// use silka_core::tree::{BoxConstraints, RenderTree};
@@ -57,7 +57,7 @@ use crate::node::{walk, ChartBox};
 /// let mut tree = RenderTree::new();
 /// reconcile(
 ///     &mut tree,
-///     line_chart(&fonts, &theme, [1.0f64, 4.0, 2.0, 8.0])
+///     line_chart_in(&fonts, &theme, [1.0f64, 4.0, 2.0, 8.0])
 ///         .numeric()
 ///         .y_named("Value", |v: &f64| *v)
 ///         .animated(true),
@@ -128,7 +128,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 /// "halfway through a spring" is not a state worth photographing.
 ///
 /// ```
-/// use silka_chart::{bar_chart, is_animating, settle};
+/// use silka_chart::{bar_chart_in, is_animating, settle};
 /// use silka_core::tree::{BoxConstraints, RenderTree};
 /// use silka_core::view::reconcile;
 /// use silka_paint::Size;
@@ -141,7 +141,7 @@ pub fn is_animating(tree: &RenderTree) -> bool {
 /// let mut tree = RenderTree::new();
 /// reconcile(
 ///     &mut tree,
-///     bar_chart(&fonts, &theme, [3.0f64, 7.0, 5.0])
+///     bar_chart_in(&fonts, &theme, [3.0f64, 7.0, 5.0])
 ///         .numeric()
 ///         .y_named("Value", |v: &f64| *v)
 ///         .animated(true),
@@ -168,7 +168,7 @@ pub fn settle(tree: &mut RenderTree) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{bar_chart, line_chart};
+    use crate::{bar_chart_in, line_chart_in};
     use silka_core::animation::Motion;
     use silka_core::tree::BoxConstraints;
     use silka_core::view::reconcile;
@@ -183,7 +183,7 @@ mod tests {
         let mut tree = RenderTree::new();
         reconcile(
             &mut tree,
-            bar_chart(&f, &t, vec![3.0f64, 9.0, 5.0])
+            bar_chart_in(&f, &t, vec![3.0f64, 9.0, 5.0])
                 .y_named("a", |v: &f64| *v)
                 .animated(animated),
         );
@@ -238,7 +238,7 @@ mod tests {
         let mut tree = RenderTree::new();
         reconcile(
             &mut tree,
-            bar_chart(&f, &t, vec![1.5e9f64, 2.4e9, 0.9e9]).y_named("Rupiah", |v: &f64| *v),
+            bar_chart_in(&f, &t, vec![1.5e9f64, 2.4e9, 0.9e9]).y_named("Rupiah", |v: &f64| *v),
         );
         tree.layout(BoxConstraints::tight(Size::new(400.0, 240.0)));
 
@@ -287,7 +287,7 @@ mod tests {
         let mut tree2 = RenderTree::new();
         reconcile(
             &mut tree2,
-            line_chart(&f, &t, vec![1.0f64, 2.0])
+            line_chart_in(&f, &t, vec![1.0f64, 2.0])
                 .y_named("a", |v: &f64| *v)
                 .numeric(),
         );

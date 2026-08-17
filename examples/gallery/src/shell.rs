@@ -39,13 +39,15 @@ use silka_core::app::{component, AppRuntime, BuildCtx, ScaleFactor};
 use silka_core::scheduler::Dirty;
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, RenderTree};
-use silka_core::view::{column, constrained, expanded, fixed, row, View};
+use silka_core::view::{column, constrained, expanded, row, View};
 use silka_paint::Insets;
 use silka_platform::{headless_app, PlatformError, WindowConfig};
 use silka_text::FontWeight;
 use silka_theme::{Appearance, Preset, Theme};
-use silka_widgets::tabs::{tab, tabs, TabsVariant};
-use silka_widgets::{button_variant, scroll_view, switch, text, ButtonVariant, Fonts};
+use silka_widgets::tabs::{tab, tabs_in, TabsVariant};
+use silka_widgets::{
+    button_variant_in, scroll_view_in, spacer, switch_in, text_in, ButtonVariant, Fonts,
+};
 
 use crate::catalog::{Halaman, Kelompok};
 
@@ -210,6 +212,9 @@ pub fn jalankan(
         // Without this line the `GlyphRun` commands carry no bitmaps and every
         // page renders blank — the atlas is what crosses over to the GPU.
         .glyphs(fonts.shared())
+        // The same sentence for bitmaps: without it every `Command::Image`
+        // draws nothing, so the icons on the layout page would simply be gone.
+        .images(silka_widgets::active_images().shared())
         .on_frame(move |ctx| {
             let mut ui = untuk_frame.borrow_mut();
             ui.resize(ctx.size());
@@ -262,6 +267,9 @@ pub fn jalankan(
 fn solo_view(cx: &BuildCtx, fonts: &Fonts, halaman: Halaman) -> View {
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
+    // Icons are coverage masks tied to a pixel grid, exactly like glyphs, so
+    // the bitmap atlas needs the same number (§3.3).
+    silka_widgets::active_images().set_scale_factor(dpi.get());
     halaman.view(cx, fonts)
 }
 
@@ -275,6 +283,9 @@ fn kerangka(cx: &BuildCtx, fonts: &Fonts, awal: Halaman) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     fonts.set_scale_factor(dpi.get());
+    // Icons are coverage masks tied to a pixel grid, exactly like glyphs, so
+    // the bitmap atlas needs the same number (§3.3).
+    silka_widgets::active_images().set_scale_factor(dpi.get());
 
     let halaman = use_signal(|| awal);
 
@@ -301,7 +312,7 @@ fn bilah_atas(fonts: &Fonts) -> View {
         let gerak: Signal<GerakDikurangi> = cx.expect_env();
 
         let preset_aktif = usize::from(t.preset == Preset::Tailwind);
-        let pemilih_preset = tabs(&fonts, &t, [tab("Cupertino"), tab("Tailwind")])
+        let pemilih_preset = tabs_in(&fonts, &t, [tab("Cupertino"), tab("Tailwind")])
             .variant(TabsVariant::Segmented)
             .selected(preset_aktif)
             .label(NAMA_PRESET)
@@ -314,7 +325,7 @@ fn bilah_atas(fonts: &Fonts) -> View {
                 tema_sig.update(|t| *t = t.with_preset(preset));
             });
 
-        let pemilih_tampilan = tabs(&fonts, &t, ModeTampilan::SEMUA.map(|m| tab(m.judul())))
+        let pemilih_tampilan = tabs_in(&fonts, &t, ModeTampilan::SEMUA.map(|m| tab(m.judul())))
             .variant(TabsVariant::Segmented)
             .selected(mode.get().indeks())
             .label(NAMA_TAMPILAN)
@@ -332,19 +343,19 @@ fn bilah_atas(fonts: &Fonts) -> View {
         // The switch only writes the signal; the animation driver itself is
         // flipped by the frame callback, because `set_motion` belongs to the
         // runtime and a view callback may only touch signals (§2.5).
-        let sakelar_gerak = switch(&fonts, &t, NAMA_GERAK)
+        let sakelar_gerak = switch_in(&fonts, &t, NAMA_GERAK)
             .on(gerak.get().0)
             .on_change(move |v| gerak.set(GerakDikurangi(v)));
 
         row([
-            text(&fonts, MEREK)
+            text_in(&fonts, MEREK)
                 .size(t.typography.headline.size)
                 .weight(FontWeight::BOLD)
                 .tracking(t.typography.headline.tracking)
                 .color(t.color.label)
                 .single_line()
                 .into(),
-            text(&fonts, "Gallery")
+            text_in(&fonts, "Gallery")
                 .size(t.typography.headline.size)
                 .color(t.color.tertiary_label)
                 .single_line()
@@ -352,7 +363,7 @@ fn bilah_atas(fonts: &Fonts) -> View {
             // The spacer that pushes the switchers to the far side; it is a
             // flex child with zero size, so the layout engine owns the gap
             // rather than a hand-computed number.
-            View::from(expanded(fixed(0.0, 0.0))),
+            View::from(spacer()),
             View::from(pemilih_preset),
             View::from(pemilih_tampilan),
             View::from(sakelar_gerak),
@@ -386,7 +397,7 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
                 continue;
             }
             anak.push(
-                text(&fonts, kelompok.judul())
+                text_in(&fonts, kelompok.judul())
                     .size(t.typography.caption1.size)
                     .weight(FontWeight::SEMIBOLD)
                     .tracking(t.typography.caption1.tracking)
@@ -401,7 +412,7 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
                     ButtonVariant::Ghost
                 };
                 anak.push(
-                    button_variant(&fonts, &t, h.judul(), variant)
+                    button_variant_in(&fonts, &t, h.judul(), variant)
                         .key(h.slug())
                         .on_press(move || halaman.set(h))
                         .into(),
@@ -418,7 +429,7 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
             // A fixed width, free height: the height comes from the row above,
             // and the scroll axis must be bounded (the same rule as Flutter's).
             BoxConstraints::new(t.space(LEBAR_SISI), t.space(LEBAR_SISI), 0.0, f32::INFINITY),
-            scroll_view(&t, daftar)
+            scroll_view_in(&t, daftar)
                 .label(NAMA_SISI)
                 .background(t.color.surface),
         )
@@ -445,7 +456,7 @@ fn isi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
             // Everything else gets a scrolling container, so a long catalogue
             // page is still reachable in a small window instead of being cut
             // off at the bottom edge.
-            scroll_view(&t, dalam).label(h.judul()).into()
+            scroll_view_in(&t, dalam).label(h.judul()).into()
         }
     });
     expanded(luar).into()

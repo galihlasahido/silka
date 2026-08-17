@@ -26,7 +26,7 @@ use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::view::{div, View};
 use silka_theme::{ColorToken, FontToken, Theme};
-use silka_widgets::{button, button_variant, text, ButtonVariant, Fonts};
+use silka_widgets::{button_in, button_variant_in, text_in, ButtonVariant, Fonts};
 
 /// The increment button's name — also used by the tests to find it in the
 /// accessibility tree, so what the tests click is **exactly** what a screen
@@ -66,13 +66,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             // One call carries size, line height, weight and tracking: the
             // optical tracking of a big title is part of the role, not
             // something this page gets to invent (§3.6).
-            text(fonts, JUDUL)
+            text_in(fonts, JUDUL)
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text(
+            text_in(
                 fonts,
                 "Klik tombol di bawah: signal berubah, hanya komponen angka \
                  yang dibangun ulang, dan angkanya benar-benar berganti di layar.",
@@ -97,7 +97,7 @@ fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
         // The one number on the page that is genuinely not a token: this is a
         // display figure, five times body size, and no type scale has a role
         // for "the hero digit of a demo".
-        text(&fonts, count.get().to_string())
+        text_in(&fonts, count.get().to_string())
             .size(t.typography.body_size * 5.0)
             .font_bold()
             .tracking(-0.03)
@@ -118,13 +118,13 @@ fn kendali(fonts: &Fonts, t: &Theme, count: Signal<i32>) -> View {
         .flex()
         .items_center()
         .gap_3()
-        .child(button(fonts, t, TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1)))
+        .child(button_in(fonts, t, TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1)))
         .child(
-            button_variant(fonts, t, TOMBOL_KURANG, ButtonVariant::Secondary)
+            button_variant_in(fonts, t, TOMBOL_KURANG, ButtonVariant::Secondary)
                 .on_press(move || count.update(|n| *n -= 1)),
         )
         .child(
-            button_variant(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary)
+            button_variant_in(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary)
                 .on_press(move || count.set(0)),
         )
         .into()

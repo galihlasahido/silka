@@ -8,7 +8,7 @@
 //! # let fonts = Fonts::bundled_only();
 //! # let theme = Theme::cupertino(Appearance::Dark);
 //! # let data = vec![Tx { tanggal: 20_000.0, nilai: 12.0 }, Tx { tanggal: 20_030.0, nilai: 18.0 }];
-//! line_chart(&fonts, &theme, data)
+//! line_chart_in(&fonts, &theme, data)
 //!     .x(|d: &Tx| d.tanggal)
 //!     .y(|d: &Tx| d.nilai)
 //!     .time()
@@ -63,11 +63,11 @@ use crate::tooltip::ChartHover;
 /// use silka_core::view::View;
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::Fonts;
-/// use silka_chart::line_chart;
+/// use silka_chart::line_chart_in;
 ///
 /// # let fonts = Fonts::bundled_only();
 /// # let theme = Theme::cupertino(Appearance::Dark);
-/// let chart = line_chart(&fonts, &theme, vec![1.0f64, 4.0, 2.0])
+/// let chart = line_chart_in(&fonts, &theme, vec![1.0f64, 4.0, 2.0])
 ///     .y(|v: &f64| *v)
 ///     .animated(false);
 ///
@@ -152,7 +152,7 @@ impl ViewNode for ChartProps {
 /// ```
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::Fonts;
-/// use silka_chart::{bar_chart, format::{Locale, NumberFormat}};
+/// use silka_chart::{bar_chart_in, format::{Locale, NumberFormat}};
 ///
 /// struct Month { name: &'static str, income: f64, outgoing: f64 }
 /// # let fonts = Fonts::bundled_only();
@@ -161,7 +161,7 @@ impl ViewNode for ChartProps {
 ///
 /// // The closures read the application's own row type; everything downstream
 /// // of them is plain numbers.
-/// bar_chart(&fonts, &theme, data)
+/// bar_chart_in(&fonts, &theme, data)
 ///     .x_label(|m: &Month| m.name.to_string())
 ///     .y_named("Income", |m: &Month| m.income)
 ///     .y_named("Outgoing", |m: &Month| m.outgoing)
@@ -480,6 +480,17 @@ impl<T> From<ChartBuilder<T>> for View {
 // Constructors
 // ---------------------------------------------------------------------------
 
+/// A **line chart**: a value over an ordered axis.
+///
+/// Use [`line_chart_in`] outside a build pass.
+pub fn line_chart<T>(data: impl IntoIterator<Item = T>) -> ChartBuilder<T> {
+    line_chart_in(
+        &silka_widgets::active_fonts(),
+        &silka_widgets::active_theme(),
+        data,
+    )
+}
+
 /// A **line chart**: position over a continuous axis.
 ///
 /// The form to reach for when the question is "how did this change" — the eye
@@ -487,7 +498,7 @@ impl<T> From<ChartBuilder<T>> for View {
 /// (see [`ChartBuilder::zero_based`]).
 ///
 /// ```
-/// use silka_chart::line_chart;
+/// use silka_chart::line_chart_in;
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::Fonts;
 ///
@@ -507,7 +518,7 @@ impl<T> From<ChartBuilder<T>> for View {
 ///
 /// // Two series on one chart: `y_named` once per line, and the categorical
 /// // palette assigns colors that stay distinguishable to colorblind readers.
-/// let chart = line_chart(&fonts, &theme, data)
+/// let chart = line_chart_in(&fonts, &theme, data)
 ///     .x_label(|d: &Reading| d.at.to_string())
 ///     .y_named("CPU", |d: &Reading| d.cpu)
 ///     .y_named("Memory", |d: &Reading| d.memory)
@@ -515,7 +526,7 @@ impl<T> From<ChartBuilder<T>> for View {
 ///     .animated(true);
 /// # let _ = chart;
 /// ```
-pub fn line_chart<T>(
+pub fn line_chart_in<T>(
     fonts: &Fonts,
     theme: &Theme,
     data: impl IntoIterator<Item = T>,
@@ -525,12 +536,23 @@ pub fn line_chart<T>(
 
 /// An **area chart**: a line with the space beneath it filled.
 ///
+/// Use [`area_chart_in`] outside a build pass.
+pub fn area_chart<T>(data: impl IntoIterator<Item = T>) -> ChartBuilder<T> {
+    area_chart_in(
+        &silka_widgets::active_fonts(),
+        &silka_widgets::active_theme(),
+        data,
+    )
+}
+
+/// An **area chart**: a line with the space beneath it filled.
+///
 /// Worth the ink only when the filled quantity is genuinely cumulative — a
 /// total, a volume. For comparing two independent series, two lines read better
 /// than two overlapping fills.
 ///
 /// ```
-/// use silka_chart::area_chart;
+/// use silka_chart::area_chart_in;
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::Fonts;
 ///
@@ -548,13 +570,13 @@ pub fn line_chart<T>(
 ///
 /// // A filled quantity is only honest when it is cumulative, and a filled
 /// // area is only honest when the axis starts at zero.
-/// let chart = area_chart(&fonts, &theme, data)
+/// let chart = area_chart_in(&fonts, &theme, data)
 ///     .x_label(|d: &Day| d.label.to_string())
 ///     .y_named("Visitors", |d: &Day| d.visitors)
 ///     .zero_based(true);
 /// # let _ = chart;
 /// ```
-pub fn area_chart<T>(
+pub fn area_chart_in<T>(
     fonts: &Fonts,
     theme: &Theme,
     data: impl IntoIterator<Item = T>,
@@ -564,12 +586,23 @@ pub fn area_chart<T>(
 
 /// A **bar chart**: magnitude as length.
 ///
+/// Use [`bar_chart_in`] outside a build pass.
+pub fn bar_chart<T>(data: impl IntoIterator<Item = T>) -> ChartBuilder<T> {
+    bar_chart_in(
+        &silka_widgets::active_fonts(),
+        &silka_widgets::active_theme(),
+        data,
+    )
+}
+
+/// A **bar chart**: magnitude as length.
+///
 /// Defaults to a categorical x axis and a zero-based value axis, and neither
 /// default is cosmetic: a bar's length *is* its value, so an axis that does not
 /// start at zero misstates every comparison on the chart.
 ///
 /// ```
-/// use silka_chart::bar_chart;
+/// use silka_chart::bar_chart_in;
 /// use silka_chart::format::{Locale, NumberFormat};
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::Fonts;
@@ -590,7 +623,7 @@ pub fn area_chart<T>(
 /// // Stacked bars answer "what makes up the total"; grouped bars (the
 /// // default) answer "how do these compare". Billions become "1,2 M" rather
 /// // than a wall of digits, in the reader's own locale.
-/// let chart = bar_chart(&fonts, &theme, data)
+/// let chart = bar_chart_in(&fonts, &theme, data)
 ///     .x_label(|d: &Month| d.name.to_string())
 ///     .y_named("Income", |d: &Month| d.income)
 ///     .y_named("Expense", |d: &Month| d.expense)
@@ -600,12 +633,23 @@ pub fn area_chart<T>(
 ///     .value_format(NumberFormat::Compact);
 /// # let _ = chart;
 /// ```
-pub fn bar_chart<T>(
+pub fn bar_chart_in<T>(
     fonts: &Fonts,
     theme: &Theme,
     data: impl IntoIterator<Item = T>,
 ) -> ChartBuilder<T> {
     ChartBuilder::new(ChartKind::Bar, fonts, theme, data.into_iter().collect())
+}
+
+/// A **sparkline**: a word-sized line with no axes, labels, or legend.
+///
+/// Use [`sparkline_in`] outside a build pass.
+pub fn sparkline(values: impl IntoIterator<Item = f64>) -> ChartBuilder<f64> {
+    sparkline_in(
+        &silka_widgets::active_fonts(),
+        &silka_widgets::active_theme(),
+        values,
+    )
 }
 
 /// A **sparkline**: a word-sized line with no axes, no labels, and no legend.
@@ -615,7 +659,7 @@ pub fn bar_chart<T>(
 /// for the shape of a trend and nothing else.
 ///
 /// ```
-/// use silka_chart::sparkline;
+/// use silka_chart::sparkline_in;
 /// use silka_theme::{Appearance, Theme};
 /// use silka_widgets::Fonts;
 ///
@@ -624,10 +668,10 @@ pub fn bar_chart<T>(
 ///
 /// // Plain numbers in, no accessors: the shape of the trend is the whole
 /// // message, so there is nothing to label.
-/// let trend = sparkline(&fonts, &theme, [4.0, 9.0, 7.0, 12.0, 11.0, 18.0]);
+/// let trend = sparkline_in(&fonts, &theme, [4.0, 9.0, 7.0, 12.0, 11.0, 18.0]);
 /// # let _ = trend;
 /// ```
-pub fn sparkline(
+pub fn sparkline_in(
     fonts: &Fonts,
     theme: &Theme,
     values: impl IntoIterator<Item = f64>,
@@ -704,7 +748,7 @@ mod tests {
         let (f, t) = env();
         let tree = pohon(
             silka_core::view::column([View::from(
-                line_chart(&f, &t, data())
+                line_chart_in(&f, &t, data())
                     .x(|d: &Tx| d.hari)
                     .y_named("Pendapatan", |d: &Tx| d.nilai)
                     .y_named("Biaya", |d: &Tx| d.biaya)
@@ -726,7 +770,7 @@ mod tests {
     fn tanpa_x_posisi_adalah_indeks() {
         let (f, t) = env();
         let tree = pohon(
-            bar_chart(&f, &t, data()).y(|d: &Tx| d.nilai),
+            bar_chart_in(&f, &t, data()).y(|d: &Tx| d.nilai),
             Size::new(400.0, 300.0),
         );
         assert_eq!(chart(&tree).data().x, vec![0.0, 1.0, 2.0, 3.0]);
@@ -736,7 +780,7 @@ mod tests {
     fn deret_tanpa_nama_diberi_nomor_urut() {
         let (f, t) = env();
         let tree = pohon(
-            line_chart(&f, &t, data())
+            line_chart_in(&f, &t, data())
                 .y(|d: &Tx| d.nilai)
                 .y(|d: &Tx| d.biaya),
             Size::new(400.0, 300.0),
@@ -750,7 +794,7 @@ mod tests {
     fn nilai_kosong_menjadi_lubang_bukan_nol() {
         let (f, t) = env();
         let tree = pohon(
-            line_chart(&f, &t, data())
+            line_chart_in(&f, &t, data())
                 .y_opt("Sebagian", |d: &Tx| (d.nilai > 15.0).then_some(d.nilai)),
             Size::new(400.0, 300.0),
         );
@@ -764,7 +808,9 @@ mod tests {
         // A one-entry legend is noise the title already covers.
         let (f, t) = env();
         let tree = pohon(
-            line_chart(&f, &t, data()).y(|d: &Tx| d.nilai).legend(true),
+            line_chart_in(&f, &t, data())
+                .y(|d: &Tx| d.nilai)
+                .legend(true),
             Size::new(400.0, 300.0),
         );
         // Nothing to assert on the outside; what matters is that it lays out
@@ -776,7 +822,7 @@ mod tests {
     fn chart_mengisi_kotak_yang_diberikan() {
         let (f, t) = env();
         let tree = pohon(
-            bar_chart(&f, &t, data())
+            bar_chart_in(&f, &t, data())
                 .y(|d: &Tx| d.nilai)
                 .x_label(|d: &Tx| d.nama.to_string()),
             Size::new(500.0, 320.0),
@@ -802,7 +848,7 @@ mod tests {
     fn label_kategori_dipakai_sebagai_tick() {
         let (f, t) = env();
         let tree = pohon(
-            bar_chart(&f, &t, data())
+            bar_chart_in(&f, &t, data())
                 .y(|d: &Tx| d.nilai)
                 .x_label(|d: &Tx| d.nama.to_string()),
             Size::new(500.0, 320.0),
@@ -819,7 +865,7 @@ mod tests {
         let (f, t) = env();
         let mut tree = RenderTree::new();
         let bikin = |f: &Fonts, t: &Theme| -> View {
-            line_chart(f, t, data())
+            line_chart_in(f, t, data())
                 .x(|d: &Tx| d.hari)
                 .y_named("Pendapatan", |d: &Tx| d.nilai)
                 .numeric()
@@ -843,7 +889,7 @@ mod tests {
         let mut tree = RenderTree::new();
         reconcile(
             &mut tree,
-            line_chart(&f, &t, data())
+            line_chart_in(&f, &t, data())
                 .y_named("a", |d: &Tx| d.nilai)
                 .numeric(),
         );
@@ -852,7 +898,7 @@ mod tests {
 
         reconcile(
             &mut tree,
-            line_chart(&f, &t, data())
+            line_chart_in(&f, &t, data())
                 .y_named("a", |d: &Tx| d.nilai * 2.0)
                 .numeric(),
         );
@@ -871,7 +917,7 @@ mod tests {
     fn animasi_bisa_dimatikan() {
         let (f, t) = env();
         let tree = pohon(
-            line_chart(&f, &t, data())
+            line_chart_in(&f, &t, data())
                 .y(|d: &Tx| d.nilai)
                 .numeric()
                 .animated(false),
@@ -887,7 +933,7 @@ mod tests {
     fn sparkline_tidak_punya_sumbu_maupun_legenda() {
         let (f, t) = env();
         let tree = pohon(
-            sparkline(&f, &t, [1.0, 4.0, 2.0, 8.0, 5.0]),
+            sparkline_in(&f, &t, [1.0, 4.0, 2.0, 8.0, 5.0]),
             Size::new(120.0, 32.0),
         );
         let node = chart(&tree);
@@ -902,7 +948,7 @@ mod tests {
     fn warna_deret_bisa_ditimpa_satu_per_satu() {
         let (f, t) = env();
         let tree = pohon(
-            bar_chart(&f, &t, data())
+            bar_chart_in(&f, &t, data())
                 .y_named("a", |d: &Tx| d.nilai)
                 .y_named("b", |d: &Tx| d.biaya)
                 .color(1, Color::WHITE),
@@ -926,7 +972,7 @@ mod tests {
         let mut tree = RenderTree::new();
         reconcile(
             &mut tree,
-            bar_chart(&f, &t, data())
+            bar_chart_in(&f, &t, data())
                 .y_named("Pendapatan", |d: &Tx| d.nilai)
                 .x_label(|d: &Tx| d.nama.to_string())
                 .on_hover(move |h| *tulis.borrow_mut() = h),
@@ -980,7 +1026,7 @@ mod tests {
         let (f, t) = env();
         let kosong: Vec<Tx> = Vec::new();
         let tree = pohon(
-            bar_chart(&f, &t, kosong)
+            bar_chart_in(&f, &t, kosong)
                 .y(|d: &Tx| d.nilai)
                 .empty("Belum ada transaksi"),
             Size::new(400.0, 300.0),
@@ -997,7 +1043,7 @@ mod tests {
         // nothing (§3.8).
         let (f, t) = env();
         let tree = pohon(
-            bar_chart(&f, &t, data())
+            bar_chart_in(&f, &t, data())
                 .y_named("Pendapatan", |d: &Tx| d.nilai)
                 .y_named("Biaya", |d: &Tx| d.biaya)
                 .title("Arus kas"),
@@ -1022,7 +1068,7 @@ mod tests {
         let mut tree = RenderTree::new();
         reconcile(
             &mut tree,
-            bar_chart(&f, &t, data())
+            bar_chart_in(&f, &t, data())
                 .y_named("Pendapatan", |d: &Tx| d.nilai)
                 .x_label(|d: &Tx| d.nama.to_string())
                 .animated(false),
@@ -1046,6 +1092,40 @@ mod tests {
     }
 
     #[test]
+    fn garis_seri_adalah_satu_perintah_stroke() {
+        use silka_paint::{Command, Scene};
+
+        let (f, t) = env();
+        let mut tree = RenderTree::new();
+        reconcile(
+            &mut tree,
+            line_chart_in(&f, &t, data())
+                .y_named("Pendapatan", |d: &Tx| d.nilai)
+                .x_label(|d: &Tx| d.nama.to_string())
+                .animated(false),
+        );
+        tree.layout(BoxConstraints::tight(Size::new(500.0, 320.0)));
+
+        let mut scene = Scene::new(t.color.background);
+        tree.paint_into(&mut scene);
+        let goresan: Vec<_> = scene
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::Stroke(g) => Some(g.clone()),
+                _ => None,
+            })
+            .collect();
+        // ONE command for the series, not one box per pixel column: that
+        // difference is the whole reason the stroke command was written.
+        assert_eq!(goresan.len(), 1, "{} perintah stroke", goresan.len());
+        assert_eq!(goresan[0].segment_count(), data().len() - 1);
+        assert!(goresan[0].width > 0.0);
+        // Clipped to the plot on the CPU, so a series never spills over an axis.
+        assert!(goresan[0].clip.is_some());
+    }
+
+    #[test]
     fn chart_kosong_tetap_menggambar_pesannya() {
         use silka_paint::{Command, Scene};
 
@@ -1054,7 +1134,7 @@ mod tests {
         let mut tree = RenderTree::new();
         reconcile(
             &mut tree,
-            bar_chart(&f, &t, kosong)
+            bar_chart_in(&f, &t, kosong)
                 .y(|d: &Tx| d.nilai)
                 .empty("Kosong"),
         );
@@ -1080,7 +1160,7 @@ mod tests {
             Size::new(1.0, 200.0),
             Size::new(200.0, 1.0),
         ] {
-            let tree = pohon(bar_chart(&f, &t, data()).y(|d: &Tx| d.nilai), ukuran);
+            let tree = pohon(bar_chart_in(&f, &t, data()).y(|d: &Tx| d.nilai), ukuran);
             let _ = chart(&tree).geometry();
         }
     }

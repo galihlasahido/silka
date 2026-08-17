@@ -149,7 +149,7 @@ fn ukuran_lintasan_berbeda_tiap_preset_tapi_selalu_kelipatan_skala() {
 fn hit_target_minimal_44pt_walau_lintasannya_lebih_kecil() {
     for preset in Preset::ALL {
         let t = Theme::new(preset, Appearance::Dark);
-        let tree = pohon(switch_only(&t).label("Wi-Fi"));
+        let tree = pohon(switch_only_in(&t).label("Wi-Fi"));
         let ukuran = tree.size(id(&tree));
         assert!(
             ukuran.height >= MIN_HIT_TARGET && ukuran.width >= MIN_HIT_TARGET,
@@ -166,7 +166,7 @@ fn hit_target_minimal_44pt_walau_lintasannya_lebih_kecil() {
 fn berlabel_pun_barisnya_tetap_setinggi_hit_target() {
     let f = fonts();
     let t = tema();
-    let tree = pohon(switch(&f, &t, "Mode pesawat"));
+    let tree = pohon(switch_in(&f, &t, "Mode pesawat"));
     let ukuran = tree.size(id(&tree));
     assert!(ukuran.height >= MIN_HIT_TARGET, "{ukuran:?}");
     // The label widens the row, so clicking it activates the switch too.
@@ -239,7 +239,7 @@ fn warna_selalu_datang_dari_token_di_kedua_preset_dan_kedua_appearance() {
 #[test]
 fn lintasan_dan_thumb_tergambar_sebagai_pil() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(true));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi").on(true));
     let q = quads(&mut tree, &t);
     assert_eq!(q.len(), 2, "satu lintasan + satu thumb");
 
@@ -266,11 +266,11 @@ fn lintasan_dan_thumb_tergambar_sebagai_pil() {
 #[test]
 fn nilai_baru_menggerakkan_thumb_dengan_spring_lalu_benar_benar_berhenti() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi").on(false));
     assert_eq!(node(&tree).fraction(), 0.0);
     assert!(!crate::is_animating(&tree), "yang diam tidak minta frame");
 
-    frame(&mut tree, switch_only(&t).label("Wi-Fi").on(true));
+    frame(&mut tree, switch_only_in(&t).label("Wi-Fi").on(true));
     assert!(crate::is_animating(&tree), "nilai baru = gerakan");
     assert_eq!(
         node(&tree).fraction(),
@@ -287,8 +287,8 @@ fn nilai_baru_menggerakkan_thumb_dengan_spring_lalu_benar_benar_berhenti() {
 #[test]
 fn dibalik_di_tengah_jalan_membawa_posisinya_bukan_memulai_ulang() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false));
-    frame(&mut tree, switch_only(&t).label("Wi-Fi").on(true));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi").on(false));
+    frame(&mut tree, switch_only_in(&t).label("Wi-Fi").on(true));
 
     for _ in 0..5 {
         crate::advance(&mut tree, &Tick::manual(FRAME, Motion::Full));
@@ -300,7 +300,7 @@ fn dibalik_di_tengah_jalan_membawa_posisinya_bukan_memulai_ulang() {
     );
 
     // Flipped again before it arrives: its position must not jump.
-    frame(&mut tree, switch_only(&t).label("Wi-Fi").on(false));
+    frame(&mut tree, switch_only_in(&t).label("Wi-Fi").on(false));
     assert!((node(&tree).fraction() - tengah).abs() < 1e-6);
     sampai_diam(&mut tree);
     assert_eq!(node(&tree).fraction(), 0.0);
@@ -309,10 +309,10 @@ fn dibalik_di_tengah_jalan_membawa_posisinya_bukan_memulai_ulang() {
 #[test]
 fn warna_lintasan_ikut_spring_bukan_lompat() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi").on(false));
     assert_eq!(node(&tree).track_color(), t.color.separator);
 
-    frame(&mut tree, switch_only(&t).label("Wi-Fi").on(true));
+    frame(&mut tree, switch_only_in(&t).label("Wi-Fi").on(true));
     assert_eq!(node(&tree).track_target(), t.color.accent);
     crate::advance(&mut tree, &Tick::manual(FRAME, Motion::Full));
     crate::advance(&mut tree, &Tick::manual(FRAME, Motion::Full));
@@ -329,14 +329,14 @@ fn reduced_motion_membuang_pantulan_bukan_gerakannya() {
     let t = tema();
     let jalankan = |motion: Motion| {
         let mut tree = pohon(
-            switch_only(&t)
+            switch_only_in(&t)
                 .label("Wi-Fi")
                 .on(false)
                 .spring(Spring::bouncy()),
         );
         frame(
             &mut tree,
-            switch_only(&t)
+            switch_only_in(&t)
                 .label("Wi-Fi")
                 .on(true)
                 .spring(Spring::bouncy()),
@@ -368,10 +368,10 @@ fn reduced_motion_membuang_pantulan_bukan_gerakannya() {
 #[test]
 fn gerakan_dekoratif_hilang_sepenuhnya_saat_reduced_motion() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false).decorative());
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi").on(false).decorative());
     frame(
         &mut tree,
-        switch_only(&t).label("Wi-Fi").on(true).decorative(),
+        switch_only_in(&t).label("Wi-Fi").on(true).decorative(),
     );
     // One reduced-motion tick is enough: decorative motion is not run at all,
     // it lands straight on its destination.
@@ -383,8 +383,8 @@ fn gerakan_dekoratif_hilang_sepenuhnya_saat_reduced_motion() {
 #[test]
 fn settle_menyelesaikan_semuanya_seketika() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false));
-    frame(&mut tree, switch_only(&t).label("Wi-Fi").on(true));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi").on(false));
+    frame(&mut tree, switch_only_in(&t).label("Wi-Fi").on(true));
     assert!(crate::is_animating(&tree));
     crate::settle(&mut tree);
     assert!(!crate::is_animating(&tree));
@@ -399,7 +399,7 @@ fn settle_menyelesaikan_semuanya_seketika() {
 /// A mock application: it holds the value, like a signal in a real app.
 fn ui(t: &Theme, nilai: &Rc<Cell<bool>>) -> impl Into<View> {
     let tulis = nilai.clone();
-    switch_only(t)
+    switch_only_in(t)
         .label("Wi-Fi")
         .on(nilai.get())
         .on_change(move |v| tulis.set(v))
@@ -430,7 +430,12 @@ fn ketukan_membalik_nilai_lewat_lapisan_input() {
 fn node_tidak_pernah_mendahului_aplikasi() {
     let t = tema();
     // An application that **refuses** the change: the value never follows.
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi").on(false).on_change(|_| {}));
+    let mut tree = pohon(
+        switch_only_in(&t)
+            .label("Wi-Fi")
+            .on(false)
+            .on_change(|_| {}),
+    );
     let mut router = InputRouter::new();
     ketuk(&mut router, &mut tree);
     assert!(!node(&tree).is_on(), "tanpa rebuild, nilainya tetap");
@@ -709,7 +714,7 @@ fn keyboard_menutup_seluruh_kontrak() {
 #[test]
 fn cincin_fokus_tumbuh_dengan_spring_lalu_hilang() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi"));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi"));
     assert_eq!(quads(&mut tree, &t).len(), 2, "belum ada cincin");
 
     let mut router = InputRouter::new();
@@ -735,7 +740,7 @@ fn cincin_fokus_tumbuh_dengan_spring_lalu_hilang() {
 #[test]
 fn tekanan_melebarkan_thumb_lalu_mengembalikannya() {
     let t = tema();
-    let mut tree = pohon(switch_only(&t).label("Wi-Fi"));
+    let mut tree = pohon(switch_only_in(&t).label("Wi-Fi"));
     let mut router = InputRouter::new();
     // The thumb is always the **last** draw command — the focus ring that
     // appears on press slots in before the track, not behind the thumb.
@@ -787,7 +792,7 @@ fn sakelar_mati_tidak_bisa_diklik_difokuskan_maupun_ditembus() {
     let nilai = Rc::new(Cell::new(false));
     let tulis = nilai.clone();
     let mut tree = pohon(
-        switch_only(&t)
+        switch_only_in(&t)
             .label("Wi-Fi")
             .disabled(true)
             .on_change(move |v| tulis.set(v)),
@@ -817,7 +822,7 @@ fn node_accesskit_menyebut_peran_nama_dan_keadaan() {
     let nilai = Rc::new(Cell::new(false));
     let tulis = nilai.clone();
     let mut tree = pohon(
-        switch(&f, &t, "Wi-Fi")
+        switch_in(&f, &t, "Wi-Fi")
             .on(false)
             .on_change(move |v| tulis.set(v)),
     );
@@ -855,7 +860,7 @@ fn node_accesskit_menyebut_peran_nama_dan_keadaan() {
     let tulis = nilai.clone();
     frame(
         &mut tree,
-        switch(&f, &t, "Wi-Fi")
+        switch_in(&f, &t, "Wi-Fi")
             .on(nilai.get())
             .on_change(move |v| tulis.set(v)),
     );
@@ -869,7 +874,12 @@ fn node_accesskit_menyebut_peran_nama_dan_keadaan() {
 #[test]
 fn sakelar_mati_tetap_dibacakan_sebagai_dimmed() {
     let t = tema();
-    let tree = pohon(switch_only(&t).label("Bluetooth").on(true).disabled(true));
+    let tree = pohon(
+        switch_only_in(&t)
+            .label("Bluetooth")
+            .on(true)
+            .disabled(true),
+    );
 
     let a11y = tree.access_tree(None);
     let e = a11y.find_label("Bluetooth").expect("tetap ada di pohon");
@@ -887,7 +897,7 @@ fn ganti_preset_mengubah_ukuran_dan_warna_tanpa_menghilangkan_nilai() {
     let cupertino = Theme::cupertino(Appearance::Light);
     let tailwind = Theme::tailwind(Appearance::Dark);
 
-    let mut tree = pohon(switch_only(&cupertino).label("Wi-Fi").on(true));
+    let mut tree = pohon(switch_only_in(&cupertino).label("Wi-Fi").on(true));
     crate::settle(&mut tree);
     assert_eq!(
         quads(&mut tree, &cupertino)[0].background,
@@ -898,7 +908,7 @@ fn ganti_preset_mengubah_ukuran_dan_warna_tanpa_menghilangkan_nilai() {
         Size::new(52.0_f32.max(MIN_HIT_TARGET), MIN_HIT_TARGET)
     );
 
-    frame(&mut tree, switch_only(&tailwind).label("Wi-Fi").on(true));
+    frame(&mut tree, switch_only_in(&tailwind).label("Wi-Fi").on(true));
     crate::settle(&mut tree);
     assert!(node(&tree).is_on(), "nilai tidak ikut hilang");
     assert_eq!(node(&tree).track_rect().size, Size::new(44.0, 24.0));

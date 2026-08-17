@@ -209,7 +209,7 @@ impl Catatan {
 fn hit_target_minimal_44pt_walau_barisnya_pendek() {
     let f = fonts();
     let t = tema();
-    let u = Uji::baru(text_field(&f, &t, ""));
+    let u = Uji::baru(text_field_in(&f, &t, ""));
     let ukuran = u.ukuran();
     assert!(
         ukuran.height >= MIN_HIT_TARGET,
@@ -225,7 +225,7 @@ fn hit_target_minimal_44pt_walau_barisnya_pendek() {
 fn dibacakan_screen_reader_sebagai_kolom_teks_berisi_nilainya() {
     let f = fonts();
     let t = tema();
-    let u = Uji::baru(text_field(&f, &t, "Ubud").label("Kota"));
+    let u = Uji::baru(text_field_in(&f, &t, "Ubud").label("Kota"));
     let pohon = u.tree.access_tree(None);
     let e = pohon
         .find_label("Kota")
@@ -247,7 +247,7 @@ fn dibacakan_screen_reader_sebagai_kolom_teks_berisi_nilainya() {
 fn kolom_mati_dibacakan_tapi_tidak_bisa_dipakai() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "beku").label("Kunci").disabled(true));
+    let mut u = Uji::baru(text_field_in(&f, &t, "beku").label("Kunci").disabled(true));
     let pohon = u.tree.access_tree(None);
     let e = pohon.find_label("Kunci").expect("tetap dibacakan");
     assert!(e.node.disabled);
@@ -265,7 +265,7 @@ fn kolom_mati_dibacakan_tapi_tidak_bisa_dipakai() {
 fn placeholder_tampil_saat_kosong_lalu_menghilang_saat_diketik() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "").placeholder("Cari…"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "").placeholder("Cari…"));
     assert!(u.kolom().shows_placeholder());
     let kosong = u.glyph_count();
     assert!(kosong > 0, "placeholder harus benar-benar tergambar");
@@ -286,7 +286,7 @@ fn mengetik_lewat_lapisan_input_mengisi_kolom_dan_melapor_sekali_per_huruf() {
     let f = fonts();
     let t = tema();
     let catatan = Catatan::default();
-    let mut u = Uji::baru(text_field(&f, &t, "").on_change(catatan.rekam()));
+    let mut u = Uji::baru(text_field_in(&f, &t, "").on_change(catatan.rekam()));
     u.fokus();
     u.ketik("halo");
     assert_eq!(u.teks(), "halo");
@@ -302,7 +302,7 @@ fn mengetik_lewat_lapisan_input_mengisi_kolom_dan_melapor_sekali_per_huruf() {
 fn tanpa_fokus_ketikan_tidak_masuk_ke_mana_pun() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, ""));
+    let mut u = Uji::baru(text_field_in(&f, &t, ""));
     u.ketik("hantu");
     assert_eq!(u.teks(), "");
 }
@@ -311,7 +311,7 @@ fn tanpa_fokus_ketikan_tidak_masuk_ke_mana_pun() {
 fn backspace_menghapus_satu_grapheme_utuh_bukan_satu_byte() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, format!("a{KELUARGA}")));
+    let mut u = Uji::baru(text_field_in(&f, &t, format!("a{KELUARGA}")));
     u.fokus();
     u.tombol(KeyCode::Named(NamedKey::Backspace), Modifiers::NONE);
     assert_eq!(u.teks(), "a", "emoji ZWJ tidak boleh terbelah");
@@ -321,7 +321,7 @@ fn backspace_menghapus_satu_grapheme_utuh_bukan_satu_byte() {
 fn pintasan_pilih_semua_lalu_ketik_mengganti_seluruh_isi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "lama"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "lama"));
     u.fokus();
     u.tombol(KeyCode::Character('a'), Modifiers::COMMAND);
     assert_eq!(u.kolom().selection().range(), 0..4);
@@ -333,7 +333,7 @@ fn pintasan_pilih_semua_lalu_ketik_mengganti_seluruh_isi() {
 fn undo_dan_redo_lewat_pintasan() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, ""));
+    let mut u = Uji::baru(text_field_in(&f, &t, ""));
     u.fokus();
     u.ketik("draf");
     u.tombol(KeyCode::Character('z'), Modifiers::COMMAND);
@@ -350,7 +350,7 @@ fn enter_memanggil_on_submit_dengan_isi_kolom() {
     let f = fonts();
     let t = tema();
     let catatan = Catatan::default();
-    let mut u = Uji::baru(text_field(&f, &t, "kirim").on_submit(catatan.rekam()));
+    let mut u = Uji::baru(text_field_in(&f, &t, "kirim").on_submit(catatan.rekam()));
     u.fokus();
     u.tombol(KeyCode::Named(NamedKey::Enter), Modifiers::NONE);
     assert_eq!(catatan.terakhir().as_deref(), Some("kirim"));
@@ -360,7 +360,7 @@ fn enter_memanggil_on_submit_dengan_isi_kolom() {
 fn kolom_read_only_bisa_diseleksi_tapi_tidak_bisa_diubah() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "tetap").read_only(true));
+    let mut u = Uji::baru(text_field_in(&f, &t, "tetap").read_only(true));
     u.fokus();
     u.ketik("x");
     u.tombol(KeyCode::Named(NamedKey::Backspace), Modifiers::NONE);
@@ -377,7 +377,7 @@ fn kolom_read_only_bisa_diseleksi_tapi_tidak_bisa_diubah() {
 fn tab_tidak_ditelan_kolom_teks() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, ""));
+    let mut u = Uji::baru(text_field_in(&f, &t, ""));
     u.fokus();
     let r = u.tombol(KeyCode::Named(NamedKey::Tab), Modifiers::NONE);
     assert_eq!(u.teks(), "", "Tab bukan karakter");
@@ -389,7 +389,7 @@ fn tab_tidak_ditelan_kolom_teks() {
 fn escape_dibiarkan_menggelembung_ke_overlay() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "isi"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "isi"));
     u.fokus();
     let r = u.tombol(KeyCode::Named(NamedKey::Escape), Modifiers::NONE);
     assert!(!r.handled, "Esc milik dialog/popover, bukan kolom teks");
@@ -403,7 +403,7 @@ fn escape_dibiarkan_menggelembung_ke_overlay() {
 fn klik_menaruh_caret_di_tempat_yang_diklik() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "satu dua tiga"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "satu dua tiga"));
     u.fokus();
 
     // Clicking far to the right of the text = caret at the end.
@@ -420,7 +420,7 @@ fn klik_menaruh_caret_di_tempat_yang_diklik() {
 fn klik_ganda_menyeleksi_kata_klik_tripel_seluruh_isi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "satu dua tiga"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "satu dua tiga"));
     u.fokus();
 
     // A point in the **middle** of the word "dua" (indices 5..8): derived from
@@ -454,7 +454,7 @@ fn klik_ganda_menyeleksi_kata_klik_tripel_seluruh_isi() {
 fn seret_menyeleksi_rentang_dan_kotak_sorotnya_digambar() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "satu dua tiga"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "satu dua tiga"));
     u.fokus();
 
     u.tekan(1.0);
@@ -487,7 +487,7 @@ fn seret_menyeleksi_rentang_dan_kotak_sorotnya_digambar() {
 fn shift_klik_memperluas_seleksi_dari_caret_yang_ada() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "satu dua"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "satu dua"));
     u.fokus();
     u.klik(1.0);
 
@@ -508,7 +508,7 @@ fn shift_klik_memperluas_seleksi_dari_caret_yang_ada() {
 fn caret_hanya_digambar_saat_kolom_terfokus() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "isi"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "isi"));
     let caret = |u: &mut Uji| -> usize {
         let kotak = u.kolom().caret_rect();
         u.scene()
@@ -527,7 +527,7 @@ fn caret_selalu_terlihat_walau_isinya_lebih_panjang_dari_kolom() {
     let f = fonts();
     let t = tema();
     let panjang = "kalimat yang jauh lebih panjang daripada lebar kolomnya sendiri, sungguh";
-    let mut u = Uji::baru(text_field(&f, &t, panjang));
+    let mut u = Uji::baru(text_field_in(&f, &t, panjang));
     u.fokus();
     // Caret to the far right: the contents must scroll, not the caret vanish.
     u.tombol(KeyCode::Named(NamedKey::End), Modifiers::NONE);
@@ -548,7 +548,7 @@ fn glyph_dipotong_di_tepi_kolom_bukan_menabrak_border() {
     let f = fonts();
     let t = tema();
     let panjang = "kalimat yang jauh lebih panjang daripada lebar kolomnya sendiri, sungguh";
-    let mut u = Uji::baru(text_field(&f, &t, panjang));
+    let mut u = Uji::baru(text_field_in(&f, &t, panjang));
     let scene = u.scene();
     let run = scene
         .commands()
@@ -575,7 +575,7 @@ fn preedit_dirender_inline_tapi_tidak_pernah_dilaporkan_ke_aplikasi() {
     let f = fonts();
     let t = tema();
     let catatan = Catatan::default();
-    let mut u = Uji::baru(text_field(&f, &t, "ha").on_change(catatan.rekam()));
+    let mut u = Uji::baru(text_field_in(&f, &t, "ha").on_change(catatan.rekam()));
     u.fokus();
     u.tombol(KeyCode::Named(NamedKey::End), Modifiers::NONE);
     let sebelum = u.glyph_count();
@@ -617,7 +617,7 @@ fn preedit_dirender_inline_tapi_tidak_pernah_dilaporkan_ke_aplikasi() {
 fn selama_komposisi_jalur_tombol_normal_ditahan() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, ""));
+    let mut u = Uji::baru(text_field_in(&f, &t, ""));
     u.fokus();
     u.ime(ImeEvent::Preedit {
         text: "ni".into(),
@@ -635,7 +635,7 @@ fn selama_komposisi_jalur_tombol_normal_ditahan() {
 fn komposisi_dibatalkan_saat_ime_dimatikan_atau_fokus_pergi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "x"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "x"));
     u.fokus();
     u.ime(ImeEvent::Preedit {
         text: "ni".into(),
@@ -657,7 +657,7 @@ fn komposisi_dibatalkan_saat_ime_dimatikan_atau_fokus_pergi() {
 fn area_kandidat_ime_mengikuti_caret() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "halo dunia"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "halo dunia"));
     let r = u.fokus();
     let area = match r.ime {
         Some(ImeRequest::Enable { area }) => area,
@@ -696,7 +696,7 @@ fn warna_dan_bentuk_sudut_selalu_datang_dari_token_di_kedua_preset() {
     for preset in [Preset::Cupertino, Preset::Tailwind] {
         for appearance in [Appearance::Light, Appearance::Dark] {
             let t = Theme::new(preset, appearance);
-            let mut u = Uji::baru(text_field(&f, &t, "Nilai").placeholder("kosong"));
+            let mut u = Uji::baru(text_field_in(&f, &t, "Nilai").placeholder("kosong"));
             let scene = u.scene();
 
             let latar = scene
@@ -732,7 +732,7 @@ fn warna_dan_bentuk_sudut_selalu_datang_dari_token_di_kedua_preset() {
 fn placeholder_memakai_warna_label_tersier_bukan_warna_teks() {
     let f = fonts();
     let t = Theme::tailwind(Appearance::Light);
-    let mut u = Uji::baru(text_field(&f, &t, "").placeholder("Cari…"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "").placeholder("Cari…"));
     let scene = u.scene();
     let warna: Vec<_> = scene
         .commands()
@@ -753,7 +753,7 @@ fn dark_mode_mengganti_seluruh_warna_tanpa_menyentuh_geometri() {
     let gelap = Theme::cupertino(Appearance::Dark);
 
     let ambil = |t: &Theme| {
-        let mut u = Uji::baru(text_field(&f, t, "Nilai"));
+        let mut u = Uji::baru(text_field_in(&f, t, "Nilai"));
         let ukuran = u.ukuran();
         let q = u
             .scene()
@@ -781,7 +781,7 @@ fn dark_mode_mengganti_seluruh_warna_tanpa_menyentuh_geometri() {
 fn cincin_fokus_tumbuh_lewat_spring_bukan_melompat() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "isi"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "isi"));
     let tick = Tick::manual(Duration::from_millis(16), Motion::Full);
 
     // A field at rest asks for not a single frame.
@@ -826,7 +826,7 @@ fn tebal_cincin(u: &mut Uji, warna: silka_paint::Color) -> f32 {
 fn reduced_motion_tetap_menjelaskan_tapi_tanpa_pantulan() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "isi"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "isi"));
     u.fokus();
 
     let tick = Tick::manual(Duration::from_millis(16), Motion::Reduced);
@@ -845,7 +845,7 @@ fn reduced_motion_tetap_menjelaskan_tapi_tanpa_pantulan() {
 fn settle_menyelesaikan_semuanya_seketika() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "isi"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "isi"));
     u.fokus();
     assert!(crate::is_animating(&u.tree));
     crate::settle(&mut u.tree);
@@ -860,7 +860,7 @@ fn settle_menyelesaikan_semuanya_seketika() {
 fn rebuild_dengan_nilai_props_yang_sama_tidak_melempar_caret() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "halo"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "halo"));
     u.fokus();
     u.klik(1.0);
     assert_eq!(u.kolom().selection().range(), 0..0);
@@ -868,7 +868,10 @@ fn rebuild_dengan_nilai_props_yang_sama_tidak_melempar_caret() {
     // A rebuild caused by some other signal: the props are identical, so the
     // field's contents and caret must not be touched at all (the "controlled
     // component" bug).
-    let stat = reconcile(&mut u.tree, text_field(&f, &t, "halo").placeholder("beda"));
+    let stat = reconcile(
+        &mut u.tree,
+        text_field_in(&f, &t, "halo").placeholder("beda"),
+    );
     assert_eq!(stat.created, 0, "node yang sama, hanya props-nya berganti");
     assert_eq!(u.kolom().selection().range(), 0..0);
     assert_eq!(u.teks(), "halo");
@@ -878,8 +881,8 @@ fn rebuild_dengan_nilai_props_yang_sama_tidak_melempar_caret() {
 fn nilai_baru_dari_aplikasi_benar_benar_mengganti_isi() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, "lama"));
-    reconcile(&mut u.tree, text_field(&f, &t, "baru"));
+    let mut u = Uji::baru(text_field_in(&f, &t, "lama"));
+    reconcile(&mut u.tree, text_field_in(&f, &t, "baru"));
     u.tata();
     assert_eq!(u.teks(), "baru");
     assert_eq!(u.kolom().selection().range(), 4..4);
@@ -889,12 +892,12 @@ fn nilai_baru_dari_aplikasi_benar_benar_mengganti_isi() {
 fn mengetik_lalu_rebuild_dengan_nilai_lama_dari_props_tidak_membatalkan_ketikan() {
     let f = fonts();
     let t = tema();
-    let mut u = Uji::baru(text_field(&f, &t, ""));
+    let mut u = Uji::baru(text_field_in(&f, &t, ""));
     u.fokus();
     u.ketik("kete");
     // An app that does **not** wire up `on_change` still gets a typable field:
     // props that never change never overwrite the contents.
-    reconcile(&mut u.tree, text_field(&f, &t, ""));
+    reconcile(&mut u.tree, text_field_in(&f, &t, ""));
     assert_eq!(u.teks(), "kete");
 }
 
@@ -907,12 +910,12 @@ fn nilai_yang_dikirim_balik_lewat_on_change_tidak_menggerakkan_caret() {
         let n = nilai.clone();
         move |s: &str| *n.borrow_mut() = s.to_string()
     };
-    let mut u = Uji::baru(text_field(&f, &t, "").on_change(tulis));
+    let mut u = Uji::baru(text_field_in(&f, &t, "").on_change(tulis));
     u.fokus();
     u.ketik("ab");
     // The full round trip: the signal changes → rebuild with the new value.
     let isi = nilai.borrow().clone();
-    reconcile(&mut u.tree, text_field(&f, &t, isi.clone()));
+    reconcile(&mut u.tree, text_field_in(&f, &t, isi.clone()));
     u.tata();
     assert_eq!(isi, "ab");
     assert_eq!(u.teks(), "ab");
@@ -932,7 +935,7 @@ fn kotak_seleksi_dan_caret_ikut_bergeser_saat_isi_tergulir() {
     let f = fonts();
     let t = tema();
     let panjang = "kalimat yang jauh lebih panjang daripada lebar kolomnya sendiri, sungguh";
-    let mut u = Uji::baru(text_field(&f, &t, panjang));
+    let mut u = Uji::baru(text_field_in(&f, &t, panjang));
     u.fokus();
     u.tombol(KeyCode::Named(NamedKey::End), Modifiers::NONE);
     u.tombol(KeyCode::Character('a'), Modifiers::COMMAND);
@@ -958,7 +961,7 @@ fn dikte_suara_mengisi_kolom_lewat_aksi_set_value() {
     let t = tema();
     let catatan = Catatan::default();
     let mut u = Uji::baru(
-        text_field(&f, &t, "")
+        text_field_in(&f, &t, "")
             .label("Kota")
             .on_change(catatan.rekam()),
     );
@@ -987,8 +990,8 @@ fn kolom_mati_dan_read_only_menolak_set_value() {
     let f = fonts();
     let t = tema();
     for view in [
-        text_field(&f, &t, "tetap").disabled(true),
-        text_field(&f, &t, "tetap").read_only(true),
+        text_field_in(&f, &t, "tetap").disabled(true),
+        text_field_in(&f, &t, "tetap").read_only(true),
     ] {
         let mut u = Uji::baru(view);
         let permintaan = AccessActionRequest {
@@ -999,4 +1002,79 @@ fn kolom_mati_dan_read_only_menolak_set_value() {
         assert!(!apply_access_action(&mut u.tree, &permintaan));
         assert_eq!(u.teks(), "tetap");
     }
+}
+
+// ---------------------------------------------------------------------------
+// RTL (§9.8, AUDIT P-6)
+// ---------------------------------------------------------------------------
+
+/// One field, laid out in the given reading direction.
+fn kolom_arah(arah: silka_core::tree::TextDirection, isi: &str) -> Uji {
+    let f = fonts();
+    let t = tema();
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, text_field_in(&f, &t, isi).label("Kota"));
+    tree.set_direction(arah);
+    tree.layout(BoxConstraints::loose(RUANG));
+    let id = first(&tree).expect("kolom teks harus ada di pohon");
+    Uji {
+        tree,
+        router: InputRouter::new(),
+        id,
+        jam: Duration::ZERO,
+    }
+}
+
+/// The leftmost glyph edge of the run — the run has no origin of its own, so
+/// the geometry is read where it actually ends up.
+fn awal_run(u: &Uji) -> f32 {
+    u.kolom()
+        .run
+        .glyphs
+        .iter()
+        .map(|g| g.bounds.origin.x)
+        .fold(f32::INFINITY, f32::min)
+}
+
+#[test]
+fn teks_pendek_menempel_tepi_awal_baca() {
+    use silka_core::tree::TextDirection;
+
+    let ltr = kolom_arah(TextDirection::Ltr, "Ubud");
+    let rtl = kolom_arah(TextDirection::Rtl, "Ubud");
+
+    let x_ltr = awal_run(&ltr);
+    let x_rtl = awal_run(&rtl);
+    assert!(
+        x_ltr.is_finite() && x_rtl.is_finite(),
+        "mesin bundled harus menghasilkan glyph untuk \"Ubud\""
+    );
+    assert!(
+        x_rtl > x_ltr,
+        "teks yang lebih sempit dari kolomnya harus menempel ke kanan di RTL: ltr={x_ltr} rtl={x_rtl}"
+    );
+}
+
+#[test]
+fn caret_ikut_pindah_bersama_teksnya_di_rtl() {
+    use silka_core::tree::TextDirection;
+
+    let ltr = kolom_arah(TextDirection::Ltr, "Ubud");
+    let rtl = kolom_arah(TextDirection::Rtl, "Ubud");
+    assert!(
+        rtl.kolom().caret.origin.x > ltr.kolom().caret.origin.x,
+        "caret dihitung dari asal teks yang sama, jadi harus ikut pindah"
+    );
+}
+
+#[test]
+fn teks_yang_meluap_tidak_terpengaruh_arah() {
+    use silka_core::tree::TextDirection;
+
+    // No slack left in the box: the caret-following scroll decides, so the
+    // origin must be identical in both directions rather than shifted twice.
+    let panjang = "Ubud Gianyar Bali Indonesia Asia Tenggara dan seterusnya sampai jauh";
+    let ltr = kolom_arah(TextDirection::Ltr, panjang);
+    let rtl = kolom_arah(TextDirection::Rtl, panjang);
+    assert_eq!(awal_run(&ltr), awal_run(&rtl));
 }
