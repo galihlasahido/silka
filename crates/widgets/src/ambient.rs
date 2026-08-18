@@ -219,7 +219,7 @@ pub fn with_fonts<R>(fonts: &Fonts, f: impl FnOnce() -> R) -> R {
 ///
 /// ```
 /// use silka_theme::{Appearance, Theme};
-/// use silka_widgets::{button_in, with_ambient, Fonts};
+/// use silka_widgets::{button, with_ambient, Fonts};
 ///
 /// let fonts = Fonts::bundled_only();
 /// let dark = Theme::tailwind(Appearance::Dark);

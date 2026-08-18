@@ -44,7 +44,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{overlay_layer, select_in, text_in, Fonts, Select, SelectState};
+use silka_widgets::{active_fonts, overlay_layer, select, text, Select, SelectState};
 
 /// The page title.
 pub const JUDUL: &str = "Select";
@@ -97,12 +97,12 @@ pub fn negara() -> Vec<String> {
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution; the logical sizes
     // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // One signal per select: all of the rules (the clamped highlight, the
     // scroll that follows it, the popup closing after a choice) live in
@@ -111,17 +111,17 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let negara_state = use_signal(SelectState::new);
     let periode = use_signal(|| SelectState::with_selected(1));
 
-    let s_mata_uang = select_in(fonts, &t, MATA_UANG)
+    let s_mata_uang = select(MATA_UANG)
         .label(LABEL_MATA_UANG)
         .key("mata-uang")
         .bind(mata_uang);
-    let s_negara = select_in(fonts, &t, negara())
+    let s_negara = select(negara())
         .label(LABEL_NEGARA)
         .placeholder("Pilih negara…")
         .max_visible(NEGARA_TERLIHAT)
         .key("negara")
         .bind(negara_state);
-    let s_periode = select_in(fonts, &t, PERIODE)
+    let s_periode = select(PERIODE)
         .label(LABEL_MATI)
         .disabled(true)
         .key("periode")
@@ -131,7 +131,6 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     // order (`silka_widgets::overlay`), and not one panel computes its own
     // position.
     overlay_layer(konten(
-        fonts,
         &t,
         [
             (LABEL_MATA_UANG, &s_mata_uang),
@@ -158,8 +157,8 @@ pub fn ringkasan(mata_uang: &Select, negara: &Select) -> String {
 
 /// The content behind the overlay layer: title, three form rows, and the
 /// summary.
-fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: String) -> View {
-    let judul = text_in(fonts, JUDUL)
+fn konten(t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: String) -> View {
+    let judul = text(JUDUL)
         .size(t.typography.body_size * 2.0)
         .weight(FontWeight::SEMIBOLD)
         // Negative tracking at large sizes — an SF habit (§3.6).
@@ -167,8 +166,7 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
         .color(t.color.label)
         .single_line();
 
-    let keterangan = text_in(
-        fonts,
+    let keterangan = text(
         "Klik kotaknya, atau Tab lalu tekan Space. Panah menyusuri, \
          mengetik huruf melompat ke pilihan yang cocok, Esc menutup.",
     )
@@ -179,7 +177,7 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
 
     let baris: Vec<View> = kontrol
         .iter()
-        .map(|(nama, s)| baris_form(fonts, t, nama, s))
+        .map(|(nama, s)| baris_form(t, nama, s))
         .collect();
 
     column([
@@ -187,7 +185,7 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
         View::from(keterangan),
         View::from(column(baris).spacing(t.space(4.0))),
         View::from(
-            text_in(fonts, ringkasan)
+            text(ringkasan)
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.accent)
@@ -207,12 +205,12 @@ fn konten(fonts: &Fonts, t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: St
 /// The name column's width is pinned via `constrained` so all three controls
 /// **line up**; that is the macOS Settings layout, and the layout engine is
 /// what computes it, not arithmetic on this page (§3.4).
-fn baris_form(fonts: &Fonts, t: &Theme, nama: &str, s: &Select) -> View {
+fn baris_form(t: &Theme, nama: &str, s: &Select) -> View {
     let lebar_nama = t.space(38.0);
     row([
         View::from(constrained(
             BoxConstraints::new(lebar_nama, lebar_nama, 0.0, f32::INFINITY),
-            text_in(fonts, nama)
+            text(nama)
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -254,9 +252,8 @@ mod tests {
 
     impl Layar {
         fn baru(theme: Theme) -> Self {
-            let fonts = Fonts::bundled_only();
             let mut layar = Self {
-                ui: headless_app(theme, move |cx| halaman(cx, &fonts))
+                ui: headless_app(theme, move |cx| halaman(cx))
                     .sized(VIEWPORT.width, VIEWPORT.height),
                 jam: Instant::now(),
             };

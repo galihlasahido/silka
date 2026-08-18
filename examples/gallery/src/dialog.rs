@@ -48,8 +48,8 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    alert_in, button_in, button_variant_in, dialog_in, overlay_layer, text_in, ButtonOrder,
-    ButtonVariant, Fonts,
+    active_fonts, alert, button, button_variant, dialog, overlay_layer, text, ButtonOrder,
+    ButtonVariant,
 };
 
 /// The page title.
@@ -88,12 +88,12 @@ enum Buka {
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution; the logical sizes
     // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let buka = use_signal(|| Buka::Tidak);
     let jawaban = use_signal(|| String::from(BELUM_DIJAWAB));
@@ -109,9 +109,9 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     };
     let tutup = move || buka.set(Buka::Tidak);
 
-    overlay_layer(konten(fonts, &t, buka, jawaban))
+    overlay_layer(konten(&t, buka, jawaban))
         .overlay(
-            dialog_in(fonts, &t, JUDUL_SIMPAN)
+            dialog(JUDUL_SIMPAN)
                 .message(
                     "Dokumen ini punya perubahan yang belum disimpan. \
                      Menutupnya sekarang akan membuang perubahan itu.",
@@ -124,14 +124,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .overlay(
             // A destructive alert: clicking outside does not close it, and
             // Return never runs "Hapus" (HIG).
-            alert_in(fonts, &t, JUDUL_HAPUS)
+            alert(JUDUL_HAPUS)
                 .message("Berkas yang dihapus tidak bisa dikembalikan.")
                 .open(buka.get() == Buka::Hapus)
                 .cancel("Batal", jawab("Batal"))
                 .destructive("Hapus", jawab("Hapus")),
         )
         .overlay(
-            dialog_in(fonts, &t, JUDUL_WINDOWS)
+            dialog(JUDUL_WINDOWS)
                 .message(
                     "Susunan yang sama dipaksa ke konvensi Windows: tombol \
                      default di kiri, batal di kanannya.",
@@ -145,10 +145,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 }
 
 /// The page content behind the dialog — inert while a modal is open.
-fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>) -> View {
+fn konten(t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>) -> View {
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -156,8 +156,7 @@ fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>)
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Modal dengan backdrop dim di atas sistem overlay yang sama \
                  dengan popover dan toast. Urutan tombolnya mengikuti konvensi \
                  OS; Esc membatalkan, Return menjalankan tombol default.",
@@ -168,22 +167,20 @@ fn konten(fonts: &Fonts, t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>)
             .max_width(t.space(120.0)),
         ),
         View::from(
-            text_in(fonts, format!("Jawaban terakhir: {}", jawaban.get()))
+            text(format!("Jawaban terakhir: {}", jawaban.get()))
                 .size(t.typography.callout.size)
                 .color(t.color.tertiary_label)
                 .single_line(),
         ),
         View::from(
             row([
+                View::from(button(BUKA_SIMPAN).on_press(move || buka.set(Buka::Simpan))),
                 View::from(
-                    button_in(fonts, t, BUKA_SIMPAN).on_press(move || buka.set(Buka::Simpan)),
-                ),
-                View::from(
-                    button_variant_in(fonts, t, BUKA_HAPUS, ButtonVariant::Destructive)
+                    button_variant(BUKA_HAPUS, ButtonVariant::Destructive)
                         .on_press(move || buka.set(Buka::Hapus)),
                 ),
                 View::from(
-                    button_variant_in(fonts, t, BUKA_WINDOWS, ButtonVariant::Secondary)
+                    button_variant(BUKA_WINDOWS, ButtonVariant::Secondary)
                         .on_press(move || buka.set(Buka::Windows)),
                 ),
             ])
@@ -227,10 +224,9 @@ mod tests {
     }
 
     impl Uji {
-        fn baru(theme: Theme, fonts: &Fonts) -> Self {
-            let untuk_view = fonts.clone();
-            let ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
-                .sized(VIEWPORT.width, VIEWPORT.height);
+        fn baru(theme: Theme) -> Self {
+            let ui =
+                headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
             Self {
                 ui,
                 jam: Instant::now(),
@@ -306,15 +302,9 @@ mod tests {
         }
     }
 
-    /// A deterministic text engine: no system fonts (§9.5).
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     #[test]
     fn halaman_dimulai_tanpa_dialog_dan_benar_benar_diam() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark), &f);
+        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark));
         uji.diam();
 
         assert!(!uji.ada(JUDUL_SIMPAN));
@@ -326,8 +316,7 @@ mod tests {
 
     #[test]
     fn klik_membuka_dialog_yang_beranimasi_masuk_lalu_diam() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::cupertino(Appearance::Light), &f);
+        let mut uji = Uji::baru(Theme::cupertino(Appearance::Light));
         uji.diam();
 
         uji.tombol(BUKA_SIMPAN);
@@ -367,8 +356,7 @@ mod tests {
 
     #[test]
     fn tombol_dialog_menjawab_lalu_menutup() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark), &f);
+        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark));
         uji.diam();
         assert!(uji.jawaban().ends_with(BELUM_DIJAWAB));
 
@@ -388,8 +376,7 @@ mod tests {
 
     #[test]
     fn esc_membatalkan_setelah_fokus_masuk_ke_dialog() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::tailwind(Appearance::Dark), &f);
+        let mut uji = Uji::baru(Theme::tailwind(Appearance::Dark));
         uji.diam();
         uji.tombol(BUKA_SIMPAN);
         uji.diam();
@@ -406,8 +393,7 @@ mod tests {
 
     #[test]
     fn keyboard_mengaktifkan_tombol_dialog_tanpa_mouse() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::cupertino(Appearance::Light), &f);
+        let mut uji = Uji::baru(Theme::cupertino(Appearance::Light));
         uji.diam();
         uji.tombol(BUKA_WINDOWS);
         uji.diam();
@@ -424,8 +410,7 @@ mod tests {
 
     #[test]
     fn klik_di_luar_menutup_dialog_tapi_tidak_menutup_alert() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark), &f);
+        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark));
         let pojok = Point::new(6.0, 6.0);
 
         uji.diam();
@@ -448,11 +433,10 @@ mod tests {
 
     #[test]
     fn warna_halaman_dan_panel_selalu_datang_dari_token() {
-        let f = fonts();
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut uji = Uji::baru(t, &f);
+                let mut uji = Uji::baru(t);
                 uji.diam();
                 assert_eq!(uji.scene().clear_color(), t.color.background);
 
@@ -493,8 +477,7 @@ mod tests {
 
     #[test]
     fn setiap_tombol_dialog_bisa_diklik_dan_memenuhi_hit_target() {
-        let f = fonts();
-        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark), &f);
+        let mut uji = Uji::baru(Theme::cupertino(Appearance::Dark));
         uji.diam();
         uji.tombol(BUKA_SIMPAN);
         uji.diam();

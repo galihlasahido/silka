@@ -21,7 +21,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
 
-use silka_chart::bar_chart_in;
+use silka_chart::bar_chart;
 use silka_chart::format::{Locale, NumberFormat};
 use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::scheduler::Dirty;
@@ -32,7 +32,8 @@ use silka_paint::Insets;
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, Theme};
 use silka_widgets::{
-    button_in, col, table_in, text_in, use_table_state, ButtonVariant, Column, Fonts, TableState,
+    active_fonts, button, col, table, text, use_table_state, ButtonVariant, Column, Fonts,
+    TableState,
 };
 
 const TITLE: &str = "Dashboard";
@@ -187,12 +188,11 @@ fn attainment(months: &[Month]) -> f64 {
 /// The whole window — this is what `run_app_with` is handed.
 fn app(
     cx: &BuildCtx,
-    fonts: &Fonts,
     stash: &Rc<Cell<Option<Signal<Load>>>>,
     inbox: &Rc<RefCell<Inbox<Report>>>,
 ) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
-    fonts.set_scale_factor(cx.expect_env::<Signal<ScaleFactor>>().get().get());
+    active_fonts().set_scale_factor(cx.expect_env::<Signal<ScaleFactor>>().get().get());
 
     let data = use_signal(|| Load::Loading);
     let seed = use_signal(|| 1u64);
@@ -205,13 +205,13 @@ fn app(
     let for_press = inbox.clone();
     let head = row([
         View::from(
-            text_in(fonts, TITLE)
+            text(TITLE)
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
         ),
         View::from(
-            button_in(fonts, &t, REFRESH)
+            button(REFRESH)
                 .variant(ButtonVariant::Secondary)
                 .disabled(data.with(|d| *d == Load::Loading))
                 .on_press(move || {
@@ -229,11 +229,11 @@ fn app(
 
     let body = data.with(|d| match d {
         Load::Loading => View::from(
-            text_in(fonts, LOADING)
+            text(LOADING)
                 .text_color(ColorToken::SecondaryLabel)
                 .single_line(),
         ),
-        Load::Ready(report) => report_view(fonts, &t, report, rows),
+        Load::Ready(report) => report_view(&t, report, rows),
     });
 
     column([View::from(head), body])
@@ -244,28 +244,26 @@ fn app(
 }
 
 /// Cards, chart, table.
-fn report_view(fonts: &Fonts, t: &Theme, report: &Report, rows: TableState) -> View {
+fn report_view(t: &Theme, report: &Report, rows: TableState) -> View {
     let money = NumberFormat::Compact;
     let cards = row([
         card(
-            fonts,
             "Booked",
             money.format(booked(&report.months), &Locale::EN_US),
         ),
         card(
-            fonts,
             "Attainment",
             format!("{:.0}%", attainment(&report.months) * 100.0),
         ),
-        card(fonts, "Deals", report.deals.len().to_string()),
+        card("Deals", report.deals.len().to_string()),
     ])
     .spacing(t.space(4.0))
     .cross(CrossAlign::Stretch);
 
     column([
         View::from(cards),
-        chart(fonts, t, report.months.clone()),
-        deals_table(fonts, t, report.deals.clone(), rows),
+        chart(t, report.months.clone()),
+        deals_table(t, report.deals.clone(), rows),
     ])
     .spacing(t.space(5.0))
     .cross(CrossAlign::Start)
@@ -273,7 +271,7 @@ fn report_view(fonts: &Fonts, t: &Theme, report: &Report, rows: TableState) -> V
 }
 
 /// One stat tile — pure utility styling, every value a token (§2.6).
-fn card(fonts: &Fonts, label: &str, value: String) -> View {
+fn card(label: &str, value: String) -> View {
     div()
         .p_4()
         .gap_1()
@@ -282,13 +280,13 @@ fn card(fonts: &Fonts, label: &str, value: String) -> View {
         .border_1()
         .border_color(ColorToken::Separator)
         .child(
-            text_in(fonts, label)
+            text(label)
                 .text_xs()
                 .text_color(ColorToken::SecondaryLabel)
                 .single_line(),
         )
         .child(
-            text_in(fonts, value)
+            text(value)
                 .font(FontToken::Title3)
                 .text_color(ColorToken::Label)
                 .single_line(),
@@ -297,11 +295,11 @@ fn card(fonts: &Fonts, label: &str, value: String) -> View {
 }
 
 /// Revenue against target, grouped — the comparison bars are actually good at.
-fn chart(fonts: &Fonts, t: &Theme, months: Vec<Month>) -> View {
+fn chart(t: &Theme, months: Vec<Month>) -> View {
     let (w, h) = (t.space(CHART_W), t.space(CHART_H));
     constrained(
         BoxConstraints::new(w, w, h, h),
-        bar_chart_in(fonts, t, months)
+        bar_chart(months)
             .key("revenue")
             .x_label(|m: &Month| m.name.clone())
             .y_named("Revenue", |m: &Month| m.revenue)
@@ -317,7 +315,7 @@ fn chart(fonts: &Fonts, t: &Theme, months: Vec<Month>) -> View {
 
 /// A small table over the same request's rows. Widths and alignment live in the
 /// column list and nowhere else.
-fn deals_table(fonts: &Fonts, t: &Theme, deals: Vec<Deal>, state: TableState) -> View {
+fn deals_table(t: &Theme, deals: Vec<Deal>, state: TableState) -> View {
     let columns: Vec<Column> = vec![
         col("Client").flex(3.0).min_width(t.space(24.0)),
         col("Region").fixed(t.space(30.0)),
@@ -325,19 +323,18 @@ fn deals_table(fonts: &Fonts, t: &Theme, deals: Vec<Deal>, state: TableState) ->
     ];
     let rows = Rc::new(deals);
     let count = rows.len();
-    let for_cell = fonts.clone();
     let (w, h) = (t.space(TABLE_W), t.space(TABLE_H));
 
     constrained(
         BoxConstraints::new(w, w, h, h),
-        table_in(fonts, t, state, columns, count, move |line, cell| {
+        table(state, columns, count, move |line, cell| {
             let deal = &rows[line];
             let value = match cell {
                 0 => deal.client.clone(),
                 1 => deal.region.clone(),
                 _ => NumberFormat::Compact.format(deal.amount, &Locale::EN_US),
             };
-            text_in(&for_cell, value)
+            text(value)
                 .text_color(match cell {
                     0 => ColorToken::Label,
                     _ => ColorToken::SecondaryLabel,
@@ -356,8 +353,10 @@ fn deals_table(fonts: &Fonts, t: &Theme, deals: Vec<Deal>, state: TableState) ->
 
 #[cfg_attr(test, allow(dead_code))]
 fn main() -> Result<(), PlatformError> {
+    // One text engine for the whole application, installed once: it is what
+    // every `text("…")` in this file resolves against (§2.5, §3.3).
     let fonts = Fonts::new();
-    let for_view = fonts.clone();
+    silka_widgets::install_fonts(&fonts);
 
     // The first request is already in flight before the window opens, so the
     // first frame honestly shows the loading state.
@@ -373,7 +372,7 @@ fn main() -> Result<(), PlatformError> {
             .preset(Preset::Cupertino)
             .follow_system_appearance()
             .glyphs(fonts.shared()),
-        move |cx| app(cx, &for_view, &stash, &for_build),
+        move |cx| app(cx, &stash, &for_build),
         move |tree, tick| {
             let mut dirty = silka_widgets::advance(tree, tick) | silka_chart::advance(tree, tick);
             let mut inbox = inbox.borrow_mut();
@@ -431,8 +430,6 @@ mod tests {
     /// second frame showing the table — no window and no thread involved.
     #[test]
     fn a_late_result_reaches_the_screen() {
-        let fonts = Fonts::bundled_only();
-        let for_view = fonts.clone();
         let (tx, rx) = channel::<Report>();
         let inbox = Rc::new(RefCell::new(Inbox::from_receiver(rx)));
         let for_build = inbox.clone();
@@ -440,7 +437,7 @@ mod tests {
         let for_driver = stash.clone();
 
         let mut ui = headless_app(Theme::cupertino(Appearance::Dark), move |cx| {
-            app(cx, &for_view, &stash, &for_build)
+            app(cx, &stash, &for_build)
         })
         .sized(1024.0, 800.0);
         ui.frame();

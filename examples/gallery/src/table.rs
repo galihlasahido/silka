@@ -37,8 +37,8 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    badge_in, button_in, button_variant_in, col, table_in, text_in, use_table_state, BadgeTone,
-    ButtonVariant, Column, Fonts, SortBy, SortDirection, TableState,
+    active_fonts, button, button_variant, col, table, text, use_table_state, BadgeTone,
+    ButtonVariant, Column, SortBy, SortDirection, TableState,
 };
 
 /// The page title.
@@ -178,11 +178,11 @@ pub fn kolom(t: &Theme) -> Vec<Column> {
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let tabel_state = use_table_state();
     let dibuka = use_signal(|| None::<usize>);
@@ -192,7 +192,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -200,8 +200,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Seratus ribu baris berkolom, dan hanya belasan di antaranya \
                  yang pernah menjadi node — memakai ulang virtualisasi yang \
                  sama dengan komponen list, bukan sistem kedua. Klik judul \
@@ -214,9 +213,9 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR_LANGKAH)),
         ),
-        tabel(fonts, &t, tabel_state, dibuka, terisi, urutan),
-        kendali(fonts, &t, tabel_state, terisi),
-        status_bar(fonts, tabel_state, dibuka),
+        tabel(&t, tabel_state, dibuka, terisi, urutan),
+        kendali(&t, tabel_state, terisi),
+        status_bar(tabel_state, dibuka),
     ])
     .spacing(t.space(5.0))
     .main(MainAlign::Center)
@@ -230,7 +229,6 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// The scroll axis **must** be bounded (the same rule as Flutter's): the bound
 /// lives here, not inside the container.
 fn tabel(
-    fonts: &Fonts,
     t: &Theme,
     state: TableState,
     dibuka: Signal<Option<usize>>,
@@ -242,8 +240,6 @@ fn tabel(
     // column heading is clicked — no callback needs wiring up (§2.5).
     let permutasi = urutan.peek().borrow_mut().untuk(state.sort(), count);
 
-    let untuk_sel = fonts.clone();
-    let untuk_kosong = fonts.clone();
     let theme = *t;
 
     constrained(
@@ -253,9 +249,9 @@ fn tabel(
             t.space(TINGGI_LANGKAH),
             t.space(TINGGI_LANGKAH),
         ),
-        table_in(fonts, t, state, kolom(t), count, move |baris, kolom| {
+        table(state, kolom(t), count, move |baris, kolom| {
             let data = permutasi[baris] as usize;
-            sel(&untuk_sel, &theme, data, kolom)
+            sel(&theme, data, kolom)
         })
         .row_extent(TINGGI_BARIS)
         .header_extent(t.space(TINGGI_HEADER_LANGKAH))
@@ -265,7 +261,7 @@ fn tabel(
         .background(t.color.surface_sunken)
         .corners(t.corners(t.radius.lg))
         .border(t.space(0.25), t.color.separator)
-        .empty(move || kosong(&untuk_kosong, &theme))
+        .empty(move || kosong(&theme))
         .on_activate(move |i| dibuka.set(Some(i))),
     )
     .into()
@@ -276,21 +272,21 @@ fn tabel(
 /// The "Status" column returns a **badge**, not text — that is what "custom
 /// cells" means in `KOMPONEN.md`: a cell accepts any view, there is no special
 /// cell type to learn.
-fn sel(fonts: &Fonts, t: &Theme, i: usize, kolom: usize) -> View {
+fn sel(t: &Theme, i: usize, kolom: usize) -> View {
     match kolom {
-        0 => text_in(fonts, format!("#{:06}", i + 1))
+        0 => text(format!("#{:06}", i + 1))
             .size(t.typography.footnote.size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.tertiary_label)
             .single_line()
             .into(),
-        1 => text_in(fonts, nama_pihak(i))
+        1 => text(nama_pihak(i))
             .size(t.typography.body_size)
             .color(t.color.label)
             .single_line()
             .into(),
-        2 => badge(fonts, t, status(i)),
-        _ => text_in(fonts, rupiah(nominal(i)))
+        2 => badge(t, status(i)),
+        _ => text(rupiah(nominal(i)))
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.secondary_label)
@@ -303,15 +299,15 @@ fn sel(fonts: &Fonts, t: &Theme, i: usize, kolom: usize) -> View {
 /// decides about it is which **tone** each status means.
 ///
 /// It used to be a hand-rolled pill here (a padded, coloured, rounded box). The
-/// catalogue grew [`silka_widgets::badge_in`] precisely because this file and
+/// catalogue grew [`silka_widgets::badge`] precisely because this file and
 /// the ERP dashboard had each written that same pill, slightly differently.
-fn badge(fonts: &Fonts, t: &Theme, status: &str) -> View {
+fn badge(_t: &Theme, status: &str) -> View {
     let tone = match status {
         "Lunas" => BadgeTone::Success,
         "Tertunda" => BadgeTone::Warning,
         _ => BadgeTone::Neutral,
     };
-    badge_in(fonts, t, status)
+    silka_widgets::badge(status)
         .tone(tone)
         .soft()
         .label(format!("Status: {status}"))
@@ -319,9 +315,9 @@ fn badge(fonts: &Fonts, t: &Theme, status: &str) -> View {
 }
 
 /// What shows up when the table is empty.
-fn kosong(fonts: &Fonts, t: &Theme) -> View {
+fn kosong(t: &Theme) -> View {
     column([View::from(
-        text_in(fonts, KOSONG)
+        text(KOSONG)
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line(),
@@ -332,27 +328,23 @@ fn kosong(fonts: &Fonts, t: &Theme) -> View {
 }
 
 /// The buttons that prove `scroll_to`, the empty state, and the column reset.
-fn kendali(fonts: &Fonts, t: &Theme, state: TableState, terisi: Signal<bool>) -> View {
+fn kendali(t: &Theme, state: TableState, terisi: Signal<bool>) -> View {
     let isi = terisi.get();
     let label_isi = if isi { TOMBOL_KOSONG } else { TOMBOL_ISI };
     row([
+        View::from(button(TOMBOL_TENGAH).on_press(move || state.scroll_to_row(50_000, BARIS))),
         View::from(
-            button_in(fonts, t, TOMBOL_TENGAH).on_press(move || state.scroll_to_row(50_000, BARIS)),
-        ),
-        View::from(
-            button_variant_in(fonts, t, label_isi, ButtonVariant::Secondary).on_press(move || {
+            button_variant(label_isi, ButtonVariant::Secondary).on_press(move || {
                 terisi.set(!isi);
                 state.clear_selection();
             }),
         ),
         View::from(
-            button_variant_in(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary).on_press(
-                move || {
-                    state.reset_widths();
-                    state.set_order(Vec::new());
-                    state.set_sort(None);
-                },
-            ),
+            button_variant(TOMBOL_RESET, ButtonVariant::Secondary).on_press(move || {
+                state.reset_widths();
+                state.set_order(Vec::new());
+                state.set_sort(None);
+            }),
         ),
     ])
     .spacing(t.space(3.0))
@@ -362,8 +354,7 @@ fn kendali(fonts: &Fonts, t: &Theme, state: TableState, terisi: Signal<bool>) ->
 
 /// The status row — **the only place the selection is read**, so moving the
 /// highlight rebuilds just this text (§2.5).
-fn status_bar(fonts: &Fonts, state: TableState, dibuka: Signal<Option<usize>>) -> View {
-    let fonts = fonts.clone();
+fn status_bar(state: TableState, dibuka: Signal<Option<usize>>) -> View {
     component("status-tabel", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let sel = state.selection();
@@ -388,7 +379,7 @@ fn status_bar(fonts: &Fonts, state: TableState, dibuka: Signal<Option<usize>>) -
             .get()
             .map(|i| format!("dibuka #{:06}", i + 1))
             .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text_in(&fonts, format!("Terpilih: {terpilih} · {urut} · {aktif}"))
+        text(format!("Terpilih: {terpilih} · {urut} · {aktif}"))
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line()
@@ -412,15 +403,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1200.0, 800.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     fn diam(ui: &mut AppRuntime) {
@@ -493,8 +478,7 @@ mod tests {
 
     #[test]
     fn seratus_ribu_baris_berkolom_hanya_menjadi_belasan_node() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let sel = sel_di_pohon(&ui);
@@ -509,8 +493,7 @@ mod tests {
 
     #[test]
     fn menggulir_seratus_ribu_baris_tidak_membengkakkan_pohon() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
         let awal = sel_di_pohon(&ui);
 
@@ -537,8 +520,7 @@ mod tests {
 
     #[test]
     fn tabel_barisnya_dan_selnya_terbaca_screen_reader() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
 
         let pohon = ui.access_tree();
@@ -572,8 +554,7 @@ mod tests {
 
     #[test]
     fn klik_judul_kolom_mengurutkan_seratus_ribu_baris() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let sebelum = kotak(&ui, "#000001");
@@ -606,8 +587,7 @@ mod tests {
 
     #[test]
     fn seleksi_jamak_lewat_keyboard_dan_status_ikut_berubah() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         // Tab until the table holds focus.
@@ -647,8 +627,7 @@ mod tests {
 
     #[test]
     fn tabel_kosong_menampilkan_empty_state_dan_tetap_berjudul() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
 
         let p = kotak(&ui, TOMBOL_KOSONG).center();
@@ -671,8 +650,7 @@ mod tests {
 
     #[test]
     fn tombol_lompat_jauh_menggulirkan_seratus_ribu_baris() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
 
         let p = kotak(&ui, TOMBOL_TENGAH).center();
@@ -690,8 +668,7 @@ mod tests {
 
     #[test]
     fn kolom_mengisi_lebar_dan_header_sejalan_dengan_barisnya() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let widths = body(&ui).column_widths();
@@ -710,8 +687,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 diam(&mut ui);
                 assert_eq!(ui.scene().clear_color(), t.color.background);
                 assert!(
@@ -734,6 +710,11 @@ mod tests {
                             t.color.secondary_label,
                             t.color.tertiary_label,
                             t.color.on_accent,
+                            // The status pill's ink is its **tone**, and a tone
+                            // is a token like any other: a badge that stayed
+                            // grey in every state would be the bug.
+                            t.color.success,
+                            t.color.warning,
                         ]
                         .contains(&w),
                         "warna teks lepas dari token: {w:?} ({preset:?} {appearance:?})"

@@ -28,7 +28,7 @@ use silka_core::view::{column, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{switch_in, switch_only_in, text_in, Fonts};
+use silka_widgets::{active_fonts, switch, switch_only, text};
 
 /// The page title.
 pub const JUDUL: &str = "Switch";
@@ -55,17 +55,17 @@ pub fn menyala(radio: &[bool]) -> usize {
 /// The title and the description are read in the root scope; **the switch
 /// values are not**, so a single tap rebuilds one component rather than the
 /// page (§2.5).
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let radio = use_signal(|| [true, false, true]);
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -74,8 +74,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Jangan cuma diklik — tekan thumb-nya lalu seret. Ia mengikuti \
                  jari 1:1, warnanya berganti tepat saat melewati tengah, dan saat \
                  dilepas kecepatan jari diteruskan ke spring, bukan dibuang.",
@@ -85,8 +84,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(120.0)),
         ),
-        kelompok(fonts, radio),
-        mati(fonts, &t),
+        kelompok(radio),
+        mati(&t),
     ])
     .spacing(t.space(6.0))
     .main(MainAlign::Center)
@@ -99,8 +98,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 ///
 /// This is the only place the values are read, and therefore the only scope
 /// marked dirty when a switch is flipped.
-fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
-    let fonts = fonts.clone();
+fn kelompok(radio: Signal<[bool; RADIO.len()]>) -> View {
     component("sakelar", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let nilai = radio.get();
@@ -110,7 +108,7 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
 
         let mut anak: Vec<View> = Vec::with_capacity(RADIO.len() + 2);
         anak.push(
-            switch_in(&fonts, &t, MODE_PESAWAT)
+            switch(MODE_PESAWAT)
                 .key("pesawat")
                 .on(pesawat)
                 // Turned on = every radio off; turned off = they all come
@@ -120,7 +118,7 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
         );
         for (i, label) in RADIO.into_iter().enumerate() {
             anak.push(
-                switch_in(&fonts, &t, label)
+                switch(label)
                     .key(label)
                     .on(nilai[i])
                     .on_change(move |v| {
@@ -130,7 +128,7 @@ fn kelompok(fonts: &Fonts, radio: Signal<[bool; RADIO.len()]>) -> View {
             );
         }
         anak.push(
-            text_in(&fonts, ringkasan(&nilai))
+            text(ringkasan(&nilai))
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -158,11 +156,11 @@ pub fn ringkasan(radio: &[bool]) -> String {
 ///
 /// All three remain in the accessibility tree: a disabled control is
 /// **announced** as dimmed, not hidden (§3.8).
-fn mati(fonts: &Fonts, t: &Theme) -> View {
+fn mati(t: &Theme) -> View {
     row([
-        View::from(switch_in(fonts, t, MATI).disabled(true)),
-        View::from(switch_in(fonts, t, TERKUNCI).on(true).disabled(true)),
-        View::from(switch_only_in(t).label(TANPA_LABEL).on(true)),
+        View::from(switch(MATI).disabled(true)),
+        View::from(switch(TERKUNCI).on(true).disabled(true)),
+        View::from(switch_only().label(TANPA_LABEL).on(true)),
     ])
     .spacing(t.space(6.0))
     .cross(CrossAlign::Center)
@@ -185,14 +183,8 @@ mod tests {
     const VIEWPORT: Size = Size::new(720.0, 640.0);
     const FRAME: Duration = Duration::from_micros(8_333);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// A node's rectangle **according to the accessibility tree** — the tests
@@ -250,8 +242,7 @@ mod tests {
 
     #[test]
     fn halaman_menampilkan_semua_sakelar_dengan_peran_yang_benar() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let pohon = ui.access_tree();
@@ -284,8 +275,7 @@ mod tests {
 
     #[test]
     fn ketukan_membalik_nilai_dan_ringkasannya_ikut() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         sampai_diam(&mut ui);
         assert_eq!(keadaan(&ui, RADIO[0]), AccessToggled::On);
         assert_eq!(keadaan(&ui, RADIO[1]), AccessToggled::Off);
@@ -308,8 +298,7 @@ mod tests {
 
     #[test]
     fn mode_pesawat_mematikan_semuanya_lalu_mengembalikannya() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         sampai_diam(&mut ui);
         assert_eq!(keadaan(&ui, MODE_PESAWAT), AccessToggled::Off);
 
@@ -331,8 +320,7 @@ mod tests {
 
     #[test]
     fn seretan_menyalakan_tanpa_satu_pun_klik() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Dark), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Dark));
         sampai_diam(&mut ui);
         assert_eq!(keadaan(&ui, RADIO[1]), AccessToggled::Off);
 
@@ -364,8 +352,7 @@ mod tests {
 
     #[test]
     fn keyboard_bisa_mengubah_sakelar_tanpa_mouse() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Light));
         sampai_diam(&mut ui);
 
         // Tab lands on the first switch; Space flips it.
@@ -393,8 +380,7 @@ mod tests {
 
     #[test]
     fn transisi_berjalan_beberapa_frame_lalu_aplikasi_kembali_idle() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         sampai_diam(&mut ui);
 
         let p = kotak(&ui, RADIO[1]).center();
@@ -423,8 +409,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 sampai_diam(&mut ui);
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 

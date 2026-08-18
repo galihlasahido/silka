@@ -63,7 +63,7 @@ use silka_paint::{CornerRadii, Corners, Insets};
 use silka_text::FontWeight;
 use silka_theme::{ColorToken, RadiusToken, ShadowToken, SpaceToken, Theme};
 
-use crate::button::{button_variant_in, ButtonVariant};
+use crate::button::button_variant_in;
 use crate::dialog::{action, ActionKind, ButtonOrder, DialogAction, DialogPanelProps};
 use crate::fonts::Fonts;
 use crate::overlay::{overlay, Align, Barrier, Dismiss, OverlayBuilder, Placement, Side};

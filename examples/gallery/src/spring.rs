@@ -35,7 +35,7 @@ use silka_core::view::{column, constrained, row, Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets, Point, Quad, Rect, ShadowPair, Size};
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button_in, button_variant_in, slider_in, text_in, ButtonVariant, Fonts};
+use silka_widgets::{active_fonts, button, button_variant, slider, text, ButtonVariant};
 
 /// The page title.
 pub const JUDUL: &str = "Spring";
@@ -163,10 +163,10 @@ pub fn ringkasan(spring: Spring) -> String {
 /// The title and the prose are read in the root scope; the target and the
 /// spring parameters are read one level down, so dragging a slider rebuilds
 /// the playground and the readout — not the page (§2.5).
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // The target is owned by the **application**, exactly like a checkbox's
     // value: the node owns the motion, never the destination.
@@ -176,7 +176,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -184,8 +184,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Empat lajur, satu tujuan yang sama. Klik di mana saja pada \
                  sebuah lajur — lalu klik lagi di seberangnya sebelum pucknya \
                  sampai: mereka berbalik sambil membawa kecepatannya, bukan \
@@ -197,8 +196,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR_LANGKAH)),
         ),
-        arena(fonts, target, durasi, bounce),
-        kendali(fonts, target, durasi, bounce),
+        arena(target, durasi, bounce),
+        kendali(target, durasi, bounce),
     ])
     .spacing(t.space(5.0))
     .main(MainAlign::Center)
@@ -208,8 +207,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 }
 
 /// The four lanes as **one component**: the only place the target is read.
-fn arena(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Signal<f32>) -> View {
-    let fonts = fonts.clone();
+fn arena(target: Signal<f32>, durasi: Signal<f32>, bounce: Signal<f32>) -> View {
     component("arena-spring", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let tujuan = target.get();
@@ -219,7 +217,7 @@ fn arena(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Signal
         let mut anak: Vec<View> = Vec::with_capacity(LAJUR.len() * 2);
         for l in LAJUR {
             anak.push(
-                text_in(&fonts, l.nama)
+                text(l.nama)
                     .size(t.typography.caption1.size)
                     .color(t.color.tertiary_label)
                     .single_line()
@@ -255,8 +253,7 @@ fn arena(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Signal
 }
 
 /// The sliders, the buttons, and the readout derived from them.
-fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Signal<f32>) -> View {
-    let fonts = fonts.clone();
+fn kendali(target: Signal<f32>, durasi: Signal<f32>, bounce: Signal<f32>) -> View {
     component("kendali-spring", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let d = durasi.get();
@@ -264,14 +261,14 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
 
         let baris_durasi = row([
             View::from(
-                text_in(&fonts, DURASI)
+                text(DURASI)
                     .size(t.typography.body_size)
                     .color(t.color.secondary_label)
                     .single_line(),
             ),
             View::from(constrained(
                 BoxConstraints::new(t.space(60.0), t.space(60.0), 0.0, f32::INFINITY),
-                slider_in(&t, d)
+                slider(d)
                     .range(DURASI_MIN..=DURASI_MAKS)
                     .step(0.05)
                     .label(DURASI)
@@ -283,14 +280,14 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
 
         let baris_bounce = row([
             View::from(
-                text_in(&fonts, BOUNCE)
+                text(BOUNCE)
                     .size(t.typography.body_size)
                     .color(t.color.secondary_label)
                     .single_line(),
             ),
             View::from(constrained(
                 BoxConstraints::new(t.space(60.0), t.space(60.0), 0.0, f32::INFINITY),
-                slider_in(&t, b)
+                slider(b)
                     .range(BOUNCE_MIN..=BOUNCE_MAKS)
                     .step(0.05)
                     .label(BOUNCE)
@@ -301,14 +298,12 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
         .cross(CrossAlign::Center);
 
         let tombol = row([
-            View::from(button_in(&fonts, &t, KIRIM).on_press(move || target.set(1.0))),
+            View::from(button(KIRIM).on_press(move || target.set(1.0))),
             View::from(
-                button_variant_in(&fonts, &t, PULANG, ButtonVariant::Secondary)
-                    .on_press(move || target.set(0.0)),
+                button_variant(PULANG, ButtonVariant::Secondary).on_press(move || target.set(0.0)),
             ),
             View::from(
-                button_variant_in(&fonts, &t, TENGAH, ButtonVariant::Secondary)
-                    .on_press(move || target.set(0.5)),
+                button_variant(TENGAH, ButtonVariant::Secondary).on_press(move || target.set(0.5)),
             ),
         ])
         .spacing(t.space(3.0))
@@ -318,7 +313,7 @@ fn kendali(fonts: &Fonts, target: Signal<f32>, durasi: Signal<f32>, bounce: Sign
             View::from(baris_durasi),
             View::from(baris_bounce),
             View::from(
-                text_in(&fonts, ringkasan(Spring::new(d, b)))
+                text(ringkasan(Spring::new(d, b)))
                     .size(t.typography.footnote.size)
                     .color(t.color.tertiary_label)
                     .single_line(),
@@ -778,14 +773,9 @@ mod tests {
     const VIEWPORT: Size = Size::new(900.0, 760.0);
     const FRAME: Duration = Duration::from_micros(8_333);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        let mut ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height);
+    fn ui(theme: Theme) -> AppRuntime {
+        let mut ui =
+            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }
@@ -851,8 +841,7 @@ mod tests {
 
     #[test]
     fn halaman_menggambar_keempat_lajur() {
-        let f = fonts();
-        let ui = ui(tema(), &f);
+        let ui = ui(tema());
         for l in LAJUR {
             assert!(
                 ui.access_tree().find_label(&nama_lajur(l)).is_some(),
@@ -869,8 +858,7 @@ mod tests {
 
     #[test]
     fn klik_di_lajur_memindahkan_target_semua_lajur() {
-        let f = fonts();
-        let mut ui = ui(tema(), &f);
+        let mut ui = ui(tema());
         let lajur = kotak(&ui, &nama_lajur(LAJUR[0]));
         // Far right — the target must follow the finger, not a fixed step.
         ketuk(
@@ -887,8 +875,7 @@ mod tests {
 
     #[test]
     fn puck_bergerak_lalu_berhenti_sendiri() {
-        let f = fonts();
-        let mut ui = ui(tema(), &f);
+        let mut ui = ui(tema());
         let lajur = kotak(&ui, &nama_lajur(LAJUR[0]));
         ketuk(&mut ui, Point::new(lajur.center().x, lajur.center().y));
 
@@ -979,11 +966,10 @@ mod tests {
 
     #[test]
     fn benar_di_kedua_preset() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let ui = ui(t, &f);
+                let ui = ui(t);
                 assert_eq!(ui.scene().clear_color(), t.color.background);
                 // Every colour on the page is a token, so the lane colours
                 // must differ between the two presets exactly as the tokens do.

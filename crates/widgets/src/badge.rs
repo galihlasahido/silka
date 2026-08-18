@@ -628,7 +628,12 @@ impl Badge {
                 BadgeVariant::Outline => t.space_of(SpaceToken::Px),
                 _ => 0.0,
             },
-            padding: Insets::symmetric(t.space(2.0), t.space(0.5)),
+            // Horizontal padding is deliberately smaller than the vertical
+            // rhythm would suggest: a one-character count has to fit inside the
+            // pill's own height, or the width floor in `BadgeBox::layout` can
+            // never win and a row of counts becomes a row of narrow ovals
+            // instead of a row of circles.
+            padding: Insets::symmetric(t.space(1.5), t.space(0.5)),
             height,
             dot: if self.dot { t.space(1.5) } else { 0.0 },
             dot_gap: t.space(1.0),

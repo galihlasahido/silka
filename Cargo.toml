@@ -114,6 +114,15 @@ taffy             = { version = "0.13", default-features = false, features = ["s
 # dalam satu proses.
 muda              = "0.19"
 tray-icon         = "0.24"
+# Global hotkey (INTEGRASI-NATIVE §3) — serumpun dengan muda/tray-icon dan
+# ikut memakai `keyboard-types` yang sama, jadi nama `Code` ("KeyA", "F12")
+# dipakai satu tabel untuk akselerator menu DAN hotkey global. Versinya dikunci
+# di sini persis seperti muda: dua pohon keyboard-types dalam satu binary
+# berarti dua tipe `Code` yang tidak bisa saling tukar.
+# Hanya dipasang di macOS + Windows (lihat crates/platform/Cargo.toml):
+# backend Linux-nya X11-only, sedangkan Wayland menyerahkan shortcut global ke
+# compositor — alasan yang sama dengan menubar.
+global-hotkey     = "0.8"
 rfd               = "0.17"    # dialog file/pesan; di Linux lewat XDG portal (ramah Flatpak)
 arboard           = "3.6"     # clipboard teks + gambar
 window-vibrancy   = "0.6"     # blur behind-window: NSVisualEffectView / acrylic / mica

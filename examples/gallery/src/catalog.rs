@@ -20,7 +20,6 @@
 
 use silka_core::app::BuildCtx;
 use silka_core::view::View;
-use silka_widgets::Fonts;
 
 /// Where a page sits in the `KOMPONEN.md` tier list.
 ///
@@ -314,30 +313,30 @@ impl Halaman {
     /// The single place that maps a catalogue entry to a page module. Every
     /// arm has the same shape on purpose: a page is a plain function of
     /// `(&BuildCtx, &Fonts)`, so the shell needs no per-page special case.
-    pub fn view(self, cx: &BuildCtx, fonts: &Fonts) -> View {
+    pub fn view(self, cx: &BuildCtx) -> View {
         match self {
-            Halaman::Primitif => crate::primitives::halaman(cx, fonts),
-            Halaman::TataLetak => crate::layout::halaman(cx, fonts),
-            Halaman::Counter => crate::counter::halaman(cx, fonts),
+            Halaman::Primitif => crate::primitives::halaman(cx),
+            Halaman::TataLetak => crate::layout::halaman(cx),
+            Halaman::Counter => crate::counter::halaman(cx),
             Halaman::Reaktif => crate::reactive::halaman(cx),
-            Halaman::Utility => crate::utility::halaman(cx, fonts),
-            Halaman::Tombol => crate::button::halaman(cx, fonts),
-            Halaman::KolomTeks => crate::text_field::halaman(cx, fonts),
-            Halaman::AreaTeks => crate::text_area::halaman(cx, fonts),
-            Halaman::Centang => crate::checkbox::halaman(cx, fonts),
-            Halaman::Sakelar => crate::switch::halaman(cx, fonts),
-            Halaman::Slider => crate::slider::halaman(cx, fonts),
-            Halaman::Pilihan => crate::select::halaman(cx, fonts),
-            Halaman::Tabs => crate::tabs::halaman(cx, fonts),
-            Halaman::MenuHalaman => crate::menu::halaman(cx, fonts),
-            Halaman::Dialog => crate::dialog::halaman(cx, fonts),
-            Halaman::Gulir => crate::scroll_view::halaman(cx, fonts),
-            Halaman::Daftar => crate::list::halaman(cx, fonts),
-            Halaman::Tabel => crate::table::halaman(cx, fonts),
-            Halaman::Pohon => crate::tree::halaman(cx, fonts),
-            Halaman::Chart => crate::chart::halaman(cx, fonts),
-            Halaman::Wysiwyg => crate::wysiwyg::halaman(cx, fonts),
-            Halaman::Animasi => crate::spring::halaman(cx, fonts),
+            Halaman::Utility => crate::utility::halaman(cx),
+            Halaman::Tombol => crate::button::halaman(cx),
+            Halaman::KolomTeks => crate::text_field::halaman(cx),
+            Halaman::AreaTeks => crate::text_area::halaman(cx),
+            Halaman::Centang => crate::checkbox::halaman(cx),
+            Halaman::Sakelar => crate::switch::halaman(cx),
+            Halaman::Slider => crate::slider::halaman(cx),
+            Halaman::Pilihan => crate::select::halaman(cx),
+            Halaman::Tabs => crate::tabs::halaman(cx),
+            Halaman::MenuHalaman => crate::menu::halaman(cx),
+            Halaman::Dialog => crate::dialog::halaman(cx),
+            Halaman::Gulir => crate::scroll_view::halaman(cx),
+            Halaman::Daftar => crate::list::halaman(cx),
+            Halaman::Tabel => crate::table::halaman(cx),
+            Halaman::Pohon => crate::tree::halaman(cx),
+            Halaman::Chart => crate::chart::halaman(cx),
+            Halaman::Wysiwyg => crate::wysiwyg::halaman(cx),
+            Halaman::Animasi => crate::spring::halaman(cx),
         }
     }
 }

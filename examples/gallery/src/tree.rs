@@ -37,7 +37,7 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    button_in, button_variant_in, spacer, text_in, tree_in, use_tree_state, ButtonVariant, Fonts,
+    active_fonts, button, button_variant, spacer, text, tree, use_tree_state, ButtonVariant,
     TreeKey, TreeNode, TreeRow, TreeState,
 };
 
@@ -184,11 +184,11 @@ impl Muatan {
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let pohon_state = use_tree_state();
     let dibuka = use_signal(|| None::<TreeKey>);
@@ -200,7 +200,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -208,8 +208,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Lima puluh ribu berkas dalam seribu folder, dan hanya belasan \
                  baris yang pernah menjadi node — memakai ulang virtualisasi \
                  yang sama dengan komponen list, bukan sistem ketiga. Klik \
@@ -222,9 +221,9 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR_LANGKAH)),
         ),
-        pohon(fonts, &t, pohon_state, dibuka, terisi, muatan, dimuat),
-        kendali(fonts, &t, pohon_state, terisi, muatan, dimuat),
-        status(fonts, pohon_state, dibuka, dimuat),
+        pohon(&t, pohon_state, dibuka, terisi, muatan, dimuat),
+        kendali(&t, pohon_state, terisi, muatan, dimuat),
+        status(pohon_state, dibuka, dimuat),
     ])
     .spacing(t.space(5.0))
     .main(MainAlign::Center)
@@ -238,7 +237,6 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// The scroll axis **must** be bounded (the same rule as Flutter's): the bound
 /// lives here, not inside the container.
 fn pohon(
-    fonts: &Fonts,
     t: &Theme,
     state: TreeState,
     dibuka: Signal<Option<TreeKey>>,
@@ -279,8 +277,6 @@ fn pohon(
         }
     };
 
-    let untuk_baris = fonts.clone();
-    let untuk_kosong = fonts.clone();
     let theme = *t;
     let untuk_buka = simpanan.clone();
 
@@ -291,7 +287,7 @@ fn pohon(
             t.space(TINGGI_LANGKAH),
             t.space(TINGGI_LANGKAH),
         ),
-        tree_in(t, state, sumber, move |r| baris(&untuk_baris, &theme, r))
+        tree(state, sumber, move |r| baris(&theme, r))
             .row_extent(TINGGI_BARIS)
             .guides(t.space(0.25))
             .multi_selection()
@@ -304,7 +300,7 @@ fn pohon(
             .background(t.color.surface_sunken)
             .corners(t.corners(t.radius.lg))
             .border(t.space(0.25), t.color.separator)
-            .empty(move || kosong(&untuk_kosong, &theme))
+            .empty(move || kosong(&theme))
             // **The lazy-loading hook.** The children are fetched exactly when
             // the folder opens, and the version bump is what tells the tree to
             // ask the source again.
@@ -321,8 +317,8 @@ fn pohon(
 ///
 /// Called **only** for rows that are actually visible — that is virtualization's
 /// promise, and that is why fifty thousand files are allowed here.
-fn baris(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
-    let judul = text_in(fonts, r.label.to_string())
+fn baris(t: &Theme, r: &TreeRow) -> View {
+    let judul = text(r.label.to_string())
         .size(t.typography.body_size)
         .weight(if r.expandable {
             FontWeight::MEDIUM
@@ -344,7 +340,7 @@ fn baris(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
         // single layout number on this page.
         View::from(spacer()),
         View::from(
-            text_in(fonts, keterangan)
+            text(keterangan)
                 .size(t.typography.footnote.size)
                 .color(t.color.tertiary_label)
                 .single_line(),
@@ -357,9 +353,9 @@ fn baris(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
 }
 
 /// What an empty tree shows instead of a blank box.
-fn kosong(fonts: &Fonts, t: &Theme) -> View {
+fn kosong(t: &Theme) -> View {
     column([View::from(
-        text_in(fonts, KOSONG)
+        text(KOSONG)
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line(),
@@ -373,7 +369,6 @@ fn kosong(fonts: &Fonts, t: &Theme) -> View {
 /// The buttons — proof that opening everything, closing everything, and
 /// jumping far all work on fifty thousand nodes.
 fn kendali(
-    fonts: &Fonts,
     t: &Theme,
     state: TreeState,
     terisi: Signal<bool>,
@@ -384,7 +379,7 @@ fn kendali(
     let ada = terisi.get();
 
     row([
-        View::from(button_in(fonts, t, TOMBOL_SEMUA).on_press(move || {
+        View::from(button(TOMBOL_SEMUA).on_press(move || {
             // "Expand all" loads first and then opens: a single rebuild, and —
             // deliberately — no height animation (§3.5, `open_many`).
             untuk_semua.borrow_mut().muat_semua(semua_folder());
@@ -392,24 +387,18 @@ fn kendali(
             state.open_many(semua_folder());
         })),
         View::from(
-            button_variant_in(fonts, t, TOMBOL_TUTUP, ButtonVariant::Secondary).on_press(
-                move || {
-                    state.collapse_all();
-                },
-            ),
+            button_variant(TOMBOL_TUTUP, ButtonVariant::Secondary).on_press(move || {
+                state.collapse_all();
+            }),
         ),
         View::from(
-            button_variant_in(fonts, t, TOMBOL_JAUH, ButtonVariant::Secondary).on_press(
-                move || {
-                    let baris = state.flat().len();
-                    state.scroll_to_row(baris.saturating_sub(11_000), baris);
-                },
-            ),
+            button_variant(TOMBOL_JAUH, ButtonVariant::Secondary).on_press(move || {
+                let baris = state.flat().len();
+                state.scroll_to_row(baris.saturating_sub(11_000), baris);
+            }),
         ),
         View::from(
-            button_variant_in(
-                fonts,
-                t,
+            button_variant(
                 if ada { TOMBOL_KOSONG } else { TOMBOL_ISI },
                 ButtonVariant::Ghost,
             )
@@ -423,13 +412,7 @@ fn kendali(
 
 /// The status line — **the only place the selection is read**, so moving the
 /// highlight rebuilds just this text (§2.5).
-fn status(
-    fonts: &Fonts,
-    state: TreeState,
-    dibuka: Signal<Option<TreeKey>>,
-    dimuat: Signal<usize>,
-) -> View {
-    let fonts = fonts.clone();
+fn status(state: TreeState, dibuka: Signal<Option<TreeKey>>, dimuat: Signal<usize>) -> View {
     component("status-pohon", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let seleksi = state.selection();
@@ -446,13 +429,10 @@ fn status(
             .get()
             .map(|k| format!("dibuka {}", nama(k)))
             .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text_in(
-            &fonts,
-            format!(
-                "Baris terlihat: {terlihat} · folder dimuat: {} · terpilih: {terpilih} · {aktif}",
-                dimuat.get()
-            ),
-        )
+        text(format!(
+            "Baris terlihat: {terlihat} · folder dimuat: {} · terpilih: {terpilih} · {aktif}",
+            dimuat.get()
+        ))
         .size(t.typography.body_size)
         .color(t.color.tertiary_label)
         .single_line()
@@ -476,15 +456,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1000.0, 820.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// Pump frames until the app is genuinely at rest **and** no spring is
@@ -563,8 +537,7 @@ mod tests {
 
     #[test]
     fn halaman_terbuka_dengan_volumenya_saja() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         assert_eq!(
@@ -578,8 +551,7 @@ mod tests {
 
     #[test]
     fn buka_semua_lima_puluh_ribu_simpul_tetap_belasan_node() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let p = kotak(&ui, TOMBOL_SEMUA).center();
@@ -612,8 +584,7 @@ mod tests {
 
     #[test]
     fn folder_dimuat_saat_dibuka_bukan_sebelumnya() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
         assert!(
             memuat(&ui, "folder dimuat: 0"),
@@ -646,8 +617,7 @@ mod tests {
 
     #[test]
     fn pohon_dan_barisnya_terbaca_screen_reader() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
 
         let pohon = ui.access_tree();
@@ -673,8 +643,7 @@ mod tests {
 
     #[test]
     fn kosongkan_menampilkan_empty_state() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let p = kotak(&ui, TOMBOL_KOSONG).center();
@@ -693,8 +662,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 diam(&mut ui);
                 assert_eq!(ui.scene().clear_color(), t.color.background);
                 assert!(

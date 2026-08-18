@@ -14,7 +14,7 @@
 //!
 //! ```text
 //! // before
-//! text_in(fonts, judul)
+//! text(judul)
 //!     .size(t.typography.caption1.size)
 //!     .weight(FontWeight::SEMIBOLD)
 //!     .tracking(t.typography.caption1.tracking)
@@ -22,7 +22,7 @@
 //!     .single_line()
 //!
 //! // after
-//! text_in(fonts, judul)
+//! text(judul)
 //!     .font(FontToken::Caption1)
 //!     .font_semibold()
 //!     .text_color(ColorToken::TertiaryLabel)
@@ -50,7 +50,7 @@ use silka_paint::{CornerStyle, Corners};
 #[cfg(test)]
 use silka_theme::TypeStyle;
 use silka_theme::{ColorToken, FontToken, RadiusToken, ShadowToken, Theme};
-use silka_widgets::{text_in, Fonts};
+use silka_widgets::{active_fonts, text};
 
 /// The page title.
 pub const JUDUL: &str = "Teks & kontainer";
@@ -91,12 +91,12 @@ pub fn tingkat() -> [(RadiusToken, ShadowToken); 4] {
 }
 
 /// The view tree for the whole page.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterised at the real screen resolution; the logical sizes
     // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     div()
         .items_center()
@@ -104,15 +104,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .gap_5()
         .p_8()
         .child(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .font(FontToken::Title2)
                 .font_semibold()
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text_in(
-                fonts,
+            text(
                 "Dua primitif Tier 0 yang dipakai semua komponen lain: satu \
                  baris teks yang mengukur dirinya sendiri, dan satu kotak yang \
                  mengambil sudut serta bayangannya dari token. Ganti preset di \
@@ -123,16 +122,16 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .text_color(ColorToken::SecondaryLabel)
             .max_width(t.space(LEBAR_LANGKAH)),
         )
-        .child(judul_bagian(fonts, "Skala tipografi"))
-        .child(spesimen(fonts))
-        .child(judul_bagian(fonts, "Sudut & bayangan"))
-        .child(kartu_kartu(fonts, &t))
+        .child(judul_bagian("Skala tipografi"))
+        .child(spesimen())
+        .child(judul_bagian("Sudut & bayangan"))
+        .child(kartu_kartu(&t))
         .into()
 }
 
 /// A section heading.
-fn judul_bagian(fonts: &Fonts, judul: &str) -> View {
-    text_in(fonts, judul)
+fn judul_bagian(judul: &str) -> View {
+    text(judul)
         .font(FontToken::Caption1)
         .font_semibold()
         .text_color(ColorToken::TertiaryLabel)
@@ -141,7 +140,7 @@ fn judul_bagian(fonts: &Fonts, judul: &str) -> View {
 }
 
 /// The type scale: token name on the left, the sample rendered on the right.
-fn spesimen(fonts: &Fonts) -> View {
+fn spesimen() -> View {
     div()
         .items_start()
         .gap_2()
@@ -151,13 +150,13 @@ fn spesimen(fonts: &Fonts) -> View {
                 .cross(CrossAlign::Baseline)
                 .gap_3()
                 .child(
-                    text_in(fonts, token.name())
+                    text(token.name())
                         .text_xs()
                         .text_color(ColorToken::TertiaryLabel)
                         .single_line(),
                 )
                 .child(
-                    text_in(fonts, CONTOH)
+                    text(CONTOH)
                         // One call for size, line height, weight and tracking:
                         // the four properties of a typographic role travel
                         // together.
@@ -170,7 +169,7 @@ fn spesimen(fonts: &Fonts) -> View {
 }
 
 /// Four radius steps × two corner shapes.
-fn kartu_kartu(fonts: &Fonts, t: &Theme) -> View {
+fn kartu_kartu(t: &Theme) -> View {
     let sisi = t.space(KARTU);
     div()
         .items_start()
@@ -181,7 +180,7 @@ fn kartu_kartu(fonts: &Fonts, t: &Theme) -> View {
                 .items_center()
                 .gap_3()
                 .child(
-                    text_in(fonts, radius.name())
+                    text(radius.name())
                         .text_xs()
                         .text_color(ColorToken::TertiaryLabel)
                         .single_line(),
@@ -223,14 +222,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(960.0, 900.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        let mut ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height);
+    fn ui(theme: Theme) -> AppRuntime {
+        let mut ui =
+            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }
@@ -274,8 +268,7 @@ mod tests {
 
     #[test]
     fn halaman_menggambar_teks_dan_kotak() {
-        let f = fonts();
-        let ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let ui = ui(Theme::cupertino(Appearance::Dark));
         let perintah = ui.scene().commands();
         assert!(
             perintah.iter().any(|c| matches!(c, Command::GlyphRun(_))),
@@ -293,11 +286,10 @@ mod tests {
 
     #[test]
     fn latar_selalu_token_background() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                assert_eq!(ui(t, &f).scene().clear_color(), t.color.background);
+                assert_eq!(ui(t).scene().clear_color(), t.color.background);
             }
         }
     }
@@ -307,11 +299,10 @@ mod tests {
     /// this way would otherwise hide.
     #[test]
     fn kotak_spesimen_memakai_warna_dan_hairline_dari_token() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let ui = ui(t, &f);
+                let ui = ui(t);
                 let kotak: Vec<_> = ui
                     .scene()
                     .commands()
@@ -335,9 +326,8 @@ mod tests {
     /// this page exists for.
     #[test]
     fn tiap_baris_memasangkan_squircle_dengan_arc_beradius_sama() {
-        let f = fonts();
         let t = Theme::cupertino(Appearance::Dark);
-        let ui = ui(t, &f);
+        let ui = ui(t);
         let kotak: Vec<_> = ui
             .scene()
             .commands()

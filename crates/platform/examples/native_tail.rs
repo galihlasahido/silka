@@ -121,7 +121,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // ---------------------------------------------------------------- §3
-    // Global hotkeys: the translation is here, the registration is not.
+    // Global hotkeys. Registered here only to show what the call reports; a
+    // real application hands the set to `window().hotkeys(…)` instead, so the
+    // registration lives as long as the window — see the `global_hotkey`
+    // example.
     let mut keys = hotkeys();
     keys.add(
         "app.palette",
@@ -134,7 +137,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "\nhotkey ⇧⌘P as a Win32 virtual key: {:?}",
         windows_virtual_key(&KeyCode::Character('p'))
     );
-    report("register hotkeys", keys.register());
+    // The guard is dropped at the end of this statement, which is exactly what
+    // gives ⇧⌘P back to the desktop again.
+    report("register hotkeys", keys.register().map(|_| ()));
 
     // ---------------------------------------------------------------- §3
     // Media keys and Now Playing.

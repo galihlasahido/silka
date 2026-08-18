@@ -18,15 +18,15 @@ early; everything below it may change at will.
 use silka_core::signals::Runtime;
 use silka_core::view::{column, View};
 use silka_theme::{Appearance, Theme};
-use silka_widgets::{button, text, Fonts};
+use silka_widgets::{button_in, text_in, Fonts};
 
 # let rt = Runtime::new();
 # let count = rt.signal(0i32);
 # let fonts = Fonts::bundled_only();
 # let t = Theme::cupertino(Appearance::Dark);
 column([
-    View::from(text(&fonts, format!("Count: {}", count.get())).color(t.color.label)),
-    View::from(button(&fonts, &t, "Increment").on_press(move || count.set(count.get() + 1))),
+    View::from(text_in(&fonts, format!("Count: {}", count.get())).color(t.color.label)),
+    View::from(button_in(&fonts, &t, "Increment").on_press(move || count.set(count.get() + 1))),
 ])
 .spacing(t.space(3.0));
 ```

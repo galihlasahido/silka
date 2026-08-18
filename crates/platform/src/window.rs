@@ -40,6 +40,7 @@ use crate::access::{AccessAdapter, AccessOutcome};
 use crate::appearance::{appearance_from_winit, winit_theme_from_appearance, AppearanceSource};
 use crate::error::PlatformError;
 use crate::event::{forward_native_events, ShellEvent};
+use crate::hotkey::{HotkeyActivation, HotkeyManager, HotkeyRegistration};
 use crate::input::{cursor_to_winit, ime_area_to_winit, WinitInput};
 use crate::lifecycle::{
     restore_placement, AccentSource, MonitorArea, QuitContext, QuitReason, SessionState,
@@ -225,6 +226,12 @@ type MenuFn = Box<dyn FnMut(&MenuActivation) -> Dirty>;
 /// [`MenuFn`].
 type TrayFn = Box<dyn FnMut(&TrayActivation) -> Dirty>;
 
+/// Handler for a global hotkey (INTEGRASI-NATIVE §3). Same contract as
+/// [`MenuFn`] — and the one where `Dirty::NONE` is genuinely common, because a
+/// hotkey often fires while the window is hidden and there is nothing to draw
+/// until it is shown.
+type HotkeyFn = Box<dyn FnMut(&HotkeyActivation) -> Dirty>;
+
 /// The glyph atlas source shared with the scene builder.
 ///
 /// Shared through `Rc<RefCell<…>>` because two parties use it in turn on the
@@ -291,6 +298,8 @@ pub struct WindowConfig {
     menu_fn: Option<MenuFn>,
     tray: Option<TrayConfig>,
     tray_fn: Option<TrayFn>,
+    hotkeys: Option<HotkeyManager>,
+    hotkey_fn: Option<HotkeyFn>,
     titlebar: TitlebarStyle,
     material: Material,
     material_state: MaterialState,
@@ -343,6 +352,8 @@ pub fn window(title: impl Into<String>) -> WindowConfig {
         menu_fn: None,
         tray: None,
         tray_fn: None,
+        hotkeys: None,
+        hotkey_fn: None,
         titlebar: TitlebarStyle::Native,
         material: Material::None,
         material_state: MaterialState::FollowsWindow,
@@ -765,6 +776,58 @@ impl WindowConfig {
         self
     }
 
+    /// Global hotkeys, registered once the event loop is running
+    /// (INTEGRASI-NATIVE §3).
+    ///
+    /// Registration is deliberately not done by the caller: both back-ends
+    /// want the thread that pumps the event loop — macOS installs a Carbon
+    /// handler on the application event target, Windows creates a message-only
+    /// window — and this is the one place in the framework that knows when
+    /// that thread has a loop on it.
+    ///
+    /// The registration lives exactly as long as the window does, so quitting
+    /// gives every combination back to the desktop.
+    ///
+    /// A refusal is reported and stepped over rather than propagated, for the
+    /// same reason a menubar's is: an application whose window will not open
+    /// because another program owns ⌘⇧Space is worse than one whose global
+    /// shortcut does not work.
+    ///
+    /// ```no_run
+    /// use silka_core::input::{KeyCode, Modifiers};
+    /// use silka_platform::hotkey::hotkeys;
+    /// use silka_platform::menu::shortcut;
+    /// use silka_platform::{window, Dirty};
+    ///
+    /// let mut keys = hotkeys();
+    /// keys.add(
+    ///     "app.quick_open",
+    ///     shortcut(Modifiers::COMMAND | Modifiers::SHIFT, KeyCode::Character('k')),
+    /// );
+    ///
+    /// window("Editor")
+    ///     .hotkeys(keys)
+    ///     .on_hotkey(|a| {
+    ///         if a.is("app.quick_open") && a.is_pressed() { /* … */ }
+    ///         Dirty::PAINT
+    ///     })
+    ///     .run()
+    ///     .unwrap();
+    /// ```
+    pub fn hotkeys(mut self, hotkeys: HotkeyManager) -> Self {
+        self.hotkeys = Some(hotkeys);
+        self
+    }
+
+    /// Handler for global hotkeys.
+    ///
+    /// Fires for both the press and the release edge; `a.is_pressed()` picks
+    /// the common one.
+    pub fn on_hotkey(mut self, handler: impl FnMut(&HotkeyActivation) -> Dirty + 'static) -> Self {
+        self.hotkey_fn = Some(Box::new(handler));
+        self
+    }
+
     /// How much of the OS titlebar to keep (INTEGRASI-NATIVE §1).
     ///
     /// Titlebar shape is decided when the window is created, so this is a
@@ -1102,6 +1165,9 @@ struct Shell {
     /// The tray description, created once the event loop is running.
     tray_config: Option<TrayConfig>,
     tray_fn: Option<TrayFn>,
+    /// The hotkey set, registered once the event loop is running.
+    hotkey_config: Option<HotkeyManager>,
+    hotkey_fn: Option<HotkeyFn>,
     titlebar: TitlebarStyle,
     material: Material,
     material_state: MaterialState,
@@ -1110,6 +1176,9 @@ struct Shell {
     /// the shell's whole life rather than by the window state, which is torn
     /// down and rebuilt on suspend/resume.
     tray: Option<Tray>,
+    /// Live hotkey registration. Dropping it gives the combinations back to
+    /// the rest of the desktop, so it is owned for the shell's whole life.
+    hotkeys: Option<HotkeyRegistration>,
     input: WinitInput,
     ime_aktif: bool,
     proxy: EventLoopProxy<ShellEvent>,
@@ -1155,11 +1224,14 @@ impl Shell {
             menu_fn: config.menu_fn,
             tray_config: config.tray,
             tray_fn: config.tray_fn,
+            hotkey_config: config.hotkeys,
+            hotkey_fn: config.hotkey_fn,
             titlebar: config.titlebar,
             material: config.material,
             material_state: config.material_state,
             traffic_light_inset: config.traffic_light_inset,
             tray: None,
+            hotkeys: None,
             input: WinitInput::new(),
             ime_aktif: false,
             proxy,
@@ -1446,6 +1518,18 @@ impl Shell {
             }
         }
 
+        // Global hotkeys, at the first moment the OS will accept them: the
+        // loop exists and this is its thread (§3). Registered once and kept —
+        // suspend/resume rebuilds the window, not the desktop-wide shortcuts.
+        if self.hotkeys.is_none() {
+            if let Some(set) = self.hotkey_config.take() {
+                match set.register() {
+                    Ok(r) => self.hotkeys = Some(r),
+                    Err(e) => eprintln!("silka: hotkey global tidak terdaftar — {e}"),
+                }
+            }
+        }
+
         // Everything is ready — only now may the window become visible.
         window.set_visible(true);
 
@@ -1540,6 +1624,17 @@ impl Shell {
     /// Route a menu activation into the application.
     fn menu(&mut self, activation: MenuActivation) {
         let Some(f) = self.menu_fn.as_mut() else {
+            return;
+        };
+        let dirty = f(&activation);
+        if !dirty.is_empty() {
+            self.minta(dirty);
+        }
+    }
+
+    /// Route a global hotkey into the application.
+    fn hotkey_event(&mut self, activation: HotkeyActivation) {
+        let Some(f) = self.hotkey_fn.as_mut() else {
             return;
         };
         let dirty = f(&activation);
@@ -1704,12 +1799,14 @@ impl ApplicationHandler<ShellEvent> for Shell {
     /// `accesskit_winit` calls its handler on any thread; the winit event loop
     /// is the official channel back to the UI thread.
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: ShellEvent) {
-        // Menus and the tray are application-wide, not window-owned: they are
-        // answered before the window-id check that accessibility needs.
+        // Menus, the tray and global hotkeys are application-wide, not
+        // window-owned: they are answered before the window-id check that
+        // accessibility needs.
         let event = match event {
             ShellEvent::Access(e) => e,
             ShellEvent::Menu(a) => return self.menu(a),
             ShellEvent::Tray(a) => return self.tray_event(a),
+            ShellEvent::Hotkey(a) => return self.hotkey_event(a),
             // A background task delivered something (§9.6). The payload is
             // already in the channel; one frame is all that is needed, and
             // `AppRuntime::frame` applies it before it drains the dirty scopes.

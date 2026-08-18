@@ -5,7 +5,7 @@
 //! # use silka_core::signals::Runtime;
 //! # use silka_core::view::column;
 //! # use silka_theme::{Appearance, Theme};
-//! # use silka_widgets::{overlay::overlay_layer, select, Fonts, SelectState};
+//! # use silka_widgets::{overlay::overlay_layer, select_in, Fonts, SelectState};
 //! # let rt = Runtime::new();
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);

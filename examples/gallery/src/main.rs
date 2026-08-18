@@ -53,26 +53,34 @@
     rustdoc::unescaped_backticks
 )]
 
+pub mod avatar;
+pub mod badge;
 pub mod button;
+pub mod card;
 pub mod cards;
 pub mod catalog;
 pub mod chart;
 pub mod checkbox;
 pub mod counter;
 pub mod dialog;
+pub mod jangkar;
+pub mod kepala;
 pub mod layout;
 pub mod list;
 pub mod menu;
 pub mod primitives;
+pub mod progress;
 pub mod reactive;
 pub mod scroll_view;
 pub mod select;
 pub mod shell;
+pub mod skeleton;
 pub mod slider;
 pub mod spring;
 pub mod switch;
 pub mod table;
 pub mod tabs;
+pub mod tag;
 pub mod text_area;
 pub mod text_field;
 pub mod tree;
@@ -83,7 +91,7 @@ pub mod wysiwyg;
 use catalog::Halaman;
 use silka_platform::{window, PlatformError};
 use silka_theme::{Appearance, Preset, Theme};
-use silka_widgets::Fonts;
+use silka_widgets::{install_fonts, Fonts};
 
 fn main() -> Result<(), PlatformError> {
     let opsi = Opsi::dari_argumen(std::env::args().skip(1));
@@ -96,6 +104,12 @@ fn main() -> Result<(), PlatformError> {
     // upload the atlas to the GPU (inside the backend, via `.glyphs(…)`). That
     // is why it is shared through `Rc<RefCell<…>>`.
     let fonts = Fonts::new();
+    // …and this is the line that lets every page write `text("…")` instead of
+    // `text_in(fonts, "…")`: installed once, at the entry point, it is the
+    // handle every short constructor resolves against (§2.5). Forgetting it
+    // would not crash — it would quietly fall back to the bundled faces, so
+    // CJK and emoji would turn into tofu on a machine that has them.
+    install_fonts(&fonts);
 
     let mut config = window("silka — Gallery")
         .size(1280.0, 860.0)

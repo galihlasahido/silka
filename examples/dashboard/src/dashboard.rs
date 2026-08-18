@@ -12,13 +12,13 @@
 
 use silka_chart::format::NumberFormat;
 use silka_chart::tooltip::ChartHover;
-use silka_chart::{area_chart_in, ChartPalette};
+use silka_chart::{area_chart, ChartPalette};
 use silka_core::app::BuildCtx;
 use silka_core::signals::Signal;
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
 use silka_core::view::{column, constrained, expanded, flexible, row, View};
 use silka_theme::Theme;
-use silka_widgets::{Fonts, TreeState};
+use silka_widgets::TreeState;
 
 use crate::data::{self, Tint, TrendPoint};
 use crate::kit;
@@ -42,7 +42,7 @@ const KPI_MIN_STEPS: f32 = 42.0;
 const CHART_STEPS: f32 = 60.0;
 
 /// The whole page.
-pub fn page(cx: &BuildCtx, fonts: &Fonts, page_signal: Signal<Page>) -> View {
+pub fn page(cx: &BuildCtx, page_signal: Signal<Page>) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let palette = ChartPalette::for_theme(&t);
 
@@ -56,11 +56,11 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts, page_signal: Signal<Page>) -> View {
     let nav_state: TreeState = cx.expect_env();
 
     column([
-        heading(fonts, &t),
-        kpi_grid(fonts, &t, &palette),
-        list_cards(fonts, &t, nav_state, page_signal),
-        trend_chart(fonts, &t, hover),
-        quick_links(fonts, &t, &palette, nav_state, page_signal),
+        heading(&t),
+        kpi_grid(&t, &palette),
+        list_cards(&t, nav_state, page_signal),
+        trend_chart(&t, hover),
+        quick_links(&t, &palette, nav_state, page_signal),
     ])
     .spacing(t.space(6.0))
     .cross(CrossAlign::Stretch)
@@ -68,10 +68,10 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts, page_signal: Signal<Page>) -> View {
     .into()
 }
 
-fn heading(fonts: &Fonts, t: &Theme) -> View {
+fn heading(t: &Theme) -> View {
     column([
-        kit::page_title(fonts, t, Page::Dashboard.title()),
-        kit::subtitle(fonts, t, Page::Dashboard.subtitle()),
+        kit::page_title(t, Page::Dashboard.title()),
+        kit::subtitle(t, Page::Dashboard.subtitle()),
     ])
     .spacing(t.space(1.5))
     .cross(CrossAlign::Start)
@@ -83,7 +83,7 @@ fn heading(fonts: &Fonts, t: &Theme) -> View {
 /// `wrap()` is what makes the grid behave when the window narrows: the tiles
 /// keep their minimum width and fall onto a third row instead of being squeezed
 /// into columns too narrow to read.
-fn kpi_grid(fonts: &Fonts, t: &Theme, palette: &ChartPalette) -> View {
+fn kpi_grid(t: &Theme, palette: &ChartPalette) -> View {
     let tiles: Vec<View> = data::KPIS
         .iter()
         .map(|k| {
@@ -92,16 +92,9 @@ fn kpi_grid(fonts: &Fonts, t: &Theme, palette: &ChartPalette) -> View {
                 Tint::Slot(i) => Some(i),
             };
             View::from(
-                flexible(kit::kpi_tile(
-                    fonts,
-                    t,
-                    palette,
-                    k.label,
-                    &k.value.text(),
-                    slot,
-                ))
-                .grow(1.0)
-                .basis(t.space(KPI_MIN_STEPS)),
+                flexible(kit::kpi_tile(t, palette, k.label, &k.value.text(), slot))
+                    .grow(1.0)
+                    .basis(t.space(KPI_MIN_STEPS)),
             )
         })
         .collect();
@@ -114,48 +107,36 @@ fn kpi_grid(fonts: &Fonts, t: &Theme, palette: &ChartPalette) -> View {
 }
 
 /// The two list cards, side by side and equally wide.
-fn list_cards(fonts: &Fonts, t: &Theme, nav_state: TreeState, page_signal: Signal<Page>) -> View {
+fn list_cards(t: &Theme, nav_state: TreeState, page_signal: Signal<Page>) -> View {
     row([
-        View::from(expanded(akad_card(fonts, t, nav_state, page_signal))),
-        View::from(expanded(disbursement_card(
-            fonts,
-            t,
-            nav_state,
-            page_signal,
-        ))),
+        View::from(expanded(akad_card(t, nav_state, page_signal))),
+        View::from(expanded(disbursement_card(t, nav_state, page_signal))),
     ])
     .spacing(t.space(5.0))
     .cross(CrossAlign::Stretch)
     .into()
 }
 
-fn akad_card(fonts: &Fonts, t: &Theme, nav_state: TreeState, page_signal: Signal<Page>) -> View {
-    // No `divider_in` after the header any more: the hairline belongs to
+fn akad_card(t: &Theme, nav_state: TreeState, page_signal: Signal<Page>) -> View {
+    // No `divider` after the header any more: the hairline belongs to
     // `card_header` itself, which is what stops a header and the rows under it
     // from ending up two points apart.
-    let mut children = vec![kit::card_header(fonts, t, AKAD_CARD, VIEW_ALL, move || {
+    let mut children = vec![kit::card_header(t, AKAD_CARD, VIEW_ALL, move || {
         nav::go_to(nav_state, page_signal, Page::Contracts)
     })];
     for a in data::AKAD {
         children.push(kit::list_row(
-            fonts,
             t,
             a.name,
             &format!("NIK {}", a.nik),
-            kit::trailing_text(fonts, t, &data::date(data::day(a.day_offset))),
+            kit::trailing_text(t, &data::date(data::day(a.day_offset))),
         ));
     }
-    kit::card(fonts, t, Some(AKAD_CARD), children)
+    kit::card(t, Some(AKAD_CARD), children)
 }
 
-fn disbursement_card(
-    fonts: &Fonts,
-    t: &Theme,
-    nav_state: TreeState,
-    page_signal: Signal<Page>,
-) -> View {
+fn disbursement_card(t: &Theme, nav_state: TreeState, page_signal: Signal<Page>) -> View {
     let mut children = vec![kit::card_header(
-        fonts,
         t,
         DISBURSEMENT_CARD,
         VIEW_ALL,
@@ -163,25 +144,23 @@ fn disbursement_card(
     )];
     for d in data::DISBURSEMENTS {
         children.push(kit::list_row(
-            fonts,
             t,
             d.name,
             &data::rupiah(d.amount),
-            kit::badge(fonts, t, d.status),
+            kit::badge(t, d.status),
         ));
     }
-    kit::card(fonts, t, Some(DISBURSEMENT_CARD), children)
+    kit::card(t, Some(DISBURSEMENT_CARD), children)
 }
 
 /// The disbursement trend — the chart that proves `silka-chart` survives being
 /// used by an application rather than by its own demo page.
-fn trend_chart(fonts: &Fonts, t: &Theme, hover: Signal<Option<ChartHover>>) -> View {
+fn trend_chart(t: &Theme, hover: Signal<Option<ChartHover>>) -> View {
     let data = data::trend();
     // No landmark name: the chart inside is already an `AccessRole::Image`
     // carrying `CHART_NAME`, and a group of the same name around it would be
     // announced twice.
     kit::padded_card(
-        fonts,
         t,
         None,
         [constrained(
@@ -191,7 +170,7 @@ fn trend_chart(fonts: &Fonts, t: &Theme, hover: Signal<Option<ChartHover>>) -> V
                 t.space(CHART_STEPS),
                 t.space(CHART_STEPS),
             ),
-            area_chart_in(fonts, t, data)
+            area_chart(data)
                 .key("trend")
                 .x(|d: &TrendPoint| d.date)
                 .y_named("Disbursed", |d: &TrendPoint| d.disbursed)
@@ -211,7 +190,6 @@ fn trend_chart(fonts: &Fonts, t: &Theme, hover: Signal<Option<ChartHover>>) -> V
 
 /// The coloured shortcut tiles.
 fn quick_links(
-    fonts: &Fonts,
     t: &Theme,
     palette: &ChartPalette,
     nav_state: TreeState,
@@ -228,7 +206,6 @@ fn quick_links(
             };
             View::from(
                 flexible(kit::action_tile(
-                    fonts,
                     t,
                     palette,
                     q.label,
@@ -243,13 +220,12 @@ fn quick_links(
         .collect();
 
     kit::padded_card(
-        fonts,
         t,
         Some(QUICK_CARD),
         [
             View::from(
                 row([View::from(
-                    silka_widgets::text_in(fonts, QUICK_CARD)
+                    silka_widgets::text(QUICK_CARD)
                         .size(t.typography.headline.size)
                         .weight(silka_text::FontWeight::SEMIBOLD)
                         .tracking(t.typography.headline.tracking)

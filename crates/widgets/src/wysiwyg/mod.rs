@@ -4,7 +4,7 @@
 //! ```
 //! # use silka_core::signals::Runtime;
 //! # use silka_theme::{Appearance, Theme};
-//! # use silka_widgets::{wysiwyg::{wysiwyg, Document}, Fonts};
+//! # use silka_widgets::{wysiwyg::{wysiwyg_in, Document}, Fonts};
 //! # let rt = Runtime::new();
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);

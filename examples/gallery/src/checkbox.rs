@@ -28,7 +28,7 @@ use silka_core::view::{column, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{checkbox_in, checkbox_only_in, text_in, CheckState, Fonts};
+use silka_widgets::{active_fonts, checkbox, checkbox_only, text, CheckState};
 
 /// The page title.
 pub const JUDUL: &str = "Checkbox";
@@ -74,17 +74,17 @@ pub fn keadaan_induk(dipilih: &[bool]) -> CheckState {
 /// The title and the description are read in the root scope; **the selection is
 /// not**, so a single click rebuilds one component rather than the page
 /// (§2.5).
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let dipilih = use_signal(|| [false; ITEM.len()]);
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -93,8 +93,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Centang satu item saja: induknya berubah menjadi garis \
                  (indeterminate), bukan centang. Klik dua kali dengan cepat — \
                  goresannya berbalik arah dari posisinya sekarang, membawa \
@@ -105,8 +104,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(120.0)),
         ),
-        pilihan(fonts, dipilih),
-        mati(fonts, &t),
+        pilihan(dipilih),
+        mati(&t),
     ])
     .spacing(t.space(6.0))
     .main(MainAlign::Center)
@@ -119,15 +118,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 ///
 /// This is the only place `dipilih` is read, and therefore the only scope
 /// marked dirty when a box is clicked.
-fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
-    let fonts = fonts.clone();
+fn pilihan(dipilih: Signal<[bool; ITEM.len()]>) -> View {
     component("pilihan", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let nilai = dipilih.get();
 
         let mut anak: Vec<View> = Vec::with_capacity(ITEM.len() + 1);
         anak.push(
-            checkbox_in(&fonts, &t, PILIH_SEMUA)
+            checkbox(PILIH_SEMUA)
                 .key("semua")
                 .state(keadaan_induk(&nilai))
                 // Activating a "partial" parent means committing: everything
@@ -137,7 +135,7 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
         );
         for (i, label) in ITEM.into_iter().enumerate() {
             anak.push(
-                checkbox_in(&fonts, &t, label)
+                checkbox(label)
                     .key(label)
                     .checked(nilai[i])
                     .on_toggle(move |v| {
@@ -161,11 +159,11 @@ fn pilihan(fonts: &Fonts, dipilih: Signal<[bool; ITEM.len()]>) -> View {
 ///
 /// All three remain in the accessibility tree: a disabled control is
 /// **announced** as dimmed, not hidden (§3.8).
-fn mati(fonts: &Fonts, t: &Theme) -> View {
+fn mati(t: &Theme) -> View {
     row([
-        View::from(checkbox_in(fonts, t, MATI).disabled(true)),
-        View::from(checkbox_in(fonts, t, TERKUNCI).checked(true).disabled(true)),
-        View::from(checkbox_only_in(t).label(TANPA_LABEL).checked(true)),
+        View::from(checkbox(MATI).disabled(true)),
+        View::from(checkbox(TERKUNCI).checked(true).disabled(true)),
+        View::from(checkbox_only().label(TANPA_LABEL).checked(true)),
     ])
     .spacing(t.space(6.0))
     .cross(CrossAlign::Center)
@@ -187,14 +185,8 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(720.0, 620.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// A node's rectangle **according to the accessibility tree** — the tests
@@ -273,8 +265,7 @@ mod tests {
 
     #[test]
     fn semua_kotak_ada_di_pohon_a11y_dengan_peran_dan_hit_target_yang_benar() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let pohon = ui.access_tree();
@@ -303,8 +294,7 @@ mod tests {
 
     #[test]
     fn mencentang_satu_anak_membuat_induknya_indeterminate() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         assert_eq!(keadaan(&ui, PILIH_SEMUA), AccessToggled::Off);
 
@@ -330,8 +320,7 @@ mod tests {
 
     #[test]
     fn induk_sebagian_yang_diklik_menyalakan_semuanya() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let p = kotak(&ui, ITEM[1]).center();
@@ -357,8 +346,7 @@ mod tests {
 
     #[test]
     fn klik_pada_labelnya_juga_mencentang() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Light));
         ui.frame();
 
         // Far to the right of the check box — still inside the same label.
@@ -370,8 +358,7 @@ mod tests {
 
     #[test]
     fn keyboard_bisa_mencentang_tanpa_mouse() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Dark), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Dark));
         ui.frame();
 
         // Tab lands on the first control (the parent), Space activates it.
@@ -391,8 +378,7 @@ mod tests {
 
     #[test]
     fn goresan_centang_benar_benar_dianimasikan_lalu_berhenti() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         sampai_diam(&mut ui);
 
@@ -411,11 +397,10 @@ mod tests {
 
     #[test]
     fn warna_dan_bentuk_selalu_datang_dari_token_di_kedua_preset() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 sampai_diam(&mut ui);
                 assert_eq!(ui.scene().clear_color(), t.color.background);

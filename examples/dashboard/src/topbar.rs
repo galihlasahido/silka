@@ -14,9 +14,9 @@ use silka_core::tree::CrossAlign;
 use silka_core::view::{column, row, View};
 use silka_text::FontWeight;
 use silka_theme::{Appearance, Theme};
-use silka_widgets::menu::{item, menu_in, separator, MenuEntry, MenuState};
+use silka_widgets::menu::{item, menu, separator, MenuEntry, MenuState};
 use silka_widgets::overlay::OverlayBuilder;
-use silka_widgets::{divider_in, spacer, text_in, Fonts, IconName};
+use silka_widgets::{divider, spacer, text, IconName};
 
 use crate::kit;
 use crate::nav::{Page, USER_EMAIL, USER_NAME};
@@ -69,7 +69,6 @@ pub struct TopBar {
 
 /// Build the top bar.
 pub fn top_bar(
-    fonts: &Fonts,
     t: &Theme,
     page: Page,
     menu_state: Signal<MenuState>,
@@ -86,7 +85,7 @@ pub fn top_bar(
         (IconName::Moon, TO_DARK)
     };
 
-    let account = menu_in(fonts, t, account_entries())
+    let account = menu(account_entries())
         .label(USER_MENU)
         .key("account-menu")
         .chip(true)
@@ -104,8 +103,8 @@ pub fn top_bar(
         });
 
     let chip = row([
-        kit::avatar(fonts, t, USER_NAME, t.space(7.0)),
-        text_in(fonts, USER_NAME)
+        kit::avatar(t, USER_NAME, t.space(7.0)),
+        text(USER_NAME)
             .size(t.typography.callout.size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.label)
@@ -116,7 +115,7 @@ pub fn top_bar(
     .cross(CrossAlign::Center);
 
     let view = row([
-        text_in(fonts, page.short_title())
+        text(page.short_title())
             .size(t.typography.title3.size)
             .weight(FontWeight::SEMIBOLD)
             .tracking(t.typography.title3.tracking)
@@ -137,7 +136,7 @@ pub fn top_bar(
     .bg(silka_theme::ColorToken::Surface);
 
     TopBar {
-        view: column([View::from(view), divider_in(t).into()])
+        view: column([View::from(view), divider().into()])
             .cross(CrossAlign::Stretch)
             .into(),
         overlays: account.overlays(),

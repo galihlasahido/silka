@@ -319,7 +319,7 @@ impl TreeState {
 /// # use silka_core::signals::Runtime;
 /// # use silka_core::view::{fixed, View};
 /// # use silka_theme::{Appearance, Theme};
-/// # use silka_widgets::{tree, use_tree_state, TreeKey, TreeNode};
+/// # use silka_widgets::{tree_in, use_tree_state, TreeKey, TreeNode};
 /// # let rt = Runtime::new();
 /// # let t = Theme::cupertino(Appearance::Dark);
 /// rt.build_root(|| {

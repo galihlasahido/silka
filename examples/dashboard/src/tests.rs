@@ -21,7 +21,7 @@ use silka_core::input::{
 use silka_core::signals::Signal;
 use silka_paint::{Color, Point, Rect, Size};
 use silka_theme::{Appearance, Preset, Theme};
-use silka_widgets::Fonts;
+use silka_widgets::{active_fonts, Fonts};
 
 use crate::app::{self, AppearanceMode};
 use crate::dashboard;
@@ -49,11 +49,8 @@ impl Screen {
     }
 
     fn at(theme: Theme, page: Page) -> Self {
-        // No system fonts: results must not depend on which fonts the machine
-        // running the tests happens to have installed (§9.5).
-        let fonts = Fonts::bundled_only();
         let mut screen = Self {
-            ui: app::app(theme, &fonts, page).sized(VIEWPORT.width, VIEWPORT.height),
+            ui: app::app(theme, page).sized(VIEWPORT.width, VIEWPORT.height),
             clock: Instant::now(),
         };
         screen.quiesce();
@@ -566,10 +563,14 @@ impl Camera {
 }
 
 /// Set up a screen whose fonts the camera can also see.
+///
+/// The engine is the **ambient** one, not a second `Fonts::bundled_only()`: the
+/// camera has to upload the very atlas the layout measured against, or the
+/// glyphs it renders are the ones nobody laid out.
 fn screen_with_fonts(theme: Theme) -> (Screen, Fonts) {
-    let fonts = Fonts::bundled_only();
+    let fonts = active_fonts();
     let mut screen = Screen {
-        ui: app::app(theme, &fonts, Page::Dashboard).sized(VIEWPORT.width, VIEWPORT.height),
+        ui: app::app(theme, Page::Dashboard).sized(VIEWPORT.width, VIEWPORT.height),
         clock: Instant::now(),
     };
     screen.quiesce();

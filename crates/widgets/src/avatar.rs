@@ -1022,8 +1022,11 @@ mod tests {
         Theme::cupertino(Appearance::Dark)
     }
 
+    // The ambient handle rather than a fresh engine per call: `Fonts`
+    // compares by identity, so two engines would make every rebuild look like
+    // a change and the no-op test below would be measuring nothing.
     fn fonts() -> Fonts {
-        Fonts::bundled_only()
+        crate::active_fonts()
     }
 
     fn laid_out(view: impl Into<View>) -> RenderTree {

@@ -121,8 +121,17 @@ pub struct ChartBox {
     geometry: Option<PlotGeometry>,
     labels: Vec<Placed>,
     swatches: Vec<Swatch>,
+    /// The reading direction from the last layout (§9.8).
+    ///
+    /// A chart draws every one of its own marks, so nothing about it is
+    /// mirrored for free: the side the value axis sits on, which end the
+    /// categories start from, where the tick labels hang, and which way the
+    /// legend runs are all decided here rather than by the layout system.
+    rtl: bool,
     /// The node size the derived state was built for; `NaN` forces a rebuild.
     built_for: Size,
+    /// The reading direction the derived state was built for.
+    built_rtl: bool,
     /// The scale factor the glyphs were rasterised at — atlas bitmaps are tied
     /// to it (§3.3).
     built_scale: f32,
@@ -163,7 +172,9 @@ impl ChartBox {
             geometry: None,
             labels: Vec::new(),
             swatches: Vec::new(),
+            rtl: false,
             built_for: Size::new(f32::NAN, f32::NAN),
+            built_rtl: false,
             built_scale: f32::NAN,
             stale: true,
             anim: Vec::new(),
@@ -178,6 +189,11 @@ impl ChartBox {
     /// positions.
     pub fn geometry(&self) -> Option<&PlotGeometry> {
         self.geometry.as_ref()
+    }
+
+    /// The reading direction the chart was last built in (§9.8).
+    pub fn is_rtl(&self) -> bool {
+        self.rtl
     }
 
     /// The data currently displayed.
@@ -337,6 +353,7 @@ impl ChartBox {
         self.swatches.clear();
         self.geometry = None;
         self.built_for = size;
+        self.built_rtl = self.rtl;
         self.built_scale = self.fonts.scale_factor();
         self.stale = false;
 
@@ -356,7 +373,8 @@ impl ChartBox {
             let gaya = self.style.title_text.clone();
             let warna = self.style.label;
             let ukuran = self.measure(&judul, &gaya);
-            let asal = Point::new(content.min_x(), content.min_y());
+            // A title starts where the reading starts (§9.8).
+            let asal = Point::new(self.leading_x(content, ukuran.width), content.min_y());
             self.push_label(&judul, asal, warna, &gaya);
             content = shrink_top(content, ukuran.height + self.style.title_gap);
         }
@@ -385,7 +403,7 @@ impl ChartBox {
         }
 
         // -- pass one: how much room do the labels want? -------------------
-        let sementara = PlotGeometry::build(content, &self.spec, &self.data);
+        let sementara = PlotGeometry::build_in(content, &self.spec, &self.data, self.rtl);
         let gaya_tick = self.style.tick_text.clone();
         let lebar_nilai = if self.spec.value_axis {
             sementara
@@ -419,45 +437,51 @@ impl ChartBox {
         };
 
         // -- pass two: the plot rect that is actually left ------------------
+        //
+        // The axis whose labels stand beside the plot claims the **leading**
+        // edge — left while reading left-to-right, right while reading
+        // right-to-left. Reserving it on a fixed side is the bug: in an RTL
+        // document the labels would be drawn outside the node's own box, where
+        // the clip eats them (§9.8).
         let gap = self.style.tick_gap;
-        let plot = match self.spec.orientation {
-            Orientation::Vertical => content.deflate(Insets {
-                // Half a value label pokes above the topmost gridline, and half
-                // a category label past each end of the axis; reserving both
-                // keeps the outermost labels inside the node's own box.
-                top: tinggi_nilai * 0.5,
-                right: (lebar_kategori * 0.5).min(content.size.width * 0.15),
-                bottom: if tinggi_kategori > 0.0 {
-                    tinggi_kategori + gap
-                } else {
-                    0.0
-                },
-                left: if lebar_nilai > 0.0 {
-                    lebar_nilai + gap
-                } else {
-                    0.0
-                },
-            }),
-            Orientation::Horizontal => content.deflate(Insets {
-                top: 0.0,
-                right: (lebar_nilai * 0.5).min(content.size.width * 0.15),
-                bottom: if tinggi_nilai > 0.0 {
-                    tinggi_nilai + gap
-                } else {
-                    0.0
-                },
-                left: if lebar_kategori > 0.0 {
-                    lebar_kategori + gap
-                } else {
-                    0.0
-                },
-            }),
+        let (lebar_label, tinggi_label, sisa_seberang, atas) = match self.spec.orientation {
+            // Half a value label pokes above the topmost gridline, and half a
+            // category label past each end of the axis; reserving both keeps
+            // the outermost labels inside the node's own box.
+            Orientation::Vertical => (
+                lebar_nilai,
+                tinggi_kategori,
+                lebar_kategori * 0.5,
+                tinggi_nilai * 0.5,
+            ),
+            Orientation::Horizontal => (lebar_kategori, tinggi_nilai, lebar_nilai * 0.5, 0.0),
         };
+        let sisi_label = if lebar_label > 0.0 {
+            lebar_label + gap
+        } else {
+            0.0
+        };
+        let sisi_seberang = sisa_seberang.min(content.size.width * 0.15);
+        let (kiri, kanan) = if self.rtl {
+            (sisi_seberang, sisi_label)
+        } else {
+            (sisi_label, sisi_seberang)
+        };
+        let plot = content.deflate(Insets {
+            top: atas,
+            right: kanan,
+            bottom: if tinggi_label > 0.0 {
+                tinggi_label + gap
+            } else {
+                0.0
+            },
+            left: kiri,
+        });
         if plot.size.width <= 1.0 || plot.size.height <= 1.0 {
             return;
         }
 
-        let geometry = PlotGeometry::build(plot, &self.spec, &self.data);
+        let geometry = PlotGeometry::build_in(plot, &self.spec, &self.data, self.rtl);
         self.place_tick_labels(&geometry, &gaya_tick);
         self.geometry = Some(geometry);
     }
@@ -478,12 +502,15 @@ impl ChartBox {
             .map(|(i, s)| (s.name.clone(), self.style.series_color(i, s.color)))
             .collect();
 
-        let mut x = content.min_x();
+        // `x` walks along the reading direction and is turned into a screen
+        // coordinate at the end: the first series is the leading one, and its
+        // swatch always sits on the side the eye starts from (§9.8).
+        let mut x = 0.0f32;
         let mut tinggi = swatch;
         for (nama, warna) in entri {
             let ukuran = self.measure(&nama, &gaya);
             let lebar = swatch + gap_swatch + ukuran.width;
-            if x > content.min_x() && x + lebar > content.max_x() {
+            if x > 0.0 && x + lebar > content.size.width {
                 // One row only: a legend that wrapped would eat the plot it is
                 // explaining. What does not fit is dropped, and the tooltip
                 // still names every series.
@@ -491,24 +518,52 @@ impl ChartBox {
             }
             let baris_y = content.min_y();
             tinggi = tinggi.max(ukuran.height);
+            let (x_swatch, x_teks) = if self.rtl {
+                (content.max_x() - x - swatch, content.max_x() - x - lebar)
+            } else {
+                (
+                    content.min_x() + x,
+                    content.min_x() + x + swatch + gap_swatch,
+                )
+            };
             self.swatches.push(Swatch {
                 rect: Rect::new(
-                    x,
+                    x_swatch,
                     baris_y + (ukuran.height - swatch).max(0.0) * 0.5,
                     swatch,
                     swatch,
                 ),
                 color: warna,
             });
-            self.push_label(
-                &nama,
-                Point::new(x + swatch + gap_swatch, baris_y),
-                warna_teks,
-                &gaya,
-            );
+            self.push_label(&nama, Point::new(x_teks, baris_y), warna_teks, &gaya);
             x += lebar + gap_entri;
         }
         tinggi
+    }
+
+    /// The x a run of `width` points starts at when it hugs the **leading**
+    /// edge of `box_` — left in an LTR document, right in an RTL one (§9.8).
+    fn leading_x(&self, box_: Rect, width: f32) -> f32 {
+        if self.rtl {
+            box_.max_x() - width
+        } else {
+            box_.min_x()
+        }
+    }
+
+    /// The origin of a label placed just outside the plot on the side the axis
+    /// labels live on.
+    ///
+    /// The axis is on the leading edge, so the label hangs off it: to the left
+    /// of the plot while reading left-to-right, to the right of it while
+    /// reading right-to-left. A column of numbers is read by its last digit,
+    /// which is why the LTR form is right-aligned against the plot.
+    fn axis_label_x(&self, plot: Rect, gap: f32, width: f32) -> f32 {
+        if self.rtl {
+            plot.max_x() + gap
+        } else {
+            plot.min_x() - gap - width
+        }
     }
 
     /// Place the tick labels around the plot.
@@ -521,10 +576,8 @@ impl ChartBox {
             for t in geometry.value_ticks.clone() {
                 let ukuran = self.measure(&t.label, gaya);
                 let asal = match self.spec.orientation {
-                    // Right-aligned against the plot: a column of numbers is
-                    // read by its last digit, not its first.
                     Orientation::Vertical => Point::new(
-                        plot.min_x() - gap - ukuran.width,
+                        self.axis_label_x(plot, gap, ukuran.width),
                         t.position - ukuran.height * 0.5,
                     ),
                     Orientation::Horizontal => {
@@ -543,7 +596,7 @@ impl ChartBox {
                         Point::new(t.position - ukuran.width * 0.5, plot.max_y() + gap)
                     }
                     Orientation::Horizontal => Point::new(
-                        plot.min_x() - gap - ukuran.width,
+                        self.axis_label_x(plot, gap, ukuran.width),
                         t.position - ukuran.height * 0.5,
                     ),
                 };
@@ -692,7 +745,11 @@ impl ChartBox {
                 } else {
                     let sub = lebar_band / jumlah as f32;
                     let mulai = geometry.category.position(i, self.data.x[i]) - lebar_band * 0.5;
-                    (mulai + sub * (si as f32 + 0.5), sub)
+                    // The first series leads inside the group, and "first" is
+                    // the side the reader starts from — otherwise the legend
+                    // reads one way and the bars the other (§9.8).
+                    let ke = if self.rtl { jumlah - si - 1 } else { si };
+                    (mulai + sub * (ke as f32 + 0.5), sub)
                 };
                 let dasar = if stacked {
                     self.data.stack_base(si, i)
@@ -704,7 +761,12 @@ impl ChartBox {
                     // A 2pt gap of the page's own color between segments — the
                     // eye reads separated fills as separate quantities, and
                     // adjacent fills of similar hue as one.
-                    r = inset_along_value(r, geometry.orientation, self.style.segment_gap);
+                    r = inset_along_value(
+                        r,
+                        geometry.orientation,
+                        self.style.segment_gap,
+                        self.rtl,
+                    );
                 }
                 if let Some(r) = r.intersect(plot) {
                     ctx.quad(
@@ -858,14 +920,22 @@ impl RenderNode for ChartBox {
         "Chart"
     }
 
-    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
         let ukuran = constraints.constrain(preferred_size(
             Size::new(constraints.max_width, constraints.max_height),
             self.spec.kind,
         ));
         self.size = ukuran;
+        // A chart draws everything itself, so the direction has to be carried
+        // out of layout the way every self-drawing widget carries it (§9.8,
+        // `AUDIT.md` P-6).
+        self.rtl = ctx.direction().is_rtl();
         let skala = self.fonts.scale_factor();
-        if self.stale || self.built_for != ukuran || self.built_scale != skala {
+        if self.stale
+            || self.built_for != ukuran
+            || self.built_rtl != self.rtl
+            || self.built_scale != skala
+        {
             self.rebuild(ukuran);
         }
         ukuran
@@ -1028,11 +1098,19 @@ fn shrink_top(rect: Rect, amount: f32) -> Rect {
 /// Which end that is depends on which side of the baseline the bar is on, and
 /// getting it wrong makes the gap appear at the far tip — where it shortens the
 /// bar and therefore misstates the value.
-fn inset_along_value(rect: Rect, orientation: Orientation, gap: f32) -> Rect {
+fn inset_along_value(rect: Rect, orientation: Orientation, gap: f32, rtl: bool) -> Rect {
     match orientation {
         Orientation::Vertical => {
             let h = (rect.size.height - gap).max(1.0);
             Rect::new(rect.origin.x, rect.origin.y, rect.size.width, h)
+        }
+        // A horizontal chart's value axis is the one that mirrors, so the base
+        // end of a bar is its left in an LTR document and its right in an RTL
+        // one. Taking the gap off the wrong end shortens the bar at its tip,
+        // where the length *is* the value.
+        Orientation::Horizontal if rtl => {
+            let w = (rect.size.width - gap).max(1.0);
+            Rect::new(rect.origin.x, rect.origin.y, w, rect.size.height)
         }
         Orientation::Horizontal => {
             let w = (rect.size.width - gap).max(1.0);

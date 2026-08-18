@@ -30,7 +30,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{text_field_in, text_in, Fonts};
+use silka_widgets::{active_fonts, text, text_field};
 
 /// The page title.
 pub const JUDUL: &str = "Text Field";
@@ -50,11 +50,11 @@ const LEBAR: f32 = 80.0;
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let nama = use_signal(String::new);
     let surel = use_signal(String::new);
@@ -62,7 +62,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -70,8 +70,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Caret dan seleksi berjalan per grapheme cluster, klik ganda \
                  menyeleksi kata, dan komposisi IME dirender inline bergaris \
                  bawah — isinya baru sampai ke aplikasi setelah IME commit.",
@@ -81,8 +80,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(120.0)),
         ),
-        formulir(fonts, &t, nama, surel, terkirim),
-        gema(fonts, nama, surel, terkirim),
+        formulir(&t, nama, surel, terkirim),
+        gema(nama, surel, terkirim),
     ])
     .spacing(t.space(6.0))
     .main(MainAlign::Center)
@@ -93,11 +92,11 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
 /// One form row: label on the left, field on the right — the macOS Settings
 /// layout (`KOMPONEN.md` Tier 2 `label` + `form`).
-fn baris(fonts: &Fonts, t: &Theme, label: &str, kolom: View) -> View {
+fn baris(t: &Theme, label: &str, kolom: View) -> View {
     row([
         View::from(constrained(
             BoxConstraints::new(t.space(28.0), t.space(28.0), 0.0, f32::INFINITY),
-            text_in(fonts, label)
+            text(label)
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -122,26 +121,17 @@ fn baris(fonts: &Fonts, t: &Theme, label: &str, kolom: View) -> View {
 /// value; `on_change` only writes. That is why the field nodes survive
 /// unchanged across keystrokes — whatever the user is typing into is never
 /// rebuilt mid-interaction (§2.5).
-fn formulir(
-    fonts: &Fonts,
-    t: &Theme,
-    nama: Signal<String>,
-    surel: Signal<String>,
-    terkirim: Signal<u32>,
-) -> View {
-    let fonts_isi = fonts.clone();
+fn formulir(t: &Theme, nama: Signal<String>, surel: Signal<String>, terkirim: Signal<u32>) -> View {
     let theme = *t;
     // The fields are wrapped in their own component so that writing `nama`
     // rebuilds only this form, not the whole page.
     component("formulir", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
-        let f = &fonts_isi;
         column([
             baris(
-                f,
                 &t,
                 KOLOM_NAMA,
-                text_field_in(f, &t, nama.get())
+                text_field(nama.get())
                     .key("nama")
                     .placeholder("Nama lengkap")
                     .label(KOLOM_NAMA)
@@ -150,10 +140,9 @@ fn formulir(
                     .into(),
             ),
             baris(
-                f,
                 &t,
                 KOLOM_SUREL,
-                text_field_in(f, &t, surel.get())
+                text_field(surel.get())
                     .key("surel")
                     .placeholder("nama@contoh.id")
                     .label(KOLOM_SUREL)
@@ -162,20 +151,18 @@ fn formulir(
                     .into(),
             ),
             baris(
-                f,
                 &t,
                 KOLOM_KUNCI,
-                text_field_in(f, &t, KUNCI)
+                text_field(KUNCI)
                     .key("kunci")
                     .label(KOLOM_KUNCI)
                     .read_only(true)
                     .into(),
             ),
             baris(
-                f,
                 &t,
                 KOLOM_MATI,
-                text_field_in(f, &t, "")
+                text_field("")
                     .key("mati")
                     .placeholder("Belum tersedia")
                     .label(KOLOM_MATI)
@@ -194,8 +181,7 @@ fn formulir(
 /// This is the only place the field contents are read for display, which makes
 /// it living proof that IME preedit has **not** yet reached the application:
 /// while composition is in progress, this row does not move.
-fn gema(fonts: &Fonts, nama: Signal<String>, surel: Signal<String>, terkirim: Signal<u32>) -> View {
-    let fonts = fonts.clone();
+fn gema(nama: Signal<String>, surel: Signal<String>, terkirim: Signal<u32>) -> View {
     component("gema", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let n = nama.get();
@@ -212,7 +198,7 @@ fn gema(fonts: &Fonts, nama: Signal<String>, surel: Signal<String>, terkirim: Si
         } else {
             isi
         };
-        text_in(&fonts, isi)
+        text(isi)
             .size(t.typography.body_size)
             .color(t.color.secondary_label)
             .single_line()
@@ -237,15 +223,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// One complete frame, animation tick included — the same order as the
@@ -312,8 +292,7 @@ mod tests {
 
     #[test]
     fn halaman_menampilkan_empat_kolom_yang_bisa_dibacakan() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         for label in [KOLOM_NAMA, KOLOM_SUREL, KOLOM_KUNCI, KOLOM_MATI] {
@@ -334,8 +313,7 @@ mod tests {
 
     #[test]
     fn mengetik_di_kolom_mengubah_isinya_dan_baris_gema() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         assert!(gema_terbaca(&ui).contains("masih kosong"));
 
@@ -352,8 +330,7 @@ mod tests {
 
     #[test]
     fn mengetik_beruntun_tidak_pernah_melempar_caret_ke_belakang() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, KOLOM_NAMA).center();
         klik(&mut ui, titik);
@@ -373,8 +350,7 @@ mod tests {
 
     #[test]
     fn keyboard_sendirian_cukup_untuk_mengisi_formulir() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Light));
         ui.frame();
 
         // Tab enters the first field, then Tab again into the second — the
@@ -405,8 +381,7 @@ mod tests {
 
     #[test]
     fn pilih_semua_lalu_ketik_mengganti_isi_kolom() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, KOLOM_NAMA).center();
         klik(&mut ui, titik);
@@ -424,8 +399,7 @@ mod tests {
 
     #[test]
     fn preedit_ime_belum_sampai_ke_aplikasi_sampai_commit() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, KOLOM_NAMA).center();
         klik(&mut ui, titik);
@@ -447,8 +421,7 @@ mod tests {
 
     #[test]
     fn kolom_mati_dan_read_only_tidak_bisa_diubah() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
 
         let titik = kotak(&ui, KOLOM_MATI).center();
@@ -474,8 +447,7 @@ mod tests {
 
     #[test]
     fn fokus_menyalakan_transisi_lalu_halaman_kembali_diam() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         let mut jam = Instant::now();
         frame(&mut ui, jam);
 
@@ -496,11 +468,10 @@ mod tests {
 
     #[test]
     fn latar_halaman_selalu_token_background_di_kedua_preset() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
             }

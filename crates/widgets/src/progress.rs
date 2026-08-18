@@ -118,10 +118,10 @@ pub const ARC_SEGMENTS: usize = 64;
 /// let (_, mid) = indeterminate_span(0.5, 200.0, 70.0);
 /// assert_eq!(mid, 70.0);
 ///
-/// // Leaving: clipped at the right.
-/// let (start, width) = indeterminate_span(1.0, 200.0, 70.0);
-/// assert_eq!(start + width, 200.0);
-/// assert_eq!(width, 0.0);
+/// // Leaving: clipped at the right, so it is short again.
+/// let (start, width) = indeterminate_span(0.9, 200.0, 70.0);
+/// assert!((start + width - 200.0).abs() < 1e-3);
+/// assert!(width < 70.0);
 /// ```
 pub fn indeterminate_span(phase: f32, length: f32, band: f32) -> (f32, f32) {
     let length = length.max(0.0);

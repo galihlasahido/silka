@@ -30,7 +30,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button_in, button_variant_in, scroll_view_in, text_in, ButtonVariant, Fonts};
+use silka_widgets::{active_fonts, button, button_variant, scroll_view, text, ButtonVariant};
 
 /// The page title.
 pub const JUDUL: &str = "Scroll view";
@@ -54,11 +54,11 @@ const LEBAR_LANGKAH: f32 = 150.0;
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // The position **owned by the application**: only the scroll-to buttons
     // write it. The mouse wheel and trackpad never touch it — the day-to-day
@@ -69,7 +69,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -77,8 +77,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Gulir melewati ujungnya: isinya melar makin berat lalu memantul \
                  pulang — rubber band ala macOS. Momentum trackpad datang dari OS \
                  apa adanya; yang kita kerjakan hanya pantulannya, dan pantulan \
@@ -89,16 +88,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR_LANGKAH)),
         ),
-        daftar(fonts, &t, tujuan),
-        kendali(fonts, &t, tujuan),
+        daftar(&t, tujuan),
+        kendali(&t, tujuan),
         View::from(
-            text_in(
-                fonts,
-                "Keyboard: Tab ke daftar, lalu ↑ ↓ · Page Up/Down · Home/End · Spasi.",
-            )
-            .size(t.typography.body_size)
-            .color(t.color.tertiary_label)
-            .single_line(),
+            text("Keyboard: Tab ke daftar, lalu ↑ ↓ · Page Up/Down · Home/End · Spasi.")
+                .size(t.typography.body_size)
+                .color(t.color.tertiary_label)
+                .single_line(),
         ),
     ])
     .spacing(t.space(5.0))
@@ -110,12 +106,11 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
 /// The list viewport: **the only place `tujuan` is read**, so pressing a
 /// scroll-to button rebuilds just this section (§2.5).
-fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
-    let fonts = fonts.clone();
+fn daftar(t: &Theme, tujuan: Signal<f32>) -> View {
     let theme = *t;
     component("daftar", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
-        let isi = column((0..BARIS).map(|i| baris(&fonts, &t, i)));
+        let isi = column((0..BARIS).map(|i| baris(&t, i)));
 
         // The scroll axis **must** be bounded (the same rule as Flutter's):
         // the bound lives here, not inside the container.
@@ -126,7 +121,7 @@ fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
                 t.space(TINGGI_LANGKAH),
                 t.space(TINGGI_LANGKAH),
             ),
-            scroll_view_in(&t, isi)
+            scroll_view(isi)
                 .label(NAMA_DAFTAR)
                 .scroll(tujuan.get())
                 .background(t.color.surface_sunken)
@@ -138,18 +133,18 @@ fn daftar(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
 }
 
 /// One list row — striped so that scrolling is visibly moving.
-fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
+fn baris(t: &Theme, i: usize) -> View {
     let genap = i % 2 == 0;
     let latar = if genap {
         t.color.surface
     } else {
         t.color.surface_hover
     };
-    let kiri = text_in(fonts, format!("Transaksi #{:02}", i + 1))
+    let kiri = text(format!("Transaksi #{:02}", i + 1))
         .size(t.typography.body_size)
         .color(t.color.label)
         .single_line();
-    let kanan = text_in(fonts, format!("Rp {}.000", (i + 1) * 125))
+    let kanan = text(format!("Rp {}.000", (i + 1) * 125))
         .size(t.typography.body_size)
         .weight(FontWeight::MEDIUM)
         .color(t.color.secondary_label)
@@ -169,18 +164,17 @@ fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
 /// The value written is an **absolute position**; the container clamps it to
 /// the maximum scroll itself, so this page need not know how tall the content
 /// turns out to be once the text is laid out.
-fn kendali(fonts: &Fonts, t: &Theme, tujuan: Signal<f32>) -> View {
+fn kendali(t: &Theme, tujuan: Signal<f32>) -> View {
     row([
         View::from(
-            button_variant_in(fonts, t, TOMBOL_ATAS, ButtonVariant::Secondary)
-                .on_press(move || tujuan.set(0.0)),
+            button_variant(TOMBOL_ATAS, ButtonVariant::Secondary).on_press(move || tujuan.set(0.0)),
         ),
         View::from(
-            button_variant_in(fonts, t, TOMBOL_TENGAH, ButtonVariant::Secondary)
+            button_variant(TOMBOL_TENGAH, ButtonVariant::Secondary)
                 // Half the content height; the container clamps the rest.
                 .on_press(move || tujuan.set(BARIS as f32 * 24.0)),
         ),
-        View::from(button_in(fonts, t, TOMBOL_BAWAH).on_press(move || tujuan.set(f32::MAX))),
+        View::from(button(TOMBOL_BAWAH).on_press(move || tujuan.set(f32::MAX))),
     ])
     .spacing(t.space(3.0))
     .cross(CrossAlign::Center)
@@ -205,15 +199,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(900.0, 700.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// One complete frame, animation tick included — the same order as the
@@ -282,8 +270,7 @@ mod tests {
 
     #[test]
     fn halaman_punya_daftar_yang_bisa_digulir_dan_dibacakan() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let pohon = ui.access_tree();
@@ -306,8 +293,7 @@ mod tests {
 
     #[test]
     fn roda_mouse_menggulir_daftar_lewat_spring() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         let tengah = kotak(&ui, NAMA_DAFTAR).center();
 
@@ -340,8 +326,7 @@ mod tests {
 
     #[test]
     fn tombol_scroll_to_membawa_daftar_ke_ujungnya() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Dark), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Dark));
         ui.frame();
 
         let titik = kotak(&ui, TOMBOL_BAWAH).center();
@@ -363,8 +348,7 @@ mod tests {
 
     #[test]
     fn keyboard_menggulir_tanpa_mouse() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         // Tab until the list holds focus, then End takes it to the bottom.
@@ -398,8 +382,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 
@@ -426,8 +409,7 @@ mod tests {
 
     #[test]
     fn menggulir_dengan_trackpad_memantul_lalu_diam() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let tengah = kotak(&ui, NAMA_DAFTAR).center();
 
@@ -471,8 +453,7 @@ mod tests {
 
     #[test]
     fn scrollbar_muncul_saat_digulir_lalu_memudar() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         assert_eq!(gulir_node(&ui).bar_opacity(), 0.0);
 
@@ -500,8 +481,7 @@ mod tests {
         // Pressing a scroll-to button rebuilds the list component; if the
         // node's identity did not survive, focus and scroll position would go
         // with it.
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let sebelum = *nodes(ui.tree()).first().expect("ada scroll_view");
 

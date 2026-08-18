@@ -31,7 +31,7 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::{
-    button_in, button_variant_in, list_in, spacer, text_in, use_list_state, ButtonVariant, Fonts,
+    active_fonts, button, button_variant, list, spacer, text, use_list_state, ButtonVariant,
     ListState,
 };
 
@@ -59,11 +59,11 @@ const LEBAR_LANGKAH: f32 = 140.0;
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // The list state: scroll position + selected row, surviving rebuilds.
     let daftar_state = use_list_state();
@@ -72,7 +72,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -80,8 +80,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Seratus ribu baris, dan hanya belasan di antaranya yang pernah \
                  menjadi node. Gulir sejauh apa pun: yang dibangun selalu \
                  sebanyak yang muat di layar. Klik satu baris lalu tekan ↓ — \
@@ -93,9 +92,9 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR_LANGKAH)),
         ),
-        daftar(fonts, &t, daftar_state, dibuka),
-        kendali(fonts, &t, daftar_state),
-        status(fonts, daftar_state, dibuka),
+        daftar(&t, daftar_state, dibuka),
+        kendali(&t, daftar_state),
+        status(daftar_state, dibuka),
     ])
     .spacing(t.space(5.0))
     .main(MainAlign::Center)
@@ -108,9 +107,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 ///
 /// The scroll axis **must** be bounded (the same rule as Flutter's): the bound
 /// lives here, not inside the container.
-fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usize>>) -> View {
-    let untuk_baris = fonts.clone();
-    let untuk_header = fonts.clone();
+fn daftar(t: &Theme, state: ListState, dibuka: Signal<Option<usize>>) -> View {
     let theme = *t;
 
     constrained(
@@ -120,11 +117,9 @@ fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usiz
             t.space(TINGGI_LANGKAH),
             t.space(TINGGI_LANGKAH),
         ),
-        list_in(t, state, BARIS, move |i| baris(&untuk_baris, &theme, i))
+        list(state, BARIS, move |i| baris(&theme, i))
             .item_extent(TINGGI_BARIS)
-            .sticky_header(t.space(TINGGI_HEADER_LANGKAH), move || {
-                judul_kolom(&untuk_header, &theme)
-            })
+            .sticky_header(t.space(TINGGI_HEADER_LANGKAH), move || judul_kolom(&theme))
             .separators(t.space(0.25))
             .label(NAMA_DAFTAR)
             .background(t.color.surface_sunken)
@@ -139,17 +134,17 @@ fn daftar(fonts: &Fonts, t: &Theme, state: ListState, dibuka: Signal<Option<usiz
 ///
 /// Called **only** for visible rows — that is virtualization's promise, and
 /// that is why `BARIS` is allowed to be a hundred thousand.
-fn baris(fonts: &Fonts, t: &Theme, i: usize) -> View {
-    let nomor = text_in(fonts, format!("#{:06}", i + 1))
+fn baris(t: &Theme, i: usize) -> View {
+    let nomor = text(format!("#{:06}", i + 1))
         .size(t.typography.footnote.size)
         .weight(FontWeight::MEDIUM)
         .color(t.color.tertiary_label)
         .single_line();
-    let nama = text_in(fonts, format!("Transaksi {}", nama_pihak(i)))
+    let nama = text(format!("Transaksi {}", nama_pihak(i)))
         .size(t.typography.body_size)
         .color(t.color.label)
         .single_line();
-    let nominal = text_in(fonts, format!("Rp {}.000", (i % 900 + 100) * 125))
+    let nominal = text(format!("Rp {}.000", (i % 900 + 100) * 125))
         .size(t.typography.body_size)
         .weight(FontWeight::MEDIUM)
         .color(t.color.secondary_label)
@@ -183,17 +178,17 @@ fn nama_pihak(i: usize) -> &'static str {
 }
 
 /// The column headings that stick to the list's top edge.
-fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
+fn judul_kolom(t: &Theme) -> View {
     row([
         View::from(
-            text_in(fonts, "No.")
+            text("No.")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
                 .single_line(),
         ),
         View::from(
-            text_in(fonts, "Pihak")
+            text("Pihak")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
@@ -203,7 +198,7 @@ fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
         // single layout number on this page.
         View::from(spacer()),
         View::from(
-            text_in(fonts, "Nominal")
+            text("Nominal")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
@@ -219,14 +214,11 @@ fn judul_kolom(fonts: &Fonts, t: &Theme) -> View {
 }
 
 /// Two jump-far buttons — proof that `scroll_to` works on huge data sets.
-fn kendali(fonts: &Fonts, t: &Theme, state: ListState) -> View {
+fn kendali(t: &Theme, state: ListState) -> View {
     row([
+        View::from(button(TOMBOL_TENGAH).on_press(move || state.scroll_to_item(50_000, BARIS))),
         View::from(
-            button_in(fonts, t, TOMBOL_TENGAH)
-                .on_press(move || state.scroll_to_item(50_000, BARIS)),
-        ),
-        View::from(
-            button_variant_in(fonts, t, TOMBOL_AWAL, ButtonVariant::Secondary)
+            button_variant(TOMBOL_AWAL, ButtonVariant::Secondary)
                 .on_press(move || state.scroll_to(0.0)),
         ),
     ])
@@ -237,8 +229,7 @@ fn kendali(fonts: &Fonts, t: &Theme, state: ListState) -> View {
 
 /// The status row — **the only place the selection is read**, so moving the
 /// highlight rebuilds just this text (§2.5).
-fn status(fonts: &Fonts, state: ListState, dibuka: Signal<Option<usize>>) -> View {
-    let fonts = fonts.clone();
+fn status(state: ListState, dibuka: Signal<Option<usize>>) -> View {
     component("status", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let terpilih = state
@@ -249,7 +240,7 @@ fn status(fonts: &Fonts, state: ListState, dibuka: Signal<Option<usize>>) -> Vie
             .get()
             .map(|i| format!("dibuka #{:06}", i + 1))
             .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text_in(&fonts, format!("Terpilih: {terpilih} · {aktif}"))
+        text(format!("Terpilih: {terpilih} · {aktif}"))
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line()
@@ -273,15 +264,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(900.0, 760.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// Pump frames until the app is genuinely at rest **and** no spring is
@@ -356,8 +341,7 @@ mod tests {
 
     #[test]
     fn seratus_ribu_baris_hanya_menjadi_belasan_node() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let baris = baris_di_pohon(&ui);
@@ -372,8 +356,7 @@ mod tests {
 
     #[test]
     fn daftar_dan_barisnya_terbaca_screen_reader() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
 
         let pohon = ui.access_tree();
@@ -401,8 +384,7 @@ mod tests {
 
     #[test]
     fn klik_memilih_dan_ketuk_ganda_membuka_baris() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         let baris_kedua = kotak(&ui, "#000002").center();
@@ -432,8 +414,7 @@ mod tests {
 
     #[test]
     fn keyboard_menggerakkan_seleksi_dan_menggulirkan_daftar() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         diam(&mut ui);
 
         // Tab until the list holds focus (the buttons come first in the tree).
@@ -462,8 +443,7 @@ mod tests {
 
     #[test]
     fn tombol_lompat_jauh_menggulirkan_seratus_ribu_baris() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
 
         let p = kotak(&ui, TOMBOL_TENGAH).center();
@@ -488,8 +468,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 diam(&mut ui);
                 assert_eq!(ui.scene().clear_color(), t.color.background);
                 assert!(

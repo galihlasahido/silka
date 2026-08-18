@@ -98,7 +98,7 @@ fn demo(window: &NativeWindow, preview: DragPreview) {
 | `drag` | starting a drag out of the application | macOS live; Windows/Wayland named, not written |
 | `notification` | system notifications | all three (macOS needs a signed bundle) |
 | `dock` | dock badge, taskbar progress, attention | badge macOS, progress Windows, attention all three |
-| `hotkey` | global shortcuts | translation only; registration named, not written |
+| `hotkey` | global shortcuts | macOS + Windows live, as a registration guard; Linux declined, with a reason |
 | `credential` | Keychain / Credential Manager, biometrics | macOS + Windows; Linux and biometrics declined, with reasons |
 | `association` | file types, URL schemes, deep links | manifest generation + `argv` parsing, all pure |
 | `instance` | single instance with argument forwarding | all three, in `std` |

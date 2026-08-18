@@ -28,8 +28,8 @@
 //! arithmetic, colour numbers, and any placement code for the tooltip.
 
 use silka_chart::format::{Locale, NumberFormat};
-use silka_chart::tooltip::{tooltip_overlay_in, ChartHover};
-use silka_chart::{area_chart_in, bar_chart_in, line_chart_in, sparkline_in, ChartStyle, Date};
+use silka_chart::tooltip::{tooltip_overlay, ChartHover};
+use silka_chart::{area_chart, bar_chart, line_chart, sparkline, ChartStyle, Date};
 use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
@@ -37,7 +37,7 @@ use silka_core::view::{column, constrained, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button_in, button_variant_in, overlay_layer, text_in, ButtonVariant, Fonts};
+use silka_widgets::{active_fonts, button, button_variant, overlay_layer, text, ButtonVariant};
 
 /// The page title.
 pub const JUDUL: &str = "Chart";
@@ -190,11 +190,11 @@ pub const LOCALE: [Locale; 3] = [Locale::ID_ID, Locale::EN_US, Locale::DE_DE];
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let seed = use_signal(|| 1u64);
     let terisi = use_signal(|| true);
@@ -208,21 +208,21 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     let kosong = !terisi.get();
 
     let konten = column([
-        judul(fonts, &t),
-        kendali(fonts, &t, seed, terisi, idx_locale, l),
+        judul(&t),
+        kendali(&t, seed, terisi, idx_locale, l),
         row([
-            garis(fonts, &t, l, benih, kosong, hover),
-            area(fonts, &t, l, benih, kosong, hover),
+            garis(&t, l, benih, kosong, hover),
+            area(&t, l, benih, kosong, hover),
         ])
         .spacing(t.space(6.0))
         .into(),
         row([
-            batang(fonts, &t, l, benih, kosong, hover),
-            tumpuk(fonts, &t, l, benih, kosong, hover),
+            batang(&t, l, benih, kosong, hover),
+            tumpuk(&t, l, benih, kosong, hover),
         ])
         .spacing(t.space(6.0))
         .into(),
-        percikan(fonts, &t, l, benih, kosong),
+        percikan(&t, l, benih, kosong),
     ])
     .spacing(t.space(5.0))
     .main(MainAlign::Start)
@@ -232,9 +232,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     // Content first, the tooltip after: this order **is** the stacking order,
     // and the panel's position belongs entirely to the overlay system.
     overlay_layer(konten)
-        .overlay(tooltip_overlay_in(
-            fonts,
-            &t,
+        .overlay(tooltip_overlay(
             &ChartStyle::from_theme(&t),
             hover.get().as_ref(),
             hover.get().map(|h| h.anchor()).unwrap_or_default(),
@@ -242,10 +240,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .into()
 }
 
-fn judul(fonts: &Fonts, t: &Theme) -> View {
+fn judul(t: &Theme) -> View {
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -253,8 +251,7 @@ fn judul(fonts: &Fonts, t: &Theme) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Empat jenis mark di satu halaman, semuanya menumpang token \
                  tema yang sama dan sistem overlay yang sama. Arahkan penunjuk \
                  ke mana pun di dalam kotak plot — bukan tepat di atas garisnya \
@@ -273,7 +270,6 @@ fn judul(fonts: &Fonts, t: &Theme) -> View {
 }
 
 fn kendali(
-    fonts: &Fonts,
     t: &Theme,
     seed: Signal<u64>,
     terisi: Signal<bool>,
@@ -283,17 +279,17 @@ fn kendali(
     let isi = terisi.get();
     let label_isi = if isi { TOMBOL_KOSONG } else { TOMBOL_ISI };
     row([
-        View::from(button_in(fonts, t, TOMBOL_DATA).on_press(move || seed.set(seed.get() + 1))),
+        View::from(button(TOMBOL_DATA).on_press(move || seed.set(seed.get() + 1))),
         View::from(
-            button_variant_in(fonts, t, label_isi, ButtonVariant::Secondary)
+            button_variant(label_isi, ButtonVariant::Secondary)
                 .on_press(move || terisi.set(!terisi.get())),
         ),
         View::from(
-            button_variant_in(fonts, t, TOMBOL_LOCALE, ButtonVariant::Ghost)
+            button_variant(TOMBOL_LOCALE, ButtonVariant::Ghost)
                 .on_press(move || idx_locale.set(idx_locale.get() + 1)),
         ),
         View::from(
-            text_in(fonts, l.tag)
+            text(l.tag)
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.accent)
@@ -324,18 +320,11 @@ fn kotak(t: &Theme, isi: impl Into<View>) -> View {
 }
 
 /// The line chart: two series over a **time** axis.
-fn garis(
-    fonts: &Fonts,
-    t: &Theme,
-    l: Locale,
-    seed: u64,
-    kosong: bool,
-    hover: Signal<Option<ChartHover>>,
-) -> View {
+fn garis(t: &Theme, l: Locale, seed: u64, kosong: bool, hover: Signal<Option<ChartHover>>) -> View {
     let data = if kosong { Vec::new() } else { harian(seed) };
     kotak(
         t,
-        line_chart_in(fonts, t, data)
+        line_chart(data)
             .key("garis")
             .x(|d: &Hari| d.tanggal)
             .y_named("Masuk", |d: &Hari| d.masuk)
@@ -352,18 +341,11 @@ fn garis(
 }
 
 /// The area chart: **one** cumulative series, which is what earns a fill.
-fn area(
-    fonts: &Fonts,
-    t: &Theme,
-    l: Locale,
-    seed: u64,
-    kosong: bool,
-    hover: Signal<Option<ChartHover>>,
-) -> View {
+fn area(t: &Theme, l: Locale, seed: u64, kosong: bool, hover: Signal<Option<ChartHover>>) -> View {
     let data = if kosong { Vec::new() } else { saldo(seed) };
     kotak(
         t,
-        area_chart_in(fonts, t, data)
+        area_chart(data)
             .key("area")
             .x(|d: &Hari| d.tanggal)
             .y_named("Saldo", |d: &Hari| d.masuk)
@@ -379,7 +361,6 @@ fn area(
 
 /// Grouped vertical bars: revenue against target, side by side.
 fn batang(
-    fonts: &Fonts,
     t: &Theme,
     l: Locale,
     seed: u64,
@@ -389,7 +370,7 @@ fn batang(
     let data = if kosong { Vec::new() } else { kuartalan(seed) };
     kotak(
         t,
-        bar_chart_in(fonts, t, data)
+        bar_chart(data)
             .key("batang")
             .x_label(|d: &Kuartal| d.nama.clone())
             .y_named("Pendapatan", |d: &Kuartal| d.pendapatan)
@@ -408,7 +389,6 @@ fn batang(
 /// Stacked **horizontal** bars — the layout to reach for when the category
 /// names are words, because horizontal labels never need rotating.
 fn tumpuk(
-    fonts: &Fonts,
     t: &Theme,
     l: Locale,
     seed: u64,
@@ -418,7 +398,7 @@ fn tumpuk(
     let data = if kosong { Vec::new() } else { biaya(seed) };
     kotak(
         t,
-        bar_chart_in(fonts, t, data)
+        bar_chart(data)
             .key("tumpuk")
             .x_label(|d: &Biaya| d.nama.clone())
             .y_named("Tetap", |d: &Biaya| d.tetap)
@@ -438,7 +418,7 @@ fn tumpuk(
 
 /// A row of sparklines: word-sized graphics beside their own numbers, which is
 /// the only place a chart with no axes makes sense.
-fn percikan(fonts: &Fonts, t: &Theme, l: Locale, seed: u64, kosong: bool) -> View {
+fn percikan(t: &Theme, l: Locale, seed: u64, kosong: bool) -> View {
     let hari = if kosong { Vec::new() } else { harian(seed) };
     let entri: Vec<View> = ["Masuk", "Keluar", "Selisih"]
         .iter()
@@ -455,20 +435,20 @@ fn percikan(fonts: &Fonts, t: &Theme, l: Locale, seed: u64, kosong: bool) -> Vie
             let terakhir = nilai.last().copied().unwrap_or(0.0);
             row([
                 View::from(
-                    text_in(fonts, *nama)
+                    text(*nama)
                         .size(t.typography.footnote.size)
                         .color(t.color.secondary_label)
                         .single_line(),
                 ),
                 View::from(constrained(
                     BoxConstraints::new(t.space(24.0), t.space(24.0), t.space(6.0), t.space(6.0)),
-                    sparkline_in(fonts, t, nilai)
+                    sparkline(nilai)
                         .key(format!("percikan-{i}"))
                         .animated(true)
                         .empty(""),
                 )),
                 View::from(
-                    text_in(fonts, NumberFormat::Compact.format(terakhir, &l))
+                    text(NumberFormat::Compact.format(terakhir, &l))
                         .size(t.typography.footnote.size)
                         .weight(FontWeight::SEMIBOLD)
                         .color(t.color.label)
@@ -501,14 +481,13 @@ mod tests {
     const SKALA: f64 = 2.0;
 
     fn aplikasi(preset: Preset, appearance: Appearance) -> AppRuntime {
-        aplikasi_dengan(preset, appearance, Fonts::bundled_only())
+        aplikasi_dengan(preset, appearance)
     }
 
     /// A headless app assembled **exactly the way `run_app` does it**.
-    fn aplikasi_dengan(preset: Preset, appearance: Appearance, fonts: Fonts) -> AppRuntime {
+    fn aplikasi_dengan(preset: Preset, appearance: Appearance) -> AppRuntime {
         let theme = Theme::new(preset, appearance);
-        let ui = headless_app(theme, move |cx| halaman(cx, &fonts))
-            .sized(VIEWPORT.width, VIEWPORT.height);
+        let ui = headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
         ui.env::<Signal<silka_core::app::ScaleFactor>>()
             .expect("run_app menitipkan scale factor")
             .set(silka_core::app::ScaleFactor(SKALA as f32));
@@ -644,12 +623,10 @@ mod tests {
     #[test]
     fn keadaan_kosong_tetap_terbaca() {
         // Emptying the page must not blank it: the message is the state.
-        let fonts = Fonts::bundled_only();
         let theme = Theme::cupertino(Appearance::Dark);
         let mut ui = headless_app(theme, move |_cx| {
             let hover = use_signal(|| None::<ChartHover>);
             overlay_layer(column([garis(
-                &fonts,
                 &Theme::cupertino(Appearance::Dark),
                 Locale::ID_ID,
                 0,
@@ -721,9 +698,11 @@ mod tests {
             return;
         };
 
-        let fonts = Fonts::bundled_only();
+        // The **ambient** engine, not a second one: the camera has to upload
+        // the very atlas the layout measured against (§3.3).
+        let fonts = active_fonts();
         let theme = Theme::cupertino(Appearance::Dark);
-        let mut ui = aplikasi_dengan(Preset::Cupertino, Appearance::Dark, fonts.clone());
+        let mut ui = aplikasi_dengan(Preset::Cupertino, Appearance::Dark);
         ui.frame();
         // Springs settled: what is measured is the finished chart, not a frame
         // caught halfway through its entrance.
@@ -826,8 +805,9 @@ mod tests {
         ] {
             // Real system fonts here, unlike every other test on this page: the
             // point is to see what a user sees, not to be deterministic.
-            let fonts = Fonts::new();
-            let mut ui = aplikasi_dengan(preset, appearance, fonts.clone());
+            let fonts = silka_widgets::Fonts::new();
+            silka_widgets::install_fonts(&fonts);
+            let mut ui = aplikasi_dengan(preset, appearance);
             ui.frame();
             selesaikan(&mut ui);
             let mut target = silka_renderer::OffscreenTarget::new(

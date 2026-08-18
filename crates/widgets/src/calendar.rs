@@ -92,8 +92,8 @@ use silka_text::FontWeight;
 use silka_theme::{ColorToken, SpaceToken, Theme};
 
 use crate::fonts::Fonts;
-use crate::icon::IconName;
-use crate::icon_button::icon_button_in;
+use crate::icon::{chevron_back_in, chevron_forward_in};
+use crate::icon_button::icon_button_with_in;
 use crate::images::{active_images, Images};
 use crate::text::text_in;
 
@@ -1314,10 +1314,14 @@ impl Calendar {
 
         row([
             View::from(
-                icon_button_in(
-                    &self.images,
+                // `chevron_back`, not `ChevronLeft`: "the previous month" is a
+                // step **backward along the reading direction**, so the arrow
+                // points left in an LTR document and right in an RTL one. The
+                // mirroring is the icon node's job — it is the one that knows
+                // the direction (§9.8, `AUDIT.md` P-6).
+                icon_button_with_in(
                     t,
-                    IconName::ChevronLeft,
+                    chevron_back_in(&self.images, t).md(),
                     format!("Previous month, {}", self.locale.month_year(sebelum)),
                 )
                 .sm()
@@ -1339,10 +1343,9 @@ impl Calendar {
                     .role(AccessRole::Label),
             ))),
             View::from(
-                icon_button_in(
-                    &self.images,
+                icon_button_with_in(
                     t,
-                    IconName::ChevronRight,
+                    chevron_forward_in(&self.images, t).md(),
                     format!("Next month, {}", self.locale.month_year(sesudah)),
                 )
                 .sm()
@@ -1465,6 +1468,7 @@ mod tests {
     use silka_core::input::{InputRouter, KeyCode, KeyEvent, PointerEvent};
     use silka_core::tree::{NodeId, RenderTree, TextDirection};
     use silka_core::view::reconcile;
+    use silka_paint::ImageId;
     use silka_theme::{Appearance, Preset};
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -1478,10 +1482,11 @@ mod tests {
     }
 
     fn build(month: Date) -> Calendar {
-        // `active_images()` rather than a fresh atlas per call: `Images`
-        // compares by identity, so two atlases would make every rebuild look
-        // like a change and the no-op test below would be measuring nothing.
-        calendar_in(&Fonts::bundled_only(), &active_images(), &theme(), month)
+        // `active_fonts()`/`active_images()` rather than a fresh engine and
+        // atlas per call: both compare by identity, so two of either would make
+        // every rebuild look like a change and the no-op test below would be
+        // measuring nothing.
+        calendar_in(&crate::active_fonts(), &active_images(), &theme(), month)
             .locale(Locale::ID_ID)
             .today(Date::new(2026, 8, 18))
     }
@@ -1838,6 +1843,44 @@ mod tests {
             "the first column leads in a left-to-right document"
         );
         assert!(b0 > b6, "…and trails in a mirrored one");
+    }
+
+    #[test]
+    fn the_month_arrows_mirror_with_the_grid() {
+        // The row of arrows mirrors on its own (Taffy), but the *glyph* used to
+        // be a constant: "previous" stayed a left-pointing chevron in a
+        // document that reads right-to-left, i.e. it pointed at the future.
+        // Now it is `chevron_back`, and the icon node picks the artwork.
+        let masks = |direction: TextDirection| -> Vec<ImageId> {
+            let mut tree = RenderTree::new();
+            reconcile(&mut tree, build(AGU));
+            tree.set_direction(direction);
+            tree.layout(BoxConstraints::loose(BOX));
+            let mut out = Vec::new();
+            kumpulkan_ikon(&tree, tree.root(), &mut out);
+            out
+        };
+        let ltr = masks(TextDirection::Ltr);
+        let rtl = masks(TextDirection::Rtl);
+        assert_eq!(ltr.len(), 2, "one arrow each side of the month name");
+        assert_eq!(rtl.len(), 2);
+        assert_ne!(ltr[0], ltr[1], "the two arrows are not the same artwork");
+        // Every arrow swapped, and "previous" in RTL draws exactly what "next"
+        // drew in LTR.
+        assert_eq!(rtl[0], ltr[1]);
+        assert_eq!(rtl[1], ltr[0]);
+    }
+
+    /// Every icon bitmap in a subtree, in tree order.
+    fn kumpulkan_ikon(tree: &RenderTree, id: NodeId, out: &mut Vec<ImageId>) {
+        if let Some(i) = tree.node_ref::<crate::IconBox>(id) {
+            if let Some(image) = i.image_id() {
+                out.push(image);
+            }
+        }
+        for anak in tree.children(id) {
+            kumpulkan_ikon(tree, *anak, out);
+        }
     }
 
     #[test]

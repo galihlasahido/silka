@@ -1,7 +1,7 @@
 //! `button()` — the first Tier 2 component (`KOMPONEN.md`).
 //!
 //! ```
-//! # use silka_widgets::{button, Fonts};
+//! # use silka_widgets::{button_in, Fonts};
 //! # use silka_theme::{Appearance, Theme};
 //! # use silka_core::signals::Runtime;
 //! # let fonts = Fonts::bundled_only();

@@ -14,47 +14,70 @@
 //! | X11 | `XGrabKey` | a keycode + modifier mask |
 //! | Wayland | *nothing* — the compositor owns global shortcuts | (a portal request, per desktop) |
 //!
-//! ## What is here, and what is honestly not
+//! ## How this module is put together
 //!
-//! The **translation** is here and is complete: [`Hotkey`] reuses
-//! [`crate::menu::Shortcut`], so an application writes a global hotkey exactly
-//! the way it writes a menu accelerator, and [`macos_key_code`],
-//! [`macos_modifier_mask`], [`windows_virtual_key`] and
-//! [`windows_modifier_flags`] turn it into what each API asks for. Those are
-//! pure functions with tests, and they are the part that would otherwise be
-//! debugged by pressing keys and watching nothing happen.
+//! Three layers, and each one is useful without the next:
 //!
-//! The **registration** is not: [`HotkeyManager::register`] reports
-//! [`HotkeyError::Unsupported`]. Carbon's `RegisterEventHotKey` needs an
-//! `InstallEventHandler` callback whose `ItemCount` argument is a C `unsigned
-//! long`, and `RegisterHotKey` needs a message-only window to receive
-//! `WM_HOTKEY` because winit does not forward it. Neither is guesswork this
-//! workspace can verify without a compiler in the loop, so the seam is here and
-//! the backend is named debt rather than an approximation. `global-hotkey` is
-//! the intended backend once it is pinned.
+//! 1. **The description.** [`Hotkey`] reuses [`crate::menu::Shortcut`], so an
+//!    application writes a global hotkey exactly the way it writes a menu
+//!    accelerator. [`HotkeyManager`] collects them, hands out a [`HotkeyId`]
+//!    per binding, and answers "is this combination already used?" with no OS
+//!    involved — which is what a preferences screen needs while the user is
+//!    still holding the keys down.
+//! 2. **The translation.** [`macos_key_code`], [`macos_modifier_mask`],
+//!    [`windows_virtual_key`] and [`windows_modifier_flags`] turn a shortcut
+//!    into exactly what each OS API asks for. Pure functions with tests, and
+//!    the part that would otherwise be debugged by pressing keys and watching
+//!    nothing happen.
+//! 3. **The registration.** [`HotkeyManager::register`] hands the set to the
+//!    OS and returns a [`HotkeyRegistration`] — a guard whose `Drop` gives
+//!    every combination back. The backend is `global-hotkey`, the same family
+//!    as the menu (`muda`) and tray (`tray-icon`) backends, so all three parse
+//!    the same `keyboard-types` key names.
 //!
-//! ```
+//! ## Where the events come out
+//!
+//! The OS calls back from its own handler — Carbon's application event target
+//! on macOS, a message-only window on Windows — never from the winit loop. So
+//! a hotkey press follows the exact path a menu click follows: it is turned
+//! into a [`HotkeyActivation`] and sent through the
+//! [`EventLoopProxy`](winit::event_loop::EventLoopProxy) as
+//! [`ShellEvent::Hotkey`](crate::ShellEvent::Hotkey), which both moves it to
+//! the UI thread and wakes a loop that is idling on `ControlFlow::Wait`.
+//! [`crate::window()`]'s [`on_hotkey`](crate::WindowConfig::on_hotkey) is the
+//! ordinary way to receive it.
+//!
+//! ## Linux
+//!
+//! Refused, with the same reasoning as the menubar: X11 could be grabbed, but
+//! Wayland hands global shortcuts to the compositor entirely, and the portal
+//! that replaces them is not shipped by every desktop. Registering on half of
+//! Linux and silently doing nothing on the other half is worse than one
+//! [`HotkeyError::Unsupported`] an application can show.
+//!
+//! ```no_run
 //! use silka_core::input::{KeyCode, Modifiers};
-//! use silka_platform::hotkey::{hotkeys, windows_modifier_flags, windows_virtual_key, MOD_NOREPEAT};
+//! use silka_platform::hotkey::hotkeys;
 //! use silka_platform::menu::shortcut;
 //!
 //! // ⌘⇧Space, written the same way a menu accelerator is written.
-//! let quick_open = shortcut(
-//!     Modifiers::COMMAND.union(Modifiers::SHIFT),
-//!     KeyCode::Named(silka_core::input::NamedKey::Space),
+//! let mut manager = hotkeys();
+//! manager.add(
+//!     "app.quick_open",
+//!     shortcut(
+//!         Modifiers::COMMAND.union(Modifiers::SHIFT),
+//!         KeyCode::Named(silka_core::input::NamedKey::Space),
+//!     ),
 //! );
 //!
-//! // …and it is already in the shape Windows wants.
-//! assert_eq!(windows_virtual_key(quick_open.key()), Some(0x20));
-//! assert!(windows_modifier_flags(quick_open.modifiers()) & MOD_NOREPEAT != 0);
-//!
-//! let mut manager = hotkeys();
-//! let id = manager.add("app.quick_open", quick_open);
-//! assert_eq!(manager.len(), 1);
-//! assert!(manager.get(id).is_some());
+//! // The registration lives as long as the guard: drop it and the combination
+//! // belongs to the rest of the desktop again.
+//! let _registered = manager.register()?;
+//! # Ok::<(), silka_platform::hotkey::HotkeyError>(())
 //! ```
 
 use core::fmt;
+use std::sync::Mutex;
 
 use silka_core::input::{KeyCode, Modifiers, NamedKey};
 
@@ -111,6 +134,14 @@ pub enum HotkeyError {
     NoModifiers,
     /// Another application already owns this combination.
     Taken,
+    /// Two bindings in the same set claim the same combination. Carries the
+    /// action name of the second one.
+    ///
+    /// Caught before the OS is asked, because the OS cannot tell us: every
+    /// platform identifies a registered hotkey by the combination itself, so
+    /// the second registration is either refused or — worse — accepted and
+    /// reported under the first binding's identity.
+    Duplicate(String),
     /// No backend on this build. The message says why.
     Unsupported(String),
     /// The OS refused.
@@ -127,6 +158,10 @@ impl fmt::Display for HotkeyError {
                 write!(f, "a global hotkey without a modifier would take the key away from every other application")
             }
             HotkeyError::Taken => write!(f, "another application already owns this shortcut"),
+            HotkeyError::Duplicate(action) => write!(
+                f,
+                "\"{action}\" claims a combination another binding in the same set already uses"
+            ),
             HotkeyError::Unsupported(m) => write!(f, "no global hotkey backend: {m}"),
             HotkeyError::Os(m) => write!(f, "the OS refused the hotkey: {m}"),
         }
@@ -421,6 +456,256 @@ fn windows_named_key(named: NamedKey) -> Option<u32> {
 }
 
 // ---------------------------------------------------------------------------
+// What comes back when the user presses one
+// ---------------------------------------------------------------------------
+
+/// Whether the hotkey went down or came back up.
+///
+/// Both edges are reported because a global hotkey is also how "push to talk"
+/// and "hold to preview" are built — an application that only cares about the
+/// press asks [`HotkeyActivation::is_pressed`] and ignores the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HotkeyState {
+    /// The combination was just pressed.
+    Pressed,
+    /// The combination was just released.
+    Released,
+}
+
+/// A global hotkey the user actually pressed.
+///
+/// Carries the action name as well as the id, so a handler reads the way a
+/// menu handler reads — matching on what the shortcut *means*, not on a number
+/// it had to remember from startup.
+///
+/// ```
+/// use silka_platform::hotkey::{HotkeyActivation, HotkeyId, HotkeyState};
+///
+/// let a = HotkeyActivation::new(HotkeyId::from_raw(3), "app.quick_open", HotkeyState::Pressed);
+/// assert!(a.is("app.quick_open"));
+/// assert!(a.is_pressed());
+/// assert!(!a.is("app.something_else"));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HotkeyActivation {
+    id: HotkeyId,
+    action: String,
+    state: HotkeyState,
+}
+
+impl HotkeyActivation {
+    /// Build one — used by the backend, and by tests that want to exercise a
+    /// handler without pressing a key.
+    pub fn new(id: HotkeyId, action: impl Into<String>, state: HotkeyState) -> Self {
+        Self {
+            id,
+            action: action.into(),
+            state,
+        }
+    }
+
+    /// Which binding fired.
+    pub fn id(&self) -> HotkeyId {
+        self.id
+    }
+
+    /// The application-level action name the binding was added with.
+    pub fn action(&self) -> &str {
+        &self.action
+    }
+
+    /// Whether this is that action.
+    pub fn is(&self, action: &str) -> bool {
+        self.action == action
+    }
+
+    /// Press or release.
+    pub fn state(&self) -> HotkeyState {
+        self.state
+    }
+
+    /// Whether this is the press edge — the common case.
+    pub fn is_pressed(&self) -> bool {
+        self.state == HotkeyState::Pressed
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Routing: from the OS's number back to our binding
+// ---------------------------------------------------------------------------
+
+/// One live registration, as the callback needs to see it.
+///
+/// `raw` is the identifier the OS reports. It is **not** [`HotkeyId`]: every
+/// backend derives its own id from the combination itself, so the mapping has
+/// to be remembered rather than computed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Route {
+    raw: u32,
+    id: HotkeyId,
+    action: String,
+}
+
+/// The live routes, process-wide.
+///
+/// Process-wide because the callback is: there is one hotkey handler per
+/// process, exactly as there is one menubar and one status bar, and it fires
+/// from a thread that has no way to reach any particular manager value.
+static ROUTES: Mutex<Vec<Route>> = Mutex::new(Vec::new());
+
+/// The pure half of the lookup, so it can be tested without registering
+/// anything with the OS.
+fn lookup(routes: &[Route], raw: u32, state: HotkeyState) -> Option<HotkeyActivation> {
+    routes
+        .iter()
+        .find(|r| r.raw == raw)
+        .map(|r| HotkeyActivation::new(r.id, r.action.clone(), state))
+}
+
+/// Add routes to the live table.
+///
+/// Only a platform with a backend ever registers anything, so on the others
+/// this is unreachable and the table simply stays empty — which is exactly
+/// what [`activation_from_raw`] should then report.
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+fn remember(routes: &[Route]) {
+    if let Ok(mut table) = ROUTES.lock() {
+        table.extend_from_slice(routes);
+    }
+}
+
+/// Take routes back out of the live table.
+fn forget(routes: &[Route]) {
+    if let Ok(mut table) = ROUTES.lock() {
+        table.retain(|live| !routes.iter().any(|own| own.raw == live.raw));
+    }
+}
+
+/// Which binding a platform callback is talking about, or `None` when the
+/// registration it belonged to has already been dropped.
+///
+/// The `None` case is a real race and not a bug: a hotkey can be pressed in the
+/// microsecond between the OS delivering the event and the application giving
+/// the combination back.
+pub fn activation_from_raw(raw: u32, state: HotkeyState) -> Option<HotkeyActivation> {
+    let routes = ROUTES.lock().ok()?;
+    lookup(&routes, raw, state)
+}
+
+/// Point the process-wide hotkey callback at this event loop.
+///
+/// Called from [`crate::forward_native_events`], inside the same `Once` that
+/// claims the menu and tray handlers — for the same reason: the backend keeps a
+/// single handler slot that can only ever be set once.
+#[allow(unused_variables)]
+pub(crate) fn forward_hotkey_events(proxy: winit::event_loop::EventLoopProxy<crate::ShellEvent>) {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        // `EventLoopProxy` is only `Send`, while the handler must be `Sync`;
+        // the lock is uncontended in practice because a person presses one
+        // hotkey at a time.
+        let proxy = Mutex::new(proxy);
+        global_hotkey::GlobalHotKeyEvent::set_event_handler(Some(
+            move |e: global_hotkey::GlobalHotKeyEvent| {
+                let state = match e.state() {
+                    global_hotkey::HotKeyState::Pressed => HotkeyState::Pressed,
+                    global_hotkey::HotKeyState::Released => HotkeyState::Released,
+                };
+                let Some(activation) = activation_from_raw(e.id(), state) else {
+                    return;
+                };
+                if let Ok(p) = proxy.lock() {
+                    // The loop being gone is the normal shutdown race, not an
+                    // error worth reporting from inside an OS callback.
+                    let _ = p.send_event(crate::ShellEvent::Hotkey(activation));
+                }
+            },
+        ));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The live registration
+// ---------------------------------------------------------------------------
+
+/// The hotkeys an application currently owns.
+///
+/// A guard, deliberately: while this value is alive the combinations belong to
+/// this process and to no other application on the machine, and when it is
+/// dropped they are handed back. That is why [`HotkeyManager::register`]
+/// returns it instead of `()` — a global hotkey that outlives the code that
+/// wanted it is exactly the bug users notice, because the shortcut keeps
+/// working in an application that is no longer doing anything with it.
+///
+/// Not `Clone` and not `Send`: on Windows the backend owns a message-only
+/// window, and a window belongs to the thread that created it.
+pub struct HotkeyRegistration {
+    /// The live backend. Dropping it unregisters whatever is left.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    backend: global_hotkey::GlobalHotKeyManager,
+    /// What was handed to the OS, for the explicit give-back.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    registered: Vec<global_hotkey::hotkey::HotKey>,
+    /// Our copy of the routes this registration added to [`ROUTES`].
+    routes: Vec<Route>,
+}
+
+impl HotkeyRegistration {
+    /// How many combinations are live.
+    pub fn len(&self) -> usize {
+        self.routes.len()
+    }
+
+    /// Whether nothing is live.
+    pub fn is_empty(&self) -> bool {
+        self.routes.is_empty()
+    }
+
+    /// The bindings that are live, in the order they were registered.
+    pub fn ids(&self) -> impl Iterator<Item = HotkeyId> + '_ {
+        self.routes.iter().map(|r| r.id)
+    }
+
+    /// Whether a binding is live.
+    pub fn contains(&self, id: HotkeyId) -> bool {
+        self.routes.iter().any(|r| r.id == id)
+    }
+
+    /// Give every combination back, now.
+    ///
+    /// Consumes the guard, which is the same thing dropping it does; it exists
+    /// so the intent can be written down at the point it matters — "the
+    /// preferences screen is about to register a new set".
+    pub fn unregister(self) {}
+}
+
+impl fmt::Debug for HotkeyRegistration {
+    /// Hand-written: the backend holds raw OS handles that are noise in a log,
+    /// and what a reader wants is which actions are live.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HotkeyRegistration")
+            .field(
+                "actions",
+                &self.routes.iter().map(|r| &r.action).collect::<Vec<_>>(),
+            )
+            .finish()
+    }
+}
+
+impl Drop for HotkeyRegistration {
+    fn drop(&mut self) {
+        forget(&self.routes);
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            // Explicit, even though dropping the backend also unregisters:
+            // "the OS gets its keys back here" is the whole point of the type,
+            // and a failure at this stage is nothing an application can act on.
+            let _ = self.backend.unregister_all(&self.registered);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The manager
 // ---------------------------------------------------------------------------
 
@@ -569,22 +854,172 @@ impl HotkeyManager {
         Ok(())
     }
 
-    /// Register every binding with the OS.
+    /// Whether the whole set could be registered, without asking the OS.
+    ///
+    /// Everything [`validate`](Self::validate) checks, plus the one thing that
+    /// only makes sense for a set: no two bindings may claim the same
+    /// combination.
+    ///
+    /// ```
+    /// use silka_core::input::{KeyCode, Modifiers};
+    /// use silka_platform::hotkey::{hotkeys, HotkeyError};
+    /// use silka_platform::menu::shortcut;
+    ///
+    /// let mut m = hotkeys();
+    /// m.add("app.open", shortcut(Modifiers::COMMAND, KeyCode::Character('k')));
+    /// assert!(m.validate_all().is_ok());
+    ///
+    /// m.add("app.palette", shortcut(Modifiers::COMMAND, KeyCode::Character('k')));
+    /// assert_eq!(
+    ///     m.validate_all(),
+    ///     Err(HotkeyError::Duplicate("app.palette".into()))
+    /// );
+    /// ```
+    pub fn validate_all(&self) -> Result<(), HotkeyError> {
+        for (i, binding) in self.bindings.iter().enumerate() {
+            self.validate(&binding.hotkey)?;
+            if self.bindings[..i]
+                .iter()
+                .any(|o| o.hotkey == binding.hotkey)
+            {
+                return Err(HotkeyError::Duplicate(binding.action.clone()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Register every binding with the OS and return the guard that owns them.
+    ///
+    /// Call it from the thread the event loop runs on, once that loop exists:
+    /// macOS installs a Carbon handler on the application event target, and
+    /// Windows creates a message-only window whose messages are pumped by the
+    /// thread that made it. [`crate::window()`]'s
+    /// [`hotkeys`](crate::WindowConfig::hotkeys) does this at the right moment
+    /// already.
+    ///
+    /// All or nothing: if any binding is refused, the ones registered before it
+    /// are given back and the error is returned, so an application never ends
+    /// up owning half a set it cannot reason about.
     ///
     /// # Errors
     ///
-    /// Always [`HotkeyError::Unsupported`] today — see the module
-    /// documentation for exactly what each platform's backend still needs.
-    pub fn register(&self) -> Result<(), HotkeyError> {
+    /// - [`HotkeyError::NoModifiers`], [`HotkeyError::UnmappableKey`],
+    ///   [`HotkeyError::Duplicate`] — the set itself is wrong; the OS was never
+    ///   asked.
+    /// - [`HotkeyError::Taken`] — another application owns the combination.
+    ///   This is the one to show the user: nothing the application does can
+    ///   take it back.
+    /// - [`HotkeyError::Unsupported`] — no backend on this platform (Linux).
+    pub fn register(&self) -> Result<HotkeyRegistration, HotkeyError> {
+        self.validate_all()?;
+        self.register_backend()
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    fn register_backend(&self) -> Result<HotkeyRegistration, HotkeyError> {
+        use global_hotkey::{Error as BackendError, GlobalHotKeyManager};
+
+        let backend = GlobalHotKeyManager::new().map_err(|e| HotkeyError::Os(e.to_string()))?;
+        let mut registered = Vec::with_capacity(self.bindings.len());
+        let mut routes = Vec::with_capacity(self.bindings.len());
+
         for binding in &self.bindings {
-            self.validate(&binding.hotkey)?;
+            // `validate_all` accepts a key that either platform can express;
+            // this asks the stricter question — can *this* one? Insert has no
+            // Mac key at all, and finding that out here means the error says
+            // "unmappable" instead of the "taken" a refused registration would
+            // otherwise look like.
+            if this_platform_key_code(binding.hotkey.key()).is_none() {
+                return Err(HotkeyError::UnmappableKey);
+            }
+            let key = platform_hotkey(&binding.hotkey).ok_or(HotkeyError::UnmappableKey)?;
+            if let Err(e) = backend.register(key) {
+                let _ = backend.unregister_all(&registered);
+                return Err(match e {
+                    // Both spellings mean the same thing in practice: the
+                    // combination is well formed, and the OS still said no.
+                    BackendError::AlreadyRegistered(_) | BackendError::FailedToRegister(_) => {
+                        HotkeyError::Taken
+                    }
+                    other => HotkeyError::Os(other.to_string()),
+                });
+            }
+            registered.push(key);
+            routes.push(Route {
+                raw: key.id(),
+                id: binding.id,
+                action: binding.action.clone(),
+            });
         }
+
+        remember(&routes);
+
+        Ok(HotkeyRegistration {
+            backend,
+            registered,
+            routes,
+        })
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    fn register_backend(&self) -> Result<HotkeyRegistration, HotkeyError> {
         Err(HotkeyError::Unsupported(
-            "the per-platform registration (Carbon RegisterEventHotKey, a message-only window for \
-             WM_HOTKEY, XGrabKey) is not written yet; the translation to each API is"
+            "global hotkeys are not registered on this platform: X11 would need XGrabKey, and \
+             Wayland gives global shortcuts to the compositor entirely — grabbing on half of \
+             Linux and doing nothing on the other half is worse than saying so"
                 .into(),
         ))
     }
+}
+
+/// The virtual key code **this** OS would use, or `None` when it has none.
+///
+/// The tested tables above, picked by platform: the honest answer to "can this
+/// machine express that shortcut at all?".
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn this_platform_key_code(key: &KeyCode) -> Option<u32> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_key_code(key)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        windows_virtual_key(key)
+    }
+}
+
+/// Our shortcut in the backend's vocabulary.
+///
+/// The key name comes from [`crate::menu::key_code_name`] — the same table the
+/// menu accelerators use, because both back-ends parse the same
+/// `keyboard-types` names and two tables would eventually disagree about one
+/// key.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn platform_hotkey(hotkey: &Hotkey) -> Option<global_hotkey::hotkey::HotKey> {
+    use core::str::FromStr;
+    use global_hotkey::hotkey::{Code, HotKey, Modifiers as BackendModifiers};
+
+    let code = Code::from_str(&crate::menu::key_code_name(hotkey.key())?).ok()?;
+
+    let ours = hotkey.modifiers();
+    let mut mods = BackendModifiers::empty();
+    if ours.contains(Modifiers::SHIFT) {
+        mods |= BackendModifiers::SHIFT;
+    }
+    if ours.contains(Modifiers::CONTROL) {
+        mods |= BackendModifiers::CONTROL;
+    }
+    if ours.contains(Modifiers::ALT) {
+        mods |= BackendModifiers::ALT;
+    }
+    if ours.contains(Modifiers::META) {
+        // ⌘ / the Windows key. `SUPER` rather than `META`: the backend folds
+        // META into SUPER itself, and going through the fold would make the id
+        // it derives depend on which spelling we happened to use.
+        mods |= BackendModifiers::SUPER;
+    }
+
+    Some(HotKey::new(Some(mods), code))
 }
 
 #[cfg(test)]
@@ -747,16 +1182,123 @@ mod tests {
     }
 
     #[test]
-    fn register_jujur_tentang_belum_ada_backend() {
+    fn set_yang_salah_ditolak_sebelum_os_ditanya() {
+        // Whatever the platform, an invalid set never reaches the OS — which
+        // is what makes these assertions meaningful on a build with no backend
+        // as well as on one with a backend.
+        let mut kosong_modifier = hotkeys();
+        kosong_modifier.add("a", shortcut(Modifiers::NONE, KeyCode::Character('k')));
+        assert_eq!(
+            kosong_modifier.register().err(),
+            Some(HotkeyError::NoModifiers)
+        );
+
+        let mut tak_terpetakan = hotkeys();
+        tak_terpetakan.add("a", shortcut(Modifiers::COMMAND, KeyCode::Unidentified));
+        assert_eq!(
+            tak_terpetakan.register().err(),
+            Some(HotkeyError::UnmappableKey)
+        );
+
+        let mut ganda = hotkeys();
+        ganda.add("a", shortcut(Modifiers::COMMAND, KeyCode::Character('k')));
+        ganda.add("b", shortcut(Modifiers::COMMAND, KeyCode::Character('k')));
+        assert_eq!(
+            ganda.register().err(),
+            Some(HotkeyError::Duplicate("b".into()))
+        );
+    }
+
+    #[test]
+    fn kombinasi_kembar_dalam_satu_set_ditolak() {
+        // The OS identifies a hotkey by the combination itself, so the second
+        // one would either be refused or reported under the first one's name.
+        let mut m = hotkeys();
+        m.add(
+            "app.open",
+            shortcut(Modifiers::COMMAND, KeyCode::Character('k')),
+        );
+        assert!(m.validate_all().is_ok());
+        m.add(
+            "app.palette",
+            shortcut(Modifiers::COMMAND, KeyCode::Character('k')),
+        );
+        assert_eq!(
+            m.validate_all(),
+            Err(HotkeyError::Duplicate("app.palette".into()))
+        );
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[test]
+    fn linux_menolak_dengan_alasan() {
         let mut m = hotkeys();
         m.add("a", shortcut(Modifiers::COMMAND, KeyCode::Character('k')));
-        assert!(matches!(m.register(), Err(HotkeyError::Unsupported(_))));
+        match m.register() {
+            Err(HotkeyError::Unsupported(alasan)) => assert!(alasan.contains("Wayland")),
+            lain => panic!("harusnya Unsupported, dapat {lain:?}"),
+        }
+    }
 
-        // …and an invalid binding is still reported as invalid first, so the
-        // seam does not hide a real mistake.
-        let mut bad = hotkeys();
-        bad.add("a", shortcut(Modifiers::NONE, KeyCode::Character('k')));
-        assert_eq!(bad.register(), Err(HotkeyError::NoModifiers));
+    #[test]
+    fn pencarian_rute_memetakan_nomor_os_ke_aksi() {
+        // The pure half of the callback: a number from the OS turns back into
+        // the action name the application wrote.
+        let routes = vec![
+            Route {
+                raw: 11,
+                id: HotkeyId::from_raw(1),
+                action: "app.open".into(),
+            },
+            Route {
+                raw: 22,
+                id: HotkeyId::from_raw(2),
+                action: "app.palette".into(),
+            },
+        ];
+        let a = lookup(&routes, 22, HotkeyState::Pressed).expect("rute ketemu");
+        assert!(a.is("app.palette"));
+        assert_eq!(a.id(), HotkeyId::from_raw(2));
+        assert!(a.is_pressed());
+
+        let lepas = lookup(&routes, 11, HotkeyState::Released).expect("rute ketemu");
+        assert!(!lepas.is_pressed());
+        assert_eq!(lepas.state(), HotkeyState::Released);
+
+        // An id nobody registered is silence, not a panic: the OS can deliver
+        // an event for a hotkey that was given back a microsecond ago.
+        assert!(lookup(&routes, 33, HotkeyState::Pressed).is_none());
+    }
+
+    #[test]
+    fn rute_hilang_lagi_setelah_dilepas() {
+        // The behaviour `HotkeyRegistration`'s Drop relies on. The raw ids are
+        // unique to this test because the table is process-wide and the test
+        // binary runs threads in parallel.
+        let routes = vec![Route {
+            raw: 0xF00D_0001,
+            id: HotkeyId::from_raw(9),
+            action: "uji.rute".into(),
+        }];
+        remember(&routes);
+        let a = activation_from_raw(0xF00D_0001, HotkeyState::Pressed).expect("terdaftar");
+        assert!(a.is("uji.rute"));
+
+        forget(&routes);
+        assert!(activation_from_raw(0xF00D_0001, HotkeyState::Pressed).is_none());
+    }
+
+    #[test]
+    fn aktivasi_membaca_seperti_menu() {
+        let a = HotkeyActivation::new(
+            HotkeyId::from_raw(4),
+            "app.quick_open",
+            HotkeyState::Pressed,
+        );
+        assert!(a.is("app.quick_open"));
+        assert!(!a.is("app.quick_close"));
+        assert_eq!(a.action(), "app.quick_open");
+        assert_eq!(a.id(), HotkeyId::from_raw(4));
     }
 
     #[test]

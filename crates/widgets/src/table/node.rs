@@ -503,10 +503,18 @@ impl TableBody {
 
     /// True when this point falls in the scrollbar track that floats over the
     /// table.
+    ///
+    /// On the **trailing** edge, wherever the scroll container drew the bar:
+    /// right in an LTR document, left in an RTL one (§9.8).
     fn di_jalur_scrollbar(&self, p: Point) -> bool {
-        self.bar_inset > 0.0
-            && self.metrics.max_scroll() > 0.0
-            && p.x >= self.width - self.bar_inset
+        if self.bar_inset <= 0.0 || self.metrics.max_scroll() <= 0.0 {
+            return false;
+        }
+        if self.rtl {
+            p.x <= self.bar_inset
+        } else {
+            p.x >= self.width - self.bar_inset
+        }
     }
 
     /// Rect of the cell at `(row, display column)` in content coordinates.

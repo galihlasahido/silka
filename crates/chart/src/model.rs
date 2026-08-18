@@ -607,24 +607,71 @@ pub struct PlotGeometry {
 }
 
 impl PlotGeometry {
-    /// Build the geometry for a plot rect.
+    /// Build the geometry for a plot rect, reading left-to-right.
     ///
     /// Everything here is a pure function of `(plot, spec, data)` — which is
     /// what makes the tests below able to assert on positions without a window
-    /// or a GPU.
+    /// or a GPU. [`PlotGeometry::build_in`] is the same function with the
+    /// reading direction spelled out; this one is the shorthand for the
+    /// left-to-right case and for the tests that do not care.
     pub fn build(plot: Rect, spec: &ChartSpec, data: &ChartData) -> Self {
+        Self::build_in(plot, spec, data, false)
+    }
+
+    /// Build the geometry for a plot rect in a given reading direction (§9.8).
+    ///
+    /// `rtl` mirrors **the horizontal axis, whichever job it has**: in a
+    /// vertical chart that is the category axis (January lands on the right),
+    /// in a horizontal one it is the value axis (bars grow leftward from a
+    /// baseline on the right). The vertical axis is never mirrored — "up" is
+    /// not a reading direction.
+    ///
+    /// Nothing downstream needs a second code path: the scales already accept
+    /// an inverted range, so [`PlotGeometry::point`], [`PlotGeometry::bar_rect`]
+    /// and [`PlotGeometry::index_at`] are right in both directions for free.
+    ///
+    /// ```
+    /// use silka_chart::model::{ChartData, ChartKind, ChartSpec, PlotGeometry, Series};
+    /// use silka_paint::Rect;
+    ///
+    /// let data = ChartData {
+    ///     x: vec![0.0, 1.0, 2.0],
+    ///     labels: vec!["Jan".into(), "Feb".into(), "Mar".into()],
+    ///     series: vec![Series::new("Income", vec![1.0, 5.0, 3.0])],
+    /// };
+    /// let spec = ChartSpec::new(ChartKind::Bar);
+    /// let plot = Rect::new(0.0, 0.0, 300.0, 200.0);
+    ///
+    /// let ltr = PlotGeometry::build_in(plot, &spec, &data, false);
+    /// let rtl = PlotGeometry::build_in(plot, &spec, &data, true);
+    ///
+    /// // The first category leads in both — from opposite ends.
+    /// assert!(ltr.point(0, 0.0, 1.0).x < ltr.point(2, 2.0, 3.0).x);
+    /// assert!(rtl.point(0, 0.0, 1.0).x > rtl.point(2, 2.0, 3.0).x);
+    /// // And values still grow upward: RTL mirrors reading, not gravity.
+    /// assert!(rtl.point(1, 1.0, 5.0).y < rtl.point(0, 0.0, 1.0).y);
+    /// ```
+    pub fn build_in(plot: Rect, spec: &ChartSpec, data: &ChartData, rtl: bool) -> Self {
         let horizontal = spec.orientation == Orientation::Horizontal;
-        // The value axis runs bottom-to-top when vertical (screen y is
-        // inverted) and left-to-right when horizontal.
+        // The horizontal axis — whichever of the two it is — runs from the
+        // start of the reading direction: left to right normally, right to left
+        // in a mirrored document (§9.8). The vertical axis always runs
+        // bottom-to-top, because screen y is inverted and gravity is not a
+        // reading direction.
+        let (x_start, x_end) = if rtl {
+            (plot.max_x(), plot.min_x())
+        } else {
+            (plot.min_x(), plot.max_x())
+        };
         let (value_start, value_end, value_extent) = if horizontal {
-            (plot.min_x(), plot.max_x(), plot.size.width)
+            (x_start, x_end, plot.size.width)
         } else {
             (plot.max_y(), plot.min_y(), plot.size.height)
         };
         let (cat_start, cat_end, cat_extent) = if horizontal {
             (plot.min_y(), plot.max_y(), plot.size.height)
         } else {
-            (plot.min_x(), plot.max_x(), plot.size.width)
+            (x_start, x_end, plot.size.width)
         };
 
         // How much room one tick needs depends on which way its labels lie,
@@ -1282,6 +1329,91 @@ mod tests {
             ChartKind::Sparkline,
         );
         assert!(percikan.height < bebas.height, "sparkline seukuran kata");
+    }
+
+    // -- RTL (§9.8, `AUDIT.md` P-6) -------------------------------------
+
+    #[test]
+    fn sumbu_kategori_bercermin_di_bagan_tegak() {
+        let d = data_kategori();
+        let s = spec(ChartKind::Bar);
+        let maju = PlotGeometry::build_in(plot(), &s, &d, false);
+        let mundur = PlotGeometry::build_in(plot(), &s, &d, true);
+
+        // Category 0 leads in both, from opposite ends of the same plot.
+        let a0 = maju.point(0, 0.0, 10.0);
+        let a_akhir = maju.point(d.len() - 1, (d.len() - 1) as f64, 10.0);
+        let b0 = mundur.point(0, 0.0, 10.0);
+        let b_akhir = mundur.point(d.len() - 1, (d.len() - 1) as f64, 10.0);
+        assert!(a0.x < a_akhir.x);
+        assert!(b0.x > b_akhir.x);
+        // Mirrored about the plot's centre line, to the point.
+        assert!((a0.x - (plot().min_x() + plot().max_x() - b0.x)).abs() < 1e-3);
+        // Values are untouched: RTL mirrors reading, not gravity.
+        assert_eq!(a0.y, b0.y);
+        assert_eq!(maju.baseline, mundur.baseline);
+    }
+
+    #[test]
+    fn hover_mengikuti_sumbu_yang_bercermin() {
+        // The hit test is the inverse of the geometry, so mirroring one without
+        // the other would hand the tooltip the wrong month.
+        let d = data_kategori();
+        let g = PlotGeometry::build_in(plot(), &spec(ChartKind::Bar), &d, true);
+        for i in 0..d.len() {
+            let p = g.point(i, d.x[i], 10.0);
+            assert_eq!(g.index_at(p, &d), Some(i), "kategori {i}");
+        }
+        // And the leftmost column is the *last* category, not the first.
+        let kiri = Point::new(plot().min_x() + 2.0, plot().max_y() - 2.0);
+        assert_eq!(g.index_at(kiri, &d), Some(d.len() - 1));
+    }
+
+    #[test]
+    fn sumbu_nilai_mendatar_tumbuh_ke_kiri_di_rtl() {
+        // A horizontal bar chart is the case where the *value* axis is the one
+        // that mirrors: bars grow away from a baseline that has moved to the
+        // right edge.
+        let d = data_kategori();
+        let mut s = spec(ChartKind::Bar);
+        s.orientation = Orientation::Horizontal;
+        let maju = PlotGeometry::build_in(plot(), &s, &d, false);
+        let mundur = PlotGeometry::build_in(plot(), &s, &d, true);
+
+        assert!((maju.baseline - plot().min_x()).abs() < 0.01);
+        assert!((mundur.baseline - plot().max_x()).abs() < 0.01);
+
+        // A short bar, so the two really do sit at opposite ends: one that
+        // spans the whole domain covers the plot in either direction and would
+        // prove nothing.
+        let batang_maju = maju.bar_rect(100.0, 10.0, 0.0, 10.0);
+        let batang_mundur = mundur.bar_rect(100.0, 10.0, 0.0, 10.0);
+        assert!((batang_maju.size.width - batang_mundur.size.width).abs() < 0.01);
+        assert!(batang_maju.min_x() < batang_mundur.min_x());
+        assert!((batang_mundur.max_x() - plot().max_x()).abs() < 0.01);
+        // The category axis of a horizontal chart is vertical, so it does not
+        // move at all.
+        assert_eq!(
+            maju.category.position(1, 1.0),
+            mundur.category.position(1, 1.0)
+        );
+    }
+
+    #[test]
+    fn label_tick_ikut_berpindah_bersama_skalanya() {
+        // The ticks are built from the same scale as the marks, so mirroring is
+        // impossible to get half-done: a label can never end up over a bar that
+        // belongs to another category.
+        let d = data_kategori();
+        let g = PlotGeometry::build_in(plot(), &spec(ChartKind::Bar), &d, true);
+        for t in &g.category_ticks {
+            let i = t.value as usize;
+            assert!(
+                (t.position - g.category.position(i, d.x[i])).abs() < 1e-3,
+                "tick {i} lepas dari kategorinya"
+            );
+        }
+        assert!(g.category_ticks[0].position > g.category_ticks[1].position);
     }
 
     #[test]

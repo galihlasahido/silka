@@ -27,7 +27,7 @@ use silka_core::view::{column, row, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{button_in, button_variant_in, text_in, ButtonVariant, Fonts};
+use silka_widgets::{active_fonts, button, button_variant, text, ButtonVariant};
 
 /// The page title.
 pub const JUDUL: &str = "Button";
@@ -49,18 +49,18 @@ pub const VARIAN: [&str; 5] = [
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let terakhir = use_signal(|| String::new());
     let sibuk = use_signal(|| false);
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -69,8 +69,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Lima varian di atas token semantik. Hover, tekan, dan Tab: setiap \
                  perpindahan keadaan berjalan lewat spring yang bisa di-retarget, \
                  bukan lompat.",
@@ -80,9 +79,9 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(120.0)),
         ),
-        varian(fonts, &t, terakhir),
-        keadaan(fonts, &t, sibuk),
-        status(fonts, terakhir),
+        varian(&t, terakhir),
+        keadaan(&t, sibuk),
+        status(terakhir),
     ])
     .spacing(t.space(6.0))
     .main(MainAlign::Center)
@@ -97,13 +96,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// `on_press` closures only write. That is why the button nodes survive
 /// unchanged across clicks: whatever the user's finger is pressing is never
 /// rebuilt mid-interaction (§2.5).
-fn varian(fonts: &Fonts, t: &Theme, terakhir: Signal<String>) -> View {
+fn varian(t: &Theme, terakhir: Signal<String>) -> View {
     let tombol: Vec<View> = ButtonVariant::ALL
         .into_iter()
         .zip(VARIAN)
         .map(|(v, label)| {
             let nama = label.to_string();
-            button_variant_in(fonts, t, label, v)
+            button_variant(label, v)
                 .key(v.name())
                 .on_press(move || terakhir.set(nama.clone()))
                 .into()
@@ -118,8 +117,7 @@ fn varian(fonts: &Fonts, t: &Theme, terakhir: Signal<String>) -> View {
 }
 
 /// The state row: disabled, loading, and the toggle for it.
-fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
-    let fonts = fonts.clone();
+fn keadaan(t: &Theme, sibuk: Signal<bool>) -> View {
     let theme = *t;
     component("keadaan", move |cx| {
         // The theme is read here too so a change in OS dark mode rebuilds
@@ -127,20 +125,14 @@ fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let memuat = sibuk.get();
         row([
-            View::from(button_in(&fonts, &t, TOMBOL_MATI).disabled(true)),
+            View::from(button(TOMBOL_MATI).disabled(true)),
+            View::from(button(TOMBOL_SIMPAN).loading(memuat).on_press(move || {
+                // A loading button refuses activation; this only
+                // applies while it is not yet busy.
+                sibuk.set(true)
+            })),
             View::from(
-                button_in(&fonts, &t, TOMBOL_SIMPAN)
-                    .loading(memuat)
-                    .on_press(move || {
-                        // A loading button refuses activation; this only
-                        // applies while it is not yet busy.
-                        sibuk.set(true)
-                    }),
-            ),
-            View::from(
-                button_variant_in(
-                    &fonts,
-                    &t,
+                button_variant(
                     if memuat { "Selesai" } else { TOMBOL_SIBUK },
                     ButtonVariant::Secondary,
                 )
@@ -158,8 +150,7 @@ fn keadaan(fonts: &Fonts, t: &Theme, sibuk: Signal<bool>) -> View {
 ///
 /// This is the only place `terakhir` is read, and therefore the only scope
 /// marked dirty when a button is pressed (§2.5).
-fn status(fonts: &Fonts, terakhir: Signal<String>) -> View {
-    let fonts = fonts.clone();
+fn status(terakhir: Signal<String>) -> View {
     component("status", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let isi = terakhir.get();
@@ -168,7 +159,7 @@ fn status(fonts: &Fonts, terakhir: Signal<String>) -> View {
         } else {
             format!("Terakhir ditekan: {isi}")
         };
-        text_in(&fonts, teks)
+        text(teks)
             .size(t.typography.body_size)
             .color(t.color.secondary_label)
             .single_line()
@@ -192,15 +183,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(900.0, 640.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// One complete frame, animation tick included — the same order as the
@@ -243,8 +228,7 @@ mod tests {
 
     #[test]
     fn kelima_varian_tampil_dan_semuanya_memenuhi_hig() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let pohon = ui.access_tree();
@@ -268,8 +252,7 @@ mod tests {
 
     #[test]
     fn klik_tombol_memperbarui_status_lewat_signal() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         assert!(label_status(&ui).starts_with("Belum ada"));
 
@@ -297,8 +280,7 @@ mod tests {
 
     #[test]
     fn keyboard_saja_cukup_untuk_memakai_halaman_ini() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Light));
         ui.frame();
 
         ui.dispatch(&Event::Key(KeyEvent::pressed(
@@ -318,8 +300,7 @@ mod tests {
 
     #[test]
     fn sakelar_memuat_menyalakan_denyut_dan_menolak_klik() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         let mut waktu = Instant::now();
         frame(&mut ui, waktu);
 
@@ -366,8 +347,7 @@ mod tests {
                 // button's.
                 continue;
             }
-            let f = fonts();
-            let mut ui = ui(t, &f);
+            let mut ui = ui(t);
             let mut waktu = Instant::now();
             frame(&mut ui, waktu);
 
@@ -418,8 +398,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 

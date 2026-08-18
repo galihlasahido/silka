@@ -752,3 +752,51 @@ fn data_yang_menyusut_tidak_meninggalkan_guliran_di_ruang_kosong() {
         "guliran lama meninggalkan daftar di ruang kosong"
     );
 }
+
+// -- RTL (§9.8, `AUDIT.md` P-6) ---------------------------------------------
+
+#[test]
+fn strip_scrollbar_pindah_sisi_di_dokumen_rtl() {
+    // The scroll container draws the vertical bar on the leading edge — right
+    // in LTR, left in RTL — and the list has to refuse clicks on *that* strip,
+    // not on a hard-coded right edge. A list that kept the dead zone on the
+    // right in an RTL document would be wrong twice over: the thumb would be
+    // unclickable, and a 44pt-wide column of real rows would be dead.
+    let mut u = polos(200);
+    let inset = u.list().bar_inset;
+    assert!(inset > 0.0, "the test needs a visible scrollbar");
+    assert!(!u.list().direction().is_rtl());
+
+    let y = EXTENT * 3.0 + EXTENT / 2.0;
+    let dekat_kiri = Point::new(inset / 2.0, y);
+    let dekat_kanan = Point::new(VIEWPORT.width - inset / 2.0, y);
+
+    // LTR: the left strip is content, the right strip belongs to the bar.
+    u.klik(dekat_kiri, 1);
+    assert_eq!(u.list().selected(), Some(3), "the left edge is a real row");
+    u.klik(dekat_kanan, 1);
+    assert_eq!(
+        u.list().selected(),
+        Some(3),
+        "the right edge is the scrollbar and must not select"
+    );
+
+    // RTL: exactly the other way round, with nothing else in the list changed.
+    let mut r = polos(200);
+    assert!(r.ui.set_direction(silka_core::tree::TextDirection::Rtl));
+    r.tuntas();
+    assert!(r.list().direction().is_rtl());
+
+    r.klik(dekat_kanan, 1);
+    assert_eq!(
+        r.list().selected(),
+        Some(3),
+        "mirrored, the right edge is a real row"
+    );
+    r.klik(dekat_kiri, 1);
+    assert_eq!(
+        r.list().selected(),
+        Some(3),
+        "…and the left edge is where the scrollbar now floats"
+    );
+}

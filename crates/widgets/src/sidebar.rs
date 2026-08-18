@@ -3,6 +3,7 @@
 //!
 //! ```
 //! # use silka_core::signals::Runtime;
+//! # use silka_core::view::View;
 //! use silka_widgets::{sidebar, sidebar_item, sidebar_section, IconName};
 //!
 //! # let rt = Runtime::new();
@@ -10,16 +11,20 @@
 //! let open = rt.signal(true);
 //!
 //! let nav = sidebar([
-//!     sidebar_section("Favourites"),
-//!     sidebar_item("All Inboxes")
-//!         .icon(IconName::Bell)
-//!         .badge("12")
-//!         .selected(picked.get() == 0)
-//!         .on_press(move || picked.set(0)),
-//!     sidebar_item("Starred")
-//!         .icon(IconName::Star)
-//!         .selected(picked.get() == 1)
-//!         .on_press(move || picked.set(1)),
+//!     View::from(sidebar_section("Favourites")),
+//!     View::from(
+//!         sidebar_item("All Inboxes")
+//!             .icon(IconName::Bell)
+//!             .badge("12")
+//!             .selected(picked.get() == 0)
+//!             .on_press(move || picked.set(0)),
+//!     ),
+//!     View::from(
+//!         sidebar_item("Starred")
+//!             .icon(IconName::Star)
+//!             .selected(picked.get() == 1)
+//!             .on_press(move || picked.set(1)),
+//!     ),
 //! ])
 //! .label("Mailboxes")
 //! .collapsed(!open.get());

@@ -823,3 +823,191 @@ fn hit_test_scrollbar_mengikuti_sisi_di_rtl() {
     // it, an RTL user grabbing the visible bar hit the content instead.
     assert!(!bar.contains(Point::new(RUANG.width - 2.0, 100.0)));
 }
+
+/// A horizontal container 1200pt wide inside a 320pt window, in one direction.
+fn pohon_mendatar(t: &Theme, direction: silka_core::tree::TextDirection) -> RenderTree {
+    let mut tree = RenderTree::new();
+    reconcile(
+        &mut tree,
+        scroll_view_in(t, fixed(1200.0, 400.0)).horizontal(),
+    );
+    tree.set_direction(direction);
+    tree.layout(BoxConstraints::tight(RUANG));
+    tree
+}
+
+/// A horizontal scroll event (a trackpad swipe, not a wheel).
+fn gulir_x(
+    tree: &mut RenderTree,
+    router: &mut InputRouter,
+    dx: f32,
+    phase: ScrollPhase,
+    ms: u64,
+) -> Response {
+    let e = ScrollEvent {
+        id: PointerId::MOUSE,
+        position: Point::new(100.0, 200.0),
+        delta: ScrollDelta::Points { x: dx, y: 0.0 },
+        phase,
+        modifiers: Modifiers::NONE,
+        time: Duration::from_millis(ms),
+    };
+    let hasil = router.dispatch(tree, &Event::Scroll(e));
+    tree.flush_layout();
+    hasil
+}
+
+#[test]
+fn isi_mendatar_bertumpu_di_tepi_awal_baca() {
+    // The whole reason a horizontal container needs RTL at all: at offset 0 a
+    // reader must see the **beginning** of the content, and in a right-to-left
+    // document the beginning is on the right. Anchoring it to the left instead
+    // opens a horizontal list on its last item.
+    let t = tema();
+    let ltr = pohon_mendatar(&t, silka_core::tree::TextDirection::Ltr);
+    let rtl = pohon_mendatar(&t, silka_core::tree::TextDirection::Rtl);
+    assert!(sv(&ltr).max_scroll() > 0.0);
+    assert!(!sv(&ltr).is_mirrored());
+    assert!(sv(&rtl).is_mirrored());
+
+    let mut ltr = ltr;
+    let mut rtl = rtl;
+    assert_eq!(
+        tree_x(&mut ltr),
+        0.0,
+        "LTR: content starts at the left edge"
+    );
+    assert_eq!(
+        tree_x(&mut rtl),
+        RUANG.width - 1200.0,
+        "RTL: its right end is flush with the container's right edge"
+    );
+}
+
+/// The content's x offset inside the container, after a fresh layout.
+///
+/// A `scroll_view` is a relayout boundary, so a clean one is skipped by
+/// `RenderTree::layout`; the frame loop marks it through
+/// [`advance`]. A test that inspects placement straight after a
+/// direct-manipulation gesture (which jumps the position rather than
+/// animating it) has to do the marking itself.
+fn tree_x(tree: &mut RenderTree) -> f32 {
+    let sv_id = id(tree);
+    tree.mark_needs_layout(sv_id);
+    tree.layout(BoxConstraints::tight(RUANG));
+    tree.offset(isi(tree)).x
+}
+
+#[test]
+fn geser_mendatar_berjalan_ke_arah_baca() {
+    let t = tema();
+    let mut ltr = pohon_mendatar(&t, silka_core::tree::TextDirection::Ltr);
+    let mut rtl = pohon_mendatar(&t, silka_core::tree::TextDirection::Rtl);
+    let mut router = InputRouter::new();
+
+    // One and the same physical gesture — fingers moving the content leftward.
+    gulir_x(&mut ltr, &mut router, -100.0, ScrollPhase::Changed, 0);
+    let mut router = InputRouter::new();
+    gulir_x(&mut rtl, &mut router, -100.0, ScrollPhase::Changed, 0);
+    selesaikan(&mut ltr);
+    selesaikan(&mut rtl);
+
+    assert_eq!(
+        sv(&ltr).offset(),
+        100.0,
+        "LTR: dragging the content left advances into it"
+    );
+    assert!(
+        sv(&rtl).offset() < 0.0,
+        "RTL: the same drag walks off the *start* — into the rubber band, not \
+         into the content: {}",
+        sv(&rtl).offset()
+    );
+    // Put it back on the start line before measuring the mirrored gesture.
+    let id_rtl = id(&rtl);
+    scroll_to(&mut rtl, id_rtl, 0.0);
+    selesaikan(&mut rtl);
+
+    // The mirrored gesture advances the mirrored container by exactly as much.
+    let mut router = InputRouter::new();
+    gulir_x(&mut rtl, &mut router, 100.0, ScrollPhase::Changed, 20);
+    selesaikan(&mut rtl);
+    assert_eq!(sv(&rtl).offset(), 100.0);
+    // …and the content moved to the *right*, not to the left.
+    assert_eq!(tree_x(&mut rtl), RUANG.width - 1200.0 + 100.0);
+    assert_eq!(tree_x(&mut ltr), -100.0);
+}
+
+#[test]
+fn panah_mendatar_bertukar_di_rtl() {
+    let t = tema();
+    let mut rtl = pohon_mendatar(&t, silka_core::tree::TextDirection::Rtl);
+    let mut router = InputRouter::new();
+    tekan(&mut rtl, &mut router, NamedKey::Tab, 0);
+
+    // Left is "onward" in a document that reads right-to-left…
+    assert!(tekan(&mut rtl, &mut router, NamedKey::ArrowLeft, 10).handled);
+    selesaikan(&mut rtl);
+    let maju = sv(&rtl).offset();
+    assert!(maju > 0.0, "ArrowLeft harus masuk ke dalam isi: {maju}");
+
+    // …and right walks back out of it.
+    assert!(tekan(&mut rtl, &mut router, NamedKey::ArrowRight, 20).handled);
+    selesaikan(&mut rtl);
+    assert_eq!(sv(&rtl).offset(), 0.0);
+
+    // Home and End are named after the content's ends, not after screen edges,
+    // so they do not swap.
+    assert!(tekan(&mut rtl, &mut router, NamedKey::End, 30).handled);
+    selesaikan(&mut rtl);
+    assert_eq!(sv(&rtl).offset(), sv(&rtl).max_scroll());
+    assert_eq!(tree_x(&mut rtl), 0.0, "the far end sits flush left");
+
+    // The same two arrows mean the opposite in an LTR container.
+    let mut ltr = pohon_mendatar(&t, silka_core::tree::TextDirection::Ltr);
+    let mut router = InputRouter::new();
+    tekan(&mut ltr, &mut router, NamedKey::Tab, 0);
+    assert!(tekan(&mut ltr, &mut router, NamedKey::ArrowRight, 10).handled);
+    selesaikan(&mut ltr);
+    assert_eq!(sv(&ltr).offset(), maju);
+}
+
+#[test]
+fn thumb_mendatar_dan_hit_test_nya_bercermin() {
+    let t = tema();
+    let ltr = pohon_mendatar(&t, silka_core::tree::TextDirection::Ltr);
+    let rtl = pohon_mendatar(&t, silka_core::tree::TextDirection::Rtl);
+
+    // At rest the thumb sits at the start of the track: left in LTR, right in
+    // RTL. A thumb that stayed left would say "you are at the end" on a list
+    // that has not been scrolled at all.
+    let t_ltr = sv(&ltr).thumb().expect("ada thumb");
+    let t_rtl = sv(&rtl).thumb().expect("ada thumb");
+    assert_eq!(t_ltr, t_rtl, "the logical thumb is direction-free");
+
+    let kotak_ltr = sv(&ltr).thumb_rect(t_ltr);
+    let kotak_rtl = sv(&rtl).thumb_rect(t_rtl);
+    assert_eq!(kotak_ltr.origin.x, 0.0);
+    assert_eq!(kotak_rtl.max_x(), RUANG.width);
+    assert_eq!(kotak_ltr.size, kotak_rtl.size);
+    // The bar itself keeps the bottom edge: RTL does not mirror "bottom".
+    assert_eq!(kotak_ltr.origin.y, kotak_rtl.origin.y);
+
+    // And a press is measured from the same end the thumb was drawn from, so
+    // grabbing the visible thumb really grabs it.
+    assert!(sv(&rtl).main_of_point(Point::new(RUANG.width - 2.0, 0.0)) < 4.0);
+    assert!(sv(&ltr).main_of_point(Point::new(RUANG.width - 2.0, 0.0)) > RUANG.width - 4.0);
+}
+
+#[test]
+fn roda_tegak_di_wadah_mendatar_tidak_ikut_bercermin() {
+    // The fallback that lets an ordinary mouse scroll a horizontal list: a
+    // wheel rolled away from the reader means "onward" in every document, so
+    // this is the one input that must NOT swap.
+    let t = tema();
+    let mut rtl = pohon_mendatar(&t, silka_core::tree::TextDirection::Rtl);
+    let mut router = InputRouter::new();
+    gulir(&mut rtl, &mut router, -120.0, ScrollPhase::Wheel, 0);
+    selesaikan(&mut rtl);
+    assert_eq!(sv(&rtl).offset(), 120.0);
+}

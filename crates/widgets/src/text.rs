@@ -2,7 +2,7 @@
 //! **actually shows up** in the render tree.
 //!
 //! ```
-//! # use silka_widgets::{text, Fonts};
+//! # use silka_widgets::{text_in, Fonts};
 //! # use silka_theme::{Appearance, Theme};
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
@@ -495,7 +495,7 @@ impl Text {
 /// and stay as the layer underneath; what an application writes is a **role**:
 ///
 /// ```
-/// # use silka_widgets::{text, Fonts};
+/// # use silka_widgets::{text_in, Fonts};
 /// # use silka_theme::{Appearance, ColorToken, FontToken, Theme};
 /// # use silka_core::view::with_theme;
 /// # let fonts = Fonts::bundled_only();

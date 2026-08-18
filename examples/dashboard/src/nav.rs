@@ -25,9 +25,7 @@ use silka_core::tree::{BoxConstraints, CrossAlign, MainAlign};
 use silka_core::view::{column, constrained, expanded, row, View};
 use silka_text::FontWeight;
 use silka_theme::{ColorToken, RadiusToken, Theme};
-use silka_widgets::{
-    divider_in, spacer, text_in, tree_in, Fonts, TreeKey, TreeNode, TreeRow, TreeState,
-};
+use silka_widgets::{divider, spacer, text, tree, TreeKey, TreeNode, TreeRow, TreeState};
 
 use crate::kit;
 
@@ -375,17 +373,16 @@ pub fn children(parent: Option<TreeKey>) -> Vec<TreeNode> {
 /// Its own component so that navigating does not rebuild the page that is open
 /// and vice versa — the sidebar reads the theme and the tree's expansion, and
 /// nothing else (§2.5).
-pub fn sidebar(fonts: &Fonts, nav_state: TreeState, page: Signal<Page>) -> View {
-    let fonts = fonts.clone();
+pub fn sidebar(nav_state: TreeState, page: Signal<Page>) -> View {
     component("sidebar", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
 
         let body = column([
-            header(&fonts, &t),
-            divider_in(&t).into(),
-            View::from(expanded(navigation(&fonts, &t, nav_state, page))),
-            divider_in(&t).into(),
-            footer(&fonts, &t),
+            header(&t),
+            divider().into(),
+            View::from(expanded(navigation(&t, nav_state, page))),
+            divider().into(),
+            footer(&t),
         ])
         .cross(CrossAlign::Stretch);
 
@@ -407,14 +404,14 @@ pub fn sidebar(fonts: &Fonts, nav_state: TreeState, page: Signal<Page>) -> View 
 }
 
 /// The logo plate and the product name.
-fn header(fonts: &Fonts, t: &Theme) -> View {
+fn header(t: &Theme) -> View {
     row([
         // A brand mark is the textbook case for `_raw`: the accent token is the
         // *system's* colour, and a logo plate is the application's own.
         constrained(
             BoxConstraints::new(t.space(9.0), t.space(9.0), t.space(9.0), t.space(9.0)),
             column([View::from(
-                text_in(fonts, "A")
+                text("A")
                     .size(t.typography.title3.size)
                     .weight(FontWeight::BOLD)
                     .color(t.color.on_accent)
@@ -429,7 +426,7 @@ fn header(fonts: &Fonts, t: &Theme) -> View {
         View::from(
             column([
                 View::from(
-                    text_in(fonts, BRAND)
+                    text(BRAND)
                         .size(t.typography.headline.size)
                         .weight(FontWeight::BOLD)
                         .tracking(t.typography.headline.tracking)
@@ -437,7 +434,7 @@ fn header(fonts: &Fonts, t: &Theme) -> View {
                         .single_line(),
                 ),
                 View::from(
-                    text_in(fonts, BRAND_TAGLINE)
+                    text(BRAND_TAGLINE)
                         .size(t.typography.caption1.size)
                         .color(t.color.tertiary_label)
                         .single_line(),
@@ -454,14 +451,12 @@ fn header(fonts: &Fonts, t: &Theme) -> View {
 }
 
 /// The navigation tree.
-fn navigation(fonts: &Fonts, t: &Theme, state: TreeState, page: Signal<Page>) -> View {
-    let row_fonts = fonts.clone();
+fn navigation(t: &Theme, state: TreeState, page: Signal<Page>) -> View {
     let theme = *t;
-    tree_in(
-        t,
+    tree(
         state,
         |parent| children(parent),
-        move |r| nav_row(&row_fonts, &theme, r),
+        move |r| nav_row(&theme, r),
     )
     .row_extent(kit::MIN_HIT)
     .indent(t.space(4.0))
@@ -479,14 +474,14 @@ fn navigation(fonts: &Fonts, t: &Theme, state: TreeState, page: Signal<Page>) ->
 }
 
 /// One navigation row.
-fn nav_row(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
+fn nav_row(t: &Theme, r: &TreeRow) -> View {
     let (weight, color) = if r.expandable {
         (FontWeight::SEMIBOLD, t.color.label)
     } else {
         (FontWeight::MEDIUM, t.color.secondary_label)
     };
     row([View::from(
-        text_in(fonts, r.label.to_string())
+        text(r.label.to_string())
             .size(t.typography.body_size)
             .weight(weight)
             .color(color)
@@ -497,15 +492,15 @@ fn nav_row(fonts: &Fonts, t: &Theme, r: &TreeRow) -> View {
 }
 
 /// The performance readout and the profile card.
-fn footer(fonts: &Fonts, t: &Theme) -> View {
+fn footer(t: &Theme) -> View {
     let timing = row([
-        text_in(fonts, LOAD_LABEL)
+        text(LOAD_LABEL)
             .size(t.typography.caption1.size)
             .color(t.color.tertiary_label)
             .single_line()
             .into(),
         View::from(spacer()),
-        text_in(fonts, LOAD_VALUE)
+        text(LOAD_VALUE)
             .size(t.typography.caption1.size)
             .weight(FontWeight::SEMIBOLD)
             .color(t.color.success)
@@ -517,18 +512,18 @@ fn footer(fonts: &Fonts, t: &Theme) -> View {
     .py_2();
 
     let profile = row([
-        kit::avatar(fonts, t, USER_NAME, t.space(9.0)),
+        kit::avatar(t, USER_NAME, t.space(9.0)),
         View::from(
             column([
                 View::from(
-                    text_in(fonts, USER_NAME)
+                    text(USER_NAME)
                         .size(t.typography.callout.size)
                         .weight(FontWeight::SEMIBOLD)
                         .color(t.color.label)
                         .single_line(),
                 ),
                 View::from(
-                    text_in(fonts, USER_EMAIL)
+                    text(USER_EMAIL)
                         .size(t.typography.caption1.size)
                         .color(t.color.tertiary_label)
                         .single_line(),

@@ -21,7 +21,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use silka_chart::tooltip::{tooltip_overlay_in, ChartHover};
+use silka_chart::tooltip::{tooltip_overlay, ChartHover};
 use silka_chart::ChartStyle;
 use silka_core::animation::{Motion, Tick};
 use silka_core::app::{component, AppRuntime, BuildCtx, ScaleFactor};
@@ -32,7 +32,7 @@ use silka_core::view::{column, expanded, row, View};
 use silka_platform::{headless_app, PlatformError, WindowConfig};
 use silka_theme::{Appearance, Theme};
 use silka_widgets::menu::MenuState;
-use silka_widgets::{overlay_layer, scroll_view_in, text_in, Fonts, TreeState};
+use silka_widgets::{active_fonts, overlay_layer, scroll_view, text, Fonts, TreeState};
 
 use crate::kit;
 use crate::nav::{self, Page};
@@ -93,9 +93,8 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
 ///
 /// Shared by the window and by the tests, so a test can never accidentally
 /// exercise a different application than the one that ships.
-pub fn app(theme: Theme, fonts: &Fonts, start: Page) -> AppRuntime {
-    let build_fonts = fonts.clone();
-    headless_app(theme, move |cx| shell(cx, &build_fonts))
+pub fn app(theme: Theme, start: Page) -> AppRuntime {
+    headless_app(theme, move |cx| shell(cx))
         .with_env(move |rt| rt.signal(start))
         .with_env(|rt| rt.signal(AppearanceMode::default()))
         .with_env(|rt| rt.signal(MenuState::new()))
@@ -122,7 +121,7 @@ pub fn run(
     fonts: Fonts,
     start: Page,
 ) -> Result<(), PlatformError> {
-    let ui = app(theme, &fonts, start);
+    let ui = app(theme, start);
 
     // Read the handles out **before** the runtime moves into the closures:
     // afterwards it lives behind a `RefCell` the frame callback borrows.
@@ -198,11 +197,11 @@ pub fn run(
 // ---------------------------------------------------------------------------
 
 /// The whole shell: top bar, sidebar, content, and one overlay layer.
-fn shell(cx: &BuildCtx, fonts: &Fonts) -> View {
+fn shell(cx: &BuildCtx) -> View {
     let theme_sig: Signal<Theme> = cx.expect_env();
     let t: Theme = theme_sig.get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
     // Icons are coverage masks tied to a pixel grid, exactly like glyphs, so
     // the bitmap atlas needs the same number (§3.3).
     silka_widgets::active_images().set_scale_factor(dpi.get());
@@ -226,11 +225,11 @@ fn shell(cx: &BuildCtx, fonts: &Fonts) -> View {
         theme_sig.update(|t| *t = t.with_appearance(next));
     };
 
-    let bar = topbar::top_bar(fonts, &t, page.get(), menu_state, last_action, toggle);
+    let bar = topbar::top_bar(&t, page.get(), menu_state, last_action, toggle);
 
     let body = row([
-        nav::sidebar(fonts, nav_state, page),
-        View::from(expanded(content(fonts, nav_state, page))),
+        nav::sidebar(nav_state, page),
+        View::from(expanded(content(nav_state, page))),
     ])
     .cross(CrossAlign::Stretch);
 
@@ -240,9 +239,7 @@ fn shell(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     // Content first, floating panels after: the order written here **is** the
     // stacking order, and not one panel computes its own position.
-    let mut layer = overlay_layer(content).overlay(tooltip_overlay_in(
-        fonts,
-        &t,
+    let mut layer = overlay_layer(content).overlay(tooltip_overlay(
         &ChartStyle::from_theme(&t),
         hover.get().as_ref(),
         hover.get().map(|h| h.anchor()).unwrap_or_default(),
@@ -258,10 +255,9 @@ fn shell(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// Each page is built inside a component **keyed by its slug**, so switching
 /// pages drops the old scope with all of its state instead of handing the next
 /// page a drawer full of someone else's signals.
-fn content(fonts: &Fonts, nav_state: TreeState, page: Signal<Page>) -> View {
-    let fonts = fonts.clone();
+fn content(nav_state: TreeState, page: Signal<Page>) -> View {
     component("content", move |cx| {
-        let t: Theme = cx.expect_env::<Signal<Theme>>().get();
+        let _t: Theme = cx.expect_env::<Signal<Theme>>().get();
 
         // The sidebar's selection is the navigation. `tree` has no `on_select`
         // hook (see `nav::selected_page`), so the selection is read back here
@@ -273,11 +269,10 @@ fn content(fonts: &Fonts, nav_state: TreeState, page: Signal<Page>) -> View {
         }
 
         let current = page.get();
-        let page_fonts = fonts.clone();
         let inner = component(current.slug(), move |cx| match current {
-            Page::Dashboard => dashboard::page(cx, &page_fonts, page),
-            Page::Transactions => transactions::page(cx, &page_fonts),
-            other => placeholder(cx, &page_fonts, other),
+            Page::Dashboard => dashboard::page(cx, page),
+            Page::Transactions => transactions::page(cx),
+            other => placeholder(cx, other),
         });
 
         if current == Page::Transactions {
@@ -286,30 +281,27 @@ fn content(fonts: &Fonts, nav_state: TreeState, page: Signal<Page>) -> View {
             // virtualization.
             inner
         } else {
-            scroll_view_in(&t, inner)
-                .label(current.short_title())
-                .into()
+            scroll_view(inner).label(current.short_title()).into()
         }
     })
 }
 
 /// The pages that exist so navigation can be proven, and say so.
-fn placeholder(cx: &BuildCtx, fonts: &Fonts, page: Page) -> View {
+fn placeholder(cx: &BuildCtx, page: Page) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     column([
         column([
-            kit::page_title(fonts, &t, page.title()),
-            kit::subtitle(fonts, &t, page.subtitle()),
+            kit::page_title(&t, page.title()),
+            kit::subtitle(&t, page.subtitle()),
         ])
         .spacing(t.space(1.5))
         .cross(CrossAlign::Start)
         .into(),
         kit::padded_card(
-            fonts,
             &t,
             Some(page.title()),
             [View::from(
-                text_in(fonts, "Nothing here yet.")
+                text("Nothing here yet.")
                     .size(t.typography.body_size)
                     .color(t.color.secondary_label)
                     .single_line(),

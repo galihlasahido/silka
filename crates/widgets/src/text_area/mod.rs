@@ -4,7 +4,7 @@
 //! ```
 //! # use silka_core::signals::Runtime;
 //! # use silka_theme::{Appearance, Theme};
-//! # use silka_widgets::{text_area, Fonts};
+//! # use silka_widgets::{text_area_in, Fonts};
 //! # let rt = Runtime::new();
 //! # let catatan = rt.signal(String::new());
 //! # let fonts = Fonts::bundled_only();

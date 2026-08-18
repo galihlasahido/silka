@@ -255,7 +255,7 @@ impl ListState {
 /// ```
 /// # use silka_core::view::{fixed, View};
 /// # use silka_theme::{Appearance, Theme};
-/// # use silka_widgets::{list, use_list_state};
+/// # use silka_widgets::{list_in, use_list_state};
 /// # use silka_core::signals::Runtime;
 /// # let rt = Runtime::new();
 /// # let t = Theme::cupertino(Appearance::Dark);

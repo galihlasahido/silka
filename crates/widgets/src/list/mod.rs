@@ -10,7 +10,7 @@
 //! # use silka_core::signals::Runtime;
 //! # use silka_core::view::View;
 //! # use silka_theme::{Appearance, Theme};
-//! # use silka_widgets::{list, text, Fonts, ListState};
+//! # use silka_widgets::{list_in, text_in, Fonts, ListState};
 //! # let rt = Runtime::new();
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);

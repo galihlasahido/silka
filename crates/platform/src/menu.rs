@@ -818,16 +818,19 @@ fn muda_modifiers(modifiers: Modifiers) -> muda::accelerator::Modifiers {
     out
 }
 
-/// Translate a logical key into the physical `Code` an accelerator needs.
+/// The `KeyboardEvent.code` name of a logical key, or `None` when it has none.
 ///
-/// The name of the code is built and parsed rather than matched arm by arm:
-/// `Code`'s naming scheme (`KeyA`, `Digit7`, `F12`) is exactly regular, and a
-/// 100-arm match would be 100 chances to typo one of them. Anything outside the
-/// regular scheme is listed explicitly in [`KODE_TANDA_BACA`].
-fn muda_code(key: &KeyCode) -> Option<muda::accelerator::Code> {
-    use core::str::FromStr;
-
-    let nama = match key {
+/// The name is built rather than matched arm by arm: the naming scheme
+/// (`KeyA`, `Digit7`, `F12`) is exactly regular, and a 100-arm match would be
+/// 100 chances to typo one of them. Anything outside the regular scheme is
+/// listed explicitly in [`KODE_TANDA_BACA`].
+///
+/// Shared with [`crate::hotkey`]: a menu accelerator and a global hotkey are
+/// the same combination aimed at different scopes, and both back-ends
+/// (`muda` and `global-hotkey`) parse the very same `keyboard-types` names —
+/// so there is one table, not two that can drift apart.
+pub(crate) fn key_code_name(key: &KeyCode) -> Option<String> {
+    Some(match key {
         KeyCode::Character(c) if c.is_ascii_alphabetic() => {
             format!("Key{}", c.to_ascii_uppercase())
         }
@@ -844,8 +847,14 @@ fn muda_code(key: &KeyCode) -> Option<muda::accelerator::Code> {
         // `KeyCode` is `#[non_exhaustive]`: a key we cannot name yet gets no
         // accelerator rather than the wrong one.
         _ => return None,
-    };
-    muda::accelerator::Code::from_str(&nama).ok()
+    })
+}
+
+/// Translate a logical key into the physical `Code` an accelerator needs.
+fn muda_code(key: &KeyCode) -> Option<muda::accelerator::Code> {
+    use core::str::FromStr;
+
+    muda::accelerator::Code::from_str(&key_code_name(key)?).ok()
 }
 
 /// Keys whose `Code` name does not follow from the character itself.

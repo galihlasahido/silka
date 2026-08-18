@@ -32,7 +32,7 @@ use silka_core::view::{column, constrained, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{text_area_in, text_in, Fonts, TabBehavior};
+use silka_widgets::{active_fonts, text, text_area, TabBehavior};
 
 /// The page title.
 pub const JUDUL: &str = "Text Area";
@@ -54,18 +54,18 @@ const LEBAR: f32 = 110.0;
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let catatan = use_signal(String::new);
     let terkirim = use_signal(|| 0u32);
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -74,8 +74,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Ketik kalimat panjang: teks melipat mengikuti lebar, bukan \
                  menggulir ke samping. Tahan panah bawah melewati baris \
                  pendek — caret kembali ke kolom yang sama (goal column). \
@@ -86,8 +85,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR)),
         ),
-        formulir(fonts, &t, catatan, terkirim),
-        gema(fonts, catatan, terkirim),
+        formulir(&t, catatan, terkirim),
+        gema(catatan, terkirim),
     ])
     .spacing(t.space(5.0))
     .main(MainAlign::Center)
@@ -98,10 +97,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
 /// One labelled field: the label above, the area below — the shape a
 /// multi-line field wants, unlike the label-left row a one-line field uses.
-fn kolom(fonts: &Fonts, t: &Theme, label: &str, area: View) -> View {
+fn kolom(t: &Theme, label: &str, area: View) -> View {
     column([
         View::from(
-            text_in(fonts, label)
+            text(label)
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.secondary_label)
@@ -127,18 +126,15 @@ fn kolom(fonts: &Fonts, t: &Theme, label: &str, area: View) -> View {
 /// They live in their own component so that writing `catatan` rebuilds this
 /// form and nothing else — which is exactly why the node the user is typing
 /// into is never rebuilt out from under them (§2.5).
-fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<u32>) -> View {
-    let fonts_isi = fonts.clone();
+fn formulir(t: &Theme, catatan: Signal<String>, terkirim: Signal<u32>) -> View {
     let theme = *t;
     component("formulir-area", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
-        let f = &fonts_isi;
         column([
             kolom(
-                f,
                 &t,
                 CATATAN,
-                text_area_in(f, &t, catatan.get())
+                text_area(catatan.get())
                     .key("catatan")
                     .placeholder("Tulis catatan rapat…")
                     .label(CATATAN)
@@ -150,10 +146,9 @@ fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<
                     .into(),
             ),
             kolom(
-                f,
                 &t,
                 KODE,
-                text_area_in(f, &t, ISI_KODE)
+                text_area(ISI_KODE)
                     .key("kode")
                     .label(KODE)
                     .rows(6)
@@ -164,10 +159,9 @@ fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<
                     .into(),
             ),
             kolom(
-                f,
                 &t,
                 SYARAT,
-                text_area_in(f, &t, ISI_SYARAT)
+                text_area(ISI_SYARAT)
                     .key("syarat")
                     .label(SYARAT)
                     .rows(4)
@@ -186,8 +180,7 @@ fn formulir(fonts: &Fonts, t: &Theme, catatan: Signal<String>, terkirim: Signal<
 /// The only place the note's contents are read for display, which makes it
 /// living proof that an IME preedit has not yet reached the application: while
 /// a composition is in progress, this row does not move.
-fn gema(fonts: &Fonts, catatan: Signal<String>, terkirim: Signal<u32>) -> View {
-    let fonts = fonts.clone();
+fn gema(catatan: Signal<String>, terkirim: Signal<u32>) -> View {
     component("gema-area", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let isi = catatan.get();
@@ -204,7 +197,7 @@ fn gema(fonts: &Fonts, catatan: Signal<String>, terkirim: Signal<u32>) -> View {
         } else {
             teks
         };
-        text_in(&fonts, teks)
+        text(teks)
             .size(t.typography.footnote.size)
             .color(t.color.secondary_label)
             .single_line()
@@ -228,15 +221,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(900.0, 700.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// One complete frame, animation tick included — the same order as the
@@ -301,8 +288,7 @@ mod tests {
 
     #[test]
     fn halaman_menampilkan_tiga_area_multiline_yang_bisa_dibacakan() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         for label in [CATATAN, KODE, SYARAT] {
@@ -326,8 +312,7 @@ mod tests {
 
     #[test]
     fn enter_membuka_baris_baru_dan_command_enter_mengirim() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         assert!(gema_terbaca(&ui).contains("kosong"));
 
@@ -354,8 +339,7 @@ mod tests {
 
     #[test]
     fn area_catatan_tumbuh_saat_barisnya_bertambah() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         let mut jam = Instant::now();
         frame(&mut ui, jam);
         let kecil = kotak(&ui, CATATAN).size.height;
@@ -373,8 +357,7 @@ mod tests {
 
     #[test]
     fn tab_di_area_kode_menyisipkan_indentasi_bukan_pindah_fokus() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, KODE).center();
         klik(&mut ui, titik);
@@ -392,8 +375,7 @@ mod tests {
 
     #[test]
     fn tab_di_area_catatan_meninggalkan_kolom() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, CATATAN).center();
         klik(&mut ui, titik);
@@ -412,8 +394,7 @@ mod tests {
 
     #[test]
     fn area_read_only_tidak_bisa_diubah() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         let titik = kotak(&ui, SYARAT).center();
         klik(&mut ui, titik);
@@ -432,8 +413,7 @@ mod tests {
 
     #[test]
     fn preedit_ime_belum_sampai_ke_aplikasi_sampai_commit() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, CATATAN).center();
         klik(&mut ui, titik);
@@ -454,8 +434,7 @@ mod tests {
 
     #[test]
     fn fokus_menyalakan_transisi_lalu_halaman_kembali_diam() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         let mut jam = Instant::now();
         frame(&mut ui, jam);
 
@@ -476,11 +455,10 @@ mod tests {
 
     #[test]
     fn latar_halaman_selalu_token_background_di_kedua_preset() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
             }

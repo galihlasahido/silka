@@ -39,7 +39,7 @@ mod transactions;
 use nav::Page;
 use silka_platform::{window, PlatformError};
 use silka_theme::{Appearance, Preset, Theme};
-use silka_widgets::Fonts;
+use silka_widgets::{install_fonts, Fonts};
 
 fn main() -> Result<(), PlatformError> {
     let options = Options::from_args(std::env::args().skip(1));
@@ -48,6 +48,10 @@ fn main() -> Result<(), PlatformError> {
     // expensive, and the glyph atlas must be shared so the same glyph is never
     // rasterised twice (REKOMENDASI §3.3).
     let fonts = Fonts::new();
+    // Installed once, here: it is what lets every widget in this application be
+    // written as `text("…")` rather than `text_in(fonts, "…")` (§2.5). Without
+    // it the short constructors quietly fall back to the bundled faces.
+    install_fonts(&fonts);
 
     let mut config = window("silka — Digital Lending Dashboard")
         .size(1440.0, 940.0)

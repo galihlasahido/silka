@@ -45,6 +45,30 @@
 //! by its exporter instead. That is why every path in the built-in set is
 //! written with lines and cubics only.
 //!
+//! # Arrows that mean "back" and "forward" (§9.8)
+//!
+//! [`IconName::ChevronLeft`] and [`IconName::ChevronRight`] are **physical**:
+//! they say which way the artwork points and nothing else. An arrow that means
+//! *the previous month* or *the next page* is not physical — it points
+//! backward or forward along the reading direction, and in a right-to-left
+//! document that is the other way round.
+//!
+//! Mirroring it is not the caller's job, because a call site has no idea which
+//! direction is in force. It is the icon node's, which learns the direction
+//! from its [`LayoutCtx`](silka_core::tree::LayoutCtx) — the same root
+//! `AUDIT.md` P-6 closed for every other self-drawing widget. So the vocabulary
+//! is [`chevron_back`]/[`chevron_forward`] (and [`Icon::mirrored`] for your own
+//! artwork), never a constant chosen at the call site:
+//!
+//! ```
+//! use silka_widgets::chevron_back;
+//!
+//! // Points left while the document reads left-to-right, right while it
+//! // reads right-to-left — decided by the node, not here.
+//! let previous = chevron_back();
+//! # let _ = previous;
+//! ```
+//!
 //! # Definition of done
 //!
 //! | Line | How it is met |
@@ -318,6 +342,9 @@ impl IconName {
 pub struct IconBox {
     key: Rc<str>,
     path: Rc<str>,
+    /// The artwork to use instead while the document reads right-to-left;
+    /// `None` = this symbol looks the same either way (§9.8).
+    mirror: Option<(Rc<str>, Rc<str>)>,
     viewport: f32,
     size: f32,
     color: Color,
@@ -329,26 +356,47 @@ pub struct IconBox {
     image: Option<ImageId>,
     /// The pixel size the mask above was rasterised at (`0` = never).
     rasterized_px: u32,
+    /// The reading direction the mask above was chosen for.
+    rasterized_rtl: bool,
 }
 
 impl IconBox {
-    /// Make sure a mask exists for the size **and the resolution** in force.
+    /// Make sure a mask exists for the size, the resolution **and the reading
+    /// direction** in force.
     ///
-    /// There are exactly two reasons to rasterise again, and both are here: the
-    /// point size changed, and the display scale factor changed (a coverage
-    /// mask is tied to a pixel grid, §3.3).
-    fn ensure_mask(&mut self) {
+    /// There are exactly three reasons to rasterise again, and all three are
+    /// here: the point size changed, the display scale factor changed (a
+    /// coverage mask is tied to a pixel grid, §3.3), and — for a directional
+    /// symbol — the document flipped between LTR and RTL (§9.8). The two
+    /// artworks are separate atlas entries under separate keys, so flipping
+    /// back costs nothing the second time.
+    fn ensure_mask(&mut self, rtl: bool) {
         let px = (self.size * self.images.scale_factor()).round().max(0.0) as u32;
-        if self.image.is_some() && self.rasterized_px == px {
+        if self.image.is_some() && self.rasterized_px == px && self.rasterized_rtl == rtl {
             return;
         }
+        let (key, path) = self.artwork(rtl);
         self.rasterized_px = px;
-        self.image = self.images.icon(&self.key, &self.path, self.viewport, px);
+        self.rasterized_rtl = rtl;
+        self.image = self.images.icon(&key, &path, self.viewport, px);
+    }
+
+    /// The artwork this icon draws in a given reading direction.
+    fn artwork(&self, rtl: bool) -> (Rc<str>, Rc<str>) {
+        match (&self.mirror, rtl) {
+            (Some((key, path)), true) => (key.clone(), path.clone()),
+            _ => (self.key.clone(), self.path.clone()),
+        }
     }
 
     /// The atlas handle currently in use, for tests and inspectors.
     pub fn image_id(&self) -> Option<ImageId> {
         self.image
+    }
+
+    /// True when this symbol swaps its artwork in a right-to-left document.
+    pub fn is_directional(&self) -> bool {
+        self.mirror.is_some()
     }
 }
 
@@ -367,11 +415,13 @@ impl RenderNode for IconBox {
         "Icon"
     }
 
-    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
         // Rasterisation happens here rather than in `paint`, which only has a
-        // shared reference — and here is also where the scale factor in force
-        // is known to be current.
-        self.ensure_mask();
+        // shared reference — and here is also where the scale factor **and the
+        // reading direction** in force are known to be current. A "back" arrow
+        // is mirrored here, at the node, rather than by a caller who cannot
+        // know which direction the document is in (§9.8).
+        self.ensure_mask(ctx.direction().is_rtl());
         constraints.constrain(Size::new(self.size, self.size))
     }
 
@@ -424,6 +474,7 @@ impl RenderNode for IconBox {
 pub struct IconProps {
     key: Rc<str>,
     path: Rc<str>,
+    mirror: Option<(Rc<str>, Rc<str>)>,
     viewport: f32,
     size: f32,
     color: Color,
@@ -436,6 +487,7 @@ impl ViewNode for IconProps {
         Box::new(IconBox {
             key: self.key.clone(),
             path: self.path.clone(),
+            mirror: self.mirror.clone(),
             viewport: self.viewport,
             size: self.size,
             color: self.color,
@@ -443,6 +495,7 @@ impl ViewNode for IconProps {
             images: self.images.clone(),
             image: None,
             rasterized_px: 0,
+            rasterized_rtl: false,
         })
     }
 
@@ -451,11 +504,14 @@ impl ViewNode for IconProps {
             .downcast_mut::<IconBox>()
             .expect("the same view type means the same render node type");
         let mut dirty = Dirty::NONE;
-        let artwork_changed =
-            n.key != self.key || n.path != self.path || n.viewport != self.viewport;
+        let artwork_changed = n.key != self.key
+            || n.path != self.path
+            || n.mirror != self.mirror
+            || n.viewport != self.viewport;
         if artwork_changed || n.size != self.size || n.images != self.images {
             n.key.clone_from(&self.key);
             n.path.clone_from(&self.path);
+            n.mirror.clone_from(&self.mirror);
             n.viewport = self.viewport;
             n.size = self.size;
             n.images = self.images.clone();
@@ -538,11 +594,68 @@ pub fn icon_path_in(images: &Images, theme: &Theme, key: &str, path: &str, viewp
     build(images, theme, key, path, viewport)
 }
 
+/// The chevron that points **backward** along the reading direction — the
+/// previous month, the previous page (§9.8).
+///
+/// Left in a left-to-right document, right in a right-to-left one, and the
+/// swap happens inside the node: see [`IconBox::layout`].
+pub fn chevron_back() -> Icon {
+    chevron_back_in(&active_images(), &active_theme())
+}
+
+/// [`chevron_back`] with the atlas and the theme passed explicitly.
+pub fn chevron_back_in(images: &Images, theme: &Theme) -> Icon {
+    icon_in(images, theme, IconName::ChevronLeft).mirrored(IconName::ChevronRight)
+}
+
+/// The chevron that points **forward** along the reading direction — the next
+/// month, the next page, a disclosure indicator (§9.8).
+///
+/// ```
+/// use silka_core::tree::{BoxConstraints, RenderTree, TextDirection};
+/// use silka_core::view::reconcile;
+/// use silka_paint::Size;
+/// use silka_theme::{Appearance, Theme};
+/// use silka_widgets::{chevron_forward_in, icon_in, IconBox, IconName, Images};
+///
+/// let images = Images::new();
+/// let theme = Theme::cupertino(Appearance::Dark);
+///
+/// let mask = |view, direction| {
+///     let mut tree = RenderTree::new();
+///     reconcile(&mut tree, view);
+///     tree.set_direction(direction);
+///     tree.layout(BoxConstraints::loose(Size::new(64.0, 64.0)));
+///     let id = tree.children(tree.root())[0];
+///     tree.node_ref::<IconBox>(id).unwrap().image_id()
+/// };
+///
+/// // Forward is the right-pointing artwork while reading left-to-right…
+/// assert_eq!(
+///     mask(chevron_forward_in(&images, &theme), TextDirection::Ltr),
+///     mask(icon_in(&images, &theme, IconName::ChevronRight), TextDirection::Ltr),
+/// );
+/// // …and the left-pointing one while reading right-to-left.
+/// assert_eq!(
+///     mask(chevron_forward_in(&images, &theme), TextDirection::Rtl),
+///     mask(icon_in(&images, &theme, IconName::ChevronLeft), TextDirection::Ltr),
+/// );
+/// ```
+pub fn chevron_forward() -> Icon {
+    chevron_forward_in(&active_images(), &active_theme())
+}
+
+/// [`chevron_forward`] with the atlas and the theme passed explicitly.
+pub fn chevron_forward_in(images: &Images, theme: &Theme) -> Icon {
+    icon_in(images, theme, IconName::ChevronRight).mirrored(IconName::ChevronLeft)
+}
+
 fn build(images: &Images, theme: &Theme, key: &str, path: &str, viewport: f32) -> Icon {
     Icon {
         props: IconProps {
             key: Rc::from(key),
             path: Rc::from(path),
+            mirror: None,
             viewport: if viewport.is_finite() && viewport > 0.0 {
                 viewport
             } else {
@@ -631,6 +744,35 @@ impl Icon {
         self.map(move |p| p.label = None)
     }
 
+    /// The artwork to draw instead while the document reads right-to-left
+    /// (§9.8).
+    ///
+    /// For arrows that mean **back**/**forward** rather than left/right. The
+    /// swap is made by the render node, which reads the direction from its
+    /// layout context — a call site cannot know it, and a call site that
+    /// guesses is exactly the bug `AUDIT.md` P-6 is about.
+    ///
+    /// Leave it unset for symbols that mean a *physical* side ("collapse the
+    /// left panel") and for symbols that are their own mirror image.
+    pub fn mirrored(self, name: IconName) -> Self {
+        self.mirrored_path(name.name(), name.path())
+    }
+
+    /// [`Icon::mirrored`] with your own artwork.
+    ///
+    /// `key` must differ from this icon's own key: the two forms are two
+    /// entries in the atlas cache, and reusing one key would draw the first
+    /// bitmap for both.
+    pub fn mirrored_path(self, key: impl AsRef<str>, path: impl AsRef<str>) -> Self {
+        let pair = (Rc::from(key.as_ref()), Rc::from(path.as_ref()));
+        self.map(move |p| p.mirror = Some(pair))
+    }
+
+    /// True when this icon swaps its artwork in a right-to-left document.
+    pub fn is_directional(&self) -> bool {
+        self.props.mirror.is_some()
+    }
+
     /// The side this icon will take, in logical points.
     pub fn size_value(&self) -> f32 {
         self.props.size
@@ -655,7 +797,7 @@ impl From<Icon> for View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silka_core::tree::RenderTree;
+    use silka_core::tree::{RenderTree, TextDirection};
     use silka_core::view::reconcile;
     use silka_paint::{Command, Scene};
     use silka_theme::{Appearance, Preset};
@@ -824,5 +966,94 @@ mod tests {
         let mut a = tree_of(icon_path_in(&images, &t, "brand", d, 24.0).size_raw(16.0));
         let mut b = tree_of(icon_path_in(&images, &t, "brand", d, 24.0).size_raw(16.0));
         assert_eq!(quad(&mut a).unwrap().image, quad(&mut b).unwrap().image);
+    }
+
+    // -- RTL (§9.8, `AUDIT.md` P-6) ------------------------------------------
+
+    /// Build one icon in one reading direction and return the bitmap it draws.
+    fn mask_in(view: impl Into<View>, direction: TextDirection) -> Option<ImageId> {
+        let mut tree = RenderTree::new();
+        reconcile(&mut tree, view);
+        tree.set_direction(direction);
+        tree.layout(BoxConstraints::loose(BOX));
+        quad(&mut tree).map(|q| q.image)
+    }
+
+    #[test]
+    fn a_back_arrow_swaps_its_artwork_between_ltr_and_rtl() {
+        let images = Images::new();
+        let t = theme();
+        let ltr = mask_in(chevron_back_in(&images, &t).sm(), TextDirection::Ltr);
+        let rtl = mask_in(chevron_back_in(&images, &t).sm(), TextDirection::Rtl);
+        assert!(ltr.is_some() && rtl.is_some());
+        assert_ne!(
+            ltr, rtl,
+            "'back' points the other way in an RTL document (§9.8)"
+        );
+
+        // And it is not just *some* other bitmap: it is exactly the opposite
+        // chevron, i.e. what a reader of that document expects to see.
+        let kiri = mask_in(
+            icon_in(&images, &t, IconName::ChevronLeft).sm(),
+            TextDirection::Ltr,
+        );
+        let kanan = mask_in(
+            icon_in(&images, &t, IconName::ChevronRight).sm(),
+            TextDirection::Ltr,
+        );
+        assert_eq!(ltr, kiri);
+        assert_eq!(rtl, kanan);
+    }
+
+    #[test]
+    fn back_and_forward_point_at_each_other_in_both_directions() {
+        let images = Images::new();
+        let t = theme();
+        for direction in [TextDirection::Ltr, TextDirection::Rtl] {
+            let mundur = mask_in(chevron_back_in(&images, &t).sm(), direction);
+            let maju = mask_in(chevron_forward_in(&images, &t).sm(), direction);
+            assert_ne!(
+                mundur, maju,
+                "previous and next must never draw the same arrow ({direction:?})"
+            );
+        }
+        // Forward in RTL is backward in LTR: the pair simply swaps.
+        assert_eq!(
+            mask_in(chevron_forward_in(&images, &t).sm(), TextDirection::Rtl),
+            mask_in(chevron_back_in(&images, &t).sm(), TextDirection::Ltr),
+        );
+    }
+
+    #[test]
+    fn a_physical_arrow_is_left_alone() {
+        // "Collapse the left panel" means the left panel in both directions —
+        // mirroring it would be a bug, so only icons that asked for it move.
+        let images = Images::new();
+        let t = theme();
+        let plain = icon_in(&images, &t, IconName::ChevronLeft).sm();
+        assert!(!plain.is_directional());
+        assert_eq!(
+            mask_in(plain.clone(), TextDirection::Ltr),
+            mask_in(plain, TextDirection::Rtl),
+        );
+        assert!(chevron_back_in(&images, &t).is_directional());
+    }
+
+    #[test]
+    fn flipping_the_direction_of_a_live_tree_re_rasterises() {
+        // The direction can change after the tree exists (a language switch),
+        // and the node caches its bitmap — so the cache has to be keyed by
+        // direction too, not only by pixel size.
+        let images = Images::new();
+        let t = theme();
+        let mut tree = RenderTree::new();
+        reconcile(&mut tree, chevron_forward_in(&images, &t).sm());
+        tree.layout(BoxConstraints::loose(BOX));
+        let sebelum = quad(&mut tree).unwrap().image;
+
+        tree.set_direction(TextDirection::Rtl);
+        tree.layout(BoxConstraints::loose(BOX));
+        let sesudah = quad(&mut tree).unwrap().image;
+        assert_ne!(sebelum, sesudah, "the arrow is stuck at its old artwork");
     }
 }

@@ -175,6 +175,11 @@ fn normalize_domain(min: f64, max: f64) -> (f64, f64) {
 /// with the bars when the window narrows — a fixed gap would swallow the bars
 /// entirely at a hundred categories.
 ///
+/// The range may be **inverted** (`range_start > range_end`), and that is how a
+/// right-to-left chart is drawn: January stays band 0 and simply lands on the
+/// right (§9.8). Everything else — the gaps, the sub-bands, the hit test —
+/// follows from the same arithmetic rather than from a second code path.
+///
 /// ```
 /// use silka_chart::scale::BandScale;
 ///
@@ -192,6 +197,12 @@ fn normalize_domain(min: f64, max: f64) -> (f64, f64) {
 /// let (start, width) = months.subband(3, 1, 2);
 /// assert!(width <= months.band_width());
 /// assert!(start >= months.start(3));
+///
+/// // Mirrored: the same twelve months, read from the right.
+/// let mirrored = BandScale::new(12, 600.0, 0.0);
+/// assert!(mirrored.is_reversed());
+/// assert!(mirrored.center(0) > mirrored.center(11));
+/// assert_eq!(mirrored.index_at(mirrored.center(0)), Some(0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BandScale {
@@ -250,9 +261,20 @@ impl BandScale {
         self.step() * (1.0 - self.padding_inner)
     }
 
-    /// The start position of band `index`.
+    /// True when band 0 sits at the **high** end of the range — a mirrored
+    /// (right-to-left) category axis.
+    pub fn is_reversed(&self) -> bool {
+        self.range_start > self.range_end
+    }
+
+    /// The start position of band `index` — its low edge on screen, whichever
+    /// way the axis runs.
     pub fn start(&self, index: usize) -> f32 {
         let step = self.step();
+        if self.is_reversed() {
+            let hi = self.range_start.max(self.range_end);
+            return hi - step * (self.padding_outer + index as f32) - self.band_width();
+        }
         let lo = self.range_start.min(self.range_end);
         lo + step * (self.padding_outer + index as f32)
     }
@@ -281,7 +303,14 @@ impl BandScale {
         if position < lo || position > hi {
             return None;
         }
-        let raw = (position - lo) / step - self.padding_outer;
+        // Measured from whichever end band 0 sits at, so a mirrored axis is the
+        // same arithmetic read the other way.
+        let dari_awal = if self.is_reversed() {
+            hi - position
+        } else {
+            position - lo
+        };
+        let raw = dari_awal / step - self.padding_outer;
         Some((raw.floor().max(0.0) as usize).min(self.count - 1))
     }
 
@@ -296,7 +325,15 @@ impl BandScale {
             return (self.start(index), width);
         }
         let sub = width / groups as f32;
-        (self.start(index) + sub * group as f32, sub)
+        // The first series leads: leftmost in a normal axis, rightmost in a
+        // mirrored one. A legend that reads right-to-left over bars that still
+        // run left-to-right is a chart nobody can match up (§9.8).
+        let ke = if self.is_reversed() {
+            groups.saturating_sub(group + 1)
+        } else {
+            group
+        };
+        (self.start(index) + sub * ke as f32, sub)
     }
 }
 
@@ -412,6 +449,66 @@ mod tests {
         assert!((a2 + w2 - (b.start(0) + b.band_width())).abs() < 1e-3);
         // A single group takes the whole band.
         assert_eq!(b.subband(1, 0, 1), (b.start(1), b.band_width()));
+    }
+
+    #[test]
+    fn band_terbalik_menaruh_kategori_pertama_di_ujung_kanan() {
+        // The RTL case (§9.8): same twelve slots, same widths, same gaps —
+        // read from the other end.
+        let maju = BandScale::new(4, 0.0, 400.0);
+        let mundur = BandScale::new(4, 400.0, 0.0);
+        assert!(!maju.is_reversed() && mundur.is_reversed());
+        assert_eq!(maju.step(), mundur.step());
+        assert_eq!(maju.band_width(), mundur.band_width());
+
+        // Band 0 leads in both, from opposite ends.
+        assert!(mundur.center(0) > mundur.center(3));
+        assert!((maju.center(0) - (400.0 - mundur.center(0))).abs() < 1e-3);
+        // Still in order, still inside the range, still not overlapping.
+        for i in 0..4 {
+            assert!(mundur.start(i) >= 0.0, "{i}");
+            assert!(mundur.start(i) + mundur.band_width() <= 400.001, "{i}");
+            if i > 0 {
+                assert!(mundur.start(i) + mundur.band_width() < mundur.start(i - 1) + 0.001);
+            }
+        }
+    }
+
+    #[test]
+    fn hit_test_band_terbalik_adalah_kebalikan_posisinya() {
+        let mundur = BandScale::new(3, 300.0, 0.0);
+        for i in 0..3 {
+            assert_eq!(mundur.index_at(mundur.center(i)), Some(i), "{i}");
+        }
+        // The gap between band 0 and band 1 still belongs to band 0 — mirrored,
+        // that gap is on the *left* of band 0.
+        let celah = mundur.start(0) - 0.5;
+        assert_eq!(mundur.index_at(celah), Some(0));
+        assert_eq!(mundur.index_at(-5.0), None);
+        assert_eq!(mundur.index_at(305.0), None);
+    }
+
+    #[test]
+    fn subband_terbalik_menaruh_deret_pertama_di_sisi_awal_baca() {
+        let maju = BandScale::new(2, 0.0, 200.0);
+        let mundur = BandScale::new(2, 200.0, 0.0);
+        let (a0, w) = maju.subband(0, 0, 3);
+        let (a2, _) = maju.subband(0, 2, 3);
+        assert!(a0 < a2, "deret pertama di kiri saat membaca ke kanan");
+
+        let (b0, wb) = mundur.subband(0, 0, 3);
+        let (b2, _) = mundur.subband(0, 2, 3);
+        assert!(b0 > b2, "…dan di kanan saat membaca ke kiri");
+        assert!((w - wb).abs() < 1e-4, "lebarnya tidak ikut berubah");
+        // Every sub-band stays inside its own band in both directions.
+        for g in 0..3 {
+            let (x, sw) = mundur.subband(0, g, 3);
+            assert!(x >= mundur.start(0) - 1e-3, "{g}");
+            assert!(
+                x + sw <= mundur.start(0) + mundur.band_width() + 1e-3,
+                "{g}"
+            );
+        }
     }
 
     #[test]

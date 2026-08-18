@@ -44,9 +44,9 @@ use silka_paint::Insets;
 use silka_platform::{headless_app, PlatformError, WindowConfig};
 use silka_text::FontWeight;
 use silka_theme::{Appearance, Preset, Theme};
-use silka_widgets::tabs::{tab, tabs_in, TabsVariant};
+use silka_widgets::tabs::{tab, tabs, TabsVariant};
 use silka_widgets::{
-    button_variant_in, scroll_view_in, spacer, switch_in, text_in, ButtonVariant, Fonts,
+    active_fonts, button_variant, scroll_view, spacer, switch, text, ButtonVariant, Fonts,
 };
 
 use crate::catalog::{Halaman, Kelompok};
@@ -144,10 +144,17 @@ pub fn tema_berikut(sekarang: Theme, mode: ModeTampilan, os: Appearance) -> Them
 /// Three sources, because animation belongs to whoever owns the node: the
 /// widget catalogue, the chart crate, and the gallery's own spring playground.
 /// The application still calls a single function once per frame (§3.5).
+///
+/// The fourth line is not animation at all: it is the seam that publishes a
+/// trigger's rectangle to the panel floating above it
+/// ([`crate::jangkar`]). It rides here because this is the one callback that
+/// runs **after** a layout and before the next build — exactly where a value
+/// that only exists once the frame is laid out has to be read.
 pub fn maju(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     silka_widgets::advance(tree, tick)
         | silka_chart::advance(tree, tick)
         | crate::spring::advance(tree, tick)
+        | crate::jangkar::sync(tree)
 }
 
 // ---------------------------------------------------------------------------
@@ -160,13 +167,12 @@ pub fn maju(tree: &mut RenderTree, tick: &Tick) -> Dirty {
 /// exercise a different application than the one that ships.
 ///
 /// [`Env`]: silka_core::app::Env
-pub fn aplikasi(tema: Theme, fonts: &Fonts, awal: Halaman, solo: bool) -> AppRuntime {
-    let untuk_view = fonts.clone();
+pub fn aplikasi(tema: Theme, awal: Halaman, solo: bool) -> AppRuntime {
     headless_app(tema, move |cx| {
         if solo {
-            solo_view(cx, &untuk_view, awal)
+            solo_view(cx, awal)
         } else {
-            kerangka(cx, &untuk_view, awal)
+            kerangka(cx, awal)
         }
     })
     .with_env(|rt| rt.signal(ModeTampilan::default()))
@@ -184,7 +190,7 @@ pub fn jalankan(
     awal: Halaman,
     solo: bool,
 ) -> Result<(), PlatformError> {
-    let ui = aplikasi(tema, &fonts, awal, solo);
+    let ui = aplikasi(tema, awal, solo);
 
     // Read the handles out **before** the runtime moves into the closures:
     // afterwards it lives behind a `RefCell` that the frame callback borrows.
@@ -264,13 +270,13 @@ pub fn jalankan(
 // ---------------------------------------------------------------------------
 
 /// A single page filling the window, with no chrome (`--solo`).
-fn solo_view(cx: &BuildCtx, fonts: &Fonts, halaman: Halaman) -> View {
+fn solo_view(cx: &BuildCtx, halaman: Halaman) -> View {
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
     // Icons are coverage masks tied to a pixel grid, exactly like glyphs, so
     // the bitmap atlas needs the same number (§3.3).
     silka_widgets::active_images().set_scale_factor(dpi.get());
-    halaman.view(cx, fonts)
+    halaman.view(cx)
 }
 
 /// The whole shell: top bar, sidebar, content.
@@ -279,21 +285,21 @@ fn solo_view(cx: &BuildCtx, fonts: &Fonts, halaman: Halaman) -> View {
 /// tokens, so a preset change genuinely does rebuild all of it) but not the
 /// selected page — that lives one level down, so switching pages rebuilds the
 /// sidebar and the content area only (§2.5).
-fn kerangka(cx: &BuildCtx, fonts: &Fonts, awal: Halaman) -> View {
+fn kerangka(cx: &BuildCtx, awal: Halaman) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
     // Icons are coverage masks tied to a pixel grid, exactly like glyphs, so
     // the bitmap atlas needs the same number (§3.3).
     silka_widgets::active_images().set_scale_factor(dpi.get());
 
     let halaman = use_signal(|| awal);
 
-    let badan = row([sisi(fonts, halaman), isi(fonts, halaman)])
+    let badan = row([sisi(halaman), isi(halaman)])
         // The sidebar is as tall as the window, not as tall as its buttons.
         .cross(CrossAlign::Stretch);
 
-    column([bilah_atas(fonts), View::from(expanded(badan))])
+    column([bilah_atas(), View::from(expanded(badan))])
         .cross(CrossAlign::Stretch)
         .background(t.color.background)
         .into()
@@ -303,8 +309,7 @@ fn kerangka(cx: &BuildCtx, fonts: &Fonts, awal: Halaman) -> View {
 ///
 /// Its own component, so flipping a switcher does not rebuild the page that
 /// happens to be open — only the bar and whatever actually reads the theme.
-fn bilah_atas(fonts: &Fonts) -> View {
-    let fonts = fonts.clone();
+fn bilah_atas() -> View {
     component("bilah-atas", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let tema_sig: Signal<Theme> = cx.expect_env();
@@ -312,7 +317,7 @@ fn bilah_atas(fonts: &Fonts) -> View {
         let gerak: Signal<GerakDikurangi> = cx.expect_env();
 
         let preset_aktif = usize::from(t.preset == Preset::Tailwind);
-        let pemilih_preset = tabs_in(&fonts, &t, [tab("Cupertino"), tab("Tailwind")])
+        let pemilih_preset = tabs([tab("Cupertino"), tab("Tailwind")])
             .variant(TabsVariant::Segmented)
             .selected(preset_aktif)
             .label(NAMA_PRESET)
@@ -325,7 +330,7 @@ fn bilah_atas(fonts: &Fonts) -> View {
                 tema_sig.update(|t| *t = t.with_preset(preset));
             });
 
-        let pemilih_tampilan = tabs_in(&fonts, &t, ModeTampilan::SEMUA.map(|m| tab(m.judul())))
+        let pemilih_tampilan = tabs(ModeTampilan::SEMUA.map(|m| tab(m.judul())))
             .variant(TabsVariant::Segmented)
             .selected(mode.get().indeks())
             .label(NAMA_TAMPILAN)
@@ -343,19 +348,19 @@ fn bilah_atas(fonts: &Fonts) -> View {
         // The switch only writes the signal; the animation driver itself is
         // flipped by the frame callback, because `set_motion` belongs to the
         // runtime and a view callback may only touch signals (§2.5).
-        let sakelar_gerak = switch_in(&fonts, &t, NAMA_GERAK)
+        let sakelar_gerak = switch(NAMA_GERAK)
             .on(gerak.get().0)
             .on_change(move |v| gerak.set(GerakDikurangi(v)));
 
         row([
-            text_in(&fonts, MEREK)
+            text(MEREK)
                 .size(t.typography.headline.size)
                 .weight(FontWeight::BOLD)
                 .tracking(t.typography.headline.tracking)
                 .color(t.color.label)
                 .single_line()
                 .into(),
-            text_in(&fonts, "Gallery")
+            text("Gallery")
                 .size(t.typography.headline.size)
                 .color(t.color.tertiary_label)
                 .single_line()
@@ -381,8 +386,7 @@ fn bilah_atas(fonts: &Fonts) -> View {
 ///
 /// The selected entry is a `primary` button and the rest are `ghost` — the
 /// same trick a source list uses, without inventing a widget for it.
-fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
-    let fonts = fonts.clone();
+fn sisi(halaman: Signal<Halaman>) -> View {
     component("navigasi", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let aktif = halaman.get();
@@ -397,7 +401,7 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
                 continue;
             }
             anak.push(
-                text_in(&fonts, kelompok.judul())
+                text(kelompok.judul())
                     .size(t.typography.caption1.size)
                     .weight(FontWeight::SEMIBOLD)
                     .tracking(t.typography.caption1.tracking)
@@ -412,7 +416,7 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
                     ButtonVariant::Ghost
                 };
                 anak.push(
-                    button_variant_in(&fonts, &t, h.judul(), variant)
+                    button_variant(h.judul(), variant)
                         .key(h.slug())
                         .on_press(move || halaman.set(h))
                         .into(),
@@ -429,7 +433,7 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
             // A fixed width, free height: the height comes from the row above,
             // and the scroll axis must be bounded (the same rule as Flutter's).
             BoxConstraints::new(t.space(LEBAR_SISI), t.space(LEBAR_SISI), 0.0, f32::INFINITY),
-            scroll_view_in(&t, daftar)
+            scroll_view(daftar)
                 .label(NAMA_SISI)
                 .background(t.color.surface),
         )
@@ -442,13 +446,11 @@ fn sisi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
 /// Each page is built inside a component **keyed by its slug**, so switching
 /// pages drops the old scope with all of its state instead of handing the
 /// next page a drawer full of someone else's signals.
-fn isi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
-    let fonts = fonts.clone();
+fn isi(halaman: Signal<Halaman>) -> View {
     let luar = component("isi", move |cx| {
-        let t: Theme = cx.expect_env::<Signal<Theme>>().get();
+        let _t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let h = halaman.get();
-        let untuk_halaman = fonts.clone();
-        let dalam = component(h.slug(), move |cx| h.view(cx, &untuk_halaman));
+        let dalam = component(h.slug(), move |cx| h.view(cx));
 
         if h.gulir_sendiri() {
             dalam
@@ -456,7 +458,7 @@ fn isi(fonts: &Fonts, halaman: Signal<Halaman>) -> View {
             // Everything else gets a scrolling container, so a long catalogue
             // page is still reachable in a small window instead of being cut
             // off at the bottom edge.
-            scroll_view_in(&t, dalam).label(h.judul()).into()
+            scroll_view(dalam).label(h.judul()).into()
         }
     });
     expanded(luar).into()
@@ -472,15 +474,8 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1280.0, 860.0);
 
-    fn fonts() -> Fonts {
-        // No system fonts: results must not depend on which fonts the machine
-        // running the tests happens to have installed (§9.5).
-        Fonts::bundled_only()
-    }
-
-    fn ui(tema: Theme, fonts: &Fonts) -> AppRuntime {
-        let mut ui =
-            aplikasi(tema, fonts, Halaman::AWAL, false).sized(VIEWPORT.width, VIEWPORT.height);
+    fn ui(tema: Theme) -> AppRuntime {
+        let mut ui = aplikasi(tema, Halaman::AWAL, false).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }
@@ -519,8 +514,7 @@ mod tests {
 
     #[test]
     fn sidebar_menampilkan_seluruh_katalog() {
-        let f = fonts();
-        let ui = ui(tema(), &f);
+        let ui = ui(tema());
         let pohon = ui.access_tree();
         let label: Vec<&str> = pohon
             .entries()
@@ -540,8 +534,7 @@ mod tests {
 
     #[test]
     fn klik_navigasi_mengganti_halaman() {
-        let f = fonts();
-        let mut ui = ui(tema(), &f);
+        let mut ui = ui(tema());
         // The counter page is the smallest page with an unmistakable label.
         let tombol = kotak(&ui, Halaman::Counter.judul());
         klik(&mut ui, tombol.center());
@@ -566,8 +559,7 @@ mod tests {
 
     #[test]
     fn pemilih_preset_mengganti_token_seluruh_aplikasi() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         assert!(menggambar_latar(
             &ui,
             Theme::cupertino(Appearance::Light).color.background
@@ -586,8 +578,7 @@ mod tests {
 
     #[test]
     fn pemilih_tampilan_mengunci_gelap() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         let tab_gelap = kotak(&ui, ModeTampilan::Gelap.judul());
         klik(&mut ui, tab_gelap.center());
 
@@ -621,8 +612,7 @@ mod tests {
 
     #[test]
     fn sakelar_gerak_mengubah_driver_animasi() {
-        let f = fonts();
-        let mut ui = ui(tema(), &f);
+        let mut ui = ui(tema());
         let sakelar = kotak(&ui, NAMA_GERAK);
         klik(&mut ui, sakelar.center());
 
@@ -632,9 +622,8 @@ mod tests {
 
     #[test]
     fn setiap_halaman_bisa_dibangun_dan_menghasilkan_gambar() {
-        let f = fonts();
         for h in Halaman::SEMUA {
-            let mut ui = aplikasi(tema(), &f, h, true).sized(VIEWPORT.width, VIEWPORT.height);
+            let mut ui = aplikasi(tema(), h, true).sized(VIEWPORT.width, VIEWPORT.height);
             ui.frame();
             assert!(
                 !ui.scene().is_empty(),
@@ -648,9 +637,8 @@ mod tests {
 
     #[test]
     fn kerangka_tersusun_bilah_atas_sidebar_lalu_isi() {
-        let f = fonts();
         let t = tema();
-        let mut ui = ui(t, &f);
+        let mut ui = ui(t);
 
         let sisi = kotak(&ui, NAMA_SISI);
         let preset = kotak(&ui, NAMA_PRESET);
@@ -754,9 +742,8 @@ mod tests {
         };
 
         const SKALA: f64 = 2.0;
-        let f = fonts();
         let terang = Theme::cupertino(Appearance::Light);
-        let mut ui = ui(terang, &f);
+        let mut ui = ui(terang);
         // The scale factor the window would report; without it the glyphs are
         // rasterised for the wrong resolution.
         if let Some(s) = ui.env::<Signal<ScaleFactor>>() {
@@ -770,7 +757,8 @@ mod tests {
         )
         .expect("target headless");
         let gambar = |ui: &AppRuntime, target: &mut silka_renderer::OffscreenTarget| {
-            f.with(|mesin| target.render_with_glyphs(&gpu, ui.scene(), mesin))
+            active_fonts()
+                .with(|mesin| target.render_with_glyphs(&gpu, ui.scene(), mesin))
                 .expect("render kerangka galeri")
         };
 
@@ -802,9 +790,8 @@ mod tests {
 
     #[test]
     fn solo_tidak_membawa_kerangka() {
-        let f = fonts();
         let mut ui =
-            aplikasi(tema(), &f, Halaman::Counter, true).sized(VIEWPORT.width, VIEWPORT.height);
+            aplikasi(tema(), Halaman::Counter, true).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         assert!(
             !ada_label(&ui, NAMA_SISI),

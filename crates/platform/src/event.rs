@@ -1,11 +1,13 @@
 //! The shell's *user event* — the one channel every off-loop native callback
 //! comes back through.
 //!
-//! Three native integrations call back from wherever the OS feels like calling:
+//! Four native integrations call back from wherever the OS feels like calling:
 //! accessibility (any thread), the menubar (inside AppKit's nested menu
-//! tracking loop), and the tray icon (the status-bar item's own handler). None
-//! of them may touch application state directly, and none of them can rely on
-//! the winit loop happening to wake up on its own afterwards.
+//! tracking loop), the tray icon (the status-bar item's own handler), and
+//! global hotkeys (a Carbon handler or a message-only window, while another
+//! application is focused). None of them may touch application state directly,
+//! and none of them can rely on the winit loop happening to wake up on its own
+//! afterwards.
 //!
 //! So they all funnel into one enum sent through [`winit::event_loop::EventLoopProxy`].
 //! That does two jobs at once: it moves the event to the UI thread, and it
@@ -19,14 +21,15 @@ use std::sync::Mutex;
 use winit::event_loop::EventLoopProxy;
 
 use crate::access::AccessEvent;
+use crate::hotkey::HotkeyActivation;
 use crate::menu::MenuActivation;
 use crate::tray::TrayActivation;
 
 /// Anything that reaches the event loop from outside a window event.
 ///
-/// The three sources that are not the window itself: assistive technology, the
-/// OS menubar, and the tray. Each arrives through a `From` conversion, so the
-/// event loop matches on one type rather than three.
+/// The sources that are not the window itself: assistive technology, the OS
+/// menubar, the tray, and global hotkeys. Each arrives through a `From`
+/// conversion, so the event loop matches on one type rather than four.
 ///
 /// ```
 /// use silka_platform::ShellEvent;
@@ -47,6 +50,11 @@ pub enum ShellEvent {
     Menu(MenuActivation),
     /// The user did something to the tray icon.
     Tray(TrayActivation),
+    /// The user pressed a global hotkey (INTEGRASI-NATIVE §3).
+    ///
+    /// The one source here that fires while the application is not focused at
+    /// all — which is precisely why it cannot arrive as a window event.
+    Hotkey(HotkeyActivation),
     /// A background task has a result waiting (REKOMENDASI §9.6).
     ///
     /// Sent from a worker thread by the notifier
@@ -78,9 +86,15 @@ impl From<TrayActivation> for ShellEvent {
     }
 }
 
-/// Point the global menu and tray callbacks at this event loop.
+impl From<HotkeyActivation> for ShellEvent {
+    fn from(a: HotkeyActivation) -> Self {
+        ShellEvent::Hotkey(a)
+    }
+}
+
+/// Point the global menu, tray and hotkey callbacks at this event loop.
 ///
-/// Both `muda` and `tray-icon` keep a single process-wide handler slot that can
+/// All three back-ends keep a single process-wide handler slot that can
 /// only ever be set once, so this is a `Once`: the first event loop to ask owns
 /// the callbacks, and a second call is a silent no-op rather than a confusing
 /// half-installed state. That matches the platforms themselves — there is one
@@ -106,6 +120,10 @@ pub fn forward_native_events(proxy: EventLoopProxy<ShellEvent>) {
                 let _ = p.send_event(ShellEvent::Menu(aktivasi));
             }
         }));
+
+        // The global hotkey backend keeps a single handler slot of exactly the
+        // same shape, so it belongs inside the same `Once` (§3).
+        crate::hotkey::forward_hotkey_events(proxy.clone());
 
         let tray = Mutex::new(proxy);
         tray_icon::TrayIconEvent::set_event_handler(Some(move |e: tray_icon::TrayIconEvent| {
@@ -167,6 +185,24 @@ mod tests {
         match e {
             ShellEvent::Menu(a) => assert!(a.is("file.save")),
             lain => panic!("harusnya Menu, dapat {lain:?}"),
+        }
+    }
+
+    #[test]
+    fn aktivasi_hotkey_masuk_sebagai_shell_event() {
+        use crate::hotkey::{HotkeyActivation, HotkeyId, HotkeyState};
+
+        let e = ShellEvent::from(HotkeyActivation::new(
+            HotkeyId::from_raw(2),
+            "app.quick_open",
+            HotkeyState::Pressed,
+        ));
+        match e {
+            ShellEvent::Hotkey(a) => {
+                assert!(a.is("app.quick_open"));
+                assert!(a.is_pressed());
+            }
+            lain => panic!("harusnya Hotkey, dapat {lain:?}"),
         }
     }
 

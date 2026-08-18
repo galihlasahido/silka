@@ -21,7 +21,7 @@ chart.
 ## Example
 
 ```rust
-use silka_chart::{bar_chart, format::{Locale, NumberFormat}};
+use silka_chart::{bar_chart_in, format::{Locale, NumberFormat}};
 use silka_theme::{Appearance, Theme};
 use silka_widgets::Fonts;
 
@@ -30,7 +30,7 @@ struct Month { name: &'static str, income: f64, outgoing: f64 }
 # let fonts = Fonts::bundled_only();
 # let theme = Theme::cupertino(Appearance::Dark);
 # let data = vec![Month { name: "Jan", income: 1.2e6, outgoing: 8.0e5 }];
-bar_chart(&fonts, &theme, data)
+bar_chart_in(&fonts, &theme, data)
     .x_label(|d: &Month| d.name.to_string())
     .y_named("Income", |d: &Month| d.income)
     .y_named("Outgoing", |d: &Month| d.outgoing)

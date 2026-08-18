@@ -81,8 +81,15 @@ objc2-app-kit = { workspace = true, features = [
 
 # Keychain (§5). Fitur native disebut di workspace; Linux sengaja tidak
 # memakai crate ini sama sekali — lihat `credential.rs`.
+#
+# Hotkey global (§3) ikut blok ini dengan alasan sejenis: backend Linux
+# `global-hotkey` hanya X11 (`XGrabKey`), sementara Wayland menyerahkan
+# shortcut global sepenuhnya ke compositor. Menautkan x11rb hanya untuk
+# separuh desktop Linux adalah harga yang tidak dibayar — `hotkey::register`
+# di sana menolak dengan alasan tertulis, sama seperti menubar.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 keyring.workspace = true
+global-hotkey.workspace = true
 
 # Escape hatch Windows (§8): windows-rs di-re-export apa adanya lewat
 # `platform::windows`, versi dikunci workspace.

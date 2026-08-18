@@ -36,7 +36,7 @@ use silka_core::view::{column, constrained, row, Builder, LayoutProps, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::{range_slider_in, slider_in, text_in, Fonts};
+use silka_widgets::{active_fonts, range_slider, slider, text};
 
 /// The page title.
 pub const JUDUL: &str = "Slider";
@@ -55,11 +55,11 @@ const LEBAR_LANGKAH: f32 = 120.0;
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     // The signals are created in the root scope but **read in each row's
     // component** — that is what makes a drag rebuild only one row.
@@ -70,7 +70,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     let isi = column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.body_size * 2.0)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(-0.02)
@@ -78,8 +78,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Seret, klik di track, atau Tab lalu tekan panah. Nilainya \
                  mendarat di undakan; thumb-nya menyusul lewat spring.",
             )
@@ -87,10 +86,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .line_height(t.typography.body_line_height)
             .color(t.color.secondary_label),
         ),
-        baris_volume(fonts, volume),
-        baris_ukuran(fonts, ukuran),
-        baris_harga(fonts, harga_min, harga_max),
-        baris_mati(fonts, &t),
+        baris_volume(volume),
+        baris_ukuran(ukuran),
+        baris_harga(harga_min, harga_max),
+        baris_mati(&t),
     ])
     .spacing(t.space(7.0))
     .cross(CrossAlign::Stretch)
@@ -110,10 +109,10 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 /// Both texts take the [`AccessRole::Container`] role so a screen reader does
 /// not announce "Volume, Volume, 40": the name is already attached to the
 /// slider, and the value rides on that same node (§3.8).
-fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<LayoutProps> {
+fn kepala(t: &Theme, nama: &str, nilai: String) -> Builder<LayoutProps> {
     row([
         View::from(
-            text_in(fonts, nama)
+            text(nama)
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.label)
@@ -121,7 +120,7 @@ fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<Layout
                 .role(AccessRole::Container),
         ),
         View::from(
-            text_in(fonts, nilai)
+            text(nilai)
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line()
@@ -133,15 +132,14 @@ fn kepala(fonts: &Fonts, t: &Theme, nama: &str, nilai: String) -> Builder<Layout
 }
 
 /// A continuous 0–100 slider.
-fn baris_volume(fonts: &Fonts, volume: Signal<f32>) -> View {
-    let fonts = fonts.clone();
+fn baris_volume(volume: Signal<f32>) -> View {
     component("volume", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let v = volume.get();
         column([
-            View::from(kepala(&fonts, &t, VOLUME, format!("{v:.0}%"))),
+            View::from(kepala(&t, VOLUME, format!("{v:.0}%"))),
             View::from(
-                slider_in(&t, v)
+                slider(v)
                     .range(0.0..=100.0)
                     .label(VOLUME)
                     .on_change(move |x| volume.set(x)),
@@ -154,15 +152,14 @@ fn baris_volume(fonts: &Fonts, volume: Signal<f32>) -> View {
 }
 
 /// A stepped slider — the snapping to steps `KOMPONEN.md` asks for.
-fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
-    let fonts = fonts.clone();
+fn baris_ukuran(ukuran: Signal<f32>) -> View {
     component("ukuran", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let v = ukuran.get();
         column([
-            View::from(kepala(&fonts, &t, UKURAN, format!("{v:.0} pt"))),
+            View::from(kepala(&t, UKURAN, format!("{v:.0} pt"))),
             View::from(
-                slider_in(&t, v)
+                slider(v)
                     .range(9.0..=32.0)
                     .step(1.0)
                     .label(UKURAN)
@@ -171,7 +168,7 @@ fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
             // A live example: the text really is the size of the slider's
             // value.
             View::from(
-                text_in(&fonts, "Ukuran teks mengikuti nilai di atas.")
+                text("Ukuran teks mengikuti nilai di atas.")
                     .size(v)
                     .color(t.color.label)
                     .single_line()
@@ -185,15 +182,14 @@ fn baris_ukuran(fonts: &Fonts, ukuran: Signal<f32>) -> View {
 }
 
 /// The range variant: two thumbs that must not cross each other.
-fn baris_harga(fonts: &Fonts, min: Signal<f32>, max: Signal<f32>) -> View {
-    let fonts = fonts.clone();
+fn baris_harga(min: Signal<f32>, max: Signal<f32>) -> View {
     component("harga", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let (a, b) = (min.get(), max.get());
         column([
-            View::from(kepala(&fonts, &t, HARGA, format!("{a:.0} – {b:.0}"))),
+            View::from(kepala(&t, HARGA, format!("{a:.0} – {b:.0}"))),
             View::from(
-                range_slider_in(&t, a, b)
+                range_slider(a, b)
                     .range(0.0..=1000.0)
                     .step(50.0)
                     .label(HARGA)
@@ -210,15 +206,10 @@ fn baris_harga(fonts: &Fonts, min: Signal<f32>, max: Signal<f32>) -> View {
 }
 
 /// The disabled slider: a screen reader still announces it as dimmed.
-fn baris_mati(fonts: &Fonts, t: &Theme) -> View {
+fn baris_mati(t: &Theme) -> View {
     column([
-        View::from(kepala(fonts, t, MATI, "60".to_string())),
-        View::from(
-            slider_in(t, 60.0)
-                .range(0.0..=100.0)
-                .label(MATI)
-                .disabled(true),
-        ),
+        View::from(kepala(t, MATI, "60".to_string())),
+        View::from(slider(60.0).range(0.0..=100.0).label(MATI).disabled(true)),
     ])
     .spacing(t.space(2.0))
     .cross(CrossAlign::Stretch)
@@ -243,14 +234,8 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(720.0, 640.0);
 
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
-    }
-
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// A slider's a11y node, looked up by name.
@@ -312,8 +297,7 @@ mod tests {
 
     #[test]
     fn keempat_slider_ada_di_pohon_a11y_dengan_hit_target_hig() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         for nama in [VOLUME, UKURAN, HARGA, MATI] {
@@ -336,8 +320,7 @@ mod tests {
 
     #[test]
     fn klik_di_track_menggeser_nilai_dan_hanya_membangun_ulang_satu_baris() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
 
         let kotak = slider_a11y(&ui, VOLUME).0;
@@ -359,8 +342,7 @@ mod tests {
 
     #[test]
     fn keyboard_menggeser_slider_berundak_tanpa_mouse() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Dark), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Dark));
         ui.frame();
 
         // Tab until the "Ukuran teks" slider holds focus.
@@ -384,8 +366,7 @@ mod tests {
 
     #[test]
     fn slider_terkunci_tidak_bisa_digeser_maupun_difokuskan() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let kotak = slider_a11y(&ui, MATI).0;
         klik(&mut ui, Point::new(kotak.max_x() - 8.0, kotak.center().y));
@@ -403,8 +384,7 @@ mod tests {
 
     #[test]
     fn thumb_menyusul_nilainya_lewat_spring_lalu_gpu_kembali_tidur() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         // The first frame primes the animation pump.
         ui.animate_at(Instant::now(), silka_widgets::advance);
         ui.frame();
@@ -429,8 +409,7 @@ mod tests {
 
     #[test]
     fn reduced_motion_tidak_menghentikan_perpindahan_nilai() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         for _ in 0..2 {
             tombol(&mut ui, NamedKey::Tab);
@@ -453,8 +432,7 @@ mod tests {
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 
@@ -493,8 +471,7 @@ mod tests {
 
     #[test]
     fn setiap_slider_punya_node_render_sendiri() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         assert_eq!(sliders(ui.tree()).len(), 4);
     }

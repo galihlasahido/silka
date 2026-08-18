@@ -25,7 +25,7 @@ use silka_core::app::{BuildCtx, ScaleFactor};
 use silka_core::signals::Signal;
 use silka_core::view::{div, fixed, interactive, View};
 use silka_theme::{ColorToken, FontToken, Preset, RadiusToken, ShadowToken, SpaceToken, Theme};
-use silka_widgets::{text_in, Fonts};
+use silka_widgets::{active_fonts, text};
 
 /// The page title.
 pub const JUDUL: &str = "Kosakata utility";
@@ -56,37 +56,33 @@ pub const LANGKAH: [SpaceToken; 9] = [
 ];
 
 /// The view tree for the whole page.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterised at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     div()
         .items_start()
         .gap_8()
         .p_8()
         .child(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .font(FontToken::Title2)
                 .font_semibold()
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text_in(fonts, keterangan(t.preset))
+            text(keterangan(t.preset))
                 .text_base()
                 .text_color(ColorToken::SecondaryLabel)
                 .max_width(t.space(120.0)),
         )
-        .child(bagian(fonts, "Spacing · skala 4pt", spacing(fonts)))
-        .child(bagian(fonts, "Radius · per preset", radius(fonts)))
-        .child(bagian(fonts, "Shadow · elevasi", shadow(fonts)))
-        .child(bagian(
-            fonts,
-            "State · hover, pressed, focused",
-            keadaan(fonts),
-        ))
+        .child(bagian("Spacing · skala 4pt", spacing()))
+        .child(bagian("Radius · per preset", radius()))
+        .child(bagian("Shadow · elevasi", shadow()))
+        .child(bagian("State · hover, pressed, focused", keadaan()))
         .into()
 }
 
@@ -105,12 +101,12 @@ fn keterangan(preset: Preset) -> String {
 }
 
 /// A section: heading plus content.
-fn bagian(fonts: &Fonts, judul: &str, isi: View) -> View {
+fn bagian(judul: &str, isi: View) -> View {
     div()
         .items_start()
         .gap_3()
         .child(
-            text_in(fonts, judul)
+            text(judul)
                 .font(FontToken::Caption1)
                 .font_semibold()
                 .text_color(ColorToken::TertiaryLabel)
@@ -121,8 +117,8 @@ fn bagian(fonts: &Fonts, judul: &str, isi: View) -> View {
 }
 
 /// A small caption under a specimen.
-fn nama(fonts: &Fonts, teks: &str) -> View {
-    text_in(fonts, teks)
+fn nama(teks: &str) -> View {
+    text(teks)
         .text_xs()
         .text_color(ColorToken::TertiaryLabel)
         .single_line()
@@ -133,7 +129,7 @@ fn nama(fonts: &Fonts, teks: &str) -> View {
 ///
 /// Each row is `p(token)` around the same inner block, so the token is not
 /// described — it is *applied*.
-fn spacing(fonts: &Fonts) -> View {
+fn spacing() -> View {
     div()
         .items_start()
         .gap_2()
@@ -142,7 +138,7 @@ fn spacing(fonts: &Fonts) -> View {
                 .flex()
                 .items_center()
                 .gap_3()
-                .child(nama(fonts, token.name()))
+                .child(nama(token.name()))
                 .child(
                     div()
                         .p(token)
@@ -155,7 +151,7 @@ fn spacing(fonts: &Fonts) -> View {
 }
 
 /// The radius tokens — the section that changes shape with the preset.
-fn radius(fonts: &Fonts) -> View {
+fn radius() -> View {
     div()
         .flex()
         .items_start()
@@ -172,13 +168,13 @@ fn radius(fonts: &Fonts) -> View {
                         .border_1()
                         .border_color(ColorToken::Border),
                 )
-                .child(nama(fonts, token.name()))
+                .child(nama(token.name()))
         }))
         .into()
 }
 
 /// The elevation tokens, on a surface that is meant to float.
-fn shadow(fonts: &Fonts) -> View {
+fn shadow() -> View {
     div()
         .flex()
         .items_start()
@@ -195,19 +191,19 @@ fn shadow(fonts: &Fonts) -> View {
                         .rounded_lg()
                         .elevation(token),
                 )
-                .child(nama(fonts, token.name()))
+                .child(nama(token.name()))
         }))
         .into()
 }
 
 /// The interaction states — the section that has to be *used*, not looked at.
-fn keadaan(fonts: &Fonts) -> View {
+fn keadaan() -> View {
     div()
         .flex()
         .items_stretch()
         .gap_4()
         .child(
-            tile(fonts, TILE_HOVER, "Arahkan pointer")
+            tile(TILE_HOVER, "Arahkan pointer")
                 .hover(|s| {
                     s.bg(ColorToken::SurfaceHover)
                         .border_color(ColorToken::Border)
@@ -215,7 +211,7 @@ fn keadaan(fonts: &Fonts) -> View {
                 .tab_order(1),
         )
         .child(
-            tile(fonts, TILE_TEKAN, "Tahan tombol tetikus")
+            tile(TILE_TEKAN, "Tahan tombol tetikus")
                 .hover(|s| s.bg(ColorToken::SurfaceHover))
                 // `scale` is decorative motion: under reduced motion it does not
                 // happen at all, while the colour change keeps running (§3.5).
@@ -223,12 +219,12 @@ fn keadaan(fonts: &Fonts) -> View {
                 .tab_order(2),
         )
         .child(
-            tile(fonts, TILE_FOKUS, "Tab ke sini")
+            tile(TILE_FOKUS, "Tab ke sini")
                 .focused(|s| s.ring(ColorToken::FocusRing))
                 .tab_order(3),
         )
         .child(
-            tile(fonts, TILE_MATI, "Tidak bisa dipakai")
+            tile(TILE_MATI, "Tidak bisa dipakai")
                 .disabled(true)
                 .disabled_style(|s| s.bg(ColorToken::SurfaceSunken)),
         )
@@ -237,7 +233,6 @@ fn keadaan(fonts: &Fonts) -> View {
 
 /// One state tile: the resting look every tile shares.
 fn tile(
-    fonts: &Fonts,
     label: &str,
     keterangan: &str,
 ) -> silka_core::view::Builder<silka_core::view::InteractiveProps> {
@@ -249,14 +244,14 @@ fn tile(
             .px_5()
             .py_4()
             .child(
-                text_in(fonts, label)
+                text(label)
                     .text_sm()
                     .font_semibold()
                     .text_color(ColorToken::Label)
                     .single_line(),
             )
             .child(
-                text_in(fonts, keterangan)
+                text(keterangan)
                     .text_xs()
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),
@@ -282,14 +277,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1100.0, 1400.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        let mut ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height);
+    fn ui(theme: Theme) -> AppRuntime {
+        let mut ui =
+            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }
@@ -320,8 +310,7 @@ mod tests {
 
     #[test]
     fn halaman_menggambar_teks_kotak_dan_bayangan() {
-        let f = fonts();
-        let ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let ui = ui(Theme::cupertino(Appearance::Dark));
         let perintah = ui.scene().commands();
         assert!(perintah.iter().any(|c| matches!(c, Command::GlyphRun(_))));
         assert!(perintah.iter().any(|c| matches!(c, Command::Quad(_))));
@@ -332,10 +321,9 @@ mod tests {
     /// each side than the one before it, in whichever preset.
     #[test]
     fn setiap_langkah_spacing_menambah_padding_sebenarnya() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             let t = Theme::new(preset, Appearance::Light);
-            let ui = ui(t, &f);
+            let ui = ui(t);
             // The padded boxes are the ones carrying the `accent_muted` colour.
             let lebar: Vec<f32> = kotak(&ui)
                 .iter()
@@ -360,10 +348,9 @@ mod tests {
     /// numbers.
     #[test]
     fn radius_mengikuti_bentuk_dan_angka_preset() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             let t = Theme::new(preset, Appearance::Light);
-            let ui = ui(t, &f);
+            let ui = ui(t);
             let spesimen: Vec<Quad> = kotak(&ui)
                 .into_iter()
                 .filter(|q| q.rect.size == Size::new(72.0, 72.0))
@@ -397,9 +384,8 @@ mod tests {
     /// Elevation is monotonic: a token that stands for "higher" must blur more.
     #[test]
     fn elevasi_naik_dari_none_sampai_xl() {
-        let f = fonts();
         let t = Theme::cupertino(Appearance::Light);
-        let ui = ui(t, &f);
+        let ui = ui(t);
         let blur: Vec<f32> = ui
             .scene()
             .commands()
@@ -423,8 +409,7 @@ mod tests {
     /// disabled rather than silently inert (§3.8).
     #[test]
     fn tiap_tile_state_terbaca_screen_reader() {
-        let f = fonts();
-        let ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let ui = ui(Theme::cupertino(Appearance::Dark));
         let pohon = ui.access_tree();
         for label in [TILE_HOVER, TILE_TEKAN, TILE_FOKUS, TILE_MATI] {
             pohon
@@ -442,9 +427,8 @@ mod tests {
     /// tile transitions, it does not cut.
     #[test]
     fn tile_hover_bertransisi_bukan_melompat() {
-        let f = fonts();
         let t = Theme::cupertino(Appearance::Dark);
-        let mut ui = ui(t, &f);
+        let mut ui = ui(t);
         let mut jam = Instant::now();
         frame(&mut ui, jam);
 

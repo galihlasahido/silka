@@ -1103,8 +1103,12 @@ mod tests {
         Theme::cupertino(Appearance::Dark)
     }
 
+    // `active_fonts()`/`active_images()` rather than a fresh engine and atlas
+    // per call: both compare by identity, so two of either would make every
+    // rebuild look like a change and the no-op test below would be measuring
+    // nothing.
     fn picker(state: DatePickerState) -> DatePicker {
-        date_picker_in(&Fonts::bundled_only(), &active_images(), &theme(), state)
+        date_picker_in(&crate::active_fonts(), &active_images(), &theme(), state)
             .locale(Locale::ID_ID)
             .today(HARI_INI)
             .label("Jatuh tempo")

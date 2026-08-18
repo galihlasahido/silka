@@ -3,7 +3,7 @@
 //! can be dragged, not merely clicked — the iOS/macOS feel.
 //!
 //! ```
-//! # use silka_widgets::{switch, Fonts};
+//! # use silka_widgets::{switch_in, Fonts};
 //! # use silka_theme::{Appearance, Theme};
 //! # use silka_core::signals::Runtime;
 //! # let fonts = Fonts::bundled_only();
@@ -1215,7 +1215,7 @@ pub fn switch(label: impl Into<String>) -> Switch {
 /// never disagree.
 ///
 /// ```
-/// # use silka_widgets::{switch, Fonts};
+/// # use silka_widgets::{switch_in, Fonts};
 /// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
@@ -1227,7 +1227,7 @@ pub fn switch_in(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Swit
     Switch {
         fonts: Some(fonts.clone()),
         label: Some(label.into()),
-        ..switch_only()
+        ..switch_only_in(theme)
     }
 }
 
@@ -1291,7 +1291,7 @@ pub fn switch_only() -> Switch {
 /// that is a bug, not a design choice.
 ///
 /// ```
-/// # use silka_widgets::switch_only;
+/// # use silka_widgets::switch_only_in;
 /// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
 /// switch_only_in(&t).label("Wi-Fi").on(true);

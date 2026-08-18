@@ -29,7 +29,9 @@ use silka_core::input::{
     Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyEvent, NamedKey, PointerButton,
     PointerEvent, PointerPhase,
 };
-use silka_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
+use silka_core::tree::{
+    BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode, TextDirection,
+};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
 
 use super::geometry::ListMetrics;
@@ -170,6 +172,15 @@ pub struct ListBody {
     reveal: Option<usize>,
     /// Content width from the last layout.
     width: f32,
+    /// Reading direction from the last layout (§9.8).
+    ///
+    /// Kept here because the place that needs it — hit-testing the strip the
+    /// scrollbar floats over — runs from an event, which has no
+    /// [`LayoutCtx`]. Same reason, same shape as
+    /// [`crate::scroll_view::ScrollView`], and the two must agree: a scrollbar
+    /// drawn on the left with its dead zone still on the right is worse than
+    /// no dead zone at all.
+    direction: TextDirection,
 }
 
 /// The row highlight spring.
@@ -208,6 +219,7 @@ impl ListBody {
             focused: false,
             reveal: None,
             width: 0.0,
+            direction: TextDirection::Ltr,
         };
         // A list born with a selection (restored state) does **not** animate
         // its highlight in: that is not motion, that is the initial state.
@@ -423,10 +435,24 @@ impl ListBody {
     /// Hit-testing walks children first (Flutter), so without this guard the
     /// rows would swallow every click actually aimed at the thumb — and a
     /// list's scrollbar would become an ornament nobody can drag.
+    ///
+    /// The strip is on the **trailing** edge: right while the document reads
+    /// left-to-right, left while it reads right-to-left — wherever
+    /// [`crate::scroll_view::ScrollView`] put the bar (§9.8).
     fn di_jalur_scrollbar(&self, p: Point) -> bool {
-        self.bar_inset > 0.0
-            && self.metrics.max_scroll() > 0.0
-            && p.x >= self.width - self.bar_inset
+        if self.bar_inset <= 0.0 || self.metrics.max_scroll() <= 0.0 {
+            return false;
+        }
+        if self.direction.is_rtl() {
+            p.x <= self.bar_inset
+        } else {
+            p.x >= self.width - self.bar_inset
+        }
+    }
+
+    /// The reading direction from the last layout — the door tests use.
+    pub fn direction(&self) -> TextDirection {
+        self.direction
     }
 
     // -- input ------------------------------------------------------------
@@ -580,6 +606,10 @@ impl RenderNode for ListBody {
             constraints.min_width
         };
         self.width = lebar;
+        // RTL is a layout input and the scrollbar strip is hit-tested by hand,
+        // so the direction is carried out of layout the same way
+        // `scroll_view` carries it (§9.8, `AUDIT.md` P-6).
+        self.direction = ctx.direction();
 
         let jumlah_anak = ctx.child_count();
         let baris = self.rows.min(jumlah_anak);

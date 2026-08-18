@@ -1,7 +1,7 @@
 //! **The public API** — constructor functions plus method chaining (§2.5).
 //!
 //! ```
-//! # use silka_chart::{line_chart, format::NumberFormat};
+//! # use silka_chart::{line_chart_in, format::NumberFormat};
 //! # use silka_widgets::Fonts;
 //! # use silka_theme::{Appearance, Theme};
 //! # struct Tx { tanggal: f64, nilai: f64 }
@@ -685,9 +685,9 @@ pub fn sparkline_in(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use silka_core::tree::{BoxConstraints, RenderTree};
+    use silka_core::tree::{BoxConstraints, RenderTree, TextDirection};
     use silka_core::view::reconcile;
-    use silka_paint::Size;
+    use silka_paint::{Command, Scene, Size};
     use silka_theme::Appearance;
     use std::cell::RefCell;
 
@@ -1147,6 +1147,189 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, Command::GlyphRun(_))),
             "keadaan kosong harus terlihat, bukan kotak hampa"
+        );
+    }
+
+    // -- RTL (§9.8, `AUDIT.md` P-6) -------------------------------------
+
+    const RTL_BOX: Size = Size::new(600.0, 400.0);
+
+    /// The same chart laid out in one reading direction.
+    fn pohon_arah(view: impl Into<View>, direction: TextDirection) -> RenderTree {
+        let mut tree = RenderTree::new();
+        reconcile(&mut tree, view);
+        tree.set_direction(direction);
+        tree.layout(BoxConstraints::tight(RTL_BOX));
+        tree
+    }
+
+    /// Every glyph run the chart draws, as the `(x, y)` of its bounding box.
+    fn label_origins(tree: &mut RenderTree) -> Vec<(f32, f32)> {
+        let mut scene = Scene::new(Color::TRANSPARENT);
+        tree.paint_into(&mut scene);
+        scene
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::GlyphRun(r) => r.bounds().map(|b| (b.min_x(), b.min_y())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sumbu_nilai_pindah_ke_sisi_kanan_di_rtl() {
+        // The whole point of the fix: the value axis is on the side the reader
+        // starts from, so its labels must not stay pinned to the left.
+        let (f, t) = env();
+        let build = || {
+            bar_chart_in(&f, &t, data())
+                .x_label(|d: &Tx| d.nama.to_string())
+                .y_named("Pendapatan", |d: &Tx| d.nilai)
+        };
+        let mut ltr = pohon_arah(build(), TextDirection::Ltr);
+        let mut rtl = pohon_arah(build(), TextDirection::Rtl);
+
+        let g_ltr = chart(&ltr).geometry().expect("ada geometri").plot;
+        let g_rtl = chart(&rtl).geometry().expect("ada geometri").plot;
+        assert!(!chart(&ltr).is_rtl() && chart(&rtl).is_rtl());
+
+        // LTR reserves the room on the left, RTL on the right — and the plot is
+        // exactly as wide either way, so nothing is lost in the swap.
+        assert!(
+            g_ltr.min_x() > g_rtl.min_x(),
+            "LTR menyisakan ruang label di kiri: {g_ltr:?} vs {g_rtl:?}"
+        );
+        assert!(g_rtl.max_x() < g_ltr.max_x());
+        assert!((g_ltr.size.width - g_rtl.size.width).abs() < 0.01);
+
+        // And the labels really went with it: everything the LTR chart drew to
+        // the left of its plot, the RTL chart drew to the right of its own.
+        let kiri: Vec<_> = label_origins(&mut ltr)
+            .into_iter()
+            .filter(|(x, _)| *x < g_ltr.min_x())
+            .collect();
+        let kanan: Vec<_> = label_origins(&mut rtl)
+            .into_iter()
+            .filter(|(x, _)| *x >= g_rtl.max_x())
+            .collect();
+        assert!(!kiri.is_empty(), "sumbu nilai LTR tidak punya label");
+        assert_eq!(
+            kiri.len(),
+            kanan.len(),
+            "label sumbu nilai hilang saat bercermin"
+        );
+        assert!(
+            label_origins(&mut rtl)
+                .iter()
+                .all(|(x, _)| *x >= g_rtl.min_x() - 0.01),
+            "tidak satu pun label boleh jatuh di kiri plot pada dokumen RTL"
+        );
+    }
+
+    #[test]
+    fn kategori_dan_batangnya_bercermin_bersama() {
+        let (f, t) = env();
+        let build = || {
+            bar_chart_in(&f, &t, data())
+                .x_label(|d: &Tx| d.nama.to_string())
+                .y_named("Pendapatan", |d: &Tx| d.nilai)
+        };
+        let ltr = pohon_arah(build(), TextDirection::Ltr);
+        let rtl = pohon_arah(build(), TextDirection::Rtl);
+
+        let posisi = |tree: &RenderTree| -> Vec<f32> {
+            let g = chart(tree).geometry().expect("ada geometri");
+            (0..4).map(|i| g.category.position(i, i as f64)).collect()
+        };
+        let a = posisi(&ltr);
+        let b = posisi(&rtl);
+        assert!(a[0] < a[3], "Jan di kiri saat membaca ke kanan");
+        assert!(b[0] > b[3], "…dan di kanan saat membaca ke kiri");
+        // Mirrored about the plot, not merely reordered: the spacing survives.
+        let plot = chart(&rtl).geometry().unwrap().plot;
+        for i in 0..3 {
+            assert!(
+                ((a[i + 1] - a[i]) - (b[i] - b[i + 1])).abs() < 0.01,
+                "jarak antar kategori berubah di {i}"
+            );
+        }
+        assert!(b[0] <= plot.max_x() && b[3] >= plot.min_x());
+    }
+
+    #[test]
+    fn legenda_dan_judul_mulai_dari_sisi_baca() {
+        let (f, t) = env();
+        let build = || {
+            bar_chart_in(&f, &t, data())
+                .x_label(|d: &Tx| d.nama.to_string())
+                .y_named("Pendapatan", |d: &Tx| d.nilai)
+                .y_named("Biaya", |d: &Tx| d.biaya)
+                .legend(true)
+                .title("Arus kas")
+        };
+        let mut ltr = pohon_arah(build(), TextDirection::Ltr);
+        let mut rtl = pohon_arah(build(), TextDirection::Rtl);
+
+        // The title is the topmost run in both; it hugs opposite edges.
+        let atas = |tree: &mut RenderTree| -> (f32, f32) {
+            let mut runs = label_origins(tree);
+            runs.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.total_cmp(&b.0)));
+            runs[0]
+        };
+        let (x_ltr, _) = atas(&mut ltr);
+        let (x_rtl, _) = atas(&mut rtl);
+        assert!(
+            x_rtl > x_ltr + RTL_BOX.width / 3.0,
+            "judul RTL harus menempel di tepi kanan: {x_ltr} vs {x_rtl}"
+        );
+
+        // The legend swatches follow: series 1's swatch leads from the right.
+        let swatch = |tree: &mut RenderTree| -> Vec<f32> {
+            let mut scene = Scene::new(Color::TRANSPARENT);
+            tree.paint_into(&mut scene);
+            let plot = chart(tree).geometry().unwrap().plot;
+            scene
+                .commands()
+                .iter()
+                .filter_map(|c| match c {
+                    Command::Quad(q) if q.rect.max_y() < plot.min_y() => Some(q.rect.origin.x),
+                    _ => None,
+                })
+                .collect()
+        };
+        let s_ltr = swatch(&mut ltr);
+        let s_rtl = swatch(&mut rtl);
+        assert_eq!(s_ltr.len(), 2, "dua deret, dua swatch");
+        assert_eq!(s_rtl.len(), 2);
+        assert!(s_ltr[0] < s_ltr[1], "deret pertama di kiri");
+        assert!(s_rtl[0] > s_rtl[1], "…dan di kanan saat bercermin");
+    }
+
+    #[test]
+    fn mengganti_arah_membangun_ulang_geometrinya() {
+        // The derived state is cached per size and per scale factor; direction
+        // had to join that key, or a language switch would leave the chart
+        // drawn the old way round until something else invalidated it.
+        let (f, t) = env();
+        let mut tree = RenderTree::new();
+        reconcile(
+            &mut tree,
+            bar_chart_in(&f, &t, data())
+                .x_label(|d: &Tx| d.nama.to_string())
+                .y_named("Pendapatan", |d: &Tx| d.nilai),
+        );
+        tree.layout(BoxConstraints::tight(RTL_BOX));
+        let sebelum = chart(&tree).geometry().unwrap().plot;
+
+        tree.set_direction(TextDirection::Rtl);
+        tree.layout(BoxConstraints::tight(RTL_BOX));
+        let sesudah = chart(&tree).geometry().unwrap().plot;
+        assert!(chart(&tree).is_rtl());
+        assert_ne!(
+            sebelum.min_x(),
+            sesudah.min_x(),
+            "bagan tetap tergambar dengan arah lama"
         );
     }
 

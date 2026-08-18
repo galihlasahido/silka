@@ -1718,12 +1718,24 @@ mod tests {
         sync(&mut tree);
 
         let id = handle_id(&tree);
-        let kotak = tree.bounds(id);
-        let mut e = PointerEvent::new(PointerPhase::Down, kotak.center(), Duration::ZERO)
-            .button(PointerButton::Primary);
-        e.click_count = 2;
+        let tengah = tree.bounds(id).center();
         let mut router = InputRouter::new();
-        router.dispatch(&mut tree, &Event::Pointer(e));
+        // `click_count` belongs to the router: it is counted from consecutive
+        // presses at the same spot, so a double-click has to be *performed*
+        // rather than asserted by hand on the event.
+        for (phase, ms) in [
+            (PointerPhase::Down, 0),
+            (PointerPhase::Up, 10),
+            (PointerPhase::Down, 20),
+        ] {
+            router.dispatch(
+                &mut tree,
+                &Event::Pointer(
+                    PointerEvent::new(phase, tengah, Duration::from_millis(ms))
+                        .button(PointerButton::Primary),
+                ),
+            );
+        }
         assert_eq!(*dipicu.borrow(), 1);
     }
 

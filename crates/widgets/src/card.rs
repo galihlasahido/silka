@@ -464,6 +464,11 @@ pub fn card_padded_in<C: Into<View>>(
 
 /// The card builder — Dart-style (§2.5).
 pub struct Card {
+    /// Held, not read: a card draws no text of its own — its children arrive
+    /// already built. The engine is still taken by `card_in` so that every
+    /// `_in` constructor has one shape, and kept here so that a card which
+    /// later grows a built-in header is not a breaking change.
+    #[allow(dead_code)]
     fonts: Fonts,
     theme: Theme,
     key: Option<Key>,
@@ -971,12 +976,19 @@ mod tests {
         // information — the same trap `AccessNode::selected` documents.
         let f = fonts();
         let tree = laid_out(card_in(&f, &theme(), [View::from(text_in(&f, "…"))]));
+        // The card's own node, not "no group anywhere": the body is a column,
+        // and a flex container is a meaningful grouping in its own right
+        // (`silka_core::tree::TaffyBox`). What is being asserted is that the
+        // card added nothing on top of it.
+        let card = tree.children(tree.root())[0];
         let a11y = tree.access_tree(None);
-        assert!(
-            a11y.find_role(AccessRole::Group).is_none(),
-            "{}",
-            a11y.dump()
-        );
+        let e = a11y
+            .entries()
+            .iter()
+            .find(|e| e.id == card)
+            .unwrap_or_else(|| panic!("{}", a11y.dump()));
+        assert_eq!(e.node.role, AccessRole::Container, "{}", a11y.dump());
+        assert!(e.node.label.is_none(), "{}", a11y.dump());
     }
 
     #[test]

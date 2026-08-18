@@ -311,6 +311,10 @@ pub use clipboard::{clipboard, Clipboard, ClipboardError};
 pub use dialog::{
     file_dialog, message, FileDialog, MessageAnswer, MessageButtons, MessageDialog, MessageLevel,
 };
+pub use hotkey::{
+    hotkeys, Hotkey, HotkeyActivation, HotkeyBinding, HotkeyError, HotkeyId, HotkeyManager,
+    HotkeyRegistration, HotkeyState,
+};
 pub use image::{ImageError, RgbaImage};
 pub use input::{
     button_from_winit, cursor_to_winit, ime_area_to_winit, ime_from_winit, key_from_winit,

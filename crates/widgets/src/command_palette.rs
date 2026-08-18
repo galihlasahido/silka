@@ -1979,10 +1979,12 @@ mod tests {
 
     #[test]
     fn posisi_adalah_indeks_karakter_bukan_byte() {
-        // "é" is two bytes; a byte index would put the highlight on half a
-        // letter, which is the bug this is here to prevent.
-        let m = fuzzy_match("cf", "café file").expect("cocok");
-        assert_eq!(m.positions, vec![0, 5]);
+        // "é" is two bytes, so every position after it differs between a byte
+        // index and a character index — a byte index would put the highlight on
+        // half a letter, which is the bug this is here to prevent. The "l" is
+        // character 7 and byte 8.
+        let m = fuzzy_match("cl", "café file").expect("cocok");
+        assert_eq!(m.positions, vec![0, 7]);
     }
 
     #[test]

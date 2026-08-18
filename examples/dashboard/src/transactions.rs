@@ -16,9 +16,7 @@ use silka_core::tree::CrossAlign;
 use silka_core::view::{column, expanded, View};
 use silka_text::FontWeight;
 use silka_theme::{RadiusToken, Theme};
-use silka_widgets::{
-    col, table_in, text_in, use_table_state, Column, Fonts, SortBy, SortDirection,
-};
+use silka_widgets::{col, table, text, use_table_state, Column, SortBy, SortDirection};
 
 use crate::data;
 use crate::kit;
@@ -95,7 +93,7 @@ impl Order {
 }
 
 /// The whole page.
-pub fn page(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn page(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let state = use_table_state();
     let order = use_signal(|| Rc::new(RefCell::new(Order::default())));
@@ -107,19 +105,15 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts) -> View {
         .borrow_mut()
         .for_sort(state.sort(), data::TRANSACTIONS);
 
-    let cell_fonts = fonts.clone();
-    let empty_fonts = fonts.clone();
     let theme = t;
 
-    let body = table_in(
-        fonts,
-        &t,
+    let body = table(
         state,
         columns(&t),
         data::TRANSACTIONS,
         move |row, column| {
             let i = permutation[row] as usize;
-            cell(&cell_fonts, &theme, i, column)
+            cell(&theme, i, column)
         },
     )
     .row_extent(ROW_HEIGHT)
@@ -130,12 +124,12 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts) -> View {
     .background(t.color.surface)
     .corners(t.corners_of(RadiusToken::Lg))
     .border(t.space_of(silka_theme::SpaceToken::Px), t.color.separator)
-    .empty(move || empty_state(&empty_fonts, &theme));
+    .empty(move || empty_state(&theme));
 
     column([
         column([
-            kit::page_title(fonts, &t, Page::Transactions.title()),
-            kit::subtitle(fonts, &t, Page::Transactions.subtitle()),
+            kit::page_title(&t, Page::Transactions.title()),
+            kit::subtitle(&t, Page::Transactions.subtitle()),
         ])
         .spacing(t.space(1.5))
         .cross(CrossAlign::Start)
@@ -152,26 +146,26 @@ pub fn page(cx: &BuildCtx, fonts: &Fonts) -> View {
 ///
 /// The status column returns a **badge**, not text — a cell accepts any view,
 /// and there is no special cell type to learn.
-fn cell(fonts: &Fonts, t: &Theme, i: usize, column: usize) -> View {
+fn cell(t: &Theme, i: usize, column: usize) -> View {
     match column {
-        0 => text_in(fonts, data::contract(i))
+        0 => text(data::contract(i))
             .size(t.typography.footnote.size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.tertiary_label)
             .single_line()
             .into(),
-        1 => text_in(fonts, data::party(i))
+        1 => text(data::party(i))
             .size(t.typography.body_size)
             .color(t.color.label)
             .single_line()
             .into(),
-        2 => text_in(fonts, data::date(data::value_date(i)))
+        2 => text(data::date(data::value_date(i)))
             .size(t.typography.footnote.size)
             .color(t.color.secondary_label)
             .single_line()
             .into(),
-        3 => kit::badge(fonts, t, data::status(i)),
-        _ => text_in(fonts, data::rupiah(data::amount(i)))
+        3 => kit::badge(t, data::status(i)),
+        _ => text(data::rupiah(data::amount(i)))
             .size(t.typography.body_size)
             .weight(FontWeight::MEDIUM)
             .color(t.color.label)
@@ -180,9 +174,9 @@ fn cell(fonts: &Fonts, t: &Theme, i: usize, column: usize) -> View {
     }
 }
 
-fn empty_state(fonts: &Fonts, t: &Theme) -> View {
+fn empty_state(t: &Theme) -> View {
     column([View::from(
-        text_in(fonts, EMPTY)
+        text(EMPTY)
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line(),

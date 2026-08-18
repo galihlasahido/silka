@@ -325,8 +325,8 @@ mod tests {
     #[test]
     fn fallback_dipakai_kalau_belum_terdaftar() {
         clear_screens();
-        let mut ui =
-            app(|cx| center(screen_view("belum", cx, || kotak(7.0, 9.0))).into()).sized(100.0, 100.0);
+        let mut ui = app(|cx| center(screen_view("belum", cx, || kotak(7.0, 9.0))).into())
+            .sized(100.0, 100.0);
         ui.frame();
         let tengah = ui.tree().children(ui.tree().root())[0];
         let id = ui.tree().children(tengah)[0];

@@ -237,7 +237,7 @@ impl TableState {
 /// # use silka_core::signals::Runtime;
 /// # use silka_core::view::{fixed, View};
 /// # use silka_theme::{Appearance, Theme};
-/// # use silka_widgets::{col, table, use_table_state, Fonts};
+/// # use silka_widgets::{col, table_in, use_table_state, Fonts};
 /// # let rt = Runtime::new();
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::cupertino(Appearance::Dark);

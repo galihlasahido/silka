@@ -250,7 +250,7 @@ where
 /// # use silka_core::signals::Runtime;
 /// # use silka_core::view::{fixed, View};
 /// # use silka_theme::{Appearance, Theme};
-/// # use silka_widgets::{list, ListState};
+/// # use silka_widgets::{list_in, ListState};
 /// # let rt = Runtime::new();
 /// # let t = Theme::cupertino(Appearance::Dark);
 /// let state = ListState::new(&rt);

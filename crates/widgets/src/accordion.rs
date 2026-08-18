@@ -70,14 +70,12 @@ use std::rc::Rc;
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
 use silka_core::animation::{Spring, SpringValue, Tick};
 use silka_core::input::{
-    CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, KeyEvent,
+    CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyEvent,
     NamedKey, PointerButton, PointerPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
-use silka_core::tree::{
-    BoxConstraints, CrossAlign, LayoutCtx, PaintCtx, RenderNode, TextDirection,
-};
+use silka_core::tree::{BoxConstraints, CrossAlign, LayoutCtx, PaintCtx, RenderNode};
 use silka_core::view::{column, row, Builder, View, ViewNode};
 use silka_paint::{
     Color, CornerRadii, Corners, Insets, LineCap, LineJoin, Point, Quad, Rect, Size, Stroke,
@@ -1316,8 +1314,8 @@ impl core::fmt::Debug for Accordion {
 mod tests {
     use super::*;
     use silka_core::animation::Motion;
-    use silka_core::input::{InputRouter, PointerEvent};
-    use silka_core::tree::{NodeId, RenderTree};
+    use silka_core::input::{InputRouter, KeyCode, PointerEvent};
+    use silka_core::tree::{NodeId, RenderTree, TextDirection};
     use silka_core::view::reconcile;
     use std::cell::Cell;
     use std::rc::Rc;
@@ -1329,8 +1327,11 @@ mod tests {
         Theme::cupertino(silka_theme::Appearance::Dark)
     }
 
+    // The ambient handle rather than a fresh engine per call: `Fonts`
+    // compares by identity, so two engines would make every rebuild look like
+    // a change and the no-op test below would be measuring nothing.
     fn fonts() -> Fonts {
-        Fonts::bundled_only()
+        crate::active_fonts()
     }
 
     fn laid_out(view: impl Into<View>) -> RenderTree {

@@ -26,7 +26,7 @@ use silka_core::app::{component, BuildCtx, ScaleFactor};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::view::{div, View};
 use silka_theme::{ColorToken, FontToken, Theme};
-use silka_widgets::{button_in, button_variant_in, text_in, ButtonVariant, Fonts};
+use silka_widgets::{active_fonts, button, button_variant, text, ButtonVariant};
 
 /// The increment button's name — also used by the tests to find it in the
 /// accessibility tree, so what the tests click is **exactly** what a screen
@@ -46,12 +46,12 @@ pub const JUDUL: &str = "Counter";
 /// in its entirety (every value here is a token), but **the counter is not read
 /// here** — that is what makes a click rebuild a single component rather than
 /// the page.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution; the logical sizes
     // below do not change with it (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let count = use_signal(|| 0i32);
 
@@ -66,14 +66,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             // One call carries size, line height, weight and tracking: the
             // optical tracking of a big title is part of the role, not
             // something this page gets to invent (§3.6).
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text_in(
-                fonts,
+            text(
                 "Klik tombol di bawah: signal berubah, hanya komponen angka \
                  yang dibangun ulang, dan angkanya benar-benar berganti di layar.",
             )
@@ -81,8 +80,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .text_color(ColorToken::SecondaryLabel)
             .max_width(t.space(96.0)),
         )
-        .child(angka(fonts, count))
-        .child(kendali(fonts, &t, count))
+        .child(angka(count))
+        .child(kendali(&t, count))
         .into()
 }
 
@@ -90,14 +89,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 ///
 /// This is the only place the counter is read, and therefore the only scope
 /// marked dirty when a button is pressed (§2.5).
-fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
-    let fonts = fonts.clone();
+fn angka(count: Signal<i32>) -> View {
     component("angka", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         // The one number on the page that is genuinely not a token: this is a
         // display figure, five times body size, and no type scale has a role
         // for "the hero digit of a demo".
-        text_in(&fonts, count.get().to_string())
+        text(count.get().to_string())
             .size(t.typography.body_size * 5.0)
             .font_bold()
             .tracking(-0.03)
@@ -113,19 +111,18 @@ fn angka(fonts: &Fonts, count: Signal<i32>) -> View {
 /// `on_press` closures only write. That is why the button nodes survive
 /// unchanged across clicks: what the user's finger is pressing is never rebuilt
 /// mid-interaction.
-fn kendali(fonts: &Fonts, t: &Theme, count: Signal<i32>) -> View {
+fn kendali(_t: &Theme, count: Signal<i32>) -> View {
     div()
         .flex()
         .items_center()
         .gap_3()
-        .child(button_in(fonts, t, TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1)))
+        .child(button(TOMBOL_TAMBAH).on_press(move || count.update(|n| *n += 1)))
         .child(
-            button_variant_in(fonts, t, TOMBOL_KURANG, ButtonVariant::Secondary)
+            button_variant(TOMBOL_KURANG, ButtonVariant::Secondary)
                 .on_press(move || count.update(|n| *n -= 1)),
         )
         .child(
-            button_variant_in(fonts, t, TOMBOL_RESET, ButtonVariant::Secondary)
-                .on_press(move || count.set(0)),
+            button_variant(TOMBOL_RESET, ButtonVariant::Secondary).on_press(move || count.set(0)),
         )
         .into()
 }
@@ -149,23 +146,14 @@ mod tests {
     const SKALA: f64 = 2.0;
 
     /// A headless app assembled **exactly the way `run_app` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        let ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height);
+    fn ui(theme: Theme) -> AppRuntime {
+        let ui = headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
         // What the shell does every frame; once is enough here since the test
         // window never moves between monitors.
         ui.env::<Signal<ScaleFactor>>()
             .expect("run_app menitipkan scale factor")
             .set(ScaleFactor(SKALA as f32));
         ui
-    }
-
-    /// A deterministic text engine: with no system fonts, test results do not
-    /// depend on whichever fonts happen to be installed on the CI machine
-    /// (§9.5).
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
     }
 
     /// A node's rectangle **according to the accessibility tree**.
@@ -212,8 +200,7 @@ mod tests {
 
     #[test]
     fn halaman_menampilkan_teks_dan_tiga_tombol() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         // The text really does become draw commands, not just empty nodes.
@@ -258,8 +245,7 @@ mod tests {
 
     #[test]
     fn klik_menaikkan_angka_dan_hanya_komponen_angka_yang_dibangun_ulang() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         assert_eq!(angka_terbaca(&ui), 0);
 
@@ -301,8 +287,7 @@ mod tests {
 
     #[test]
     fn klik_di_luar_tombol_tidak_mengubah_apa_pun() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         // Top-left corner of the window: far from the centered stack.
@@ -313,8 +298,7 @@ mod tests {
 
     #[test]
     fn keyboard_bisa_mengaktifkan_tombol_tanpa_mouse() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Light));
         ui.frame();
 
         // Tab moves focus to the first button, Space activates it — the
@@ -336,8 +320,7 @@ mod tests {
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 
@@ -378,9 +361,8 @@ mod tests {
 
     #[test]
     fn ganti_theme_membangun_ulang_halaman_dan_angka_ikut_ganti_warna() {
-        let f = fonts();
         let terang = Theme::cupertino(Appearance::Light);
-        let mut ui = ui(terang, &f);
+        let mut ui = ui(terang);
         ui.frame();
         let p = kotak(&ui, TOMBOL_TAMBAH).center();
         klik(&mut ui, p);
@@ -445,15 +427,15 @@ mod tests {
             return;
         };
 
-        let f = fonts();
         let theme = Theme::cupertino(Appearance::Dark);
-        let mut ui = ui(theme, &f);
+        let mut ui = ui(theme);
         ui.frame();
 
         let mut target = OffscreenTarget::new(&gpu, SurfaceGeometry::from_logical(VIEWPORT, SKALA))
             .expect("target headless");
         let gambar = |ui: &AppRuntime, target: &mut OffscreenTarget| -> Rgba8Image {
-            f.with(|mesin| target.render_with_glyphs(&gpu, ui.scene(), mesin))
+            active_fonts()
+                .with(|mesin| target.render_with_glyphs(&gpu, ui.scene(), mesin))
                 .expect("render halaman counter")
         };
 

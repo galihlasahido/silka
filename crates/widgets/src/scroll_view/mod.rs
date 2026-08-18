@@ -275,10 +275,13 @@ pub struct ScrollView {
     controlled: Option<f32>,
     /// The reading direction from the last layout (§9.8).
     ///
-    /// Stored here rather than read where it is needed, because the two places
-    /// that need it — drawing the scrollbar and hit-testing it — have no access
-    /// to [`LayoutCtx`], and a vertical scrollbar belongs on the **leading**
-    /// edge: right in LTR, left in RTL, the way every RTL platform draws it.
+    /// Stored here rather than read where it is needed, because everything that
+    /// needs it — drawing the scrollbar, hit-testing it, turning a wheel delta
+    /// and an arrow key into a direction — runs without a [`LayoutCtx`]. A
+    /// vertical scrollbar belongs on the **trailing** edge (right in LTR, left
+    /// in RTL, the way every RTL platform draws it), and a horizontal
+    /// container's content starts at the trailing edge too: see
+    /// [`ScrollView::is_mirrored`].
     direction: TextDirection,
 }
 
@@ -572,36 +575,72 @@ impl ScrollView {
                 };
                 Rect::new(x, t.offset, tebal, t.length)
             }
-            Axis::Horizontal => Rect::new(
-                t.offset,
-                (s.height - self.bar.margin - tebal).max(0.0),
-                t.length,
-                tebal,
-            ),
+            Axis::Horizontal => {
+                // The thumb's offset counts from the leading edge, which is on
+                // the right in a mirrored container — so it is turned back into
+                // a screen x here, at the one place that draws it (§9.8).
+                let x = if self.is_mirrored() {
+                    s.width - t.offset - t.length
+                } else {
+                    t.offset
+                };
+                Rect::new(
+                    x,
+                    (s.height - self.bar.margin - tebal).max(0.0),
+                    t.length,
+                    tebal,
+                )
+            }
         }
     }
 
-    /// The scroll-axis component of a local point.
+    /// The scroll-axis component of a local point, measured **from the leading
+    /// edge**.
+    ///
+    /// Logical, not physical: everything downstream of this (the thumb, the
+    /// grab distance, "did the click land before or after the thumb") speaks
+    /// the same units as [`ScrollView::offset`], which counts from the start of
+    /// the content. In a right-to-left document the start of a horizontal
+    /// container is its **right** edge, so the axis is measured back from
+    /// there and not a single caller has to know (§9.8).
     fn main_of_point(&self, p: Point) -> f32 {
         match self.axis {
             Axis::Vertical => p.y,
+            Axis::Horizontal if self.is_mirrored() => self.viewport.width - p.x,
             Axis::Horizontal => p.x,
         }
+    }
+
+    /// True when this container's scroll axis runs the other way to the screen.
+    ///
+    /// Only a **horizontal** container mirrors: "down" is not reversed by a
+    /// right-to-left document, and neither is the bottom edge a horizontal
+    /// scrollbar lives on.
+    pub fn is_mirrored(&self) -> bool {
+        self.axis == Axis::Horizontal && self.direction.is_rtl()
     }
 
     // -- scrolling ---------------------------------------------------------
 
     /// The scroll delta along this container's axis, logical points.
     ///
-    /// Positive = content moves up/left (the scroll position grows). A
-    /// horizontal container also accepts vertical wheel input: it is the only
-    /// way to scroll a horizontal list with an ordinary mouse.
+    /// Positive = the scroll position grows, i.e. the content moves **toward
+    /// the start**: up in a vertical container, left in a left-to-right
+    /// horizontal one and *right* in a mirrored one (§9.8). A horizontal
+    /// container also accepts vertical wheel input: it is the only way to
+    /// scroll a horizontal list with an ordinary mouse, and that fallback is
+    /// not mirrored — a wheel rolled away from the user means "onward" in every
+    /// document.
     fn main_delta(&self, delta: Point) -> f32 {
         match self.axis {
             Axis::Vertical => -delta.y,
             Axis::Horizontal => {
                 if delta.x != 0.0 {
-                    -delta.x
+                    if self.is_mirrored() {
+                        delta.x
+                    } else {
+                        -delta.x
+                    }
                 } else {
                     -delta.y
                 }
@@ -801,11 +840,20 @@ impl ScrollView {
 
         let sekarang = self.offset.target();
         let polos = e.modifiers.is_empty();
+        // Right means "onward" only while the document reads left-to-right. In a
+        // mirrored container the arrow that walks into the content is the left
+        // one, and Home/End keep their meaning either way: they are named after
+        // the content's ends, not after screen edges (§9.8).
+        let (maju, mundur) = if self.is_mirrored() {
+            (NamedKey::ArrowLeft, NamedKey::ArrowRight)
+        } else {
+            (NamedKey::ArrowRight, NamedKey::ArrowLeft)
+        };
         let tujuan = match &e.code {
             KeyCode::Named(NamedKey::ArrowDown) if !mendatar && polos => Some(sekarang + baris),
             KeyCode::Named(NamedKey::ArrowUp) if !mendatar && polos => Some(sekarang - baris),
-            KeyCode::Named(NamedKey::ArrowRight) if mendatar && polos => Some(sekarang + baris),
-            KeyCode::Named(NamedKey::ArrowLeft) if mendatar && polos => Some(sekarang - baris),
+            KeyCode::Named(k) if mendatar && polos && *k == maju => Some(sekarang + baris),
+            KeyCode::Named(k) if mendatar && polos && *k == mundur => Some(sekarang - baris),
             KeyCode::Named(NamedKey::PageDown) if polos => Some(sekarang + halaman),
             KeyCode::Named(NamedKey::PageUp) if polos => Some(sekarang - halaman),
             // Space scrolls one page (AppKit, and every browser);
@@ -908,9 +956,18 @@ impl RenderNode for ScrollView {
             }
         }
 
+        // The content hangs off the **leading** edge: the top in a vertical
+        // container, the left in a left-to-right horizontal one — and the right
+        // in a mirrored one, where offset 0 must show the *start* of the
+        // content, i.e. its right end flush with the container's right edge
+        // (§9.8). The two branches agree when the content fits: `ukuran.width -
+        // self.content` is zero, and both put it at the leading edge.
         let geser = -self.offset.position();
         let offset = match self.axis {
             Axis::Vertical => Point::new(0.0, geser),
+            Axis::Horizontal if self.is_mirrored() => {
+                Point::new(ukuran.width - self.content - geser, 0.0)
+            }
             Axis::Horizontal => Point::new(geser, 0.0),
         };
         ctx.place_child(child, offset);

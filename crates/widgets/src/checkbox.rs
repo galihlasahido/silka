@@ -2,7 +2,7 @@
 //! indeterminate state and the check animation** its special notes ask for.
 //!
 //! ```
-//! # use silka_widgets::{checkbox, Fonts};
+//! # use silka_widgets::{checkbox_in, Fonts};
 //! # use silka_theme::{Appearance, Theme};
 //! # use silka_core::signals::Runtime;
 //! # let fonts = Fonts::bundled_only();
@@ -1338,7 +1338,7 @@ pub struct Checkbox {
 /// use silka_widgets::{checkbox, CheckState};
 ///
 /// let rt = Runtime::new();
-/// let all = rt.signal(CheckState::Indeterminate);
+/// let all = rt.signal(CheckState::Mixed);
 ///
 /// let head = checkbox("Select all")
 ///     .state(all.get())
@@ -1362,7 +1362,7 @@ pub fn checkbox(label: impl Into<String>) -> Checkbox {
 /// never disagree.
 ///
 /// ```
-/// # use silka_widgets::{checkbox, CheckState, Fonts};
+/// # use silka_widgets::{checkbox_in, CheckState, Fonts};
 /// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
@@ -1374,7 +1374,7 @@ pub fn checkbox_in(fonts: &Fonts, theme: &Theme, label: impl Into<String>) -> Ch
     Checkbox {
         fonts: Some(fonts.clone()),
         label: Some(label.into()),
-        ..checkbox_only()
+        ..checkbox_only_in(theme)
     }
 }
 
@@ -1403,7 +1403,7 @@ pub fn checkbox_only() -> Checkbox {
 /// (§3.8), and that is a bug, not a design choice.
 ///
 /// ```
-/// # use silka_widgets::checkbox_only;
+/// # use silka_widgets::checkbox_only_in;
 /// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
 /// checkbox_only_in(&t).label("Pilih semua").checked(true);

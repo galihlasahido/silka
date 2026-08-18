@@ -212,7 +212,7 @@ impl core::fmt::Debug for ToastAction {
 ///     .description("INV-2026-0184 to Ada Lovelace")
 ///     .duration(Duration::from_secs(6));
 ///
-/// assert_eq!(t.id(), 7);
+/// assert_eq!(t.id_value(), 7);
 /// assert_eq!(t.summary(), "Invoice sent. INV-2026-0184 to Ada Lovelace");
 /// ```
 #[derive(Debug, Clone, PartialEq)]

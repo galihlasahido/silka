@@ -30,8 +30,8 @@ use silka_core::view::{column, View};
 use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
-use silka_widgets::tabs::{tab, tabs_in, TabsVariant};
-use silka_widgets::{text_in, Fonts};
+use silka_widgets::tabs::{tab, tabs, TabsVariant};
+use silka_widgets::{active_fonts, text};
 
 /// The page title.
 pub const JUDUL: &str = "Tabs";
@@ -53,17 +53,17 @@ pub const PANEL: [&str; 3] = [
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let terpilih = use_signal(|| 0usize);
 
     column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 // Negative tracking at large sizes — an SF habit (§3.6).
@@ -72,8 +72,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Tiga varian, satu mesin, dan satu signal yang sama untuk \
                  ketiganya. Klik, atau Tab lalu ←/→: indikatornya meluncur \
                  lewat spring yang bisa di-retarget di tengah jalan.",
@@ -83,8 +82,8 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(120.0)),
         ),
-        deretan(fonts, terpilih),
-        panel(fonts, terpilih),
+        deretan(terpilih),
+        panel(terpilih),
     ])
     .spacing(t.space(6.0))
     .main(MainAlign::Center)
@@ -97,35 +96,30 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 ///
 /// This is the only place the selection is read alongside its tabs, so a click
 /// rebuilds just this section and its panel — not the whole page (§2.5).
-fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
-    let fonts = fonts.clone();
+fn deretan(terpilih: Signal<usize>) -> View {
     component("deretan-tab", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let aktif = terpilih.get();
 
-        let segmented = tabs_in(&fonts, &t, SEGMENTED.map(tab))
+        let segmented = tabs(SEGMENTED.map(tab))
             .variant(TabsVariant::Segmented)
             .selected(aktif)
             .label("Rentang waktu")
             .on_select(move |i| terpilih.set(i));
 
-        let underline = tabs_in(
-            &fonts,
-            &t,
-            [
-                tab(UNDERLINE[0]),
-                tab(UNDERLINE[1]),
-                // A disabled tab: skipped by the arrows, not clickable, still
-                // announced by a screen reader as dimmed.
-                tab(UNDERLINE[2]).disabled(true),
-            ],
-        )
+        let underline = tabs([
+            tab(UNDERLINE[0]),
+            tab(UNDERLINE[1]),
+            // A disabled tab: skipped by the arrows, not clickable, still
+            // announced by a screen reader as dimmed.
+            tab(UNDERLINE[2]).disabled(true),
+        ])
         .variant(TabsVariant::Underline)
         .selected(aktif)
         .label("Tampilan laporan")
         .on_select(move |i| terpilih.set(i));
 
-        let enclosed = tabs_in(&fonts, &t, ENCLOSED.map(tab))
+        let enclosed = tabs(ENCLOSED.map(tab))
             .variant(TabsVariant::Enclosed)
             .selected(aktif)
             .label("Sumber")
@@ -146,12 +140,11 @@ fn deretan(fonts: &Fonts, terpilih: Signal<usize>) -> View {
 ///
 /// Only the active panel is built: the others are not in the tree, so there is
 /// nothing to hide from focus or from a screen reader.
-fn panel(fonts: &Fonts, terpilih: Signal<usize>) -> View {
-    let fonts = fonts.clone();
+fn panel(terpilih: Signal<usize>) -> View {
     component("panel-tab", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let isi = PANEL[terpilih.get().min(PANEL.len() - 1)];
-        text_in(&fonts, isi)
+        text(isi)
             .size(t.typography.body_size)
             .color(t.color.secondary_label)
             .single_line()
@@ -176,15 +169,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(900.0, 700.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// One complete frame, animation tick included — the same order as the
@@ -232,8 +219,7 @@ mod tests {
 
     #[test]
     fn ketiga_deretan_tampil_lengkap_dan_memenuhi_hig() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let pohon = ui.access_tree();
@@ -279,8 +265,7 @@ mod tests {
 
     #[test]
     fn klik_satu_deretan_memindahkan_ketiganya_dan_menukar_panel() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
 
         let p = kotak(&ui, UNDERLINE[1]).center();
@@ -297,8 +282,7 @@ mod tests {
 
     #[test]
     fn tab_yang_dimatikan_tidak_memindahkan_apa_pun() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let p = kotak(&ui, UNDERLINE[2]).center();
@@ -309,8 +293,7 @@ mod tests {
 
     #[test]
     fn keyboard_saja_cukup_untuk_memakai_halaman_ini() {
-        let f = fonts();
-        let mut ui = ui(Theme::tailwind(Appearance::Light), &f);
+        let mut ui = ui(Theme::tailwind(Appearance::Light));
         ui.frame();
 
         // The first Tab enters the first row — a single stop for the whole
@@ -343,8 +326,7 @@ mod tests {
 
     #[test]
     fn indikator_beranimasi_lalu_gpu_kembali_tidur() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         let mut waktu = Instant::now();
         frame(&mut ui, waktu);
 
@@ -378,8 +360,7 @@ mod tests {
         for preset in Preset::ALL {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let f = fonts();
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
 

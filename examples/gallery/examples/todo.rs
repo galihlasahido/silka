@@ -25,8 +25,8 @@ use silka_paint::Insets;
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, Theme};
 use silka_widgets::{
-    advance, button_in, button_variant_in, checkbox_in, list_in, spacer, tab, tabs_in,
-    text_field_in, text_in, use_list_state, ButtonVariant, Fonts,
+    active_fonts, advance, button, button_variant, checkbox, list, spacer, tab, tabs, text,
+    text_field, use_list_state, ButtonVariant, Fonts,
 };
 
 const TITLE: &str = "Todo";
@@ -120,11 +120,11 @@ fn seed() -> Vec<Task> {
 // --- the view ---------------------------------------------------------------
 
 /// The whole application — this is what `run_app_with` is handed.
-fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
+fn app(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution; the logical sizes here
     // do not change with it (§3.3).
-    fonts.set_scale_factor(cx.expect_env::<Signal<ScaleFactor>>().get().get());
+    active_fonts().set_scale_factor(cx.expect_env::<Signal<ScaleFactor>>().get().get());
 
     let tasks = use_signal(seed);
     let draft = use_signal(String::new);
@@ -132,15 +132,15 @@ fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     column([
         View::from(
-            text_in(fonts, TITLE)
+            text(TITLE)
                 .font(FontToken::Title1)
                 .text_color(ColorToken::Label)
                 .single_line(),
         ),
-        composer(fonts, &t, tasks, draft),
-        filters(fonts, &t, filter),
-        rows(fonts, &t, tasks, filter),
-        footer(fonts, &t, tasks),
+        composer(&t, tasks, draft),
+        filters(&t, filter),
+        rows(&t, tasks, filter),
+        footer(&t, tasks),
     ])
     .spacing(t.space(4.0))
     .cross(CrossAlign::Center)
@@ -150,8 +150,8 @@ fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
 
 /// The field plus the add button — its own component because it is the only
 /// place `draft` is read, and a keystroke must not rebuild the list.
-fn composer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, draft: Signal<String>) -> View {
-    let (fonts, theme) = (fonts.clone(), *t);
+fn composer(t: &Theme, tasks: Signal<Vec<Task>>, draft: Signal<String>) -> View {
+    let theme = *t;
     component("composer", move |_| {
         let commit = move || {
             if tasks.update(|list| add(list, &draft.peek())) {
@@ -161,14 +161,14 @@ fn composer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, draft: Signal<St
         row([
             View::from(constrained(
                 BoxConstraints::new(theme.space(80.0), theme.space(80.0), 0.0, f32::INFINITY),
-                text_field_in(&fonts, &theme, draft.get())
+                text_field(draft.get())
                     .key("draft")
                     .label(FIELD_NAME)
                     .placeholder("What needs doing?")
                     .on_change(move |s| draft.set(s.to_string()))
                     .on_submit(move |_| commit()),
             )),
-            View::from(button_in(&fonts, &theme, ADD).on_press(commit)),
+            View::from(button(ADD).on_press(commit)),
         ])
         .spacing(theme.space(2.0))
         .cross(CrossAlign::Center)
@@ -177,10 +177,9 @@ fn composer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, draft: Signal<St
 }
 
 /// The All / Open / Finished segmented control.
-fn filters(fonts: &Fonts, t: &Theme, filter: Signal<Filter>) -> View {
-    let (fonts, theme) = (fonts.clone(), *t);
+fn filters(_t: &Theme, filter: Signal<Filter>) -> View {
     component("filters", move |_| {
-        tabs_in(&fonts, &theme, Filter::ALL.map(|f| tab(f.title())))
+        tabs(Filter::ALL.map(|f| tab(f.title())))
             .segmented()
             .label("Filter")
             .selected(filter.get().index())
@@ -191,20 +190,19 @@ fn filters(fonts: &Fonts, t: &Theme, filter: Signal<Filter>) -> View {
 
 /// The list — virtualized, so this scales past the three seeded rows without a
 /// second code path.
-fn rows(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, filter: Signal<Filter>) -> View {
-    let (fonts, theme) = (fonts.clone(), *t);
+fn rows(t: &Theme, tasks: Signal<Vec<Task>>, filter: Signal<Filter>) -> View {
+    let theme = *t;
     component("rows", move |_| {
         let state = use_list_state();
         // Reading both signals here is what makes ticking a box or switching
         // the filter rebuild exactly this component (§2.5).
         let shown = Rc::new(tasks.with(|list| visible(list, filter.get())));
-        let (for_row, for_empty) = (fonts.clone(), fonts.clone());
         let side = theme.space(WIDTH_STEPS);
 
         constrained(
             BoxConstraints::new(side, side, theme.space(LIST_STEPS), theme.space(LIST_STEPS)),
-            list_in(&theme, state, shown.len(), move |i| {
-                task_row(&for_row, &theme, tasks, shown[i])
+            list(state, shown.len(), move |i| {
+                task_row(&theme, tasks, shown[i])
             })
             .item_extent(ROW_EXTENT)
             .separators(theme.space(0.25))
@@ -213,7 +211,7 @@ fn rows(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, filter: Signal<Filte
             .corners(theme.corners(theme.radius.lg))
             .border(theme.space(0.25), theme.color.separator)
             .empty(move || {
-                text_in(&for_empty, "Nothing here")
+                text("Nothing here")
                     .text_color(ColorToken::TertiaryLabel)
                     .single_line()
                     .into()
@@ -226,18 +224,18 @@ fn rows(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, filter: Signal<Filte
 /// One row: a checkbox whose label is the task, and a delete button. The
 /// expanded spacer is what puts the button at the trailing edge — no
 /// coordinate is written here (§3.4).
-fn task_row(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, i: usize) -> View {
+fn task_row(t: &Theme, tasks: Signal<Vec<Task>>, i: usize) -> View {
     let (title, done) = tasks.with(|list| (list[i].title.clone(), list[i].done));
     row([
         View::from(
-            checkbox_in(fonts, t, title)
+            checkbox(title)
                 .key(format!("done-{i}"))
                 .checked(done)
                 .on_toggle(move |on| tasks.update(|list| list[i].done = on)),
         ),
         View::from(spacer()),
         View::from(
-            button_variant_in(fonts, t, DELETE, ButtonVariant::Ghost)
+            button_variant(DELETE, ButtonVariant::Ghost)
                 .key(format!("delete-{i}"))
                 .on_press(move || {
                     tasks.update(|list| {
@@ -253,18 +251,18 @@ fn task_row(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>, i: usize) -> Vie
 }
 
 /// The count plus the "clear finished" button.
-fn footer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>) -> View {
-    let (fonts, theme) = (fonts.clone(), *t);
+fn footer(t: &Theme, tasks: Signal<Vec<Task>>) -> View {
+    let theme = *t;
     component("footer", move |_| {
         let (line, any_done) = tasks.with(|l| (summary(l), l.iter().any(|t| t.done)));
         row([
             View::from(
-                text_in(&fonts, line)
+                text(line)
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),
             ),
             View::from(
-                button_variant_in(&fonts, &theme, CLEAR_DONE, ButtonVariant::Link)
+                button_variant(CLEAR_DONE, ButtonVariant::Link)
                     .disabled(!any_done)
                     .on_press(move || tasks.update(|list| list.retain(|t| !t.done))),
             ),
@@ -278,9 +276,10 @@ fn footer(fonts: &Fonts, t: &Theme, tasks: Signal<Vec<Task>>) -> View {
 #[cfg_attr(test, allow(dead_code))]
 fn main() -> Result<(), PlatformError> {
     // One text engine for the whole application: scanning system fonts is
-    // expensive and the glyph atlas must be shared (§3.3).
+    // expensive and the glyph atlas must be shared (§3.3). Installed here, once,
+    // it is what every `text("…")` in this file resolves against (§2.5).
     let fonts = Fonts::new();
-    let for_view = fonts.clone();
+    silka_widgets::install_fonts(&fonts);
     run_app_with(
         window(TITLE)
             .size(560.0, 680.0)
@@ -290,7 +289,7 @@ fn main() -> Result<(), PlatformError> {
             // Without this the `GlyphRun` commands carry no bitmaps and the
             // window renders blank — the atlas is what crosses to the GPU.
             .glyphs(fonts.shared()),
-        move |cx| app(cx, &for_view),
+        move |cx| app(cx),
         // One tick for every spring in the tree, once per frame (§3.5).
         advance,
     )
@@ -327,12 +326,8 @@ mod tests {
     /// — the a11y tree is the contract, so it is what the test reads (§3.8).
     #[test]
     fn the_app_builds_and_announces_its_parts() {
-        let fonts = Fonts::bundled_only();
-        let for_view = fonts.clone();
-        let mut ui = headless_app(Theme::cupertino(Appearance::Dark), move |cx| {
-            app(cx, &for_view)
-        })
-        .sized(640.0, 720.0);
+        let mut ui =
+            headless_app(Theme::cupertino(Appearance::Dark), move |cx| app(cx)).sized(640.0, 720.0);
         ui.frame();
 
         let tree = ui.access_tree();

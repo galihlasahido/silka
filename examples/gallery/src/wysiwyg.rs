@@ -35,10 +35,10 @@ use silka_paint::Insets;
 use silka_text::FontWeight;
 use silka_theme::Theme;
 use silka_widgets::wysiwyg::{
-    decode, link_dialog_in, toolbar_in, wysiwyg_in, Block, BlockKind, Document, EditorCommand,
-    EditorHandle, EditorSnapshot, InlineStyle, Marks, Span,
+    decode, link_dialog, toolbar, wysiwyg, Block, BlockKind, Document, EditorCommand, EditorHandle,
+    EditorSnapshot, InlineStyle, Marks, Span,
 };
-use silka_widgets::{overlay_layer, text_in, Fonts, SelectState};
+use silka_widgets::{active_fonts, overlay_layer, text, SelectState};
 
 /// The page title.
 pub const JUDUL: &str = "WYSIWYG editor";
@@ -84,11 +84,11 @@ pub fn naskah_awal() -> Document {
 }
 
 /// The view tree for the whole page.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
 
     let naskah = use_signal(naskah_awal);
     let keadaan = use_signal(EditorSnapshot::default);
@@ -105,13 +105,13 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
     // button posted in the frame before it.
     let saluran = use_signal(EditorHandle::new).get();
 
-    let bar = toolbar_in(fonts, &t, saluran.clone(), &keadaan.get())
+    let bar = toolbar(saluran.clone(), &keadaan.get())
         .block_state(blok)
         .on_link(move || {
             tautan_url.set(keadaan.get().link.unwrap_or_default());
             tautan_terbuka.set(true);
         });
-    let dialog = link_dialog_in(fonts, &t, saluran.clone(), tautan_url.get())
+    let dialog = link_dialog(saluran.clone(), tautan_url.get())
         .open(tautan_terbuka.get())
         .text(keadaan.get().selected_text)
         .on_url(move |s| tautan_url.set(s.to_string()))
@@ -119,7 +119,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     let isi = column([
         View::from(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .size(t.typography.title2.size)
                 .weight(FontWeight::SEMIBOLD)
                 .tracking(t.typography.title2.tracking)
@@ -127,8 +127,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 .single_line(),
         ),
         View::from(
-            text_in(
-                fonts,
+            text(
                 "Pilih sebagian kata lalu ⌘B: rentang gayanya terpecah tepat di \
                  situ. Tekan ⌘Z setelah menghapus seleksi lintas blok — judul \
                  kembali jadi judul, poin kembali jadi poin. ⌘K menyisipkan \
@@ -141,7 +140,6 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         ),
         View::from(bar.view()),
         editor(
-            fonts,
             &t,
             Kabel {
                 naskah,
@@ -152,7 +150,7 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
                 saluran,
             },
         ),
-        gema(fonts, keadaan, naskah),
+        gema(keadaan, naskah),
     ])
     .spacing(t.space(3.0))
     .main(MainAlign::Start)
@@ -187,8 +185,7 @@ struct Kabel {
 /// Its own component so that writing `naskah` rebuilds this subtree and nothing
 /// else — which is exactly why the node the user is typing into is never
 /// rebuilt out from under them (§2.5).
-fn editor(fonts: &Fonts, t: &Theme, kabel: Kabel) -> View {
-    let fonts = fonts.clone();
+fn editor(t: &Theme, kabel: Kabel) -> View {
     let theme = *t;
     let Kabel {
         naskah,
@@ -201,7 +198,7 @@ fn editor(fonts: &Fonts, t: &Theme, kabel: Kabel) -> View {
     component("editor-wysiwyg", move |cx| {
         let t: Theme = cx.env::<Signal<Theme>>().map(|s| s.get()).unwrap_or(theme);
         let tempel = saluran.clone();
-        let e = wysiwyg_in(&fonts, &t, naskah.get())
+        let e = wysiwyg(naskah.get())
             .key("naskah")
             .handle(saluran.clone())
             .label(NASKAH)
@@ -239,8 +236,7 @@ fn editor(fonts: &Fonts, t: &Theme, kabel: Kabel) -> View {
 /// The status row below the editor — the only place the document is read for
 /// display, which makes it living proof that an IME preedit has not yet reached
 /// the application.
-fn gema(fonts: &Fonts, keadaan: Signal<EditorSnapshot>, naskah: Signal<Document>) -> View {
-    let fonts = fonts.clone();
+fn gema(keadaan: Signal<EditorSnapshot>, naskah: Signal<Document>) -> View {
     component("gema-wysiwyg", move |cx| {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let d = naskah.get();
@@ -265,7 +261,7 @@ fn gema(fonts: &Fonts, keadaan: Signal<EditorSnapshot>, naskah: Signal<Document>
             "{blok} blok · {huruf} karakter · caret di {jenis} · gaya: {gaya}{}",
             if s.can_undo { " · ⌘Z tersedia" } else { "" }
         );
-        text_in(&fonts, teks)
+        text(teks)
             .size(t.typography.footnote.size)
             .color(t.color.secondary_label)
             .single_line()
@@ -289,15 +285,9 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1000.0, 800.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
     /// A headless app assembled **exactly the way `run_app_with` does it**.
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height)
+    fn ui(theme: Theme) -> AppRuntime {
+        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     fn frame(ui: &mut AppRuntime, waktu: Instant) {
@@ -367,8 +357,7 @@ mod tests {
 
     #[test]
     fn halaman_menampilkan_editor_multiline_yang_bisa_dibacakan() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
 
         let pohon = ui.access_tree();
@@ -384,8 +373,7 @@ mod tests {
 
     #[test]
     fn menebalkan_sebagian_seleksi_terlihat_di_toolbar_dan_di_dokumen() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, NASKAH).center();
         klik(&mut ui, titik);
@@ -419,8 +407,7 @@ mod tests {
 
     #[test]
     fn undo_mengembalikan_struktur_blok() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
         let titik = kotak(&ui, NASKAH).center();
         klik(&mut ui, titik);
@@ -447,8 +434,7 @@ mod tests {
 
     #[test]
     fn preedit_ime_belum_sampai_ke_aplikasi_sampai_commit() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         ui.frame();
         let titik = kotak(&ui, NASKAH).center();
         klik(&mut ui, titik);
@@ -470,8 +456,7 @@ mod tests {
 
     #[test]
     fn halaman_kembali_diam_setelah_transisi_fokus() {
-        let f = fonts();
-        let mut ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let mut ui = ui(Theme::cupertino(Appearance::Dark));
         let mut jam = Instant::now();
         frame(&mut ui, jam);
         let titik = kotak(&ui, NASKAH).center();
@@ -490,11 +475,10 @@ mod tests {
 
     #[test]
     fn latar_halaman_selalu_token_background_di_kedua_preset() {
-        let f = fonts();
         for preset in [Preset::Cupertino, Preset::Tailwind] {
             for appearance in [Appearance::Light, Appearance::Dark] {
                 let t = Theme::new(preset, appearance);
-                let mut ui = ui(t, &f);
+                let mut ui = ui(t);
                 ui.frame();
                 assert_eq!(ui.scene().clear_color(), t.color.background);
             }

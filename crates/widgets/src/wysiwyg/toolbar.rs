@@ -65,7 +65,7 @@ pub fn toolbar(handle: EditorHandle, state: &EditorSnapshot) -> Toolbar {
 /// ```
 /// # use silka_core::signals::Runtime;
 /// # use silka_theme::{Appearance, Theme};
-/// # use silka_widgets::wysiwyg::{toolbar, EditorHandle, EditorSnapshot};
+/// # use silka_widgets::wysiwyg::{toolbar_in, EditorHandle, EditorSnapshot};
 /// # use silka_widgets::Fonts;
 /// # let rt = Runtime::new();
 /// # let fonts = Fonts::bundled_only();

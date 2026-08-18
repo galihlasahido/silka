@@ -28,8 +28,8 @@ use silka_core::view::{constrained, div, fixed, row, View};
 use silka_paint::ImageId;
 use silka_theme::{ColorToken, FontToken, RadiusToken, SpaceToken, Theme};
 use silka_widgets::{
-    active_images, align, aspect_ratio, center, divider_in, icon_in, image_in, spacer, stack,
-    text_in, Alignment, Fonts, IconName, Images, ASPECT_16_9, ASPECT_4_3, ASPECT_SQUARE,
+    active_fonts, active_images, align, aspect_ratio, center, divider, icon, image, spacer, stack,
+    text, Alignment, IconName, ASPECT_16_9, ASPECT_4_3, ASPECT_SQUARE,
 };
 
 /// The page title.
@@ -84,22 +84,26 @@ fn spesimen_alpha() -> Vec<u8> {
 }
 
 /// The specimen's handle, inserting it on first use.
-fn spesimen(images: &Images) -> Option<ImageId> {
+fn spesimen() -> Option<ImageId> {
     SPESIMEN.with(|slot| {
         if let Some(id) = *slot.borrow() {
             return Some(id);
         }
-        let id = images.insert_mask(SPESIMEN_W, SPESIMEN_H, &spesimen_alpha())?;
+        let id = silka_widgets::active_images().insert_mask(
+            SPESIMEN_W,
+            SPESIMEN_H,
+            &spesimen_alpha(),
+        )?;
         *slot.borrow_mut() = Some(id);
         Some(id)
     })
 }
 
 /// The view tree for the whole page.
-pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
+pub fn halaman(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
-    fonts.set_scale_factor(dpi.get());
+    active_fonts().set_scale_factor(dpi.get());
     let images = active_images();
     images.set_scale_factor(dpi.get());
 
@@ -108,15 +112,14 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
         .gap_6()
         .p_8()
         .child(
-            text_in(fonts, JUDUL)
+            text(JUDUL)
                 .font(FontToken::Title2)
                 .font_semibold()
                 .text_color(ColorToken::Label)
                 .single_line(),
         )
         .child(
-            text_in(
-                fonts,
+            text(
                 "Tujuh komponen paling dasar di katalog, dan yang paling akhir \
                  ditulis. Sebelum ada, galeri dan dashboard sama-sama merakit \
                  garis pemisah dari kotak kosong ber-constraint dan celah dari \
@@ -127,24 +130,24 @@ pub fn halaman(cx: &BuildCtx, fonts: &Fonts) -> View {
             .text_color(ColorToken::SecondaryLabel)
             .max_width(t.space(LEBAR_LANGKAH)),
         )
-        .child(judul_bagian(fonts, "Spacer & divider"))
-        .child(bagian_pemisah(fonts, &t))
-        .child(judul_bagian(fonts, "Stack (sumbu z)"))
-        .child(bagian_stack(fonts, &t))
-        .child(judul_bagian(fonts, "Align & center"))
-        .child(bagian_align(fonts, &t))
-        .child(judul_bagian(fonts, "Aspect ratio"))
-        .child(bagian_rasio(fonts, &t))
-        .child(judul_bagian(fonts, "Icon"))
-        .child(bagian_ikon(fonts, &t, &images))
-        .child(judul_bagian(fonts, "Image — fit mode & rounded clip"))
-        .child(bagian_gambar(fonts, &t, &images))
+        .child(judul_bagian("Spacer & divider"))
+        .child(bagian_pemisah(&t))
+        .child(judul_bagian("Stack (sumbu z)"))
+        .child(bagian_stack(&t))
+        .child(judul_bagian("Align & center"))
+        .child(bagian_align(&t))
+        .child(judul_bagian("Aspect ratio"))
+        .child(bagian_rasio(&t))
+        .child(judul_bagian("Icon"))
+        .child(bagian_ikon(&t))
+        .child(judul_bagian("Image — fit mode & rounded clip"))
+        .child(bagian_gambar(&t))
         .into()
 }
 
 /// A section heading.
-fn judul_bagian(fonts: &Fonts, judul: &str) -> View {
-    text_in(fonts, judul)
+fn judul_bagian(judul: &str) -> View {
+    text(judul)
         .font(FontToken::Caption1)
         .font_semibold()
         .text_color(ColorToken::TertiaryLabel)
@@ -153,8 +156,8 @@ fn judul_bagian(fonts: &Fonts, judul: &str) -> View {
 }
 
 /// A small caption under a specimen.
-fn keterangan(fonts: &Fonts, teks: &str) -> View {
-    text_in(fonts, teks)
+fn keterangan(teks: &str) -> View {
+    text(teks)
         .text_xs()
         .text_color(ColorToken::TertiaryLabel)
         .single_line()
@@ -162,12 +165,12 @@ fn keterangan(fonts: &Fonts, teks: &str) -> View {
 }
 
 /// A specimen with its caption underneath.
-fn spesimen_kolom(fonts: &Fonts, isi: View, caption: &str) -> View {
+fn spesimen_kolom(isi: View, caption: &str) -> View {
     div()
         .items_start()
         .gap_1()
         .child(isi)
-        .child(keterangan(fonts, caption))
+        .child(keterangan(caption))
         .into()
 }
 
@@ -176,10 +179,10 @@ fn spesimen_kolom(fonts: &Fonts, isi: View, caption: &str) -> View {
 // ---------------------------------------------------------------------------
 
 /// A card whose header is pushed apart by a spacer and separated by a divider.
-fn bagian_pemisah(fonts: &Fonts, t: &Theme) -> View {
+fn bagian_pemisah(t: &Theme) -> View {
     let judul_baris = |kiri: &str, kanan: &str| -> View {
         row([
-            text_in(fonts, kiri)
+            text(kiri)
                 .text_base()
                 .text_color(ColorToken::Label)
                 .single_line()
@@ -187,7 +190,7 @@ fn bagian_pemisah(fonts: &Fonts, t: &Theme) -> View {
             // The whole reason `spacer()` exists: the gap belongs to the layout
             // engine, and there is no number here to get wrong.
             View::from(spacer()),
-            text_in(fonts, kanan)
+            text(kanan)
                 .text_sm()
                 .text_color(ColorToken::SecondaryLabel)
                 .single_line()
@@ -208,19 +211,19 @@ fn bagian_pemisah(fonts: &Fonts, t: &Theme) -> View {
         .child(judul_baris("Pinjaman aktif", "128"))
         // A named divider: the one case where a separator earns a name, because
         // it genuinely opens a section.
-        .child(divider_in(t).label(NAMA_PEMISAH))
+        .child(divider().label(NAMA_PEMISAH))
         .child(judul_baris("Menunggu akad", "12"))
         // …and an inset one, the shape a list separator takes when it lines up
         // with the row's text. The inset is reading-relative, so it mirrors.
-        .child(divider_in(t).inset_start(SpaceToken::S4))
+        .child(divider().inset_start(SpaceToken::S4))
         .child(judul_baris("Ditolak", "3"))
-        .child(divider_in(t).inset(SpaceToken::S4))
+        .child(divider().inset(SpaceToken::S4))
         .child(judul_baris("Lunas", "1.204"));
 
     let vertikal = row([
-        View::from(keterangan(fonts, "kiri")),
-        divider_in(t).vertical().into(),
-        View::from(keterangan(fonts, "kanan")),
+        View::from(keterangan("kiri")),
+        divider().vertical().into(),
+        View::from(keterangan("kanan")),
     ])
     .gap_3()
     .cross(CrossAlign::Stretch);
@@ -238,7 +241,6 @@ fn bagian_pemisah(fonts: &Fonts, t: &Theme) -> View {
             kartu,
         ))
         .child(spesimen_kolom(
-            fonts,
             constrained(
                 BoxConstraints::new(0.0, f32::INFINITY, t.space(8.0), t.space(8.0)),
                 vertikal,
@@ -254,7 +256,7 @@ fn bagian_pemisah(fonts: &Fonts, t: &Theme) -> View {
 // ---------------------------------------------------------------------------
 
 /// A tile with a count badge pinned to one corner — the canonical stack.
-fn bagian_stack(fonts: &Fonts, t: &Theme) -> View {
+fn bagian_stack(t: &Theme) -> View {
     let ubin = |alignment: Alignment, caption: &str| -> View {
         let dasar = div()
             .items_center()
@@ -264,7 +266,7 @@ fn bagian_stack(fonts: &Fonts, t: &Theme) -> View {
             .border_1()
             .border_color(ColorToken::Separator)
             .child(
-                text_in(fonts, "Inbox")
+                text("Inbox")
                     .text_sm()
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),
@@ -278,7 +280,7 @@ fn bagian_stack(fonts: &Fonts, t: &Theme) -> View {
             .bg(ColorToken::Accent)
             .rounded_full()
             .child(
-                text_in(fonts, "9+")
+                text("9+")
                     .text_xs()
                     .font_semibold()
                     .text_color(ColorToken::OnAccent)
@@ -286,7 +288,6 @@ fn bagian_stack(fonts: &Fonts, t: &Theme) -> View {
             );
 
         spesimen_kolom(
-            fonts,
             constrained(
                 BoxConstraints::new(t.space(22.0), t.space(22.0), t.space(14.0), t.space(14.0)),
                 // `expand()` hands the whole box to **both** children: the tile
@@ -320,13 +321,12 @@ fn bagian_stack(fonts: &Fonts, t: &Theme) -> View {
 // ---------------------------------------------------------------------------
 
 /// One box positioned inside a bigger one, nine ways.
-fn bagian_align(fonts: &Fonts, t: &Theme) -> View {
+fn bagian_align(t: &Theme) -> View {
     let sel = |alignment: Alignment, caption: &str| -> View {
         let titik = fixed(t.space(3.0), t.space(3.0))
             .bg(ColorToken::Accent)
             .rounded_sm();
         spesimen_kolom(
-            fonts,
             constrained(
                 BoxConstraints::new(t.space(16.0), t.space(16.0), t.space(11.0), t.space(11.0)),
                 align(titik)
@@ -341,11 +341,10 @@ fn bagian_align(fonts: &Fonts, t: &Theme) -> View {
 
     // `center(x)` is `align(x)` at its default — the name is the documentation.
     let tengah = spesimen_kolom(
-        fonts,
         constrained(
             BoxConstraints::new(t.space(16.0), t.space(16.0), t.space(11.0), t.space(11.0)),
             center(
-                text_in(fonts, "center()")
+                text("center()")
                     .text_xs()
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line(),
@@ -374,10 +373,9 @@ fn bagian_align(fonts: &Fonts, t: &Theme) -> View {
 // ---------------------------------------------------------------------------
 
 /// Three frames of the same width and three different shapes.
-fn bagian_rasio(fonts: &Fonts, t: &Theme) -> View {
+fn bagian_rasio(t: &Theme) -> View {
     let bingkai = |ratio: f32, caption: &str| -> View {
         spesimen_kolom(
-            fonts,
             constrained(
                 BoxConstraints::new(t.space(24.0), t.space(24.0), 0.0, f32::INFINITY),
                 aspect_ratio(
@@ -409,7 +407,7 @@ fn bagian_rasio(fonts: &Fonts, t: &Theme) -> View {
 // ---------------------------------------------------------------------------
 
 /// The whole built-in set, plus the proof that one bitmap serves every colour.
-fn bagian_ikon(fonts: &Fonts, t: &Theme, images: &Images) -> View {
+fn bagian_ikon(_t: &Theme) -> View {
     let semua = div()
         .flex()
         .wrap()
@@ -420,8 +418,8 @@ fn bagian_ikon(fonts: &Fonts, t: &Theme, images: &Images) -> View {
                 div()
                     .items_center()
                     .gap_1()
-                    .child(icon_in(images, t, name).md().color(ColorToken::Label))
-                    .child(keterangan(fonts, name.name())),
+                    .child(icon(name).md().color(ColorToken::Label))
+                    .child(keterangan(name.name())),
             )
         }));
 
@@ -433,7 +431,7 @@ fn bagian_ikon(fonts: &Fonts, t: &Theme, images: &Images) -> View {
         ColorToken::Accent,
         ColorToken::Destructive,
     ]
-    .map(|token| View::from(icon_in(images, t, IconName::ChevronRight).lg().color(token))))
+    .map(|token| View::from(icon(IconName::ChevronRight).lg().color(token))))
     .gap_2()
     .cross(CrossAlign::Center);
 
@@ -442,7 +440,6 @@ fn bagian_ikon(fonts: &Fonts, t: &Theme, images: &Images) -> View {
         .gap_4()
         .child(semua)
         .child(spesimen_kolom(
-            fonts,
             warna.into(),
             "satu bitmap, empat token warna",
         ))
@@ -454,15 +451,14 @@ fn bagian_ikon(fonts: &Fonts, t: &Theme, images: &Images) -> View {
 // ---------------------------------------------------------------------------
 
 /// The same 2:1 specimen in four fits, inside one square box.
-fn bagian_gambar(fonts: &Fonts, t: &Theme, images: &Images) -> View {
-    let Some(id) = spesimen(images) else {
-        return keterangan(fonts, "atlas gambar penuh — spesimen tidak masuk");
+fn bagian_gambar(t: &Theme) -> View {
+    let Some(id) = spesimen() else {
+        return keterangan("atlas gambar penuh — spesimen tidak masuk");
     };
 
     let sisi = t.space(18.0);
     let kotak = |isi: View, caption: &str| -> View {
         spesimen_kolom(
-            fonts,
             constrained(
                 BoxConstraints::new(sisi, sisi, sisi, sisi),
                 // A stack in `expand()` mode is the honest square frame here: the
@@ -480,7 +476,7 @@ fn bagian_gambar(fonts: &Fonts, t: &Theme, images: &Images) -> View {
 
     row([
         kotak(
-            image_in(images, id)
+            image(id)
                 .theme(t)
                 .contain()
                 .expand()
@@ -490,7 +486,7 @@ fn bagian_gambar(fonts: &Fonts, t: &Theme, images: &Images) -> View {
             "contain",
         ),
         kotak(
-            image_in(images, id)
+            image(id)
                 .theme(t)
                 .cover()
                 .expand()
@@ -499,7 +495,7 @@ fn bagian_gambar(fonts: &Fonts, t: &Theme, images: &Images) -> View {
             "cover",
         ),
         kotak(
-            image_in(images, id)
+            image(id)
                 .theme(t)
                 .fill()
                 .expand()
@@ -508,7 +504,7 @@ fn bagian_gambar(fonts: &Fonts, t: &Theme, images: &Images) -> View {
             "fill",
         ),
         kotak(
-            image_in(images, id)
+            image(id)
                 .theme(t)
                 .cover()
                 .expand()
@@ -534,21 +530,16 @@ mod tests {
 
     const VIEWPORT: Size = Size::new(1100.0, 1400.0);
 
-    fn fonts() -> Fonts {
-        Fonts::bundled_only()
-    }
-
-    fn ui(theme: Theme, fonts: &Fonts) -> AppRuntime {
-        let untuk_view = fonts.clone();
-        let mut ui = headless_app(theme, move |cx| halaman(cx, &untuk_view))
-            .sized(VIEWPORT.width, VIEWPORT.height);
+    fn ui(theme: Theme) -> AppRuntime {
+        let mut ui =
+            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }
 
     #[test]
     fn setiap_ikon_bawaan_punya_bitmap() {
-        let images = Images::new();
+        let images = silka_widgets::Images::new();
         for name in IconName::ALL {
             assert!(
                 images.icon(name.name(), name.path(), 24.0, 20).is_some(),
@@ -560,8 +551,7 @@ mod tests {
 
     #[test]
     fn halaman_menggambar_teks_kotak_dan_gambar() {
-        let f = fonts();
-        let ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let ui = ui(Theme::cupertino(Appearance::Dark));
         let perintah = ui.scene().commands();
         assert!(
             perintah.iter().any(|c| matches!(c, Command::GlyphRun(_))),
@@ -579,8 +569,7 @@ mod tests {
 
     #[test]
     fn divider_terbaca_sebagai_separator_oleh_pembaca_layar() {
-        let f = fonts();
-        let ui = ui(Theme::cupertino(Appearance::Light), &f);
+        let ui = ui(Theme::cupertino(Appearance::Light));
         let pohon = ui.access_tree();
         let e = pohon
             .find_label(NAMA_PEMISAH)
@@ -595,8 +584,7 @@ mod tests {
 
     #[test]
     fn gambar_bernama_adalah_konten_dan_ikon_tanpa_nama_adalah_dekorasi() {
-        let f = fonts();
-        let ui = ui(Theme::cupertino(Appearance::Dark), &f);
+        let ui = ui(Theme::cupertino(Appearance::Dark));
         let pohon = ui.access_tree();
         let gambar = pohon
             .find_label(NAMA_GAMBAR)
@@ -636,11 +624,11 @@ mod tests {
     #[test]
     fn spesimen_hanya_masuk_atlas_sekali() {
         // A page function runs on every rebuild; inserting the bitmap each time
-        // would grow the atlas without limit.
-        let images = Images::new();
+        // would grow the atlas without limit — and the atlas is the ambient
+        // one, exactly as the page sees it.
         SPESIMEN.with(|s| *s.borrow_mut() = None);
-        let a = spesimen(&images).expect("masuk");
-        let b = spesimen(&images).expect("masuk");
+        let a = spesimen().expect("masuk");
+        let b = spesimen().expect("masuk");
         assert_eq!(a, b);
         SPESIMEN.with(|s| *s.borrow_mut() = None);
     }

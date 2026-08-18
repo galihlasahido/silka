@@ -332,7 +332,7 @@ where
 /// # use silka_core::signals::Runtime;
 /// # use silka_core::view::{fixed, View};
 /// # use silka_theme::{Appearance, Theme};
-/// # use silka_widgets::{col, table, Fonts, TableState};
+/// # use silka_widgets::{col, table_in, Fonts, TableState};
 /// # let rt = Runtime::new();
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::cupertino(Appearance::Dark);

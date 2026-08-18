@@ -25,8 +25,8 @@ use silka_paint::Insets;
 use silka_platform::{run_app_with, window, PlatformError};
 use silka_theme::{ColorToken, FontToken, Preset, Theme};
 use silka_widgets::{
-    advance, button_variant_in, checkbox_in, overlay_layer, select_in, slider_in, switch_in,
-    text_field_in, text_in, ButtonVariant, Fonts, Select, SelectState,
+    active_fonts, advance, button_variant, checkbox, overlay_layer, select, slider, switch, text,
+    text_field, ButtonVariant, Fonts, Select, SelectState,
 };
 
 const TITLE: &str = "Settings";
@@ -118,10 +118,10 @@ fn status(s: &Settings) -> String {
 // --- the view ---------------------------------------------------------------
 
 /// The whole window — this is what `run_app_with` is handed.
-fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
+fn app(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     // Text is rasterized at the real screen resolution (§3.3).
-    fonts.set_scale_factor(cx.expect_env::<Signal<ScaleFactor>>().get().get());
+    active_fonts().set_scale_factor(cx.expect_env::<Signal<ScaleFactor>>().get().get());
 
     let section = use_signal(Section::default);
     let settings = use_signal(Settings::default);
@@ -129,16 +129,13 @@ fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
 
     // Built at the root because its panel belongs to the overlay layer: the
     // trigger travels down into the pane, the panel travels nowhere.
-    let picker = select_in(fonts, &t, ACCENTS)
-        .label(ACCENT)
-        .key("accent")
-        .bind(accent);
+    let picker = select(ACCENTS).label(ACCENT).key("accent").bind(accent);
 
     // Switching section rebuilds this whole window, which is the honest shape:
     // a settings pane *is* a different screen, not a detail of one.
     let content = row([
-        sidebar(fonts, &t, section),
-        View::from(expanded(pane(fonts, &t, section.get(), settings, &picker))),
+        sidebar(&t, section),
+        View::from(expanded(pane(&t, section.get(), settings, &picker))),
     ])
     .cross(CrossAlign::Stretch);
 
@@ -146,11 +143,11 @@ fn app(cx: &BuildCtx, fonts: &Fonts) -> View {
 }
 
 /// The source list on the left.
-fn sidebar(fonts: &Fonts, t: &Theme, section: Signal<Section>) -> View {
+fn sidebar(t: &Theme, section: Signal<Section>) -> View {
     let items: Vec<View> = Section::ALL
         .into_iter()
         .map(|s| {
-            button_variant_in(fonts, t, s.title(), ButtonVariant::Ghost)
+            button_variant(s.title(), ButtonVariant::Ghost)
                 .key(s.title())
                 .toggled(s == section.get())
                 .on_press(move || section.set(s))
@@ -172,19 +169,13 @@ fn sidebar(fonts: &Fonts, t: &Theme, section: Signal<Section>) -> View {
 }
 
 /// The form on the right: a heading, the section's fields, and the status line.
-fn pane(
-    fonts: &Fonts,
-    t: &Theme,
-    section: Section,
-    settings: Signal<Settings>,
-    picker: &Select,
-) -> View {
+fn pane(t: &Theme, section: Section, settings: Signal<Settings>, picker: &Select) -> View {
     let s = settings.get();
     let fields: Vec<(&str, View)> = match section {
         Section::General => vec![
             (
                 "Display name",
-                text_field_in(fonts, t, s.display_name.clone())
+                text_field(s.display_name.clone())
                     .key("display-name")
                     .label("Display name")
                     .placeholder("Your name")
@@ -193,7 +184,7 @@ fn pane(
             ),
             (
                 "Startup",
-                switch_in(fonts, t, "Launch at login")
+                switch("Launch at login")
                     .key("launch")
                     .on(s.launch_at_login)
                     .on_change(move |v| settings.update(|s| s.launch_at_login = v))
@@ -201,7 +192,7 @@ fn pane(
             ),
             (
                 "Menu bar",
-                checkbox_in(fonts, t, "Show the icon")
+                checkbox("Show the icon")
                     .key("menu-bar")
                     .checked(s.menu_bar_icon)
                     .on_toggle(move |v| settings.update(|s| s.menu_bar_icon = v))
@@ -212,7 +203,7 @@ fn pane(
             (ACCENT, picker.trigger()),
             (
                 "Text size",
-                slider_in(t, s.text_size)
+                slider(s.text_size)
                     .range(11.0..=20.0)
                     .step(1.0)
                     .label("Text size")
@@ -221,7 +212,7 @@ fn pane(
             ),
             (
                 "Motion",
-                switch_in(fonts, t, "Reduce motion")
+                switch("Reduce motion")
                     .key("motion")
                     .on(s.reduce_motion)
                     .on_change(move |v| settings.update(|s| s.reduce_motion = v))
@@ -231,7 +222,7 @@ fn pane(
         Section::Network => vec![
             (
                 "Proxy",
-                switch_in(fonts, t, "Route through a proxy")
+                switch("Route through a proxy")
                     .key("proxy")
                     .on(s.use_proxy)
                     .on_change(move |v| settings.update(|s| s.use_proxy = v))
@@ -239,7 +230,7 @@ fn pane(
             ),
             (
                 "Host",
-                text_field_in(fonts, t, s.proxy_host.clone())
+                text_field(s.proxy_host.clone())
                     .key("host")
                     .label("Host")
                     .disabled(!s.use_proxy)
@@ -248,7 +239,7 @@ fn pane(
             ),
             (
                 "Port",
-                text_field_in(fonts, t, s.proxy_port.clone())
+                text_field(s.proxy_port.clone())
                     .key("port")
                     .label("Port")
                     .disabled(!s.use_proxy)
@@ -259,14 +250,14 @@ fn pane(
     };
 
     let mut rows = vec![View::from(
-        text_in(fonts, section.title())
+        text(section.title())
             .font(FontToken::Title2)
             .text_color(ColorToken::Label)
             .single_line(),
     )];
-    rows.extend(fields.into_iter().map(|(l, c)| field(fonts, t, l, c)));
+    rows.extend(fields.into_iter().map(|(l, c)| field(t, l, c)));
     rows.push(View::from(
-        text_in(fonts, status(&s))
+        text(status(&s))
             .text_color(match issues(&s).is_empty() {
                 true => ColorToken::SecondaryLabel,
                 false => ColorToken::Destructive,
@@ -284,13 +275,13 @@ fn pane(
 /// One form row: a right-aligned label, then the control. The label carries the
 /// `Container` role on purpose — the control announces its own name, and a
 /// screen reader must not hear it twice (§3.8).
-fn field(fonts: &Fonts, t: &Theme, label: &str, control: View) -> View {
+fn field(t: &Theme, label: &str, control: View) -> View {
     let (l, c) = (t.space(LABEL_STEPS), t.space(CONTROL_STEPS));
     row([
         View::from(constrained(
             BoxConstraints::new(l, l, 0.0, f32::INFINITY),
             row([View::from(
-                text_in(fonts, label)
+                text(label)
                     .text_color(ColorToken::SecondaryLabel)
                     .single_line()
                     .role(AccessRole::Container),
@@ -310,8 +301,11 @@ fn field(fonts: &Fonts, t: &Theme, label: &str, control: View) -> View {
 
 #[cfg_attr(test, allow(dead_code))]
 fn main() -> Result<(), PlatformError> {
+    // One text engine for the whole application, installed once: it is what
+    // every `text("…")` in this file resolves against (§2.5, §3.3).
     let fonts = Fonts::new();
-    let for_view = fonts.clone();
+    silka_widgets::install_fonts(&fonts);
+
     run_app_with(
         window(TITLE)
             .size(760.0, 560.0)
@@ -321,7 +315,7 @@ fn main() -> Result<(), PlatformError> {
             // Without this the `GlyphRun` commands carry no bitmaps and the
             // window renders blank — the atlas is what crosses to the GPU.
             .glyphs(fonts.shared()),
-        move |cx| app(cx, &for_view),
+        move |cx| app(cx),
         advance,
     )
 }
@@ -377,12 +371,8 @@ mod tests {
     /// tree is the contract, so it is what the test reads (§3.8).
     #[test]
     fn the_window_builds_and_announces_its_parts() {
-        let fonts = Fonts::bundled_only();
-        let for_view = fonts.clone();
-        let mut ui = headless_app(Theme::cupertino(Appearance::Dark), move |cx| {
-            app(cx, &for_view)
-        })
-        .sized(900.0, 620.0);
+        let mut ui =
+            headless_app(Theme::cupertino(Appearance::Dark), move |cx| app(cx)).sized(900.0, 620.0);
         ui.frame();
 
         let tree = ui.access_tree();

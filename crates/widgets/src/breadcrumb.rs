@@ -1447,7 +1447,9 @@ mod tests {
 
         assert_eq!(panjang.plan(), vec![Some(0), None, Some(4), Some(5)]);
         assert_eq!(panjang.visible_len(), 4);
-        assert_eq!(panjang.hidden_len(), 2);
+        // Four visible slots, but one of them is the `…`: three of the six
+        // levels are shown, so three are hidden.
+        assert_eq!(panjang.hidden_len(), 3);
         assert_eq!(panjang.hidden_levels(), vec![1, 2, 3]);
     }
 
