@@ -31,11 +31,11 @@ use silka_widgets::{active_fonts, button, button_variant, text, ButtonVariant};
 /// The increment button's name — also used by the tests to find it in the
 /// accessibility tree, so what the tests click is **exactly** what a screen
 /// reader announces (§3.8).
-pub const TOMBOL_TAMBAH: &str = "Tambah";
+pub const TOMBOL_TAMBAH: &str = "Increment";
 /// The decrement button's name.
-pub const TOMBOL_KURANG: &str = "Kurangi";
+pub const TOMBOL_KURANG: &str = "Decrement";
 /// The reset button's name.
-pub const TOMBOL_RESET: &str = "Nol";
+pub const TOMBOL_RESET: &str = "Reset";
 
 /// The page title.
 pub const JUDUL: &str = "Counter";
@@ -73,8 +73,8 @@ pub fn halaman(cx: &BuildCtx) -> View {
         )
         .child(
             text(
-                "Klik tombol di bawah: signal berubah, hanya komponen angka \
-                 yang dibangun ulang, dan angkanya benar-benar berganti di layar.",
+                "Click a button below: the signal changes, only the number \
+                 component is rebuilt, and the number really does change on screen.",
             )
             .text_base()
             .text_color(ColorToken::SecondaryLabel)

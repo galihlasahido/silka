@@ -67,12 +67,14 @@ pub enum ClipboardError {
 impl fmt::Display for ClipboardError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ClipboardError::Empty => write!(f, "clipboard kosong untuk format itu"),
-            ClipboardError::Busy => write!(f, "clipboard sedang dipegang proses lain"),
-            ClipboardError::Unsupported => write!(f, "clipboard tidak tersedia di sistem ini"),
-            ClipboardError::Conversion => write!(f, "isi clipboard gagal dikonversi"),
-            ClipboardError::Image(e) => write!(f, "gambar clipboard tidak sah: {e}"),
-            ClipboardError::Os(m) => write!(f, "clipboard gagal: {m}"),
+            ClipboardError::Empty => write!(f, "the clipboard holds nothing in that format"),
+            ClipboardError::Busy => write!(f, "another process is holding the clipboard"),
+            ClipboardError::Unsupported => write!(f, "the clipboard is unavailable on this system"),
+            ClipboardError::Conversion => {
+                write!(f, "the clipboard contents could not be converted")
+            }
+            ClipboardError::Image(e) => write!(f, "invalid clipboard image: {e}"),
+            ClipboardError::Os(m) => write!(f, "clipboard failed: {m}"),
         }
     }
 }

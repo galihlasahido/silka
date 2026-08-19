@@ -124,7 +124,7 @@ pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
     tambah(
         &mut out,
         teks,
-        "Tipografi",
+        "Typography",
         TextStyle::new()
             .size(body * 2.0)
             .weight(FontWeight::SEMIBOLD)
@@ -141,7 +141,7 @@ pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
     tambah(
         &mut out,
         teks,
-        "Inter variable, di-shape cosmic-text, dirasterisasi ke glyph atlas.",
+        "Inter variable, shaped by cosmic-text, rasterised into the glyph atlas.",
         TextStyle::new()
             .size(body * 1.15)
             .line_height(baris)
@@ -154,10 +154,11 @@ pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
     tambah(
         &mut out,
         teks,
-        "Musuh terbesar framework GUI baru bukan rendering, melainkan teks: \
-         shaping, font fallback, bidi, dan IME. Karena itu lapisan ini menumpang \
-         cosmic-text, dan yang kita tulis sendiri hanyalah atlas glyph dengan \
-         cache varian subpixel serta API measure untuk sistem layout.",
+        "The greatest enemy of a new GUI framework is not rendering but \
+         text: shaping, font fallback, bidi, and IME. That is why this layer \
+         rides on cosmic-text, and all we write ourselves is the glyph atlas \
+         with its subpixel-variant cache plus a measure API for the layout \
+         system.",
         TextStyle::new().size(body).line_height(baris),
         theme.color.label,
         theme.space(4.0),
@@ -201,7 +202,7 @@ pub fn susun(teks: &mut TextEngine, theme: &Theme, size: Size) -> Vec<Blok> {
     tambah(
         &mut out,
         teks,
-        "Angka tabular 0123456789 — dan aksen: àéîõü",
+        "Tabular figures 0123456789 — and accents: àéîõü",
         TextStyle::new().size(body).line_height(baris).single_line(),
         theme.color.secondary_label,
         0.0,
@@ -263,7 +264,7 @@ mod tests {
         let mut e = mesin();
         let t = tema();
         let blok = susun(&mut e, &t, VIEWPORT);
-        assert_eq!(blok[0].teks, "Tipografi");
+        assert_eq!(blok[0].teks, "Typography");
         assert!(blok[0].gaya.size > t.typography.body_size);
         assert!(blok[0].tinggi > blok[1].tinggi / 2.0);
     }
@@ -299,7 +300,7 @@ mod tests {
         let t = tema();
         let paragraf = susun(&mut e, &t, VIEWPORT)
             .into_iter()
-            .find(|b| b.teks.starts_with("Musuh terbesar"))
+            .find(|b| b.teks.starts_with("The greatest enemy"))
             .expect("paragraf ada");
 
         let lebar = e.measure(&paragraf.teks, &paragraf.gaya, batas_kolom(&t, VIEWPORT));

@@ -5,7 +5,7 @@
 //! | A tag **does** something, a badge **says** something | the chips here are buttons carrying a toggled state; the pills on the badge page are labels |
 //! | Interactive states on a spring | hover and press: background, border and focus ring all move, none of them cut |
 //! | Keyboard | Tab to a chip, Space toggles it; Tab again reaches its **cross**, which is its own control; Delete on the chip removes it |
-//! | The cross has its own name | a screen reader says "Hapus Mendesak", not "×" |
+//! | The cross has its own name | a screen reader says "Delete Urgent", not "×" |
 //! | Hit target ≥ 44pt | the chip's box clears the floor while the drawn pill stays small inside it |
 //! | Correct in both presets | the tone comes from [`silka_widgets::BadgeTone`], the radius from [`silka_theme::RadiusToken::Full`] |
 //!
@@ -16,7 +16,7 @@
 use silka_core::app::{component, BuildCtx};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{CrossAlign, MainAlign};
-use silka_core::view::{column, row, View};
+use silka_core::view::{row, View};
 use silka_theme::Theme;
 use silka_widgets::{button_variant, tag, BadgeTone, ButtonVariant};
 
@@ -26,19 +26,19 @@ use crate::kepala;
 pub const JUDUL: &str = "Tag";
 
 /// The paragraph under the title.
-pub const KETERANGAN: &str = "Pil yang bisa ditekan: penyaring yang menyala, \
-    dan label yang bisa dicopot. Bentuknya nyaris sama dengan badge, dan itulah \
-    jebakannya — yang membedakan bukan hiasan melainkan kontraknya: peran, \
-    tab stop, target sentuh, dan spring.";
+pub const KETERANGAN: &str = "A pill you can press: a filter that lights up, and \
+    a label you can take off. Its shape is nearly identical to a badge, and \
+    that is the trap — what separates them is not decoration but the contract: \
+    role, tab stop, touch target, and spring.";
 
 /// The filter chips, in order.
-pub const PENYARING: [&str; 4] = ["Semua", "Belum bayar", "Jatuh tempo", "Lunas"];
+pub const PENYARING: [&str; 4] = ["All", "Unpaid", "Due date", "Paid"];
 /// The removable labels the page starts with.
-pub const LABEL: [&str; 3] = ["Mendesak", "Klien lama", "Ulang tahun"];
+pub const LABEL: [&str; 3] = ["Urgent", "Long-standing client", "Birthday"];
 /// The chip that is deliberately unusable.
-pub const TERKUNCI: &str = "Arsip (terkunci)";
+pub const TERKUNCI: &str = "Archive (locked)";
 /// The prefix of a cross's accessible name.
-pub const HAPUS: &str = "Hapus";
+pub const HAPUS: &str = "Delete";
 
 /// The name a cross announces itself with.
 ///
@@ -79,7 +79,7 @@ fn penyaring(terpilih: Signal<usize>) -> View {
 
         kepala::spesimen(
             &t,
-            "Penyaring",
+            "Filters",
             [
                 View::from(
                     row(chip.collect::<Vec<_>>())
@@ -87,7 +87,7 @@ fn penyaring(terpilih: Signal<usize>) -> View {
                         .cross(CrossAlign::Center)
                         .wrap(),
                 ),
-                kepala::catatan(&t, format!("Aktif: {}", PENYARING[aktif])),
+                kepala::catatan(&t, format!("Active: {}", PENYARING[aktif])),
             ],
         )
     })
@@ -117,7 +117,7 @@ fn dapat_dicopot(label: Signal<Vec<String>>) -> View {
             .collect();
 
         let isi: Vec<View> = if chip.is_empty() {
-            vec![kepala::catatan(&t, "Semua label sudah dicopot.")]
+            vec![kepala::catatan(&t, "Every label has been taken off.")]
         } else {
             vec![View::from(
                 row(chip)
@@ -129,11 +129,11 @@ fn dapat_dicopot(label: Signal<Vec<String>>) -> View {
 
         let mut anak = isi;
         anak.push(View::from(
-            button_variant("Kembalikan semua", ButtonVariant::Secondary)
+            button_variant("Bring them all back", ButtonVariant::Secondary)
                 .on_press(move || label.set(LABEL.map(String::from).to_vec())),
         ));
 
-        kepala::spesimen(&t, "Bisa dicopot", anak)
+        kepala::spesimen(&t, "Removable", anak)
     })
 }
 
@@ -141,7 +141,7 @@ fn dapat_dicopot(label: Signal<Vec<String>>) -> View {
 fn mati(t: &Theme) -> View {
     kepala::spesimen(
         t,
-        "Tidak tersedia",
+        "Unavailable",
         [View::from(
             row([View::from(
                 tag(TERKUNCI)
@@ -194,7 +194,7 @@ mod tests {
 
     #[test]
     fn nama_silang_menyebut_apa_yang_dihapus() {
-        assert_eq!(nama_hapus("Mendesak"), "Hapus Mendesak");
+        assert_eq!(nama_hapus("Urgent"), "Delete Urgent");
     }
 
     #[test]

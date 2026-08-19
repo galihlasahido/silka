@@ -71,6 +71,17 @@ fn scene_hitam() -> Scene {
     Scene::new(Color::BLACK)
 }
 
+/// One sRGB-encoded channel byte as linear light — the space the sampler blends
+/// in, and so the only space where a blend tolerance means anything.
+fn linear(v: u8) -> f32 {
+    let c = v as f32 / 255.0;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Stroke
 // ---------------------------------------------------------------------------
@@ -254,12 +265,19 @@ fn gambar_menampilkan_texelnya_sendiri() {
     s.push(ImageQuad::new(Rect::new(0.0, 0.0, 32.0, 32.0), id));
     let img = render_dengan_gambar(&gpu, &s, &mut atlas);
 
-    // Sampled at the texel centres (a quarter and three quarters across), so
-    // bilinear filtering has nothing to blend in.
-    // The tolerance covers the few per cent of the neighbouring texel that
-    // bilinear filtering pulls in half a pixel off centre, plus the sRGB round
-    // trip through the target format.
-    let dekat = |a: [u8; 4], b: [u8; 3]| (0..3).all(|i| (a[i] as i32 - b[i] as i32).abs() <= 24);
+    // Sampled a quarter and three quarters across, as near the texel centres as
+    // whole pixels allow: a pixel centre sits half a pixel off, which is 1/32 of
+    // a texel here, so bilinear filtering still blends in a few per cent of each
+    // neighbour.
+    //
+    // The comparison happens in **linear light**, because that is the space the
+    // sampler blends in and the readback is sRGB-encoded. The encoding is at its
+    // steepest near black: 3% of linear light comes back as 49/255, so a
+    // tolerance stated in encoded bytes would have to be ~50 wide — wide enough
+    // to accept a genuinely wrong texel. In linear light the same blend is a
+    // budget of a few per cent, which is what this test actually means.
+    let dekat =
+        |a: [u8; 4], b: [u8; 3]| (0..3).all(|i| (linear(a[i]) - linear(b[i])).abs() <= 0.08);
     assert!(dekat(img.pixel(8, 8), [255, 0, 0]), "{:?}", img.pixel(8, 8));
     assert!(
         dekat(img.pixel(24, 8), [0, 255, 0]),

@@ -138,7 +138,7 @@ pub fn gaya_baris(baris: usize) -> (RadiusToken, ShadowToken) {
 pub fn nama(baris: usize, kolom: usize) -> String {
     let (radius, _) = gaya_baris(baris);
     let bentuk = if kolom == 0 { "squircle" } else { "arc" };
-    format!("Kartu {} {bentuk}", radius.name())
+    format!("Card {} {bentuk}", radius.name())
 }
 
 #[cfg(test)]

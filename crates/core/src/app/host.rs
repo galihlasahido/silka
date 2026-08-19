@@ -296,7 +296,7 @@ impl BuildCtx {
     /// Panics when called outside a build — just like
     /// [`crate::signals::use_signal`].
     pub fn scope(&self) -> ScopeId {
-        current_scope().expect("BuildCtx::scope() hanya berlaku saat komponen dibangun")
+        current_scope().expect("BuildCtx::scope() is only valid while a component is being built")
     }
 
     /// Clone the application-level injected value of type `T` ([`Env`]).
@@ -358,7 +358,7 @@ impl BuildCtx {
     pub fn expect_env<T: Clone + 'static>(&self) -> T {
         self.env::<T>().unwrap_or_else(|| {
             panic!(
-                "tidak ada titipan bertipe {} di Env aplikasi — pasang lewat AppRuntime::with_env",
+                "no value of type {} in the application Env — install one with AppRuntime::with_env",
                 std::any::type_name::<T>()
             )
         })
@@ -606,7 +606,7 @@ impl AppRuntime {
     ///     let judul: silka_core::signals::Signal<&'static str> = cx.expect_env();
     ///     fixed(10.0, 10.0).label(judul.get()).into()
     /// })
-    /// .with_env(|rt| rt.signal("Beranda"));
+    /// .with_env(|rt| rt.signal("Home"));
     /// ```
     pub fn with_env<T: 'static>(self, f: impl FnOnce(&Runtime) -> T) -> Self {
         let value = f(&self.host.runtime);
@@ -978,7 +978,7 @@ impl AppRuntime {
     ///
     /// This is the shell's last line of defence: a widget that panics halfway
     /// through a build, a layout, or a paint takes the frame with it instead of
-    /// the process. What comes back is a [`PanicReport`] the shell can log,
+    /// the process. What comes back is a [`PanicReport`](crate::recover::PanicReport) the shell can log,
     /// report, and show — and, crucially, the application is still alive at that
     /// point, so this is where state gets **saved** (signals are still readable;
     /// the panic hook cannot touch them).
@@ -998,7 +998,7 @@ impl AppRuntime {
     /// let mut ui = app(|_cx| {
     ///     let broken = use_signal(|| false);
     ///     if broken.get() {
-    ///         panic!("data root rusak");
+    ///         panic!("the root data is corrupt");
     ///     }
     ///     View::from(fixed(80.0, 20.0))
     /// })

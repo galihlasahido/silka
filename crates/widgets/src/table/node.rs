@@ -138,6 +138,13 @@ pub struct HeaderStyle {
     pub handle_width: f32,
 }
 
+/// A **blank** header: no color, no size.
+///
+/// Every value is deliberately zero. The real look comes from
+/// [`table`](crate::table()), which resolves each field from theme tokens; a
+/// plausible-looking literal here (`indicator_size: 8.0`) would be a back door
+/// for hard-coded numbers to re-enter the render tree without passing through
+/// the token layer (§2.7). The `default_style_is_blank` test keeps it shut.
 impl Default for HeaderStyle {
     fn default() -> Self {
         Self {
@@ -147,9 +154,9 @@ impl Default for HeaderStyle {
             separator: Color::TRANSPARENT,
             separator_width: 0.0,
             indicator: Color::TRANSPARENT,
-            indicator_size: 8.0,
+            indicator_size: 0.0,
             handle: Color::TRANSPARENT,
-            handle_width: 2.0,
+            handle_width: 0.0,
         }
     }
 }

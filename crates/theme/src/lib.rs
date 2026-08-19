@@ -65,7 +65,9 @@
 )]
 
 pub mod color;
-/// Development-time tooling: theme tokens in a text file (§9.1).
+// The module doc lives in `dev.rs` as `//!`. An outer `///` here would merge
+// with it and make rustdoc resolve the whole text in *this* module's scope,
+// where `ThemeOverrides` does not exist.
 pub mod dev;
 pub mod palette;
 pub mod preset;

@@ -121,6 +121,13 @@ pub struct TreeStyle {
     pub focus_ring: Option<FocusRing>,
 }
 
+/// A **blank** style: no color, no size, no indentation.
+///
+/// Every value is deliberately zero. The real look comes from
+/// [`tree`](crate::tree()), which resolves each field from theme tokens; a
+/// plausible-looking literal here (`indent: 20.0`) would be a back door for
+/// hard-coded numbers to re-enter the render tree without passing through the
+/// token layer (§2.7). The `default_style_is_blank` test keeps it shut.
 impl Default for TreeStyle {
     fn default() -> Self {
         Self {
@@ -133,11 +140,11 @@ impl Default for TreeStyle {
             guide: Color::TRANSPARENT,
             guide_width: 0.0,
             chevron: Color::TRANSPARENT,
-            chevron_size: 12.0,
-            chevron_stroke: 1.5,
-            chevron_gap: 4.0,
-            indent: 20.0,
-            padding: 8.0,
+            chevron_size: 0.0,
+            chevron_stroke: 0.0,
+            chevron_gap: 0.0,
+            indent: 0.0,
+            padding: 0.0,
             focus_ring: None,
         }
     }

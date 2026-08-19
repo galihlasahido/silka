@@ -233,12 +233,14 @@ pub enum VibrancyError {
 impl core::fmt::Display for VibrancyError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            VibrancyError::Unsupported(m) => write!(f, "material tidak didukung: {m}"),
-            VibrancyError::TooOld(m) => write!(f, "versi OS terlalu lama: {m}"),
+            VibrancyError::Unsupported(m) => write!(f, "material not supported: {m}"),
+            VibrancyError::TooOld(m) => write!(f, "the OS version is too old: {m}"),
             VibrancyError::NotMainThread(m) => {
-                write!(f, "material harus dipasang di UI thread: {m}")
+                write!(f, "the material must be installed on the UI thread: {m}")
             }
-            VibrancyError::NoWindowHandle(m) => write!(f, "handle window tidak terbaca: {m}"),
+            VibrancyError::NoWindowHandle(m) => {
+                write!(f, "the window handle could not be read: {m}")
+            }
         }
     }
 }
@@ -407,7 +409,7 @@ pub fn force_material(
 
     #[cfg(target_os = "macos")]
     {
-        let m = material_macos(material).expect("Material::None sudah ditangani di atas");
+        let m = material_macos(material).expect("Material::None is already handled above");
         window_vibrancy::apply_vibrancy(window, m, Some(state_macos(state)), None)
             .map_err(dari_vibrancy)
     }
@@ -425,7 +427,7 @@ pub fn force_material(
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     Err(VibrancyError::Unsupported(
-        "blur behind-window Linux butuh protokol khusus kompositor".into(),
+        "behind-window blur on Linux needs a compositor-specific protocol".into(),
     ))
 }
 

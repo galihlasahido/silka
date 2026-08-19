@@ -1088,3 +1088,34 @@ fn probe_frame_time_seratus_ribu_baris() {
         "rata-rata {rata:?} per frame — terlalu mahal untuk 120 Hz"
     );
 }
+
+/// `HeaderStyle::default()` must stay a blank shell.
+///
+/// Guards the P-7 back door: a raw literal in `impl Default` is the easiest way
+/// for a hard-coded size to re-enter the render tree without passing through
+/// `theme.space(…)`. If this test fails, the fix is to move the number into
+/// [`table`], not to update the expectation.
+#[test]
+fn default_style_is_blank() {
+    let h = HeaderStyle::default();
+    for (nama, nilai) in [
+        ("separator_width", h.separator_width),
+        ("indicator_size", h.indicator_size),
+        ("handle_width", h.handle_width),
+    ] {
+        assert_eq!(
+            nilai, 0.0,
+            "HeaderStyle::default().{nama} must not be a raw number"
+        );
+    }
+    let s = TableStyle::default();
+    for (nama, nilai) in [
+        ("separator_width", s.separator_width),
+        ("grid_width", s.grid_width),
+    ] {
+        assert_eq!(
+            nilai, 0.0,
+            "TableStyle::default().{nama} must not be a raw number"
+        );
+    }
+}

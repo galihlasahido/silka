@@ -25,19 +25,19 @@ use crate::kepala;
 pub const JUDUL: &str = "Card";
 
 /// The paragraph under the title.
-pub const KETERANGAN: &str = "Permukaan tempat sekelompok isi duduk. Dua \
-    aplikasi di repositori ini masing-masing sempat menumbuhkannya sendiri — \
-    empat baris yang sama, dan masing-masing punya gagasan sendiri tentang \
-    berapa padding sebuah kartu.";
+pub const KETERANGAN: &str = "The surface a group of content sits on. Both \
+    applications in this repository grew one of their own at some point — the \
+    same four lines, each with its own idea of how much padding a card \
+    has.";
 
 /// The name of the card assembled from header, body and footer.
-pub const NAMA_FAKTUR: &str = "Faktur terakhir";
+pub const NAMA_FAKTUR: &str = "Latest invoice";
 /// The subtitle of that card.
-pub const SUB_FAKTUR: &str = "30 hari terakhir";
+pub const SUB_FAKTUR: &str = "Last 30 days";
 /// The name of the pressable card.
-pub const NAMA_TEKAN: &str = "Buka rekapitulasi";
+pub const NAMA_TEKAN: &str = "Open the recap";
 /// What the page says before the pressable card has been used.
-pub const BELUM: &str = "belum ditekan";
+pub const BELUM: &str = "not pressed yet";
 
 /// The view tree for the whole page.
 pub fn halaman(cx: &BuildCtx) -> View {
@@ -64,13 +64,13 @@ fn varian(t: &Theme) -> View {
             )])
             .key(v.name())
             .variant(v)
-            .label(format!("Kartu {}", v.name())),
+            .label(format!("Card {}", v.name())),
         )
     });
 
     kepala::spesimen(
         t,
-        "Empat permukaan",
+        "Four surfaces",
         [View::from(
             row(kartu)
                 .spacing(t.space(4.0))
@@ -90,14 +90,14 @@ fn bagian(t: &Theme) -> View {
                 .single_line(),
         ),
         View::from(
-            text("42 transaksi, 3 di antaranya menunggu persetujuan.")
+            text("42 transactions, 3 of them awaiting approval.")
                 .size(t.typography.body.size)
                 .color(t.color.secondary_label),
         ),
     ]);
 
     let kaki = card_footer([View::from(
-        text("Diperbarui 5 menit lalu")
+        text("Updated 5 minutes ago")
             .size(t.typography.footnote.size)
             .color(t.color.tertiary_label)
             .single_line(),
@@ -105,7 +105,7 @@ fn bagian(t: &Theme) -> View {
 
     kepala::spesimen(
         t,
-        "Kepala, badan, kaki",
+        "Header, body, footer",
         [View::from(
             card([
                 View::from(card_header(NAMA_FAKTUR).subtitle(SUB_FAKTUR)),
@@ -126,17 +126,17 @@ fn dapat_ditekan(ditekan: Signal<u32>) -> View {
         let keterangan = if n == 0 {
             BELUM.to_string()
         } else {
-            format!("ditekan {n}×")
+            format!("pressed {n}×")
         };
 
         kepala::spesimen(
             &t,
-            "Kartu yang bisa ditekan",
+            "A pressable card",
             [View::from(
                 column([
                     View::from(
                         card_padded([View::from(
-                            text("Rekapitulasi bulan ini")
+                            text("This month's recap")
                                 .size(t.typography.headline.size)
                                 .color(t.color.label)
                                 .single_line(),
@@ -225,7 +225,7 @@ mod tests {
         klik(&mut ui, p);
         ui.frame();
         assert!(
-            ui.access_tree().dump().contains("ditekan 1×"),
+            ui.access_tree().dump().contains("pressed 1×"),
             "klik tidak menjalankan aksinya:\n{}",
             ui.access_tree().dump()
         );
@@ -237,7 +237,7 @@ mod tests {
             Duration::from_millis(80),
         )));
         ui.frame();
-        assert!(ui.access_tree().dump().contains("ditekan 2×"));
+        assert!(ui.access_tree().dump().contains("pressed 2×"));
     }
 
     #[test]
@@ -251,7 +251,7 @@ mod tests {
                 let pohon = ui.access_tree();
                 for v in CardVariant::ALL {
                     assert!(
-                        pohon.find_label(&format!("Kartu {}", v.name())).is_some(),
+                        pohon.find_label(&format!("Card {}", v.name())).is_some(),
                         "varian {} hilang di {preset:?}/{appearance:?}",
                         v.name()
                     );

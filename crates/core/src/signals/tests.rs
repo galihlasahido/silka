@@ -66,7 +66,7 @@ fn use_signal_membuat_state_sekali_dan_bertahan_lintas_rebuild() {
 }
 
 #[test]
-#[should_panic(expected = "jumlah use_signal berubah")]
+#[should_panic(expected = "the number of use_signal calls changed")]
 fn hook_kondisional_ditolak() {
     let rt = Runtime::new();
     let dua = Rc::new(Cell::new(true));
@@ -83,7 +83,7 @@ fn hook_kondisional_ditolak() {
 }
 
 #[test]
-#[should_panic(expected = "urutan use_signal berubah")]
+#[should_panic(expected = "the order of use_signal calls changed")]
 fn hook_yang_berganti_tipe_ditolak() {
     let rt = Runtime::new();
     let pertama = Rc::new(Cell::new(true));
@@ -101,7 +101,7 @@ fn hook_yang_berganti_tipe_ditolak() {
 }
 
 #[test]
-#[should_panic(expected = "use_signal hanya boleh dipanggil saat komponen dibangun")]
+#[should_panic(expected = "use_signal may only be called while a component is being built")]
 fn use_signal_di_luar_build_ditolak() {
     let _rt = Runtime::new();
     use_signal(|| 0i32);
@@ -757,7 +757,7 @@ fn slot_arena_dipakai_ulang_tanpa_menghidupkan_id_lama() {
 }
 
 #[test]
-#[should_panic(expected = "kunci ganda")]
+#[should_panic(expected = "duplicate key")]
 fn kunci_ganda_di_antara_saudara_ditolak() {
     let rt = Runtime::new();
     rt.build_root(|| {
@@ -826,7 +826,7 @@ fn signal_milik_runtime_hidup_selama_runtime() {
 }
 
 #[test]
-#[should_panic(expected = "sudah mati")]
+#[should_panic(expected = "is already dead")]
 fn signal_yang_scope_pemiliknya_dibuang_dilaporkan_jelas() {
     let rt = Runtime::new();
     let simpan: Rc<Cell<Option<Signal<i32>>>> = Rc::new(Cell::new(None));
@@ -843,7 +843,7 @@ fn signal_yang_scope_pemiliknya_dibuang_dilaporkan_jelas() {
 }
 
 #[test]
-#[should_panic(expected = "akses rekursif")]
+#[should_panic(expected = "recursive access")]
 fn akses_rekursif_ke_signal_yang_sama_dilaporkan_jelas() {
     let rt = Runtime::new();
     let s = rt.signal(1i32);

@@ -743,13 +743,13 @@ impl RenderTree {
         type_id: TypeId,
         render: Box<dyn RenderNode>,
     ) -> NodeId {
-        assert!(self.contains(parent), "induk {parent:?} sudah mati");
+        assert!(self.contains(parent), "parent {parent:?} is already dead");
         let child = self.alloc(Some(parent), key, type_id, render);
         let depth = self.node(parent).map(|n| n.depth).unwrap_or(0) + 1;
         if let Some(n) = self.node_mut(child) {
             n.depth = depth;
         }
-        let n = self.node_mut(parent).expect("induk hidup");
+        let n = self.node_mut(parent).expect("the parent is alive");
         let at = index.min(n.children.len());
         n.children.insert(at, child);
         self.mark_needs_layout(parent);
@@ -761,7 +761,10 @@ impl RenderTree {
     ///
     /// The root cannot be removed (it panics) — a tree always has a root.
     pub fn remove_subtree(&mut self, id: NodeId) -> usize {
-        assert!(id != self.root, "akar render tree tidak boleh dibuang");
+        assert!(
+            id != self.root,
+            "the root of the render tree must not be dropped"
+        );
         let Some(node) = self.node(id) else { return 0 };
         let parent = node.parent;
         if let Some(p) = parent {
@@ -776,7 +779,7 @@ impl RenderTree {
             let Some(idx) = self.index_of(cur) else {
                 continue;
             };
-            let node = self.slots[idx].node.take().expect("slot hidup");
+            let node = self.slots[idx].node.take().expect("the slot is alive");
             stack.extend(node.children);
             self.slots[idx].generation = self.slots[idx].generation.wrapping_add(1);
             self.free.push(idx as u32);
@@ -796,7 +799,7 @@ impl RenderTree {
         assert_eq!(
             current.len(),
             order.len(),
-            "set_children harus memuat semua anak {parent:?}"
+            "set_children must list every child of {parent:?}"
         );
         if current == order {
             return;
@@ -805,7 +808,7 @@ impl RenderTree {
             assert_eq!(
                 self.parent(*id),
                 Some(parent),
-                "{id:?} bukan anak {parent:?}"
+                "{id:?} is not a child of {parent:?}"
             );
         }
         if let Some(n) = self.node_mut(parent) {
@@ -1210,9 +1213,9 @@ impl RenderTree {
         let (is_root, intrinsic) = {
             let node = self
                 .node(id)
-                .unwrap_or_else(|| panic!("layout node mati: {id:?}"));
+                .unwrap_or_else(|| panic!("laying out a dead node: {id:?}"));
             let render = node.render.as_ref().unwrap_or_else(|| {
-                panic!("{id:?} sedang melakukan layout — layout rekursif tidak diizinkan")
+                panic!("{id:?} is already laying out — recursive layout is not allowed")
             });
             (node.parent.is_none(), render.is_relayout_boundary())
         };
@@ -1226,7 +1229,7 @@ impl RenderTree {
             || !parent_uses_size;
 
         {
-            let node = self.node_mut(id).expect("node hidup");
+            let node = self.node_mut(id).expect("the node is alive");
             if !node.needs_layout
                 && node.constraints == Some(constraints)
                 && node.boundary == boundary
@@ -1241,10 +1244,10 @@ impl RenderTree {
 
         let mut render = self
             .node_mut(id)
-            .expect("node hidup")
+            .expect("the node is alive")
             .render
             .take()
-            .expect("render node tersedia");
+            .expect("the render node is present");
         let size = {
             let mut ctx = LayoutCtx {
                 tree: self,
@@ -1255,13 +1258,13 @@ impl RenderTree {
         let size = constraints.constrain(size);
         debug_assert!(
             size.width.is_finite() && size.height.is_finite(),
-            "{id:?} ({}) memilih ukuran tak hingga di bawah constraints tanpa batas",
+            "{id:?} ({}) chose an infinite size under unbounded constraints",
             render.type_name()
         );
 
         let node = self
             .node_mut(id)
-            .expect("struktur pohon tidak boleh berubah selama layout");
+            .expect("the tree structure must not change during layout");
         node.render = Some(render);
         node.size = size;
         node.needs_layout = false;
@@ -1474,7 +1477,7 @@ impl LayoutCtx<'_> {
         debug_assert_eq!(
             self.tree.parent(child),
             Some(self.node),
-            "hanya boleh melayout anak sendiri"
+            "a node may only lay out its own children"
         );
         self.tree.layout_node(child, constraints, true, true)
     }
@@ -1493,7 +1496,7 @@ impl LayoutCtx<'_> {
         debug_assert_eq!(
             self.tree.parent(child),
             Some(self.node),
-            "hanya boleh melayout anak sendiri"
+            "a node may only lay out its own children"
         );
         self.tree.layout_node(child, constraints, true, false)
     }
@@ -1515,7 +1518,7 @@ impl LayoutCtx<'_> {
         debug_assert_eq!(
             self.tree.parent(child),
             Some(self.node),
-            "hanya boleh melayout anak sendiri"
+            "a node may only lay out its own children"
         );
         self.tree.layout_node(child, constraints, false, true)
     }
@@ -1531,7 +1534,7 @@ impl LayoutCtx<'_> {
         debug_assert_eq!(
             self.tree.parent(child),
             Some(self.node),
-            "hanya boleh menempatkan anak sendiri"
+            "a node may only place its own children"
         );
         let berubah = match self.tree.node_mut(child) {
             Some(n) if n.offset != offset => {
@@ -1566,8 +1569,8 @@ pub(crate) fn keyed_children(tree: &RenderTree, parent: NodeId) -> HashMap<Key, 
         if let Some(key) = tree.key(*id) {
             if let Some(sebelumnya) = map.insert(key.clone(), *id) {
                 panic!(
-                    "kunci ganda di antara anak {parent:?}: {key:?} dipakai {sebelumnya:?} \
-                     dan {id:?} — kunci wajib unik di antara saudara"
+                    "duplicate key among the children of {parent:?}: {key:?} is used by {sebelumnya:?} \
+                     and {id:?} — keys must be unique among siblings"
                 );
             }
         }

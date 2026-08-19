@@ -98,7 +98,7 @@ impl ViewNode for TreeProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TreeBody>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.metrics != self.metrics {
@@ -188,7 +188,7 @@ impl ViewNode for TreeRowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TreeRowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.depth != self.depth || n.style != self.style {
             n.depth = self.depth;
@@ -248,7 +248,7 @@ impl ViewNode for TreeGapProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TreeGapBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.first == self.first && n.block_first == self.block_first && n.extent == self.extent {
             return Dirty::NONE;
         }

@@ -320,7 +320,7 @@ impl Command {
     }
 
     /// The shortcut shown at the trailing edge — displayed, never dispatched
-    /// (the same rule as [`crate::menu`]).
+    /// (the same rule as [`mod@crate::menu`]).
     pub fn shortcut(mut self, shortcut: Shortcut) -> Self {
         self.shortcut = Some(shortcut);
         self
@@ -1013,7 +1013,7 @@ impl ViewNode for PaletteRowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<PaletteRowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.label != self.label {
@@ -1272,7 +1272,7 @@ impl ViewNode for PaletteProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<PaletteBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.style != self.style {
             n.style = self.style;

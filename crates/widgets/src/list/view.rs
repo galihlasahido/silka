@@ -88,7 +88,7 @@ impl ViewNode for ListProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ListBody>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.metrics != self.metrics {
@@ -176,7 +176,7 @@ impl ViewNode for ListRowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ListRowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.index == self.index && n.selected == self.selected && n.activatable == self.activatable
         {
             return Dirty::NONE;
@@ -227,10 +227,24 @@ pub struct ListBuilder {
 /// rebuild ([`super::use_list_state`]); everything else it needs — the theme —
 /// is ambient (§2.5):
 ///
-/// ```ignore
-/// let state = use_list_state();
-/// list(state, rows.len(), move |i| View::from(text(rows[i].clone())))
-///     .selection(SelectionMode::Single)
+/// ```
+/// # use silka_core::signals::Runtime;
+/// # use silka_core::view::{with_theme, View};
+/// # use silka_theme::{Appearance, Theme};
+/// # use silka_widgets::{list, text, use_list_state};
+/// # let rt = Runtime::new();
+/// let rows = vec!["Groceries".to_string(), "Rent".to_string()];
+///
+/// // `with_theme` is what the shell wraps a frame in; inside it, no call site
+/// // spells the theme out.
+/// with_theme(Theme::cupertino(Appearance::Dark), || {
+///     rt.build_root(|| {
+///         let state = use_list_state();
+///         list(state, rows.len(), move |i| View::from(text(rows[i].clone())))
+///             .selectable(true)
+///             .item_extent(28.0);
+///     });
+/// });
 /// ```
 ///
 /// Use [`list_in`] outside a build pass.

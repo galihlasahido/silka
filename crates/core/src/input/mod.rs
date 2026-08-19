@@ -31,7 +31,7 @@
 //! use silka_paint::{Point, Size};
 //!
 //! let mut tree = RenderTree::new();
-//! reconcile(&mut tree, interactive(fixed(120.0, 44.0)).label("Simpan"));
+//! reconcile(&mut tree, interactive(fixed(120.0, 44.0)).label("Save"));
 //! tree.layout(BoxConstraints::loose(Size::new(320.0, 200.0)));
 //!
 //! let mut router = InputRouter::new();

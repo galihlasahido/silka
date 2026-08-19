@@ -90,7 +90,7 @@ impl TaffyBox {
         taffy.disable_rounding();
         let root = taffy
             .new_leaf(TaffyStyle::DEFAULT)
-            .expect("pohon taffy baru selalu bisa menerima node akar");
+            .expect("a fresh taffy tree can always take a root node");
         Self {
             style,
             decoration: Decoration::NONE,
@@ -120,19 +120,19 @@ impl TaffyBox {
         self.root = self
             .taffy
             .new_leaf(TaffyStyle::DEFAULT)
-            .expect("pohon taffy kosong selalu bisa menerima akar");
+            .expect("an empty taffy tree can always take a root");
         self.slots = kids
             .iter()
             .enumerate()
             .map(|(i, _)| {
                 self.taffy
                     .new_leaf_with_context(TaffyStyle::DEFAULT, i)
-                    .expect("slot anak selalu bisa dibuat")
+                    .expect("a child slot can always be created")
             })
             .collect();
         self.taffy
             .set_children(self.root, &self.slots)
-            .expect("slot yang baru dibuat pasti milik pohon ini");
+            .expect("a freshly created slot always belongs to this tree");
         self.kids.clear();
         self.kids.extend_from_slice(kids);
     }
@@ -153,7 +153,7 @@ impl TaffyBox {
         if !sama {
             self.taffy
                 .set_style(node, style)
-                .expect("node milik pohon ini");
+                .expect("the node belongs to this tree");
         }
     }
 }
@@ -218,7 +218,7 @@ impl RenderNode for TaffyBox {
                         }
                     },
                 )
-                .expect("pohon taffy yang dirakit sendiri selalu valid");
+                .expect("a taffy tree we assembled ourselves is always valid");
         }
 
         // 3. Sizes come up + the parent places.
@@ -226,7 +226,7 @@ impl RenderNode for TaffyBox {
             let hasil = *self
                 .taffy
                 .layout(self.slots[i])
-                .expect("slot sudah dihitung layout-nya");
+                .expect("the slot has already been laid out");
             let ukuran = Size::new(hasil.size.width.max(0.0), hasil.size.height.max(0.0));
             ctx.layout_child_measured(*anak, BoxConstraints::tight(ukuran));
             ctx.place_child(*anak, Point::new(hasil.location.x, hasil.location.y));
@@ -235,7 +235,7 @@ impl RenderNode for TaffyBox {
         let hasil = self
             .taffy
             .layout(root)
-            .expect("akar sudah dihitung layout-nya");
+            .expect("the root has already been laid out");
         Size::new(hasil.size.width.max(0.0), hasil.size.height.max(0.0))
     }
 

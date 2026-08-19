@@ -80,7 +80,10 @@ cargo run -p silka-gallery
 ```
 
 The gallery showcases the available components and their variants, with a theme
-switcher and dark mode toggle. `--page chart` opens the chart catalogue.
+switcher and dark mode toggle. Every component of `KOMPONEN.md` has its own
+page, reachable from the sidebar or directly: `--page chart` opens the chart
+catalogue, `--page date-picker` the date field and its calendar, `--page toast`
+the notification stack. Adding `--solo` gives that page the whole window.
 
 ## Shipping an application
 

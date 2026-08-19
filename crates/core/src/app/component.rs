@@ -85,7 +85,7 @@ impl ViewNode for ComponentProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ComponentBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.scope == self.scope {
             return Dirty::NONE;
         }
@@ -138,7 +138,7 @@ where
     F: Fn(&BuildCtx) -> View + 'static,
 {
     let host = current_host().expect(
-        "component() hanya boleh dipanggil saat komponen dibangun (di dalam AppRuntime::frame)",
+        "component() may only be called while a component is being built (inside AppRuntime::frame)",
     );
     let key: Key = key.into();
     let builder: ComponentBuilder = std::rc::Rc::new(body);
@@ -146,7 +146,7 @@ where
     let cx = BuildCtx::new(host.clone());
     let untuk_scope = builder.clone();
     let (scope, isi) = masuk_scope(key.clone(), move || {
-        let id = current_scope().expect("scope() baru saja memasuki scope anak");
+        let id = current_scope().expect("scope() has just entered the child scope");
         (id, untuk_scope(&cx))
     });
 

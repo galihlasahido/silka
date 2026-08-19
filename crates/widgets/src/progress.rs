@@ -14,7 +14,7 @@
 //! ```
 //!
 //! These are the first users of
-//! [`AccessRole::ProgressIndicator`](silka_core::access::AccessRole::ProgressIndicator),
+//! [`AccessRole::ProgressIndicator`],
 //! which has been in the vocabulary since the accessibility layer was written
 //! and had no widget behind it.
 //!

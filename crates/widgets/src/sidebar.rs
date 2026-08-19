@@ -556,7 +556,7 @@ impl ViewNode for SidebarRowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<SidebarRowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.label != self.label {
@@ -848,7 +848,7 @@ impl ViewNode for SidebarProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<SidebarBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.style != self.style {
             n.style = self.style;

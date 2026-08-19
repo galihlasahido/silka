@@ -1066,3 +1066,28 @@ fn dua_pohon_bersebelahan_tidak_berbagi_state() {
     assert!(a.is_open(1));
     assert!(!b.is_open(1), "dua pohon berbagi ekspansi");
 }
+
+/// `TreeStyle::default()` must stay a blank shell.
+///
+/// Guards the P-7 back door: a raw literal in `impl Default` is the easiest way
+/// for a hard-coded size to re-enter the render tree without passing through
+/// `theme.space(…)`. If this test fails, the fix is to move the number into
+/// [`tree`], not to update the expectation.
+#[test]
+fn default_style_is_blank() {
+    let s = TreeStyle::default();
+    for (nama, nilai) in [
+        ("guide_width", s.guide_width),
+        ("chevron_size", s.chevron_size),
+        ("chevron_stroke", s.chevron_stroke),
+        ("chevron_gap", s.chevron_gap),
+        ("indent", s.indent),
+        ("padding", s.padding),
+    ] {
+        assert_eq!(
+            nilai, 0.0,
+            "TreeStyle::default().{nama} must not be a raw number"
+        );
+    }
+    assert!(s.focus_ring.is_none());
+}

@@ -85,7 +85,7 @@ impl ViewNode for AlignProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<AlignBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.alignment != self.alignment
             || n.width_factor != self.width_factor
@@ -253,7 +253,7 @@ impl ViewNode for StackProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<StackBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.alignment != self.alignment || n.fit != self.fit || n.clip != self.clip {
             n.alignment = self.alignment;
@@ -353,7 +353,7 @@ impl ViewNode for AspectRatioProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<AspectRatioBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.ratio == self.ratio {
             return Dirty::NONE;
         }

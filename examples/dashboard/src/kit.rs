@@ -11,26 +11,26 @@
 //! keeping the file:
 //!
 //! - the separator that used to live here as a constrained empty box is now
-//!   [`silka_widgets::divider`] — with an inset that mirrors in RTL and an
+//!   [`mod@silka_widgets::divider`] — with an inset that mirrors in RTL and an
 //!   AccessKit `Separator` role the hand-rolled version never had;
 //! - the flex child of zero size that pushed things to the far edge is now
 //!   [`silka_widgets::spacer()`], and the icon-only button below draws a real
 //!   [`silka_widgets::icon()`] instead of a text glyph, so it no longer has to
 //!   apologise for announcing "☀" to a screen reader;
-//! - the status pill is now [`silka_widgets::badge`], and what is left in
+//! - the status pill is now [`mod@silka_widgets::badge`], and what is left in
 //!   [`badge`] is two lines mapping this application's own `Status` onto a
 //!   *tone*. The framework version gained four things the local one never had:
 //!   a floor on the width (so a one-character pill is a circle), a soft variant
 //!   (so a table of them is readable), a dot as a second channel for a reader
 //!   who cannot separate the hues, and a name that says the word is a status;
-//! - the **card** and its **header** are [`silka_widgets::card`] and
+//! - the **card** and its **header** are [`mod@silka_widgets::card`] and
 //!   [`silka_widgets::card_header`]. Two things arrived with them. The
 //!   hairline under a header used to be a second `divider()` written at
 //!   every call site, which is exactly how a header and the rows beneath it end
 //!   up two points apart; and a card is now a **landmark** with a name, so a
 //!   screen reader can jump between "Akad Scheduled" and "Recent Disbursements"
 //!   instead of walking every row of both;
-//! - the **avatar** is [`silka_widgets::avatar`], which brought
+//! - the **avatar** is [`mod@silka_widgets::avatar`], which brought
 //!   [`silka_widgets::initials`] with it — a pure function with an answer for
 //!   one word, three words, an empty string and a script with no capital
 //!   letters, where the local version had a `take(2)` and a hope;
@@ -117,7 +117,7 @@ pub fn overline(t: &Theme, label: &str) -> View {
 ///
 /// **No longer missing from the framework**, and this is all that is left of
 /// it: a call. What the hand-rolled version repeated — surface, radius,
-/// hairline, elevation — is [`silka_widgets::card`], and what it never had
+/// hairline, elevation — is [`mod@silka_widgets::card`], and what it never had
 /// is the reason the component exists: a variant vocabulary, so a card nested
 /// in a card stops doubling its shadow, and a **name** so a screen reader can
 /// jump between "Akad Scheduled" and "Recent Disbursements" instead of walking
@@ -177,7 +177,7 @@ pub fn card_header(_t: &Theme, title: &str, action: &str, on_action: impl Fn() +
 ///
 /// **No longer missing from the framework**, and this is what is left of it:
 /// the application maps its own domain (`Status`) onto a *tone*, and
-/// [`silka_widgets::badge`] does the rest. What the hand-rolled version used
+/// [`mod@silka_widgets::badge`] does the rest. What the hand-rolled version used
 /// to do and got wrong is worth recording, because it is the reason the
 /// component exists:
 ///
@@ -209,7 +209,7 @@ pub fn badge(_t: &Theme, status: Status) -> View {
 /// A round initials avatar.
 ///
 /// **No longer missing from the framework.** What is left here is the call, and
-/// what [`silka_widgets::avatar`] brought with it is what the local version
+/// what [`mod@silka_widgets::avatar`] brought with it is what the local version
 /// never had: [`silka_widgets::initials`] as a *pure* function with an answer
 /// for one word, three words, an empty string and a script with no capital
 /// letters, plus an `AccessRole::Image` carrying the person's name instead of a

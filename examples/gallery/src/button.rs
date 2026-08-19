@@ -12,7 +12,7 @@
 //! | Scale-on-press | Press and hold: the button shrinks, and springs back on release |
 //! | Keyboard + focus ring | Tab around, Space/Enter presses; the focus ring **grows** |
 //! | Hit target ≥ 44pt | Even the shortest button is still 44pt tall |
-//! | Loading | The "Simpan perubahan" button pulses without changing width |
+//! | Loading | The "Save changes" button pulses without changing width |
 //! | AccessKit nodes | VoiceOver announces each button's name + role |
 //! | Reduced motion | Turn on "Reduce motion" in the OS: the pulse stops, the shrink goes away, colors still cross over |
 //!
@@ -32,20 +32,14 @@ use silka_widgets::{active_fonts, button, button_variant, text, ButtonVariant};
 /// The page title.
 pub const JUDUL: &str = "Button";
 /// The name of the button that toggles the "loading" state.
-pub const TOMBOL_SIBUK: &str = "Mulai memuat";
+pub const TOMBOL_SIBUK: &str = "Start loading";
 /// The name of the button that is loading.
-pub const TOMBOL_SIMPAN: &str = "Simpan perubahan";
+pub const TOMBOL_SIMPAN: &str = "Save changes";
 /// The name of the deliberately disabled button.
-pub const TOMBOL_MATI: &str = "Tidak tersedia";
+pub const TOMBOL_MATI: &str = "Unavailable";
 
 /// One label per variant, in the same order as [`ButtonVariant::ALL`].
-pub const VARIAN: [&str; 5] = [
-    "Simpan",
-    "Batal",
-    "Ubah",
-    "Hapus permanen",
-    "Pelajari selengkapnya",
-];
+pub const VARIAN: [&str; 5] = ["Save", "Cancel", "Edit", "Delete permanently", "Learn more"];
 
 /// The view tree for the whole page — this is what gets handed to
 /// `run_app_with`.
@@ -70,9 +64,9 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Lima varian di atas token semantik. Hover, tekan, dan Tab: setiap \
-                 perpindahan keadaan berjalan lewat spring yang bisa di-retarget, \
-                 bukan lompat.",
+                "Five variants on semantic tokens. Hover, press, and Tab: every state \
+                 change runs through a retargetable spring rather than a \
+                 jump.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -133,7 +127,7 @@ fn keadaan(t: &Theme, sibuk: Signal<bool>) -> View {
             })),
             View::from(
                 button_variant(
-                    if memuat { "Selesai" } else { TOMBOL_SIBUK },
+                    if memuat { "Done" } else { TOMBOL_SIBUK },
                     ButtonVariant::Secondary,
                 )
                 .on_press(move || sibuk.update(|s| *s = !*s)),
@@ -155,9 +149,9 @@ fn status(terakhir: Signal<String>) -> View {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let isi = terakhir.get();
         let teks = if isi.is_empty() {
-            "Belum ada tombol yang ditekan.".to_string()
+            "No button pressed yet.".to_string()
         } else {
-            format!("Terakhir ditekan: {isi}")
+            format!("Last pressed: {isi}")
         };
         text(teks)
             .size(t.typography.body_size)
@@ -210,7 +204,7 @@ mod tests {
             .entries()
             .iter()
             .filter_map(|e| e.node.label.clone())
-            .find(|l| l.starts_with("Terakhir ditekan") || l.starts_with("Belum ada"))
+            .find(|l| l.starts_with("Last pressed") || l.starts_with("No button pressed"))
             .unwrap_or_else(|| panic!("tidak ada baris status:\n{}", pohon.dump()))
     }
 
@@ -254,15 +248,12 @@ mod tests {
     fn klik_tombol_memperbarui_status_lewat_signal() {
         let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
-        assert!(label_status(&ui).starts_with("Belum ada"));
+        assert!(label_status(&ui).starts_with("No button pressed"));
 
         let p = kotak(&ui, VARIAN[0]).center();
         klik(&mut ui, p);
         let laporan = ui.frame();
-        assert_eq!(
-            label_status(&ui),
-            format!("Terakhir ditekan: {}", VARIAN[0])
-        );
+        assert_eq!(label_status(&ui), format!("Last pressed: {}", VARIAN[0]));
         assert!(
             laporan.rebuilt <= 1,
             "hanya komponen status yang membaca signalnya"
@@ -272,10 +263,7 @@ mod tests {
         let mati = kotak(&ui, TOMBOL_MATI).center();
         klik(&mut ui, mati);
         ui.frame();
-        assert_eq!(
-            label_status(&ui),
-            format!("Terakhir ditekan: {}", VARIAN[0])
-        );
+        assert_eq!(label_status(&ui), format!("Last pressed: {}", VARIAN[0]));
     }
 
     #[test]
@@ -292,10 +280,7 @@ mod tests {
             Duration::from_millis(20),
         )));
         ui.frame();
-        assert_eq!(
-            label_status(&ui),
-            format!("Terakhir ditekan: {}", VARIAN[0])
-        );
+        assert_eq!(label_status(&ui), format!("Last pressed: {}", VARIAN[0]));
     }
 
     #[test]
@@ -324,7 +309,7 @@ mod tests {
         }
 
         // Turning it off returns the app to rest.
-        let selesai = kotak(&ui, "Selesai").center();
+        let selesai = kotak(&ui, "Done").center();
         klik(&mut ui, selesai);
         waktu += Duration::from_millis(16);
         frame(&mut ui, waktu);

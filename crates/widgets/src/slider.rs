@@ -1196,7 +1196,7 @@ impl ViewNode for SliderProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<Slider>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.min != self.min || n.max != self.max || n.step != self.step || n.thumbs != self.thumbs

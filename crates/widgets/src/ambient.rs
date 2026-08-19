@@ -3,11 +3,15 @@
 //!
 //! The promise in §2.5 is that application code reads like Dart:
 //!
-//! ```ignore
-//! column((
-//!     text("Hello").size(17.0),
-//!     button("Save").on_press(save),
-//! ))
+//! ```
+//! use silka_core::view::{column, View};
+//! use silka_widgets::{button, text};
+//!
+//! # let save = || {};
+//! column([
+//!     View::from(text("Hello").size(17.0)),
+//!     View::from(button("Save").on_press(save)),
+//! ]);
 //! ```
 //!
 //! Two values stand in the way of that shape, because every widget needs both

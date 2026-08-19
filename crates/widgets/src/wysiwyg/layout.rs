@@ -620,7 +620,10 @@ fn layout_block(
                     x = 0.0;
                 }
                 x += pecahan.width;
-                baris.last_mut().expect("selalu ada baris").push(pecahan);
+                baris
+                    .last_mut()
+                    .expect("there is always at least one line")
+                    .push(pecahan);
             }
             continue;
         }
@@ -629,7 +632,10 @@ fn layout_block(
             x = 0.0;
         }
         x += chunk.width;
-        baris.last_mut().expect("selalu ada baris").push(chunk);
+        baris
+            .last_mut()
+            .expect("there is always at least one line")
+            .push(chunk);
     }
 
     // 3. Shape each line: consecutive chunks of the same span become one

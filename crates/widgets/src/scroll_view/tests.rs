@@ -750,7 +750,10 @@ fn scroll_view_adalah_relayout_boundary_dan_memotong_isinya() {
     let tree = pohon_gulir(&t);
     let sv_id = id(&tree);
     assert!(tree.is_relayout_boundary(sv_id));
-    assert!(tree.render(sv_id).expect("node hidup").clips_children());
+    assert!(tree
+        .render(sv_id)
+        .expect("the node is alive")
+        .clips_children());
     assert_eq!(tree.size(sv_id), RUANG, "ukurannya milik induk sepenuhnya");
 }
 
@@ -1010,4 +1013,26 @@ fn roda_tegak_di_wadah_mendatar_tidak_ikut_bercermin() {
     gulir(&mut rtl, &mut router, -120.0, ScrollPhase::Wheel, 0);
     selesaikan(&mut rtl);
     assert_eq!(sv(&rtl).offset(), 120.0);
+}
+
+/// `ScrollView::default()` must stay a blank shell.
+///
+/// Guards the P-7 back door: a raw literal in `impl Default` is the easiest way
+/// for a hard-coded size to re-enter the render tree without passing through
+/// `theme.space(…)`. If this test fails, the fix is to move the number into
+/// [`scroll_view`](crate::scroll_view()), not to update the expectation.
+#[test]
+fn default_is_blank() {
+    let s = ScrollView::default();
+    for (nama, nilai) in [
+        ("line_height", s.line_height),
+        ("bar.thickness", s.bar.thickness),
+        ("bar.thickness_hover", s.bar.thickness_hover),
+        ("bar.margin", s.bar.margin),
+    ] {
+        assert_eq!(
+            nilai, 0.0,
+            "ScrollView::default().{nama} must not be a raw number"
+        );
+    }
 }

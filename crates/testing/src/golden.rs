@@ -162,11 +162,11 @@ impl fmt::Display for GoldenFailure {
         match self {
             GoldenFailure::Missing { path } => write!(
                 f,
-                "berkas golden belum ada: {}\n  buat dengan: {MODE_ENV}=new cargo test",
+                "no golden file yet: {}\n  create it with: {MODE_ENV}=new cargo test",
                 path.display()
             ),
             GoldenFailure::Size { mismatch, actual } => {
-                write!(f, "{mismatch}\n  hasil tangkapan: {}", actual.display())
+                write!(f, "{mismatch}\n  capture: {}", actual.display())
             }
             GoldenFailure::Mismatch {
                 diff,
@@ -175,19 +175,19 @@ impl fmt::Display for GoldenFailure {
                 visual,
             } => write!(
                 f,
-                "tangkapan tidak sama dengan golden.\n  {}\n\
-                 \n  golden : {}\n  hasil  : {}\n  selisih: {}\n\
-                 \n  Bila gambar baru yang benar: {MODE_ENV}=update cargo test",
+                "the capture does not match the golden.\n  {}\n\
+                 \n  golden : {}\n  capture: {}\n  diff   : {}\n\
+                 \n  If the new image is the correct one: {MODE_ENV}=update cargo test",
                 diff.report(),
                 golden.display(),
                 actual.display(),
                 visual.display()
             ),
             GoldenFailure::Io { path, message } => {
-                write!(f, "gagal mengakses {}: {message}", path.display())
+                write!(f, "could not access {}: {message}", path.display())
             }
             GoldenFailure::Png { path, error } => {
-                write!(f, "gagal membaca {}: {error}", path.display())
+                write!(f, "could not read {}: {error}", path.display())
             }
         }
     }

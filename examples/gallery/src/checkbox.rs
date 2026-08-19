@@ -10,7 +10,7 @@
 //! | Dark mode | `--appearance dark` / `light`, or follow the OS |
 //! | Check animation | Click: the stroke is **drawn** from root to tip, it does not pop in finished |
 //! | Retargetable spring | Click twice quickly: the stroke reverses from where it currently is, it does not jump to zero |
-//! | Indeterminate state | Check just one item — "Pilih semua" turns into a dash, not a checkmark |
+//! | Indeterminate state | Check just one item — "Select all" turns into a dash, not a checkmark |
 //! | Hover / press | The box shrinks slightly while held, and springs back on release |
 //! | Keyboard + focus ring | Tab around, **Space** activates (Enter deliberately does not — that belongs to the default button) |
 //! | Hit target ≥ 44pt | The box is 16pt, but the whole row — label included — is clickable |
@@ -33,20 +33,20 @@ use silka_widgets::{active_fonts, checkbox, checkbox_only, text, CheckState};
 /// The page title.
 pub const JUDUL: &str = "Checkbox";
 /// The name of the parent checkbox whose state is derived from its children.
-pub const PILIH_SEMUA: &str = "Pilih semua";
+pub const PILIH_SEMUA: &str = "Select all";
 /// The name of each option.
 pub const ITEM: [&str; 3] = [
-    "Sinkronkan otomatis",
-    "Kirim laporan galat",
-    "Ikut program beta",
+    "Sync automatically",
+    "Send crash reports",
+    "Join the beta programme",
 ];
 /// The name of the checkbox deliberately disabled in the unchecked state.
-pub const MATI: &str = "Tidak tersedia di paket ini";
+pub const MATI: &str = "Not available on this plan";
 /// The name of the checkbox deliberately disabled in the checked state.
-pub const TERKUNCI: &str = "Wajib menyala";
+pub const TERKUNCI: &str = "Always on";
 /// The name of the checkbox with no visible label (its a11y name still
 /// exists).
-pub const TANPA_LABEL: &str = "Pilih baris pertama";
+pub const TANPA_LABEL: &str = "Select the first row";
 
 /// The parent checkbox state, **derived** from its children.
 ///
@@ -94,10 +94,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Centang satu item saja: induknya berubah menjadi garis \
-                 (indeterminate), bukan centang. Klik dua kali dengan cepat — \
-                 goresannya berbalik arah dari posisinya sekarang, membawa \
-                 kecepatannya.",
+                "Tick a single item: the parent turns into a dash \
+                 (indeterminate), not a check. Click twice quickly — the \
+                 stroke reverses from where it is right now, carrying its \
+                 velocity.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)

@@ -1224,7 +1224,7 @@ pub fn accordion_in(
 /// The accordion builder — Dart-style (§2.5).
 ///
 /// It owns no node of its own, and that is deliberate: an accordion **is** a
-/// [`card`](crate::card) holding sections with hairlines between them, and
+/// [`card`](mod@crate::card) holding sections with hairlines between them, and
 /// growing a second panel component to say so would be two implementations of
 /// one surface (`KOMPONEN.md` working rule #4). What it adds is the two things
 /// a hand-written column of collapsibles gets wrong — a hairline between every

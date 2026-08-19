@@ -495,7 +495,7 @@ fn nodes(tree: &RenderTree) -> Vec<NodeId> {
 /// let mut tree = RenderTree::new();
 /// let tick = Tick::manual(Duration::from_millis(8), Motion::Full);
 ///
-/// reconcile(&mut tree, tabs_in(&fonts, &t, [tab("Satu"), tab("Dua")]).selected(0));
+/// reconcile(&mut tree, tabs_in(&fonts, &t, [tab("One"), tab("Two")]).selected(0));
 /// tree.layout(BoxConstraints::tight(Size::new(400.0, 60.0)));
 /// // A freshly built row is already in place: nothing is moving.
 /// assert_eq!(advance(&mut tree, &tick), Dirty::NONE);

@@ -125,12 +125,12 @@ impl Marks {
     /// The name a screen reader and the toolbar both use.
     pub fn name(self) -> &'static str {
         match self {
-            Marks::BOLD => "Tebal",
-            Marks::ITALIC => "Miring",
-            Marks::UNDERLINE => "Garis bawah",
-            Marks::STRIKE => "Coret",
-            Marks::CODE => "Kode",
-            _ => "Gaya",
+            Marks::BOLD => "Bold",
+            Marks::ITALIC => "Italic",
+            Marks::UNDERLINE => "Underline",
+            Marks::STRIKE => "Strikethrough",
+            Marks::CODE => "Code",
+            _ => "Style",
         }
     }
 }
@@ -220,14 +220,14 @@ impl BlockKind {
     /// The label shown in the dropdown — also what a screen reader announces.
     pub fn label(self) -> &'static str {
         match self {
-            BlockKind::Paragraph => "Paragraf",
-            BlockKind::Heading1 => "Judul 1",
-            BlockKind::Heading2 => "Judul 2",
-            BlockKind::Heading3 => "Judul 3",
-            BlockKind::Bullet => "Daftar berpoin",
-            BlockKind::Numbered => "Daftar bernomor",
-            BlockKind::Quote => "Kutipan",
-            BlockKind::Code => "Blok kode",
+            BlockKind::Paragraph => "Paragraph",
+            BlockKind::Heading1 => "Heading 1",
+            BlockKind::Heading2 => "Heading 2",
+            BlockKind::Heading3 => "Heading 3",
+            BlockKind::Bullet => "Bulleted list",
+            BlockKind::Numbered => "Numbered list",
+            BlockKind::Quote => "Quote",
+            BlockKind::Code => "Code block",
         }
     }
 

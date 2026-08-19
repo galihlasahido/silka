@@ -539,7 +539,7 @@ fn sudut_yang_digambar_sama_dengan_yang_diuji_hit_test() {
     tree.layout(window(400.0, 400.0));
 
     let daun = anak(&tree, tree.root(), 0);
-    match tree.render(daun).expect("node hidup").hit_shape() {
+    match tree.render(daun).expect("the node is alive").hit_shape() {
         HitShape::Rounded(c) => assert_eq!(c, sudut),
         lain => panic!("sudut melengkung wajib diuji sebagai squircle: {lain:?}"),
     }

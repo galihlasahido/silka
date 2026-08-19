@@ -22,8 +22,8 @@
 //! let jangkar = use_signal(Anchor::default);
 //! jangkar::lacak("pemicu", jangkar);
 //!
-//! overlay_layer(button("Hapus").key("pemicu"))
-//!     .overlay(tooltip("Hapus permanen").anchor(jangkar.get()).open(true))
+//! overlay_layer(button("Delete").key("pemicu"))
+//!     .overlay(tooltip("Delete permanently").anchor(jangkar.get()).open(true))
 //! ```
 //!
 //! ## Why a registry and not a parameter

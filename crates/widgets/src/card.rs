@@ -39,7 +39,7 @@
 //! 4. **Header, body and footer that agree with each other.** The inset of a
 //!    header and the inset of the rows under it were two independent numbers in
 //!    the application; here they are one token, and the hairline between them is
-//!    [`crate::divider`] rather than a constrained empty box.
+//!    [`mod@crate::divider`] rather than a constrained empty box.
 //!
 //! # Why it owns a node
 //!
@@ -553,7 +553,7 @@ impl Card {
     /// Make the whole panel a control.
     ///
     /// This is what a "shortcut tile" is, and building it out of a button would
-    /// not work: [`crate::button`] takes one string and uses it as both the
+    /// not work: [`fn@crate::button`] takes one string and uses it as both the
     /// visible label and the accessible name, whereas a tile has a title, a
     /// detail line, and sometimes an icon. What it gets instead is
     /// [`silka_core::view::interactive`] — the same hover/press/focus springs

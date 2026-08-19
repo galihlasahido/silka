@@ -1,4 +1,4 @@
-//! `date_picker()` — a date field with a [`calendar`](crate::calendar) under it
+//! `date_picker()` — a date field with a [`calendar`](mod@crate::calendar) under it
 //! (`KOMPONEN.md` Tier 5).
 //!
 //! ```
@@ -23,8 +23,8 @@
 //! # Almost nothing here is new
 //!
 //! The grid, its arrow keys, its locale and its accessibility are
-//! [`calendar`](crate::calendar)'s. The anchoring, the auto-flip at the screen
-//! edge, the scrim and the dismissal are [`overlay`](crate::overlay)'s. What
+//! [`calendar`](mod@crate::calendar)'s. The anchoring, the auto-flip at the screen
+//! edge, the scrim and the dismissal are [`overlay`](mod@crate::overlay)'s. What
 //! this module adds is exactly three things, and each of them is the reason a
 //! date *picker* is a component rather than a calendar in a popover:
 //!
@@ -48,14 +48,14 @@
 //! anchor to on the frame it opens. [`sync`] answers that request **after** the
 //! frame's layout has settled — the same seam
 //! [`combo_box::sync`](crate::combo_box::sync) and
-//! [`menu::advance`](crate::menu) use, and with the same one-frame lag on the
+//! [`menu::advance`](mod@crate::menu) use, and with the same one-frame lag on the
 //! very first open.
 //!
 //! # Definition of Done (`KOMPONEN.md`)
 //!
 //! | Line | How it is met |
 //! |---|---|
-//! | Correct in both presets | inherited from [`calendar`](crate::calendar); the field's own frame is [`ColorToken`] and [`RadiusToken`] |
+//! | Correct in both presets | inherited from [`calendar`](mod@crate::calendar); the field's own frame is [`ColorToken`] and [`RadiusToken`] |
 //! | Interactive states on a spring | the field's background, border and focus ring |
 //! | Keyboard + focus ring | Space/Enter/↓ open, Esc closes, Delete/Backspace clear, and the grid takes over from there |
 //! | AccessKit node | a `Button` carrying the spoken date as its **value**, with `expanded` saying whether the panel is out |
@@ -768,7 +768,7 @@ impl DatePicker {
         self
     }
 
-    /// **Who is reading this** — see [`crate::calendar`].
+    /// **Who is reading this** — see [`mod@crate::calendar`].
     pub fn locale(mut self, locale: Locale) -> Self {
         self.locale = locale;
         self
@@ -1054,7 +1054,7 @@ fn layer_of(tree: &RenderTree, id: NodeId) -> Option<NodeId> {
 /// never learns its own position, so a panel opened by ↓ or by a click leaves a
 /// request behind ([`DateFieldBox::wants_anchor`]) and it is answered here,
 /// after this frame's layout has settled. The same seam
-/// [`crate::combo_box::sync`] and [`crate::menu`] use, for the same reason —
+/// [`crate::combo_box::sync`] and [`mod@crate::menu`] use, for the same reason —
 /// and with the same one-frame lag the first time a panel opens.
 ///
 /// Called once per frame by [`crate::advance`], so an application never has to

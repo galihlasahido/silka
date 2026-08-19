@@ -314,6 +314,17 @@ impl DrawList {
     }
 
     fn push_clip(&mut self, rect: Rect) {
+        // An empty clip is pushed through untouched. `map_rect` takes the
+        // bounding box of the four mapped corners, which normalises min/max —
+        // so a collapsed viewport (a scroll view at zero height, a rect whose
+        // size went negative) would come back out with real *positive* area and
+        // let through exactly the content the clip existed to hide. Emptiness
+        // survives no transform, so there is nothing to map: keep the rect as
+        // it came, and the culling below drops its contents.
+        if rect.size.is_empty() {
+            self.stack.push(rect);
+            return;
+        }
         // A scissor rect can only ever be axis aligned, so under rotation the
         // clip grows to the bounding box of the rotated rect: conservative, which
         // is the only safe direction for a clip (it may show too much, never too
@@ -325,7 +336,7 @@ impl DrawList {
         let ada = self.stack.pop().is_some();
         // `Scene` guarantees these are balanced; if they are not, a frame drawn
         // unclipped beats panicking in the middle of the render path.
-        debug_assert!(ada, "PopClip tanpa PushClip");
+        debug_assert!(ada, "PopClip without PushClip");
     }
 
     fn push_transform(&mut self, transform: Transform) {
@@ -334,7 +345,7 @@ impl DrawList {
 
     fn pop_transform(&mut self) {
         let ada = self.transforms.pop().is_some();
-        debug_assert!(ada, "PopTransform tanpa PushTransform");
+        debug_assert!(ada, "PopTransform without PushTransform");
     }
 
     /// Open a layer: close the current step, then start drawing into a fresh
@@ -363,7 +374,7 @@ impl DrawList {
     /// Close the innermost layer and record its composite.
     fn pop_layer(&mut self) {
         let Some(rec) = self.open_layers.pop() else {
-            debug_assert!(false, "PopLayer tanpa PushLayer");
+            debug_assert!(false, "PopLayer without PushLayer");
             return;
         };
         let composite = rec.layer.is_visible().then_some(LayerComposite {
@@ -405,7 +416,7 @@ impl DrawList {
     /// a panel's pixels is worse than an imperfect frame (§9.7).
     fn finish(&mut self) {
         while !self.open_layers.is_empty() {
-            debug_assert!(false, "PushLayer tanpa PopLayer");
+            debug_assert!(false, "PushLayer without PopLayer");
             self.pop_layer();
         }
         self.close_step(None);
@@ -499,7 +510,10 @@ pub(crate) fn fill_draw_list(
             // frame still draws — but it MUST show up as a named arm above as
             // soon as the backend supports it, so "not implemented" can never
             // masquerade as "working".
-            lain => debug_assert!(false, "perintah gambar belum didukung backend: {lain:?}"),
+            lain => debug_assert!(
+                false,
+                "draw command not supported by this backend: {lain:?}"
+            ),
         }
     }
     out.finish();
@@ -1276,6 +1290,22 @@ mod tests {
         assert_eq!(list.instances().len(), 1);
         assert_eq!(list.batches().len(), 1);
         assert_eq!(list.batches()[0].clip, None);
+    }
+
+    #[test]
+    fn clip_terbalik_tidak_dinormalkan_menjadi_kotak_berisi() {
+        // A rect whose size went negative is empty, not a rect drawn backwards.
+        // `Transform::map_rect` takes the bounding box of the mapped corners and
+        // would hand back a rect with real positive area, which is how a clip
+        // meant to hide everything ends up revealing a corner of the surface.
+        let mut s = Scene::new(Color::BLACK);
+        s.push(Command::PushClip(Rect::new(32.0, 32.0, -48.0, -48.0)));
+        s.push(kotak(0.0, 0.0, 100.0, 100.0));
+        s.push(Command::PopClip);
+
+        let list = draw_list_from_scene(&s, ColorSpace::Srgb, 1.0, &NoGlyphs);
+        assert!(list.is_empty());
+        assert!(list.batches().is_empty());
     }
 
     #[test]

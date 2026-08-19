@@ -19,7 +19,7 @@
 //! The one that is: `silka-paint` has no gradient command (§3.2 keeps the
 //! vocabulary small on purpose), so a saturation/value square would have to be
 //! approximated by a few hundred quads — the same trick
-//! [`skeleton`](crate::skeleton) uses for its shimmer, and a much worse deal at
+//! [`skeleton`](mod@crate::skeleton) uses for its shimmer, and a much worse deal at
 //! this size.
 //!
 //! The one that is not: an application built on a **design system** does not
@@ -32,12 +32,12 @@
 //!
 //! An arbitrary value still has a door: [`parse_hex`] and [`hex_string`] are
 //! the two halves of a hex field, and an application that wants one wires them
-//! to a [`text_field`](crate::text_field) beside this grid.
+//! to a [`text_field`](mod@crate::text_field) beside this grid.
 //!
 //! # One Tab stop, arrows inside it
 //!
-//! The same contract [`calendar`](crate::calendar) and
-//! [`radio_group`](crate::radio) use: the grid is the control, arrows move a
+//! The same contract [`calendar`](mod@crate::calendar) and
+//! [`radio_group`](mod@crate::radio) use: the grid is the control, arrows move a
 //! cursor inside it, Enter and Space pick, and the focus ring belongs to the
 //! **container** so it glides between swatches. Twenty tabs to cross a palette
 //! is not keyboard support.
@@ -58,7 +58,7 @@
 //! | Keyboard + focus ring | arrows, Home/End, Enter/Space, mirrored in RTL |
 //! | AccessKit node | a `Group` for the grid, a `Button` per swatch carrying `selected` and a **name** — the hex, or whatever the application called it |
 //! | Dark mode | token-driven |
-//! | Hit target ≥ 44pt | the same deliberate exception [`calendar`](crate::calendar) documents: a swatch is a sub-region of one control. [`ColorPicker::swatch_size`] is there for a touch-first application |
+//! | Hit target ≥ 44pt | the same deliberate exception [`calendar`](mod@crate::calendar) documents: a swatch is a sub-region of one control. [`ColorPicker::swatch_size`] is there for a touch-first application |
 //! | Reduced motion | the ring's glide is decorative and stops; the selection still moves |
 
 use std::rc::Rc;

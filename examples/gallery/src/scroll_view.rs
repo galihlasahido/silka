@@ -15,7 +15,7 @@
 //! | Scrollbar widens on hover | Bring the cursor near the right edge: the bar widens on a spring, and its track appears with it |
 //! | Dragging the thumb | Drag the bar directly: the content follows instantly, with no animation |
 //! | Full keyboard support + focus ring | Tab to the list, then ↑ ↓ PageUp/PageDown Home/End; the focus ring is visible |
-//! | Scroll-to | The "Ke atas"/"Tengah"/"Ke bawah" buttons |
+//! | Scroll-to | The "To the top"/"Middle"/"To the bottom" buttons |
 //! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
 //! | AccessKit nodes | VoiceOver says "scroll view" along with its position as a percentage |
 //! | Reduced motion | Turn on "Reduce motion" in the OS: scrolling **ends up in the same place**, only the glide goes away |
@@ -35,16 +35,16 @@ use silka_widgets::{active_fonts, button, button_variant, scroll_view, text, But
 /// The page title.
 pub const JUDUL: &str = "Scroll view";
 /// The list's name for screen readers — and the anchor the tests look for.
-pub const NAMA_DAFTAR: &str = "Daftar transaksi";
+pub const NAMA_DAFTAR: &str = "Transaction list";
 /// How many rows are in the list.
 pub const BARIS: usize = 40;
 
 /// The scroll-to-top button.
-pub const TOMBOL_ATAS: &str = "Ke atas";
+pub const TOMBOL_ATAS: &str = "To the top";
 /// The scroll-to-middle button.
-pub const TOMBOL_TENGAH: &str = "Tengah";
+pub const TOMBOL_TENGAH: &str = "Middle";
 /// The scroll-to-bottom button.
-pub const TOMBOL_BAWAH: &str = "Ke bawah";
+pub const TOMBOL_BAWAH: &str = "To the bottom";
 
 /// The list viewport's height, in **spacing-scale steps** (§2.6) — not a free
 /// number.
@@ -78,10 +78,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Gulir melewati ujungnya: isinya melar makin berat lalu memantul \
-                 pulang — rubber band ala macOS. Momentum trackpad datang dari OS \
-                 apa adanya; yang kita kerjakan hanya pantulannya, dan pantulan \
-                 itu melanjutkan kecepatan lemparan.",
+                "Scroll past the end: the content stretches, getting heavier as \
+                 it goes, then springs back — the macOS rubber band. Trackpad \
+                 momentum arrives from the OS as it is; all we do is the bounce, \
+                 and that bounce continues the velocity of the throw.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -91,7 +91,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
         daftar(&t, tujuan),
         kendali(&t, tujuan),
         View::from(
-            text("Keyboard: Tab ke daftar, lalu ↑ ↓ · Page Up/Down · Home/End · Spasi.")
+            text("Keyboard: Tab to the list, then ↑ ↓ · Page Up/Down · Home/End · Space.")
                 .size(t.typography.body_size)
                 .color(t.color.tertiary_label)
                 .single_line(),
@@ -140,7 +140,7 @@ fn baris(t: &Theme, i: usize) -> View {
     } else {
         t.color.surface_hover
     };
-    let kiri = text(format!("Transaksi #{:02}", i + 1))
+    let kiri = text(format!("Transaction #{:02}", i + 1))
         .size(t.typography.body_size)
         .color(t.color.label)
         .single_line();

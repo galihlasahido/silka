@@ -139,7 +139,7 @@ fn kunci_menjaga_identitas_saat_urutan_berubah() {
 }
 
 #[test]
-#[should_panic(expected = "kunci ganda di antara saudara")]
+#[should_panic(expected = "duplicate key among siblings")]
 fn kunci_ganda_di_antara_saudara_langsung_berisik() {
     // Left silent, this would swallow one of the nodes and only blow up a
     // frame later inside the arena — far from the author's mistake (§9.7).
@@ -148,7 +148,7 @@ fn kunci_ganda_di_antara_saudara_langsung_berisik() {
 }
 
 #[test]
-#[should_panic(expected = "kunci ganda di antara saudara")]
+#[should_panic(expected = "duplicate key among siblings")]
 fn kunci_ganda_ketahuan_pada_frame_pertama_bukan_berikutnya() {
     let mut tree = RenderTree::new();
     reconcile(&mut tree, column(daftar(&["a", "b"])));

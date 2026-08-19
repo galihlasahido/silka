@@ -32,10 +32,10 @@
 //! use silka_paint::{Insets, Size};
 //!
 //! let mut tree = RenderTree::new();
-//! tree.set_root_label("Laporan");
+//! tree.set_root_label("Reports");
 //! reconcile(
 //!     &mut tree,
-//!     pad(Insets::all(10.0), fixed(120.0, 24.0).label("Judul")),
+//!     pad(Insets::all(10.0), fixed(120.0, 24.0).label("Heading")),
 //! );
 //! tree.layout(BoxConstraints::loose(Size::new(200.0, 100.0)));
 //!
@@ -44,9 +44,9 @@
 //! let a11y = tree.access_tree(None);
 //! assert_eq!(
 //!     a11y.dump(),
-//!     "window \"Laporan\" [0,0 140x44] *focus\n  \
+//!     "window \"Reports\" [0,0 140x44] *focus\n  \
 //!        container [0,0 140x44]\n    \
-//!          label \"Judul\" [10,10 120x24]\n"
+//!          label \"Heading\" [10,10 120x24]\n"
 //! );
 //!
 //! // Only the difference is sent to the platform.

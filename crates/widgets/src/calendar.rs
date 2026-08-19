@@ -45,7 +45,7 @@
 //! # One Tab stop, arrows inside it
 //!
 //! The grid is the control, not the forty-two cells. That is the ARIA date-grid
-//! pattern and it is what [`radio_group`](crate::radio) already does here: one
+//! pattern and it is what [`radio_group`](mod@crate::radio) already does here: one
 //! Tab stop, arrows move a cursor inside it, and the focus ring belongs to the
 //! **container** so it glides from day to day instead of blinking. Arrows that
 //! walk off the edge of the month ask the application for the next one, which

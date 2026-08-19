@@ -25,7 +25,7 @@
 //! let stat = reconcile(
 //!     &mut tree,
 //!     column([
-//!         fixed(120.0, 20.0).label("Judul").key("judul"),
+//!         fixed(120.0, 20.0).label("Heading").key("judul"),
 //!         fixed(200.0, 40.0).key("isi"),
 //!     ])
 //!     .spacing(12.0),

@@ -256,7 +256,7 @@ impl CrashReport {
     /// let context = CrashContext::new("app", Version::new(1, 4, 0))
     ///     .platform(Platform::MacosArm64)
     ///     .build("9e75a29");
-    /// let panic = PanicReport::new("frame", "berkas hilang", None);
+    /// let panic = PanicReport::new("frame", "file missing", None);
     /// let report = CrashReport::from_panic(&context, &panic);
     /// assert_eq!(report.symbol_path(), "macos-aarch64/1.4.0/9e75a29");
     /// ```
@@ -679,7 +679,7 @@ mod tests {
     fn panic_report() -> PanicReport {
         PanicReport::new(
             "frame",
-            "berkas hilang",
+            "file missing",
             Some(String::from("crates/widgets/src/table/view.rs:42:9")),
         )
     }
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(report.channel(), "beta");
         assert_eq!(report.platform(), &Platform::MacosArm64);
         assert_eq!(report.label(), "frame");
-        assert_eq!(report.message(), "berkas hilang");
+        assert_eq!(report.message(), "file missing");
         assert_eq!(
             report.location(),
             Some("crates/widgets/src/table/view.rs:42:9")
@@ -729,7 +729,7 @@ mod tests {
         let line = CrashReport::from_panic(&context(), &panic_report()).to_string();
         assert!(line.contains("dev.silka.dashboard"));
         assert!(line.contains("1.4.0"));
-        assert!(line.contains("berkas hilang"));
+        assert!(line.contains("file missing"));
         assert!(line.contains("view.rs:42:9"));
     }
 

@@ -196,9 +196,9 @@ fn periksa_kunci_ganda(parent: NodeId, views: &[View]) {
         };
         if let Some(sebelumnya) = terlihat.insert(kunci, i) {
             panic!(
-                "kunci ganda di antara saudara: {kunci:?} dipakai view ke-{sebelumnya} dan \
-                 ke-{i} (anak dari {parent:?}) — kunci wajib unik di antara saudara. \
-                 Biasanya ini berarti data daftarnya punya id yang sama dua kali."
+                "duplicate key among siblings: {kunci:?} is used by view #{sebelumnya} and \
+                 #{i} (children of {parent:?}) — keys must be unique among siblings. \
+                 Usually this means the list data carries the same id twice."
             );
         }
     }

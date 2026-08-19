@@ -191,7 +191,7 @@ impl ViewNode for TextAreaBodyProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TextAreaBody>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         // Every rebuild allocates a fresh link; the state on the old one is
@@ -320,7 +320,7 @@ impl ViewNode for TextAreaFrameProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TextAreaFrame>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if !n.link.same(&self.link) {

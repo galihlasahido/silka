@@ -138,7 +138,7 @@ impl fmt::Display for Tolerance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "±{} per kanal, maksimal {:.4}% piksel berbeda",
+            "±{} per channel, at most {:.4}% of pixels differing",
             self.channel,
             self.different_ratio * 100.0
         )
@@ -172,7 +172,7 @@ impl fmt::Display for SizeMismatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "ukuran berbeda: golden {}x{}, hasil {}x{}",
+            "size mismatch: golden {}x{}, capture {}x{}",
             self.expected.0, self.expected.1, self.actual.0, self.actual.1
         )
     }
@@ -240,23 +240,23 @@ impl Diff {
     /// A human-readable summary, used verbatim in assertion messages.
     pub fn report(&self) -> String {
         let mut s = format!(
-            "{} dari {} piksel berbeda ({:.4}%), selisih kanal terbesar {}",
+            "{} of {} pixels differ ({:.4}%), largest channel gap {}",
             self.different,
             self.total,
             self.ratio() * 100.0,
             self.max_channel
         );
         if let Some((x, y)) = self.worst_at {
-            s.push_str(&format!(" di ({x}, {y})"));
+            s.push_str(&format!(" at ({x}, {y})"));
         }
         if let Some((x0, y0, x1, y1)) = self.bounds {
             s.push_str(&format!(
-                "\n  kotak perbedaan: ({x0}, {y0}) sampai ({x1}, {y1}) — {}x{} piksel",
+                "\n  difference box: ({x0}, {y0}) to ({x1}, {y1}) — {}x{} pixels",
                 x1 - x0 + 1,
                 y1 - y0 + 1
             ));
         }
-        s.push_str(&format!("\n  toleransi: {}", self.tolerance));
+        s.push_str(&format!("\n  tolerance: {}", self.tolerance));
         s
     }
 }
@@ -481,7 +481,7 @@ mod tests {
         }
         let d = compare(&a, &b, Tolerance::EXACT).expect("ukuran sama");
         assert_eq!(d.bounds, Some((5, 12, 9, 12)));
-        assert!(d.report().contains("5x1 piksel"), "{}", d.report());
+        assert!(d.report().contains("5x1 pixels"), "{}", d.report());
     }
 
     #[test]

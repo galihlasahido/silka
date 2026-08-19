@@ -11,13 +11,13 @@
 //! # let _ = (label, filter);
 //! ```
 //!
-//! # Why this is not [`badge`](crate::badge)
+//! # Why this is not [`badge`](mod@crate::badge)
 //!
 //! They draw nearly the same pill, and that is the whole trap. A badge **says
 //! something**; a tag **does something**. The difference is not decoration, it
 //! is the accessibility contract and the input contract:
 //!
-//! | | [`badge`](crate::badge) | `tag` |
+//! | | [`badge`](mod@crate::badge) | `tag` |
 //! |---|---|---|
 //! | Role | [`AccessRole::Label`] — a status | [`AccessRole::Button`] carrying `toggled`, or a label when it is neither selectable nor removable |
 //! | Tab stop | never | when it can be selected, and again for its cross |
@@ -78,7 +78,7 @@ use crate::text::text_in;
 
 /// The drawn pill's height, in **spacing steps** (§2.6) — 7 × 4pt = 28pt.
 ///
-/// Taller than a [`badge`](crate::badge)'s 20pt because a tag holds a cross and
+/// Taller than a [`badge`](mod@crate::badge)'s 20pt because a tag holds a cross and
 /// sometimes an avatar, and shorter than [`MIN_HIT_TARGET`] because a row of
 /// 44pt pills reads as a row of buttons. The **hit area** is the floor; the
 /// pill is what is drawn inside it.
@@ -1125,7 +1125,7 @@ impl Tag {
         self
     }
 
-    /// The name of the cross, when "Remove <text>" is not right.
+    /// The name of the cross, when `Remove <text>` is not right.
     pub fn remove_label(mut self, label: impl Into<String>) -> Self {
         self.remove_label = Some(label.into());
         self

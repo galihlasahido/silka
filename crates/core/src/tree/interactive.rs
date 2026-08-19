@@ -506,11 +506,18 @@ impl Interactive {
 
     /// The box actually drawn this frame, shrunk (or grown) by the scale spring.
     ///
-    /// Scale is expressed as an inset rather than a transform on purpose: the
-    /// paint vocabulary has no transform yet (§3.2 keeps it deliberately thin),
-    /// and a box that shrinks **into itself** never moves a neighbour — so a
-    /// press can never trigger a relayout. The radius shrinks with it, which is
-    /// what keeps the corner looking like the same corner.
+    /// Scale is expressed as an inset rather than a transform: a box that
+    /// shrinks **into itself** never moves a neighbour, so a press can never
+    /// trigger a relayout. The radius shrinks with it, which is what keeps the
+    /// corner looking like the same corner.
+    ///
+    /// The cost is that only the decoration shrinks — children are painted
+    /// through [`PaintCtx::paint_children`](crate::tree::PaintCtx::paint_children)
+    /// afterwards, at full size, so a label inside a pressed button stays put.
+    /// The paint vocabulary now has a real transform
+    /// ([`PaintCtx::with_transform`](crate::tree::PaintCtx::with_transform)),
+    /// which is what a whole-subtree press scale would be built on; switching
+    /// to it is a deliberate follow-up, not an oversight.
     fn kotak_gambar(&self, bounds: Rect) -> (Rect, Corners) {
         let skala = self.scale.position();
         if (skala - 1.0).abs() < f32::EPSILON || bounds.size.is_empty() {

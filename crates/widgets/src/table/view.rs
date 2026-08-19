@@ -93,7 +93,7 @@ impl ViewNode for TableProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TableBody>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.metrics != self.metrics {
@@ -179,7 +179,7 @@ impl ViewNode for TableHeaderProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TableHeaderBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.columns != self.columns {
             n.columns = self.columns.clone();
@@ -224,7 +224,7 @@ impl ViewNode for TableRowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TableRowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.columns != self.columns {
             n.columns = self.columns.clone();
@@ -256,7 +256,7 @@ impl ViewNode for TableCellProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TableCellBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.align == self.align && n.padding == self.padding {
             return Dirty::NONE;
         }

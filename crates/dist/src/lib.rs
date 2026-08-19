@@ -14,7 +14,7 @@
 //! | [`version`] | Is `1.4.0-rc.2` newer than `1.4.0-rc.10`? (no, and that is the point) |
 //! | [`feed`] | What did the release pipeline publish? |
 //! | [`update`] | Which of those releases applies to *this* install, on *this* OS, in *this* rollout bucket — and are these the bytes it named? |
-//! | [`sha256`] | Is the file we downloaded byte-for-byte the file the feed described? |
+//! | [`mod@sha256`] | Is the file we downloaded byte-for-byte the file the feed described? |
 //! | [`pending`] | What has to happen at the next restart, and what if the swap fails? |
 //! | [`crash`] | What is written down before the process dies, and where is it read back? |
 //! | [`json`] | The one document format all of the above are written in |
@@ -63,7 +63,7 @@
 //!
 //! **This crate does not verify signatures.** It computes the digest, it hands
 //! over the exact bytes that were signed, and it takes a
-//! [`SignatureVerifier`](update::SignatureVerifier) the application implements
+//! [`SignatureVerifier`] the application implements
 //! with a real cryptography crate. Hand-rolling Ed25519 field arithmetic inside
 //! a UI framework would produce a routine that looks like security and is not.
 //! The digest check it *does* perform is integrity, not authenticity, and the
@@ -71,7 +71,7 @@
 //!
 //! **This crate does not write minidumps.**
 //! [`crash::write_minidump`] returns
-//! [`MinidumpError::Unsupported`](crash::MinidumpError::Unsupported) naming the
+//! [`MinidumpError::Unsupported`] naming the
 //! API it is waiting for — the same convention `silka-platform` uses for every
 //! backend it does not have yet. What it *does* write is the metadata around the
 //! dump, because that is what makes a dump symbolicatable six months later.

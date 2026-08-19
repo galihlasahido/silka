@@ -91,10 +91,10 @@ pub enum ImageError {
 impl fmt::Display for ImageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ImageError::Empty => f.write_str("ukuran gambar tidak boleh nol"),
+            ImageError::Empty => f.write_str("image size must not be zero"),
             ImageError::WrongLength { expected, actual } => write!(
                 f,
-                "panjang buffer {actual} byte, seharusnya {expected} byte (w*h*4)"
+                "buffer is {actual} bytes, expected {expected} bytes (w*h*4)"
             ),
         }
     }

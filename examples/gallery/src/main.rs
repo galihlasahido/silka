@@ -18,6 +18,14 @@
 //! - and the **spring playground** ([`spring`]), the one page that exists to
 //!   make the thing a screenshot cannot show — motion — visible and touchable.
 //!
+//! Two small seams belong to the gallery rather than to the framework, and both
+//! ride the one callback that runs after a layout: [`jangkar`] publishes a
+//! trigger's rectangle to the panel floating above it, and [`sentuh`] turns
+//! "the pointer is resting on that node" into a signal. Anchored overlays
+//! ([`tooltip`], [`popover`], [`hover_card`]) take both as parameters, because
+//! they do not own the trigger and must not guess which node the application
+//! meant.
+//!
 //! ```text
 //! cargo run -p silka-gallery                             # the gallery
 //! cargo run -p silka-gallery -- --page table             # opened on one page
@@ -53,26 +61,35 @@
     rustdoc::unescaped_backticks
 )]
 
+pub mod accordion;
 pub mod avatar;
 pub mod badge;
 pub mod button;
+pub mod calendar;
 pub mod card;
 pub mod cards;
 pub mod catalog;
 pub mod chart;
 pub mod checkbox;
+pub mod color_picker;
 pub mod counter;
+pub mod date_picker;
 pub mod dialog;
+pub mod drawer;
+pub mod hover_card;
 pub mod jangkar;
 pub mod kepala;
 pub mod layout;
 pub mod list;
 pub mod menu;
+pub mod popover;
 pub mod primitives;
 pub mod progress;
 pub mod reactive;
 pub mod scroll_view;
 pub mod select;
+pub mod sentuh;
+pub mod sheet;
 pub mod shell;
 pub mod skeleton;
 pub mod slider;
@@ -83,6 +100,8 @@ pub mod tabs;
 pub mod tag;
 pub mod text_area;
 pub mod text_field;
+pub mod toast;
+pub mod tooltip;
 pub mod tree;
 pub mod typography;
 pub mod utility;

@@ -9,7 +9,7 @@
 //! use silka_core::view::View;
 //!
 //! let _ = column([
-//!     View::from(pad(Insets::all(12.0), fixed(120.0, 24.0).label("Judul"))),
+//!     View::from(pad(Insets::all(12.0), fixed(120.0, 24.0).label("Heading"))),
 //!     View::from(row([fixed(64.0, 32.0), fixed(64.0, 32.0)]).spacing(8.0)),
 //! ])
 //! .spacing(12.0);
@@ -162,7 +162,7 @@ impl ViewNode for FixedProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<FixedBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.size != self.size {
             n.size = self.size;
@@ -243,7 +243,7 @@ impl ViewNode for PadProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<PaddingBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.insets != self.insets {
             n.insets = self.insets;
@@ -294,7 +294,7 @@ impl ViewNode for ConstrainProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ConstrainedBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.extra != self.extra {
             n.extra = self.extra;
@@ -339,7 +339,7 @@ impl ViewNode for MeasuredProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<MeasuredBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if *n == self.node {
             return Dirty::NONE;
         }
@@ -423,7 +423,7 @@ impl ViewNode for LayoutProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TaffyBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = terapkan_dekorasi(&mut n.decoration, &self.decoration);
         if n.style != self.style {
             n.style = self.style.clone();
@@ -624,7 +624,7 @@ impl ViewNode for ItemProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<LayoutItem>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.style == self.style {
             return Dirty::NONE;
         }
@@ -747,7 +747,7 @@ impl ViewNode for ViewportProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<Viewport>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.axis != self.axis {
             n.axis = self.axis;

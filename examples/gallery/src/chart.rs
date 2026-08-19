@@ -8,13 +8,13 @@
 //! | What it proves | How to try it in the window |
 //! |---|---|
 //! | Every mark | Line, area, grouped bars, stacked horizontal bars, and sparklines, all on one page |
-//! | Spring data transitions | "Data baru" — the marks **travel** to their new values instead of jumping, carrying their velocity if you click again mid-flight |
+//! | Spring data transitions | "New data" — the marks **travel** to their new values instead of jumping, carrying their velocity if you click again mid-flight |
 //! | The tooltip rides the overlay system | Hover any chart: the panel is placed, flipped at the window edge, and sprung by `silka_widgets::overlay` — this page computes no positions |
 //! | Colorblind-safe categorical palette | The series keep their hues across light/dark and both presets; slot order never shifts when a series is added |
-//! | Locale-aware formatting | "Ganti locale" — the same numbers become `1,5 jt` / `1.5M` / `1,5 Mio.` and the dates re-order with them |
+//! | Locale-aware formatting | "Switch locale" — the same numbers become `1,5 jt` / `1.5M` / `1,5 Mio.` and the dates re-order with them |
 //! | Time axis on real calendar boundaries | The line chart's labels sit on month starts, not every-30-days |
 //! | Bars start at zero, lines do not | The bar axis includes 0; the line axis frames its own range |
-//! | Empty state | "Kosongkan" — the axes go, the message stays |
+//! | Empty state | "Clear" — the axes go, the message stays |
 //! | AccessKit node | VoiceOver announces each chart and reads out what it shows |
 //! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
 //! | Reduced motion | Turn on "Reduce motion" in the OS: values are immediately in place, the tooltip stops sliding |
@@ -43,25 +43,25 @@ use silka_widgets::{active_fonts, button, button_variant, overlay_layer, text, B
 pub const JUDUL: &str = "Chart";
 
 /// The line chart's name — also the anchor the a11y tests look for.
-pub const NAMA_GARIS: &str = "Arus kas harian";
+pub const NAMA_GARIS: &str = "Daily cash flow";
 /// The area chart's name.
-pub const NAMA_AREA: &str = "Saldo kas";
+pub const NAMA_AREA: &str = "Cash balance";
 /// The grouped bar chart's name.
-pub const NAMA_BATANG: &str = "Pendapatan per kuartal";
+pub const NAMA_BATANG: &str = "Revenue per quarter";
 /// The stacked horizontal bar chart's name.
-pub const NAMA_TUMPUK: &str = "Komposisi biaya";
+pub const NAMA_TUMPUK: &str = "Cost breakdown";
 
 /// The button that regenerates the dataset.
-pub const TOMBOL_DATA: &str = "Data baru";
+pub const TOMBOL_DATA: &str = "New data";
 /// The button that empties every chart.
-pub const TOMBOL_KOSONG: &str = "Kosongkan";
+pub const TOMBOL_KOSONG: &str = "Clear";
 /// The button that fills them again.
-pub const TOMBOL_ISI: &str = "Isi lagi";
+pub const TOMBOL_ISI: &str = "Refill";
 /// The button that cycles the locale.
-pub const TOMBOL_LOCALE: &str = "Ganti locale";
+pub const TOMBOL_LOCALE: &str = "Switch locale";
 
 /// The empty-state text.
-pub const KOSONG: &str = "Belum ada data untuk periode ini";
+pub const KOSONG: &str = "No data for this period";
 
 /// A chart's height, in spacing-scale steps (§2.6 — never a raw number).
 const TINGGI_LANGKAH: f32 = 56.0;
@@ -108,7 +108,7 @@ pub struct Biaya {
 }
 
 /// A deterministic pseudo-random stream — the same `seed` always produces the
-/// same data, so "Data baru" is reproducible and the tests below are not
+/// same data, so "New data" is reproducible and the tests below are not
 /// flaky.
 fn acak(seed: u64, i: u64) -> f64 {
     let mut x = seed
@@ -166,7 +166,7 @@ pub fn kuartalan(seed: u64) -> Vec<Kuartal> {
 
 /// The cost breakdown.
 pub fn biaya(seed: u64) -> Vec<Biaya> {
-    ["Operasional", "Gaji", "Sewa", "Pemasaran"]
+    ["Operations", "Payroll", "Rent", "Marketing"]
         .iter()
         .enumerate()
         .map(|(i, nama)| {
@@ -252,11 +252,11 @@ fn judul(t: &Theme) -> View {
         ),
         View::from(
             text(
-                "Empat jenis mark di satu halaman, semuanya menumpang token \
-                 tema yang sama dan sistem overlay yang sama. Arahkan penunjuk \
-                 ke mana pun di dalam kotak plot — bukan tepat di atas garisnya \
-                 — lalu tekan \"Data baru\" berkali-kali untuk melihat nilai \
-                 berpindah sambil membawa kecepatannya.",
+                "Four kinds of mark on one page, all riding the same theme \
+                 tokens and the same overlay system. Point anywhere inside the \
+                 plot box — not exactly on the line — then press \"New data\" \
+                 a few times to watch the values move while carrying their \
+                 velocity.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -327,8 +327,8 @@ fn garis(t: &Theme, l: Locale, seed: u64, kosong: bool, hover: Signal<Option<Cha
         line_chart(data)
             .key("garis")
             .x(|d: &Hari| d.tanggal)
-            .y_named("Masuk", |d: &Hari| d.masuk)
-            .y_named("Keluar", |d: &Hari| d.keluar)
+            .y_named("In", |d: &Hari| d.masuk)
+            .y_named("Out", |d: &Hari| d.keluar)
             .time()
             .title(NAMA_GARIS)
             .legend(true)
@@ -348,7 +348,7 @@ fn area(t: &Theme, l: Locale, seed: u64, kosong: bool, hover: Signal<Option<Char
         area_chart(data)
             .key("area")
             .x(|d: &Hari| d.tanggal)
-            .y_named("Saldo", |d: &Hari| d.masuk)
+            .y_named("Balance", |d: &Hari| d.masuk)
             .time()
             .title(NAMA_AREA)
             .animated(true)
@@ -373,7 +373,7 @@ fn batang(
         bar_chart(data)
             .key("batang")
             .x_label(|d: &Kuartal| d.nama.clone())
-            .y_named("Pendapatan", |d: &Kuartal| d.pendapatan)
+            .y_named("Revenue", |d: &Kuartal| d.pendapatan)
             .y_named("Target", |d: &Kuartal| d.target)
             .grouped()
             .title(NAMA_BATANG)
@@ -401,9 +401,9 @@ fn tumpuk(
         bar_chart(data)
             .key("tumpuk")
             .x_label(|d: &Biaya| d.nama.clone())
-            .y_named("Tetap", |d: &Biaya| d.tetap)
-            .y_named("Variabel", |d: &Biaya| d.variabel)
-            .y_named("Sekali", |d: &Biaya| d.sekali)
+            .y_named("Fixed", |d: &Biaya| d.tetap)
+            .y_named("Variable", |d: &Biaya| d.variabel)
+            .y_named("One-off", |d: &Biaya| d.sekali)
             .stacked()
             .horizontal()
             .title(NAMA_TUMPUK)
@@ -420,7 +420,7 @@ fn tumpuk(
 /// the only place a chart with no axes makes sense.
 fn percikan(t: &Theme, l: Locale, seed: u64, kosong: bool) -> View {
     let hari = if kosong { Vec::new() } else { harian(seed) };
-    let entri: Vec<View> = ["Masuk", "Keluar", "Selisih"]
+    let entri: Vec<View> = ["In", "Out", "Delta"]
         .iter()
         .enumerate()
         .map(|(i, nama)| {
@@ -832,7 +832,7 @@ mod tests {
 
     #[test]
     fn data_deterministik_agar_uji_tidak_goyah() {
-        // "Data baru" has to be reproducible, otherwise every test on this page
+        // "New data" has to be reproducible, otherwise every test on this page
         // becomes a coin flip.
         let a = harian(7);
         let b = harian(7);

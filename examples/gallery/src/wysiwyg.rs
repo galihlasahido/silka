@@ -8,12 +8,12 @@
 //! |---|---|
 //! | The model is a **document**, not a string | Put the caret in a bullet and press Return: a new bullet. Press Return again in the empty one: it leaves the list |
 //! | Styled inline runs | Select half a word and press ⌘B — only that half turns bold, and the run splits exactly there |
-//! | The toolbar reflects the caret | Walk the caret in and out of bold text with the arrow keys: the "Tebal" button lights up and goes out without a click |
+//! | The toolbar reflects the caret | Walk the caret in and out of bold text with the arrow keys: the "Bold" button lights up and goes out without a click |
 //! | Selection across blocks and styles | Drag from inside the heading down into the second bullet |
 //! | Undo works on **operations** | Delete that cross-block selection and press ⌘Z: the heading is a heading again and the bullet is a bullet |
 //! | Typing is one undo step | Type a word, press ⌘Z once: the whole word goes |
 //! | The block menu is the Tier 2 `select` | Open it with the mouse or Space: an anchored popup with typeahead, flipping at the screen edge |
-//! | The link sheet is the Tier 4 `dialog` | ⌘K, or the "Tautan" button: a modal with Esc to cancel |
+//! | The link sheet is the Tier 4 `dialog` | ⌘K, or the "Link" button: a modal with Esc to cancel |
 //! | Typing inside a link does not extend it | Put the caret in the middle of the link and type: the anchor keeps its own text |
 //! | Copy keeps styling **inside** the app | ⌘C, put the caret at the end, then ⌘V (this page keeps the rich flavour in a signal, the way a shell keeps it on the pasteboard) |
 //! | IME in the middle of styled text | Compose Japanese inside the bold run: the preedit is underlined in place and never reaches the document until it is committed |
@@ -43,7 +43,7 @@ use silka_widgets::{active_fonts, overlay_layer, text, SelectState};
 /// The page title.
 pub const JUDUL: &str = "WYSIWYG editor";
 /// The editor's a11y name.
-pub const NASKAH: &str = "Naskah rilis";
+pub const NASKAH: &str = "Release draft";
 /// The address used by the sample link.
 pub const TAUTAN: &str = "https://silka.dev/rilis";
 
@@ -54,31 +54,31 @@ const LEBAR: f32 = 150.0;
 /// regression in any of them is visible without typing a character.
 pub fn naskah_awal() -> Document {
     Document::from_blocks(vec![
-        Block::plain(BlockKind::Heading1, "Catatan rilis"),
+        Block::plain(BlockKind::Heading1, "Release notes"),
         Block::new(
             BlockKind::Paragraph,
             vec![
-                Span::plain("Versi "),
+                Span::plain("Version "),
                 Span::new("1.0", InlineStyle::with_marks(Marks::BOLD)),
-                Span::plain(" akhirnya "),
-                Span::new("keluar", InlineStyle::with_marks(Marks::ITALIC)),
-                Span::plain(" — lihat "),
-                Span::new("catatan lengkap", InlineStyle::link(TAUTAN)),
+                Span::plain(" is finally "),
+                Span::new("out", InlineStyle::with_marks(Marks::ITALIC)),
+                Span::plain(" — see "),
+                Span::new("the full notes", InlineStyle::link(TAUTAN)),
                 Span::plain("."),
             ],
         ),
-        Block::plain(BlockKind::Heading2, "Yang baru"),
+        Block::plain(BlockKind::Heading2, "What's new"),
         Block::new(
             BlockKind::Bullet,
             vec![
-                Span::plain("editor teks kaya dengan "),
-                Span::new("undo per-operasi", InlineStyle::with_marks(Marks::CODE)),
+                Span::plain("a rich text editor with "),
+                Span::new("per-operation undo", InlineStyle::with_marks(Marks::CODE)),
             ],
         ),
-        Block::plain(BlockKind::Bullet, "daftar, kutipan, dan blok kode"),
-        Block::plain(BlockKind::Numbered, "pilih teks"),
-        Block::plain(BlockKind::Numbered, "tekan ⌘B"),
-        Block::plain(BlockKind::Quote, "Yang tidak diuji, tidak selesai."),
+        Block::plain(BlockKind::Bullet, "lists, quotes, and code blocks"),
+        Block::plain(BlockKind::Numbered, "select text"),
+        Block::plain(BlockKind::Numbered, "press ⌘B"),
+        Block::plain(BlockKind::Quote, "What is not tested is not finished."),
         Block::plain(BlockKind::Code, "cargo run -p silka-gallery"),
     ])
 }
@@ -128,10 +128,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Pilih sebagian kata lalu ⌘B: rentang gayanya terpecah tepat di \
-                 situ. Tekan ⌘Z setelah menghapus seleksi lintas blok — judul \
-                 kembali jadi judul, poin kembali jadi poin. ⌘K menyisipkan \
-                 tautan; mengetik di dalam tautan tidak memperlebarnya.",
+                "Select part of a word and press ⌘B: the style span splits exactly \
+                 there. Press ⌘Z after deleting a selection that crosses blocks \
+                 — a heading becomes a heading again, a bullet a bullet again. \
+                 ⌘K inserts a link; typing inside a link does not widen it.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -202,7 +202,7 @@ fn editor(t: &Theme, kabel: Kabel) -> View {
             .key("naskah")
             .handle(saluran.clone())
             .label(NASKAH)
-            .placeholder("Tulis catatan rilis…")
+            .placeholder("Write the release notes…")
             .rows(14)
             .on_change(move |d| naskah.set(d.clone()))
             .on_state(move |s| keadaan.set(s.clone()))
@@ -245,7 +245,7 @@ fn gema(keadaan: Signal<EditorSnapshot>, naskah: Signal<Document>) -> View {
         let huruf = d.access_text().chars().count();
         let jenis = s
             .kind
-            .map_or("campuran".to_string(), |k| k.label().to_string());
+            .map_or("mixed".to_string(), |k| k.label().to_string());
         let gaya = Marks::ALL
             .iter()
             .filter(|m| s.marks.contains(**m))
@@ -253,13 +253,13 @@ fn gema(keadaan: Signal<EditorSnapshot>, naskah: Signal<Document>) -> View {
             .collect::<Vec<_>>()
             .join(" · ");
         let gaya = if gaya.is_empty() {
-            "biasa".to_string()
+            "plain".to_string()
         } else {
             gaya
         };
         let teks = format!(
-            "{blok} blok · {huruf} karakter · caret di {jenis} · gaya: {gaya}{}",
-            if s.can_undo { " · ⌘Z tersedia" } else { "" }
+            "{blok} blocks · {huruf} characters · caret in {jenis} · style: {gaya}{}",
+            if s.can_undo { " · ⌘Z available" } else { "" }
         );
         text(teks)
             .size(t.typography.footnote.size)
@@ -351,7 +351,7 @@ mod tests {
             .entries()
             .iter()
             .filter_map(|e| e.node.label.clone())
-            .find(|l| l.contains("blok ·"))
+            .find(|l| l.contains("blocks ·"))
             .unwrap_or_else(|| panic!("tidak ada baris gema:\n{}", pohon.dump()))
     }
 
@@ -367,8 +367,8 @@ mod tests {
         assert_eq!(e.node.role, AccessRole::MultilineTextInput);
         assert!(e.node.text_selection.is_some(), "caret harus dilaporkan");
         assert!(e.node.actions.contains(AccessActions::SET_VALUE));
-        assert!(nilai(&ui, NASKAH).starts_with("Catatan rilis"));
-        assert!(gema_terbaca(&ui).contains("9 blok"));
+        assert!(nilai(&ui, NASKAH).starts_with("Release notes"));
+        assert!(gema_terbaca(&ui).contains("9 blocks"));
     }
 
     #[test]
@@ -398,11 +398,11 @@ mod tests {
         ui.frame();
 
         assert!(
-            gema_terbaca(&ui).contains("Tebal"),
+            gema_terbaca(&ui).contains("Bold"),
             "toolbar harus memantulkan gaya: {}",
             gema_terbaca(&ui)
         );
-        assert_eq!(nilai(&ui, NASKAH).lines().next(), Some("Catatan rilis"));
+        assert_eq!(nilai(&ui, NASKAH).lines().next(), Some("Release notes"));
     }
 
     #[test]
@@ -412,24 +412,24 @@ mod tests {
         let titik = kotak(&ui, NASKAH).center();
         klik(&mut ui, titik);
         ui.frame();
-        assert!(gema_terbaca(&ui).contains("9 blok"));
+        assert!(gema_terbaca(&ui).contains("9 blocks"));
 
         // ⌘A then type: nine blocks collapse into one.
         tombol(&mut ui, KeyCode::Character('a'), Modifiers::COMMAND, 100);
         ketik(&mut ui, "X");
         assert!(
-            gema_terbaca(&ui).contains("1 blok"),
+            gema_terbaca(&ui).contains("1 block"),
             "{}",
             gema_terbaca(&ui)
         );
 
         tombol(&mut ui, KeyCode::Character('z'), Modifiers::COMMAND, 400);
         assert!(
-            gema_terbaca(&ui).contains("9 blok"),
+            gema_terbaca(&ui).contains("9 blocks"),
             "⌘Z harus mengembalikan sembilan blok, bukan sekadar teksnya: {}",
             gema_terbaca(&ui)
         );
-        assert!(nilai(&ui, NASKAH).starts_with("Catatan rilis"));
+        assert!(nilai(&ui, NASKAH).starts_with("Release notes"));
     }
 
     #[test]

@@ -56,13 +56,13 @@ const LEBAR_SISI: f32 = 46.0;
 
 /// The a11y name of the sidebar — the tests find it by this name, which is
 /// also what a screen reader announces (§3.8).
-pub const NAMA_SISI: &str = "Daftar komponen";
+pub const NAMA_SISI: &str = "Component list";
 /// The a11y name of the preset switcher.
 pub const NAMA_PRESET: &str = "Preset";
 /// The a11y name of the appearance switcher.
-pub const NAMA_TAMPILAN: &str = "Tampilan";
+pub const NAMA_TAMPILAN: &str = "View";
 /// The label of the reduced-motion switch.
-pub const NAMA_GERAK: &str = "Kurangi gerak";
+pub const NAMA_GERAK: &str = "Reduce motion";
 /// The brand shown at the top left.
 pub const MEREK: &str = "silka";
 
@@ -94,9 +94,9 @@ impl ModeTampilan {
     /// The label in the segmented control.
     pub fn judul(self) -> &'static str {
         match self {
-            ModeTampilan::Sistem => "Sistem",
-            ModeTampilan::Terang => "Terang",
-            ModeTampilan::Gelap => "Gelap",
+            ModeTampilan::Sistem => "System",
+            ModeTampilan::Terang => "Light",
+            ModeTampilan::Gelap => "Dark",
         }
     }
 
@@ -145,16 +145,18 @@ pub fn tema_berikut(sekarang: Theme, mode: ModeTampilan, os: Appearance) -> Them
 /// widget catalogue, the chart crate, and the gallery's own spring playground.
 /// The application still calls a single function once per frame (§3.5).
 ///
-/// The fourth line is not animation at all: it is the seam that publishes a
-/// trigger's rectangle to the panel floating above it
-/// ([`crate::jangkar`]). It rides here because this is the one callback that
-/// runs **after** a layout and before the next build — exactly where a value
-/// that only exists once the frame is laid out has to be read.
+/// The last two lines are not animation at all: they are the seams that
+/// publish, to whatever floats above a trigger, the two facts about it that
+/// only a finished frame knows — **where** it is ([`crate::jangkar`]) and
+/// whether the pointer is resting on it ([`crate::sentuh`]). Both ride here
+/// because this is the one callback that runs **after** a layout and before
+/// the next build.
 pub fn maju(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     silka_widgets::advance(tree, tick)
         | silka_chart::advance(tree, tick)
         | crate::spring::advance(tree, tick)
         | crate::jangkar::sync(tree)
+        | crate::sentuh::sync(tree, tick)
 }
 
 // ---------------------------------------------------------------------------

@@ -82,11 +82,11 @@ pub enum ImageError {
 impl fmt::Display for ImageError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ImageError::Empty => write!(f, "gambar kosong: lebar atau tinggi 0"),
+            ImageError::Empty => write!(f, "empty image: width or height is 0"),
             ImageError::WrongLength { expected, actual } => {
                 write!(
                     f,
-                    "panjang RGBA salah: perlu {expected} bita, dapat {actual}"
+                    "wrong RGBA length: expected {expected} bytes, got {actual}"
                 )
             }
         }

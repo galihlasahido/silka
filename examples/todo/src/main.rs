@@ -48,9 +48,9 @@ pub const JUDUL: &str = "Tugas hari ini";
 /// what the tests type into.
 pub const KOLOM_BARU: &str = "Tugas baru";
 /// The label of the add button.
-pub const TOMBOL_TAMBAH: &str = "Tambah";
+pub const TOMBOL_TAMBAH: &str = "Increment";
 /// The label of the per-row delete button.
-pub const TOMBOL_HAPUS: &str = "Hapus";
+pub const TOMBOL_HAPUS: &str = "Delete";
 /// The label of the button that clears every finished task.
 pub const TOMBOL_BERSIHKAN: &str = "Bersihkan yang selesai";
 /// What the card says while the list is empty.

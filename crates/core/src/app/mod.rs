@@ -74,10 +74,10 @@
 //! assert!(ui.is_idle());
 //!
 //! pegangan.get().unwrap().set(3);
-//! assert!(!ui.is_idle(), "perubahan signal menjadwalkan frame");
+//! assert!(!ui.is_idle(), "a signal change schedules a frame");
 //!
 //! let berikut = ui.frame();
-//! assert_eq!(berikut.rebuilt, 1, "hanya komponen 'angka' yang dibangun ulang");
+//! assert_eq!(berikut.rebuilt, 1, "only the 'angka' component is rebuilt");
 //! assert_eq!(berikut.diff.created, 0);
 //! assert!(ui.is_idle());
 //! # let _ = awal;

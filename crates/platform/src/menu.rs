@@ -787,9 +787,9 @@ pub enum MenuError {
 impl fmt::Display for MenuError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MenuError::DuplicateId(id) => write!(f, "id menu ganda: {id}"),
-            MenuError::Os(m) => write!(f, "menu ditolak OS: {m}"),
-            MenuError::Unsupported(m) => write!(f, "menu tidak didukung: {m}"),
+            MenuError::DuplicateId(id) => write!(f, "duplicate menu id: {id}"),
+            MenuError::Os(m) => write!(f, "the OS refused the menu: {m}"),
+            MenuError::Unsupported(m) => write!(f, "menu not supported: {m}"),
         }
     }
 }
@@ -1089,7 +1089,7 @@ impl MenuBar {
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
             Err(MenuError::Unsupported(
-                "menubar in-window Linux butuh window GTK yang tidak diekspos winit",
+                "an in-window Linux menubar needs the GTK window winit does not expose",
             ))
         }
 
@@ -1114,7 +1114,7 @@ impl MenuBar {
                         unsafe { root.init_for_hwnd(h.hwnd.get()) }
                             .map_err(|e| MenuError::Os(e.to_string()))?;
                     }
-                    _ => return Err(MenuError::Unsupported("hanya HWND yang punya menubar")),
+                    _ => return Err(MenuError::Unsupported("only an HWND can carry a menubar")),
                 }
             }
 

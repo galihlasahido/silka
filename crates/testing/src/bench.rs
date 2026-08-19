@@ -221,7 +221,7 @@ impl Samples {
     /// A one-block summary, printed on both success and failure.
     pub fn report(&self) -> String {
         format!(
-            "{}: {} frame — p50 {:.3} ms · p95 {:.3} ms · p99 {:.3} ms · maks {:.3} ms",
+            "{}: {} frames — p50 {:.3} ms · p95 {:.3} ms · p99 {:.3} ms · max {:.3} ms",
             self.name,
             self.len(),
             ms(self.p50()),
@@ -253,11 +253,11 @@ impl Samples {
     /// In a debug build this only prints — see the module docs.
     pub fn assert_within(&self, budget: Budget) {
         match self.check(budget) {
-            Ok(()) => eprintln!("{} (anggaran {budget}) ✓", self.report()),
+            Ok(()) => eprintln!("{} (budget {budget}) ✓", self.report()),
             Err(overrun) if Budget::enforced() => panic!("{overrun}"),
             Err(overrun) => eprintln!(
-                "{overrun}\n  (build debug: gerbang tidak ditegakkan; \
-                 jalankan --release atau set {FORCE_ENV}=1)"
+                "{overrun}\n  (debug build: the gate is not enforced; \
+                 run --release or set {FORCE_ENV}=1)"
             ),
         }
     }
@@ -297,7 +297,7 @@ impl fmt::Display for Overrun {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "anggaran frame terlampaui: {:.3} ms > {:.3} ms (p{:.0})\n  {}",
+            "frame budget exceeded: {:.3} ms > {:.3} ms (p{:.0})\n  {}",
             ms(self.measured),
             ms(self.limit),
             self.budget.percentile * 100.0,
@@ -449,7 +449,7 @@ mod tests {
         assert!(s.check(Budget::millis(5.0).percentile(0.5)).is_ok());
         let e = s.check(Budget::millis(5.0).percentile(0.95)).unwrap_err();
         assert_eq!(e.measured, Duration::from_millis(20));
-        assert!(e.to_string().contains("terlampaui"), "{e}");
+        assert!(e.to_string().contains("budget exceeded"), "{e}");
         assert!(e.to_string().contains("p95"), "{e}");
     }
 

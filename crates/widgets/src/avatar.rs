@@ -32,7 +32,7 @@
 //! 2. **A photo is announced as an image with no name.** A screen reader
 //!    meeting a decorative disc learns nothing; meeting "Dian Permata" learns
 //!    who is on the call. The name is a **required argument**, exactly as it is
-//!    for [`icon_button`](crate::icon_button), because it is the one thing a
+//!    for [`icon_button`](mod@crate::icon_button), because it is the one thing a
 //!    picture cannot borrow from what it draws.
 //! 3. **A stack of overlapping discs has no edges.** Four avatars overlapping
 //!    by a third read as one blob unless each one carries a ring in the colour
@@ -61,7 +61,7 @@
 //! | Line | How it is met |
 //! |---|---|
 //! | Correct in both presets | the fill is a [`ColorToken`], the ring is `Surface`, the corner comes from [`Theme::corners`] so a squircle clamped to half its box is still a circle |
-//! | Interactive states on a spring | none: an avatar is not a control. A clickable one is an avatar **inside** a [`button`](crate::button) or a pressable [`card`](crate::card) |
+//! | Interactive states on a spring | none: an avatar is not a control. A clickable one is an avatar **inside** a [`button`](mod@crate::button) or a pressable [`card`](mod@crate::card) |
 //! | Keyboard + focus ring | not a tab stop, by design |
 //! | AccessKit node | [`AccessRole::Image`] carrying the person's name, or hidden when [`Avatar::decorative`] |
 //! | Dark mode | token-driven |
@@ -479,7 +479,7 @@ impl Avatar {
     /// The person's picture, already in the application's atlas.
     ///
     /// Decoding is deliberately not this component's job — the same line
-    /// [`image`](crate::image) draws: what arrives here is an [`ImageId`], and
+    /// [`image`](mod@crate::image) draws: what arrives here is an [`ImageId`], and
     /// how the bytes became one is the application's business (§9.6).
     pub fn image(mut self, image: ImageId) -> Self {
         self.image = Some(image);

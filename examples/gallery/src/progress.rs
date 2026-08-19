@@ -2,7 +2,7 @@
 //!
 //! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Determinate and indeterminate are one node | press "Sambungkan": the same indicator stops sweeping and starts filling, and it does **not** jump back to zero first |
+//! | Determinate and indeterminate are one node | press "Connect": the same indicator stops sweeping and starts filling, and it does **not** jump back to zero first |
 //! | Retargetable spring | press "+25%" twice quickly — the fill carries its velocity into the new target instead of restarting |
 //! | Correct in both presets | `--preset tailwind`: the track's corners follow the preset, the thickness is a spacing step |
 //! | Dark mode | track and fill are tokens |
@@ -27,23 +27,23 @@ use crate::kepala;
 pub const JUDUL: &str = "Progress";
 
 /// The paragraph under the title.
-pub const KETERANGAN: &str = "Dua bentuk dari kalimat yang sama: \"ini butuh \
-    waktu\". Yang tahu pecahannya mengatakannya; yang tidak tahu tidak \
-    berpura-pura tahu — dan keduanya satu node, sehingga perpindahannya tidak \
-    kehilangan apa yang sudah dianimasikan.";
+pub const KETERANGAN: &str = "Two shapes of the same sentence: \"this is going \
+    to take a while\". The one that knows its fraction says so; the one that \
+    does not know does not pretend to — and both are one node, so switching \
+    between them loses none of what is already animating.";
 
 /// The a11y name of the determinate bar.
-pub const NAMA_BAR: &str = "Mengimpor faktur";
+pub const NAMA_BAR: &str = "Importing invoices";
 /// The a11y name of the determinate ring.
-pub const NAMA_LINGKARAN: &str = "Mengunggah lampiran";
+pub const NAMA_LINGKARAN: &str = "Uploading attachments";
 /// The a11y name of the indicator that flips between the two states.
-pub const NAMA_TUKAR: &str = "Menyambung ke server";
+pub const NAMA_TUKAR: &str = "Connecting to the server";
 /// The button that adds a quarter to the progress.
 pub const TOMBOL_MAJU: &str = "+25%";
 /// The button that puts everything back to zero.
-pub const TOMBOL_ULANG: &str = "Ulangi";
+pub const TOMBOL_ULANG: &str = "Retry";
 /// The button that turns the unknown fraction into a known one.
-pub const TOMBOL_SAMBUNG: &str = "Sambungkan";
+pub const TOMBOL_SAMBUNG: &str = "Connect";
 
 /// How much one press of [`TOMBOL_MAJU`] adds.
 pub const LANGKAH: f32 = 0.25;
@@ -94,7 +94,7 @@ fn indikator(nilai: Signal<f32>, tersambung: Signal<bool>) -> View {
 
         kepala::spesimen(
             &t,
-            "Bar, cincin, dan yang belum tahu",
+            "Bar, ring, and the one that does not know yet",
             [
                 View::from(bar),
                 View::from(
@@ -102,7 +102,7 @@ fn indikator(nilai: Signal<f32>, tersambung: Signal<bool>) -> View {
                         .spacing(t.space(6.0))
                         .cross(CrossAlign::Center),
                 ),
-                kepala::catatan(&t, format!("Nilai: {}%", (v * 100.0).round() as i32)),
+                kepala::catatan(&t, format!("Value: {}%", (v * 100.0).round() as i32)),
             ],
         )
     })

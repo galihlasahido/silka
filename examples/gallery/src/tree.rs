@@ -9,7 +9,7 @@
 //!
 //! | What it proves | How to try it in the window |
 //! |---|---|
-//! | Virtualization | "Buka semua", then scroll to file 40,000: no stutter, and only a dozen rows are ever nodes |
+//! | Virtualization | "Expand all", then scroll to file 40,000: no stutter, and only a dozen rows are ever nodes |
 //! | No third virtualization system | Scrolling, rubber banding, and the scrollbar belong to `scroll_view`; the row window belongs to the same `ListMetrics` the `list` page uses |
 //! | Height animation | Click a chevron: the subtree does not appear, it **grows**, and the rows below slide down on a spring |
 //! | Rotating chevron | Watch the triangle while it opens — it turns, it does not swap pictures |
@@ -17,7 +17,7 @@
 //! | Lazy loading | A folder's children are fetched **the moment it opens**, never before — the counter under the tree only moves when you open something |
 //! | Selection | Click, ⇧-click to extend, ⌘-click to pick individually, ⌘A for everything |
 //! | Full keyboard | Tab to the tree, then ↑ ↓ · → opens or steps in · ← closes or steps out · Home/End · Enter · **type a letter to jump** |
-//! | Empty state | "Kosongkan" — an empty tree says so instead of showing a blank box |
+//! | Empty state | "Clear" — an empty tree says so instead of showing a blank box |
 //! | AccessKit nodes | VoiceOver says "tree", and each row announces its level, its position among its siblings, and whether it is open |
 //! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
 //! | Reduced motion | Turn on "Reduce motion": the highlight is instantly in place, while the disclosure keeps moving — it is what explains where the rows came from |
@@ -42,9 +42,9 @@ use silka_widgets::{
 };
 
 /// The page title.
-pub const JUDUL: &str = "Tree (tervirtualisasi)";
+pub const JUDUL: &str = "Tree (virtualised)";
 /// The tree's name for screen readers — and the anchor the tests look for.
-pub const NAMA_POHON: &str = "Berkas";
+pub const NAMA_POHON: &str = "Files";
 
 /// How many volumes (roots).
 pub const VOLUME: u64 = 50;
@@ -58,18 +58,18 @@ pub const BERKAS: u64 = 50;
 pub const TOTAL: usize = (VOLUME + VOLUME * FOLDER + VOLUME * FOLDER * BERKAS) as usize;
 
 /// The expand-everything button.
-pub const TOMBOL_SEMUA: &str = "Buka semua";
+pub const TOMBOL_SEMUA: &str = "Expand all";
 /// The collapse-everything button.
-pub const TOMBOL_TUTUP: &str = "Tutup semua";
+pub const TOMBOL_TUTUP: &str = "Collapse all";
 /// The jump-far button.
-pub const TOMBOL_JAUH: &str = "Ke berkas 40.000";
+pub const TOMBOL_JAUH: &str = "Jump to file 40,000";
 /// The button that empties the tree (showing off the empty state).
-pub const TOMBOL_KOSONG: &str = "Kosongkan";
+pub const TOMBOL_KOSONG: &str = "Clear";
 /// The button that puts the content back.
-pub const TOMBOL_ISI: &str = "Isi lagi";
+pub const TOMBOL_ISI: &str = "Refill";
 
 /// The empty-state text.
-pub const KOSONG: &str = "Tidak ada berkas";
+pub const KOSONG: &str = "No files";
 
 /// One row's height — which is also the HIG's minimum hit target.
 const TINGGI_BARIS: f32 = 44.0;
@@ -114,7 +114,7 @@ fn kunci_berkas(f: u64, b: u64) -> TreeKey {
     VOLUME + VOLUME * FOLDER + f * BERKAS + b
 }
 
-/// Every folder key — what "Buka semua" opens.
+/// Every folder key — what "Expand all" opens.
 fn semua_folder() -> Vec<TreeKey> {
     (0..VOLUME)
         .flat_map(|v| (0..FOLDER).map(move |f| kunci_folder(v, f)))
@@ -127,14 +127,21 @@ fn nama(key: TreeKey) -> String {
     match jenis(key) {
         Simpul::Volume(v) => format!("{} ({})", NAMA_VOLUME[(v % 5) as usize], v + 1),
         Simpul::Folder(f) => NAMA_FOLDER[(f % 8) as usize].to_string(),
-        Simpul::Berkas(b) => format!("berkas-{:05}.txt", b + 1),
+        Simpul::Berkas(b) => format!("file-{:05}.txt", b + 1),
     }
 }
 
-const NAMA_VOLUME: [&str; 5] = ["Macintosh HD", "Arsip", "Cadangan", "Proyek", "Media"];
+const NAMA_VOLUME: [&str; 5] = ["Macintosh HD", "Archive", "Backups", "Projects", "Media"];
 
 const NAMA_FOLDER: [&str; 8] = [
-    "Dokumen", "Gambar", "Musik", "Unduhan", "Laporan", "Kontrak", "Faktur", "Rekaman",
+    "Documents",
+    "Images",
+    "Music",
+    "Downloads",
+    "Reports",
+    "Contracts",
+    "Invoices",
+    "Recordings",
 ];
 
 /// The size shown next to a file — fake data that still looks like data.
@@ -209,12 +216,12 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Lima puluh ribu berkas dalam seribu folder, dan hanya belasan \
-                 baris yang pernah menjadi node — memakai ulang virtualisasi \
-                 yang sama dengan komponen list, bukan sistem ketiga. Klik \
-                 segitiga untuk membuka: subpohonnya tidak muncul begitu saja, \
-                 ia tumbuh, dan baris di bawahnya bergeser dengan pegas. Isi \
-                 folder baru diambil saat folder itu dibuka.",
+                "Fifty thousand files in a thousand folders, and only a dozen or \
+                 so rows ever become nodes — reusing the same virtualisation as \
+                 the list component rather than a third system. Click the \
+                 triangle to open one: the subtree does not simply appear, it \
+                 grows, and the rows below it move on a spring. A folder's \
+                 contents are only fetched when that folder is opened.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -330,7 +337,7 @@ fn baris(t: &Theme, r: &TreeRow) -> View {
 
     let keterangan = match jenis(r.key) {
         Simpul::Volume(_) => format!("{FOLDER} folder"),
-        Simpul::Folder(_) => format!("{BERKAS} berkas"),
+        Simpul::Folder(_) => format!("{BERKAS} files"),
         Simpul::Berkas(b) => ukuran(b),
     };
 
@@ -418,19 +425,19 @@ fn status(state: TreeState, dibuka: Signal<Option<TreeKey>>, dimuat: Signal<usiz
         let seleksi = state.selection();
         let terlihat = state.flat().len();
         let terpilih = match seleksi.len() {
-            0 => "belum ada".to_string(),
+            0 => "none yet".to_string(),
             1 => seleksi
                 .lead()
                 .and_then(|i| state.flat().get(i).map(|r| r.label.to_string()))
-                .unwrap_or_else(|| "satu baris".to_string()),
-            n => format!("{n} baris"),
+                .unwrap_or_else(|| "one row".to_string()),
+            n => format!("{n} rows"),
         };
         let aktif = dibuka
             .get()
-            .map(|k| format!("dibuka {}", nama(k)))
-            .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
+            .map(|k| format!("opened {}", nama(k)))
+            .unwrap_or_else(|| "double-tap or Enter to open".to_string());
         text(format!(
-            "Baris terlihat: {terlihat} · folder dimuat: {} · terpilih: {terpilih} · {aktif}",
+            "Rows shown: {terlihat} · folders loaded: {} · selected: {terpilih} · {aktif}",
             dimuat.get()
         ))
         .size(t.typography.body_size)
@@ -587,7 +594,7 @@ mod tests {
         let mut ui = ui(Theme::cupertino(Appearance::Light));
         diam(&mut ui);
         assert!(
-            memuat(&ui, "folder dimuat: 0"),
+            memuat(&ui, "folders loaded: 0"),
             "ada yang sudah dimuat padahal belum ada yang dibuka:\n{}",
             ui.access_tree().dump()
         );
@@ -609,7 +616,7 @@ mod tests {
             "isi folder tidak muncul setelah dibuka"
         );
         assert!(
-            memuat(&ui, "folder dimuat: 1"),
+            memuat(&ui, "folders loaded: 1"),
             "penghitung pemuatan tidak ikut bergerak:\n{}",
             ui.access_tree().dump()
         );

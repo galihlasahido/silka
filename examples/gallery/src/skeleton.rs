@@ -2,7 +2,7 @@
 //!
 //! | What it proves | How to try it in the window |
 //! |---|---|
-//! | The placeholder is the shape of what is coming | press "Muat": the real card takes exactly the room the skeleton was holding, so nothing jumps |
+//! | The placeholder is the shape of what is coming | press "Load": the real card takes exactly the room the skeleton was holding, so nothing jumps |
 //! | The shimmer is quads, not a gradient | `silka-paint` has no gradient command; the highlight is a handful of alpha-stepped quads and looks the same |
 //! | Correct in both presets | base and highlight are [`silka_theme::ColorToken::SurfaceSunken`] and `SurfaceHover`; nothing else has a colour |
 //! | AccessKit node | hidden by default — a screen reader must not read a wall of empty boxes — unless it is given a name, which turns it into a busy progress indicator |
@@ -15,7 +15,7 @@
 use silka_core::app::{component, BuildCtx};
 use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::{CrossAlign, MainAlign};
-use silka_core::view::{column, row, View};
+use silka_core::view::{row, View};
 use silka_theme::{RadiusToken, Theme};
 use silka_widgets::{
     button, card_padded, skeleton, skeleton_circle, skeleton_text, text, CardVariant,
@@ -27,21 +27,21 @@ use crate::kepala;
 pub const JUDUL: &str = "Skeleton";
 
 /// The paragraph under the title.
-pub const KETERANGAN: &str = "Spinner bilang \"ada yang sedang terjadi\"; \
-    skeleton bilang \"INI yang sedang terjadi, dan beginilah bentuknya nanti\". \
-    Itulah yang membuat halaman tidak melompat saat datanya tiba — tempatnya \
-    sudah dipesan sejak awal.";
+pub const KETERANGAN: &str = "A spinner says \"something is happening\"; a \
+    skeleton says \"THIS is happening, and this is the shape it will take\". \
+    That is what keeps the page from jumping when the data lands — the room \
+    was booked from the start.";
 
 /// The button that swaps the placeholder for the real thing.
-pub const TOMBOL_MUAT: &str = "Muat";
+pub const TOMBOL_MUAT: &str = "Load";
 /// The button that puts the placeholder back.
-pub const TOMBOL_ULANG: &str = "Kosongkan lagi";
+pub const TOMBOL_ULANG: &str = "Clear again";
 /// The a11y name of the one skeleton that is deliberately announced.
-pub const NAMA_SIBUK: &str = "Memuat ringkasan";
+pub const NAMA_SIBUK: &str = "Loading the summary";
 /// The heading of the card that arrives once loaded.
-pub const JUDUL_KARTU: &str = "Ringkasan Agustus";
+pub const JUDUL_KARTU: &str = "August summary";
 /// The body of the card that arrives once loaded.
-pub const ISI_KARTU: &str = "Rp 128.400.000 dari 42 transaksi.";
+pub const ISI_KARTU: &str = "Rp 128.400.000 from 42 transactions.";
 
 /// The diameter of the round placeholder, in points.
 pub const GARIS_TENGAH: f32 = 40.0;
@@ -63,7 +63,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
 fn bentuk(t: &Theme) -> View {
     kepala::spesimen(
         t,
-        "Baris, lingkaran, blok",
+        "Lines, circles, blocks",
         [
             View::from(
                 row([
@@ -118,7 +118,7 @@ fn tukar(dimuat: Signal<bool>) -> View {
 
         kepala::spesimen(
             &t,
-            "Sebelum dan sesudah",
+            "Before and after",
             [View::from(
                 card_padded(isi)
                     .variant(CardVariant::Outlined)

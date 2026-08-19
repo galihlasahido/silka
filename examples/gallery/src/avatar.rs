@@ -25,10 +25,10 @@ use crate::kepala;
 pub const JUDUL: &str = "Avatar";
 
 /// The paragraph under the title.
-pub const KETERANGAN: &str = "Seseorang, sebagai cakram. Yang benar-benar \
-    terjadi bukan fotonya melainkan inisialnya: sebagian besar akun tidak punya \
-    gambar, jadi itulah kasus utamanya — lengkap dengan warna yang selalu sama \
-    untuk nama yang sama.";
+pub const KETERANGAN: &str = "A person, as a disc. What actually happens is not \
+    the photo but the initials: most accounts have no picture, so that is the \
+    main case — complete with a colour that is always the same for the same \
+    name.";
 
 /// The team the page shows.
 pub const TIM: [&str; 5] = [
@@ -42,7 +42,7 @@ pub const TIM: [&str; 5] = [
 /// How many discs the stack has room for.
 pub const MUAT: usize = 3;
 /// The a11y name of the stack.
-pub const NAMA_TIM: &str = "Tim proyek";
+pub const NAMA_TIM: &str = "Project team";
 /// The name whose initials are deliberately a single letter.
 pub const SATU_KATA: &str = "Prabowo";
 
@@ -61,7 +61,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
 fn ukuran(t: &Theme) -> View {
     kepala::spesimen(
         t,
-        "Ukuran",
+        "Size",
         [View::from(
             row([
                 View::from(avatar(TIM[0]).xs()),
@@ -80,7 +80,7 @@ fn ukuran(t: &Theme) -> View {
 fn bentuk(t: &Theme) -> View {
     kepala::spesimen(
         t,
-        "Bentuk dan nama",
+        "Shape and name",
         [
             View::from(
                 row([
@@ -97,7 +97,7 @@ fn bentuk(t: &Theme) -> View {
             kepala::catatan(
                 t,
                 format!(
-                    "Inisial: {} · {} · {}",
+                    "Initials: {} · {} · {}",
                     initials(TIM[1], 2),
                     initials(TIM[2], 2),
                     initials(SATU_KATA, 2),
@@ -112,7 +112,7 @@ fn tumpukan(t: &Theme) -> View {
     let (tampil, sisa) = group_plan(TIM.len(), MUAT);
     kepala::spesimen(
         t,
-        "Tumpukan",
+        "Stack",
         [
             View::from(
                 avatar_group(TIM.map(avatar))
@@ -122,7 +122,7 @@ fn tumpukan(t: &Theme) -> View {
             ),
             kepala::catatan(
                 t,
-                format!("{tampil} cakram terlihat, {sisa} sisanya menjadi \"+{sisa}\"."),
+                format!("{tampil} discs are shown, the remaining {sisa} become \"+{sisa}\"."),
             ),
         ],
     )

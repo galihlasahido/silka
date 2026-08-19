@@ -286,11 +286,11 @@ pub fn item(id: impl Into<String>, label: impl Into<String>) -> MenuItem {
 impl MenuItem {
     /// A short glyph shown before the label.
     ///
-    /// Text rather than an image on purpose: `KOMPONEN.md`'s Tier 0 `icon`
-    /// component (an SVG atlas) does not exist yet, and a menu is not the place
-    /// to invent a second one. Once the icon set lands this becomes an
-    /// additional method, not a replacement — a menu written today keeps
-    /// working.
+    /// Text rather than an image, and it stays that way. When this was written
+    /// `KOMPONEN.md`'s Tier 0 `icon` component did not exist; now it does
+    /// ([`icon`](crate::icon()), an SVG atlas), so this method is the
+    /// **string** shorthand and an image icon will arrive as an additional
+    /// method rather than a replacement — a menu written today keeps working.
     pub fn icon(mut self, icon: impl Into<String>) -> Self {
         self.icon = Some(icon.into());
         self

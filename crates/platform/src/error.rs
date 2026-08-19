@@ -43,10 +43,10 @@ pub enum PlatformError {
 impl fmt::Display for PlatformError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PlatformError::EventLoop(m) => write!(f, "event loop gagal: {m}"),
-            PlatformError::WindowCreation(m) => write!(f, "window gagal dibuat: {m}"),
-            PlatformError::Renderer(e) => write!(f, "renderer gagal: {e}"),
-            PlatformError::State(m) => write!(f, "state sesi gagal disimpan: {m}"),
+            PlatformError::EventLoop(m) => write!(f, "event loop failed: {m}"),
+            PlatformError::WindowCreation(m) => write!(f, "could not create the window: {m}"),
+            PlatformError::Renderer(e) => write!(f, "renderer failed: {e}"),
+            PlatformError::State(m) => write!(f, "could not save the session state: {m}"),
         }
     }
 }

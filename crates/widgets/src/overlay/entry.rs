@@ -446,7 +446,10 @@ impl RenderNode for OverlayEntry {
                     && self.on_dismiss.is_some() =>
             {
                 let ditutup = self.request_dismiss(Dismiss::ESCAPE);
-                debug_assert!(ditutup, "guard sudah memastikan Esc punya penerima");
+                debug_assert!(
+                    ditutup,
+                    "the guard has already made sure Esc has a receiver"
+                );
                 ctx.handled();
             }
             _ => {}
@@ -542,7 +545,7 @@ impl ViewNode for OverlayProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<OverlayEntry>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.open != self.open {
@@ -606,7 +609,7 @@ impl ViewNode for OverlayProps {
 ///     .backdrop(t.color.scrim)
 ///     .barrier(Barrier::Modal)
 ///     .dismiss(Dismiss::ALL)
-///     .label("Simpan perubahan?")
+///     .label("Save changes?")
 ///     .on_dismiss(move || terbuka.set(false));
 /// # let _ = Side::Bottom;
 /// ```

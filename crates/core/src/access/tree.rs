@@ -268,7 +268,7 @@ impl AccessTree {
     /// window [0,0 400x400] *focus
     ///   container [0,0 140x44]
     ///     group [10,10 120x24]
-    ///       label "Judul" [10,10 120x24]
+    ///       label "Heading" [10,10 120x24]
     /// ```
     pub fn dump(&self) -> String {
         let mut out = String::new();

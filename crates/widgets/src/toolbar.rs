@@ -567,7 +567,7 @@ impl ViewNode for ToolbarItemProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ToolbarItemBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.id != self.id {
             n.id.clone_from(&self.id);
@@ -871,7 +871,7 @@ impl ViewNode for ToolbarOverflowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ToolbarOverflowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.style != self.style {
             n.style = self.style;
@@ -1141,7 +1141,7 @@ impl ViewNode for ToolbarProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ToolbarBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.style != self.style {
             n.style = self.style;

@@ -38,7 +38,7 @@
 //!         .barrier(Barrier::Light)
 //!         .anchor(Anchor::Rect(tombol))
 //!         .placement(Placement::anchored(Side::Bottom).gap(t.space(2.0)))
-//!         .label("Pilih tanggal")
+//!         .label("Pick a date")
 //!         .on_dismiss(move || terbuka.set(false)),
 //! );
 //!

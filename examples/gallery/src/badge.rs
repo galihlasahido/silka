@@ -7,7 +7,7 @@
 //! | The tone vocabulary | five tones × three variants, in one grid — "danger" has to look the same here as on a filter chip |
 //! | A count cannot overflow its pill | `99+` instead of a four-digit number stretching a dot across a toolbar |
 //! | One character is a circle | the `3` pill is as wide as it is tall, because the minimum width **is** the height |
-//! | AccessKit node | a badge with a name is announced as "Status: Lunas"; one without is structural, so its text is not read twice |
+//! | AccessKit node | a badge with a name is announced as "Status: Paid"; one without is structural, so its text is not read twice |
 //! | Reduced motion | nothing here moves: a badge is a statement, not a control |
 //!
 //! ```text
@@ -31,15 +31,15 @@ use crate::kepala;
 pub const JUDUL: &str = "Badge";
 
 /// The paragraph under the title.
-pub const KETERANGAN: &str = "Pil status: lima nada × tiga varian, plus \
-    penghitung yang tidak bisa meluber. Sebuah badge menyatakan sesuatu — yang \
-    bisa diklik adalah button varian ghost, dan mencampur keduanya membuat \
-    status berubah menjadi tombol misterius.";
+pub const KETERANGAN: &str = "A status pill: five tones × three variants, plus a \
+    counter that cannot overflow. A badge states something — the clickable \
+    thing is a ghost-variant button, and mixing the two turns a status into a \
+    mysterious button.";
 
 /// The a11y name of the status pill the tests look for.
-pub const NAMA_STATUS: &str = "Status: Lunas";
+pub const NAMA_STATUS: &str = "Status: Paid";
 /// The a11y name of the unread counter.
-pub const NAMA_HITUNG: &str = "Pesan belum dibaca";
+pub const NAMA_HITUNG: &str = "Unread messages";
 /// The counter that is deliberately larger than its cap.
 pub const HITUNG_BESAR: u64 = 1_240;
 /// The cap the large counter is written against.
@@ -80,7 +80,7 @@ fn matriks(t: &Theme) -> View {
 
     kepala::spesimen(
         t,
-        "Nada × varian",
+        "Tone × variant",
         [View::from(column(baris).spacing(t.space(3.0)))],
     )
 }
@@ -89,7 +89,7 @@ fn matriks(t: &Theme) -> View {
 fn penghitung(t: &Theme) -> View {
     kepala::spesimen(
         t,
-        "Penghitung",
+        "Counter",
         [View::from(
             row([
                 View::from(badge_count(3).tone(BadgeTone::Accent)),
@@ -100,7 +100,7 @@ fn penghitung(t: &Theme) -> View {
                         .tone(BadgeTone::Danger)
                         .label(NAMA_HITUNG),
                 ),
-                View::from(badge("Draf").dot(true)),
+                View::from(badge("Draft").dot(true)),
             ])
             .spacing(t.space(3.0))
             .cross(CrossAlign::Center),
@@ -112,12 +112,12 @@ fn penghitung(t: &Theme) -> View {
 fn dalam_kalimat(t: &Theme) -> View {
     kepala::spesimen(
         t,
-        "Di dalam baris",
+        "Inline",
         [View::from(
             row([
-                View::from(kepala::catatan(t, "Faktur #001280")),
+                View::from(kepala::catatan(t, "Invoice #001280")),
                 View::from(
-                    badge("Lunas")
+                    badge("Paid")
                         .tone(BadgeTone::Success)
                         .soft()
                         .label(NAMA_STATUS),
@@ -167,7 +167,7 @@ mod tests {
         // …but a *named* pill must not be announced twice: the name replaces
         // the text rather than joining it.
         assert!(
-            pohon.find_label("Lunas").is_none(),
+            pohon.find_label("Paid").is_none(),
             "pil bernama dibacakan dua kali:\n{}",
             pohon.dump()
         );

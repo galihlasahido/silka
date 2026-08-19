@@ -11,7 +11,7 @@
 //! | Springs are **retargetable mid-flight** | Click far to the right, then immediately click on the left: the pucks reverse **carrying their velocity**; they never jump |
 //! | Position **and** velocity are state, not a timeline | Drag across a lane: the puck chases the finger continuously instead of restarting an animation on every move |
 //! | Duration/bounce is the API, stiffness/damping is the consequence | Move the sliders: the readout under them is derived from the spring, not typed in twice (WWDC23: perceptual duration, not stiffness) |
-//! | Reduced motion is honoured | Flip "Kurangi gerak" in the top bar: the bouncy lane stops overshooting, and nothing else about the page changes |
+//! | Reduced motion is honoured | Flip "Reduce motion" in the top bar: the bouncy lane stops overshooting, and nothing else about the page changes |
 //! | Idle really is zero | Once the pucks settle, the window stops asking for frames — the GPU sleeps until the next click (§3.5) |
 //!
 //! The lane is the gallery's **own render node**. That is deliberate: it shows
@@ -44,15 +44,15 @@ pub const JUDUL: &str = "Spring";
 const LEBAR_LANGKAH: f32 = 120.0;
 
 /// The a11y name (and slider label) of the duration control.
-pub const DURASI: &str = "Durasi";
+pub const DURASI: &str = "Duration";
 /// The a11y name of the bounce control.
 pub const BOUNCE: &str = "Bounce";
 /// The button that sends every puck to the far end.
-pub const KIRIM: &str = "Lempar ke ujung";
+pub const KIRIM: &str = "Throw to the end";
 /// The button that sends every puck home.
-pub const PULANG: &str = "Kembali";
+pub const PULANG: &str = "Back";
 /// The button that sends every puck to the middle.
-pub const TENGAH: &str = "Ke tengah";
+pub const TENGAH: &str = "To the middle";
 
 /// The smallest and largest duration the slider offers, in seconds.
 const DURASI_MIN: f32 = 0.1;
@@ -101,7 +101,7 @@ pub const LAJUR: [Lajur; 4] = [
         jenis: Jenis::Bouncy,
     },
     Lajur {
-        nama: "sendiri",
+        nama: "custom",
         jenis: Jenis::Sendiri,
     },
 ];
@@ -112,7 +112,7 @@ pub const LAJUR: [Lajur; 4] = [
 /// nodes sharing a name are two nodes a screen reader cannot tell apart — and
 /// two nodes a test cannot tell apart either.
 pub fn nama_lajur(l: Lajur) -> String {
-    format!("lajur {}", l.nama)
+    format!("lane {}", l.nama)
 }
 
 impl Jenis {
@@ -145,7 +145,7 @@ impl Jenis {
 /// visible instead of merely claimed.
 pub fn ringkasan(spring: Spring) -> String {
     format!(
-        "durasi {:.2} s · bounce {:+.2} · kekakuan {:.0} · redaman {:.0} · rasio {:.2}",
+        "duration {:.2} s · bounce {:+.2} · stiffness {:.0} · damping {:.0} · ratio {:.2}",
         spring.duration(),
         spring.bounce(),
         spring.stiffness(),
@@ -185,11 +185,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Empat lajur, satu tujuan yang sama. Klik di mana saja pada \
-                 sebuah lajur — lalu klik lagi di seberangnya sebelum pucknya \
-                 sampai: mereka berbalik sambil membawa kecepatannya, bukan \
-                 mengulang dari nol. Seret untuk membuat targetnya bergerak \
-                 terus.",
+                "Four lanes, one shared destination. Click anywhere on a lane \
+                 — then click again across from it before the puck arrives: it \
+                 reverses while carrying its velocity rather than starting over \
+                 from zero. Drag to keep the target moving.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -830,7 +829,7 @@ mod tests {
     fn ringkasan_diturunkan_dari_spring_bukan_diketik_ulang() {
         let s = Spring::new(0.5, 0.0);
         let teks = ringkasan(s);
-        assert!(teks.contains("durasi 0.50"), "{teks}");
+        assert!(teks.contains("duration 0.50"), "{teks}");
         assert!(
             teks.contains(&format!("{:.0}", s.stiffness())),
             "kekakuan tidak ikut nilai spring: {teks}"

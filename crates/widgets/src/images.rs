@@ -33,7 +33,8 @@
 //! `silka_platform::WindowConfig::images` wants, so the atlas filled while
 //! building the view is **exactly** the atlas the backend reads:
 //!
-//! ```ignore
+//! ```text
+//! // in the application crate, which is the one that depends on silka-platform
 //! config.glyphs(fonts.shared()).images(images.shared())
 //! ```
 //!

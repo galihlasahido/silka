@@ -1467,7 +1467,7 @@ impl Shell {
 
         #[cfg(debug_assertions)]
         eprintln!(
-            "silka: window \"{}\" — backend {} pada {} ({}×{} px @ {}x) · vsync {} ({})",
+            "silka: window \"{}\" — backend {} on {} ({}×{} px @ {}x) · vsync {} ({})",
             self.title,
             gpu.backend_name(),
             gpu.adapter_name(),
@@ -1496,7 +1496,7 @@ impl Shell {
         let menu = match self.menubar.as_ref().map(|bar| bar.install(&window)) {
             Some(Ok(m)) => Some(m),
             Some(Err(e)) => {
-                eprintln!("silka: menubar tidak terpasang — {e}");
+                eprintln!("silka: the menubar was not installed — {e}");
                 None
             }
             None => None,
@@ -1504,7 +1504,7 @@ impl Shell {
 
         if self.material != Material::None {
             if let Err(e) = apply_material(&window, self.material, self.material_state) {
-                eprintln!("silka: material tidak terpasang — {e}");
+                eprintln!("silka: the material was not applied — {e}");
             }
         }
         self.pasang_traffic_light(&window);
@@ -1513,7 +1513,7 @@ impl Shell {
             if let Some(cfg) = self.tray_config.take() {
                 match cfg.install() {
                     Ok(t) => self.tray = Some(t),
-                    Err(e) => eprintln!("silka: tray tidak terpasang — {e}"),
+                    Err(e) => eprintln!("silka: the tray was not installed — {e}"),
                 }
             }
         }
@@ -1525,7 +1525,7 @@ impl Shell {
             if let Some(set) = self.hotkey_config.take() {
                 match set.register() {
                     Ok(r) => self.hotkeys = Some(r),
-                    Err(e) => eprintln!("silka: hotkey global tidak terdaftar — {e}"),
+                    Err(e) => eprintln!("silka: the global hotkeys were not registered — {e}"),
                 }
             }
         }

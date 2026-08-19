@@ -1225,7 +1225,7 @@ impl ViewNode for CheckboxProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<CheckboxNode>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.style != self.style {
@@ -1366,7 +1366,7 @@ pub fn checkbox(label: impl Into<String>) -> Checkbox {
 /// # use silka_theme::{Appearance, Theme};
 /// # let fonts = Fonts::bundled_only();
 /// # let t = Theme::tailwind(Appearance::Light);
-/// checkbox_in(&fonts, &t, "Semua item")
+/// checkbox_in(&fonts, &t, "All items")
 ///     .state(CheckState::Mixed)
 ///     .on_change(|baru| println!("sekarang {}", baru.name()));
 /// ```
@@ -1406,7 +1406,7 @@ pub fn checkbox_only() -> Checkbox {
 /// # use silka_widgets::checkbox_only_in;
 /// # use silka_theme::{Appearance, Theme};
 /// # let t = Theme::cupertino(Appearance::Light);
-/// checkbox_only_in(&t).label("Pilih semua").checked(true);
+/// checkbox_only_in(&t).label("Select all").checked(true);
 /// ```
 pub fn checkbox_only_in(theme: &Theme) -> Checkbox {
     Checkbox {

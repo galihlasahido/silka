@@ -714,7 +714,7 @@ impl ViewNode for SplitHandleProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<SplitHandleBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.style != self.style {
             n.style = self.style;
@@ -1034,7 +1034,7 @@ impl ViewNode for SplitViewProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<SplitViewBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.style != self.style {
             n.style = self.style;

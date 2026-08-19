@@ -15,7 +15,7 @@
 //!     item("view.zoom_out", "Perkecil").into(),
 //!     separator(),
 //!     item("view.mode", "Tampilan")
-//!         .submenu([item("view.list", "Daftar").radio(true)])
+//!         .submenu([item("view.list", "List").radio(true)])
 //!         .into(),
 //! ])
 //! .label("Tampilan")

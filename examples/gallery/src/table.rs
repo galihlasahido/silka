@@ -15,10 +15,10 @@
 //! | Column reordering | Drag a heading left/right; the drop indicator glides along |
 //! | Multi-selection | Click, ⇧-click to extend a range, ⌘-click to pick individually, ⌘A for everything |
 //! | Sticky header | The headings stick to the top edge while rows slide past |
-//! | Auto vs fixed widths | "Pihak" stretches with the window; "No.", "Status", and "Nominal" do not |
+//! | Auto vs fixed widths | "Party" stretches with the window; "No.", "Status", and "Amount" do not |
 //! | Custom cells | The "Status" column holds a colored badge, not text — a cell accepts any widget |
 //! | Cell-wise keyboard navigation | Tab to the table, then ↑ ↓ (⇧ extends) · ← → move by **cell** · Page · Home/End · Esc · Enter |
-//! | Empty state | The "Kosongkan" button — an empty table still shows its column headings |
+//! | Empty state | The "Clear" button — an empty table still shows its column headings |
 //! | AccessKit nodes | VoiceOver says "table", announcing each row and its cells |
 //! | Both presets & dark mode | `--preset tailwind`, `--appearance dark` |
 //! | Reduced motion | Turn on "Reduce motion" in the OS: the highlight is immediately in place |
@@ -42,24 +42,24 @@ use silka_widgets::{
 };
 
 /// The page title.
-pub const JUDUL: &str = "Table (tervirtualisasi)";
+pub const JUDUL: &str = "Table (virtualised)";
 /// The table's name for screen readers — and the anchor the tests look for.
-pub const NAMA_TABEL: &str = "Transaksi";
+pub const NAMA_TABEL: &str = "Transactions";
 /// How many rows. A hundred thousand, and that is exactly the point of the
 /// demo.
 pub const BARIS: usize = 100_000;
 
 /// The jump-far button.
-pub const TOMBOL_TENGAH: &str = "Ke baris 50.000";
+pub const TOMBOL_TENGAH: &str = "Jump to row 50,000";
 /// The button that empties the table (showing off the empty state).
-pub const TOMBOL_KOSONG: &str = "Kosongkan";
+pub const TOMBOL_KOSONG: &str = "Clear";
 /// The button that puts the content back.
-pub const TOMBOL_ISI: &str = "Isi lagi";
+pub const TOMBOL_ISI: &str = "Refill";
 /// The button that restores the original column widths & order.
-pub const TOMBOL_RESET: &str = "Reset kolom";
+pub const TOMBOL_RESET: &str = "Reset columns";
 
 /// The empty-state text.
-pub const KOSONG: &str = "Belum ada transaksi";
+pub const KOSONG: &str = "No transactions yet";
 
 /// One row's height — which is also the HIG's minimum hit target.
 const TINGGI_BARIS: f32 = 44.0;
@@ -83,7 +83,7 @@ const NAMA: [&str; 6] = [
     "Apotek Sehat",
 ];
 
-const STATUS: [&str; 3] = ["Lunas", "Tertunda", "Batal"];
+const STATUS: [&str; 3] = ["Paid", "Pending", "Cancel"];
 
 /// The counterparty name for row `i`.
 fn nama_pihak(i: usize) -> &'static str {
@@ -170,9 +170,9 @@ impl Urutan {
 pub fn kolom(t: &Theme) -> Vec<Column> {
     vec![
         col("No.").fixed(t.space(24.0)).min_width(t.space(16.0)),
-        col("Pihak").flex(3.0).min_width(t.space(24.0)),
+        col("Party").flex(3.0).min_width(t.space(24.0)),
         col("Status").fixed(t.space(30.0)).center(),
-        col("Nominal").fixed(t.space(38.0)).trailing(),
+        col("Amount").fixed(t.space(38.0)).trailing(),
     ]
 }
 
@@ -201,12 +201,12 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Seratus ribu baris berkolom, dan hanya belasan di antaranya \
-                 yang pernah menjadi node — memakai ulang virtualisasi yang \
-                 sama dengan komponen list, bukan sistem kedua. Klik judul \
-                 kolom untuk mengurutkan, seret batasnya untuk melebarkan, \
-                 seret judulnya untuk memindahkan. ⇧-klik merentang seleksi, \
-                 ⌘-klik memungut satu per satu, ⌘A memilih semuanya.",
+                "A hundred thousand rows in columns, and only a dozen or so of \
+                 them ever become nodes — reusing the same virtualisation as \
+                 the list component rather than a second system. Click a column \
+                 heading to sort, drag its edge to resize, drag the heading to \
+                 move it. ⇧-click extends the selection, ⌘-click picks rows one \
+                 by one, ⌘A selects everything.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -299,12 +299,12 @@ fn sel(t: &Theme, i: usize, kolom: usize) -> View {
 /// decides about it is which **tone** each status means.
 ///
 /// It used to be a hand-rolled pill here (a padded, coloured, rounded box). The
-/// catalogue grew [`silka_widgets::badge`] precisely because this file and
+/// catalogue grew [`mod@silka_widgets::badge`] precisely because this file and
 /// the ERP dashboard had each written that same pill, slightly differently.
 fn badge(_t: &Theme, status: &str) -> View {
     let tone = match status {
-        "Lunas" => BadgeTone::Success,
-        "Tertunda" => BadgeTone::Warning,
+        "Paid" => BadgeTone::Success,
+        "Pending" => BadgeTone::Warning,
         _ => BadgeTone::Neutral,
     };
     silka_widgets::badge(status)
@@ -359,27 +359,27 @@ fn status_bar(state: TableState, dibuka: Signal<Option<usize>>) -> View {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let sel = state.selection();
         let terpilih = match sel.len() {
-            0 => "belum ada".to_string(),
-            1 => format!("baris #{:06}", sel.first().unwrap_or(0) + 1),
-            n => format!("{n} baris"),
+            0 => "none yet".to_string(),
+            1 => format!("row #{:06}", sel.first().unwrap_or(0) + 1),
+            n => format!("{n} rows"),
         };
         let urut = match state.sort() {
             Some(s) => format!(
-                "urut kolom {} {}",
+                "sorted by column {} {}",
                 s.column,
                 if s.direction == SortDirection::Ascending {
-                    "naik"
+                    "ascending"
                 } else {
-                    "turun"
+                    "descending"
                 }
             ),
-            None => "tanpa urutan".to_string(),
+            None => "unsorted".to_string(),
         };
         let aktif = dibuka
             .get()
-            .map(|i| format!("dibuka #{:06}", i + 1))
-            .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text(format!("Terpilih: {terpilih} · {urut} · {aktif}"))
+            .map(|i| format!("opened #{:06}", i + 1))
+            .unwrap_or_else(|| "double-tap or Enter to open".to_string());
+        text(format!("Selected: {terpilih} · {urut} · {aktif}"))
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line()
@@ -548,7 +548,7 @@ mod tests {
         assert!(sel > 4, "tidak ada sel di pohon a11y:\n{}", pohon.dump());
         // The column headings are announced, and the first row really does
         // carry its data.
-        assert!(pohon.find_label("Nominal").is_some());
+        assert!(pohon.find_label("Amount").is_some());
         assert!(pohon.find_label("#000001").is_some());
     }
 
@@ -560,7 +560,7 @@ mod tests {
         let sebelum = kotak(&ui, "#000001");
         assert!(sebelum.size.width > 0.0);
 
-        let judul = kotak(&ui, "Pihak").center();
+        let judul = kotak(&ui, "Party").center();
         klik(&mut ui, judul, 1, Duration::from_secs(1));
         assert_eq!(
             body(&ui).state().unwrap().sort(),
@@ -614,7 +614,7 @@ mod tests {
                 .node
                 .label
                 .as_deref()
-                .is_some_and(|l| l.contains("3 baris"))),
+                .is_some_and(|l| l.contains("3 rows"))),
             "status tidak melaporkan seleksi jamak:\n{}",
             pohon.dump()
         );
@@ -639,7 +639,7 @@ mod tests {
             "empty state tidak muncul:\n{}",
             pohon.dump()
         );
-        assert!(pohon.find_label("Nominal").is_some(), "judul kolom hilang");
+        assert!(pohon.find_label("Amount").is_some(), "judul kolom hilang");
         assert_eq!(body(&ui).metrics().count, 0);
 
         // And back again.

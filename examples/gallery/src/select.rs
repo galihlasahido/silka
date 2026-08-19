@@ -51,17 +51,17 @@ pub const JUDUL: &str = "Select";
 
 /// The currency control's name — also used by the tests to find it in the
 /// a11y tree.
-pub const LABEL_MATA_UANG: &str = "Mata uang";
+pub const LABEL_MATA_UANG: &str = "Currency";
 /// The country control's name.
-pub const LABEL_NEGARA: &str = "Negara";
+pub const LABEL_NEGARA: &str = "Country";
 /// The name of the deliberately disabled control.
-pub const LABEL_MATI: &str = "Periode (terkunci)";
+pub const LABEL_MATI: &str = "Period (locked)";
 
 /// The currency options.
-pub const MATA_UANG: [&str; 5] = ["Rupiah", "Dolar AS", "Euro", "Yen", "Dolar Singapura"];
+pub const MATA_UANG: [&str; 5] = ["Rupiah", "US dollar", "Euro", "Yen", "Singapore dollar"];
 
 /// The period options for the disabled control.
-pub const PERIODE: [&str; 3] = ["Harian", "Bulanan", "Tahunan"];
+pub const PERIODE: [&str; 3] = ["Daily", "Monthly", "Yearly"];
 
 /// How many country rows are visible before the popup becomes scrollable.
 pub const NEGARA_TERLIHAT: usize = 6;
@@ -71,24 +71,24 @@ pub fn negara() -> Vec<String> {
     [
         "Indonesia",
         "Malaysia",
-        "Singapura",
+        "Singapore",
         "Thailand",
         "Vietnam",
-        "Filipina",
-        "Jepang",
-        "Korea Selatan",
-        "Tiongkok",
+        "Philippines",
+        "Japan",
+        "South Korea",
+        "China",
         "India",
         "Australia",
-        "Selandia Baru",
-        "Amerika Serikat",
-        "Kanada",
-        "Meksiko",
-        "Brasil",
-        "Jerman",
-        "Prancis",
-        "Belanda",
-        "Inggris",
+        "New Zealand",
+        "United States",
+        "Canada",
+        "Mexico",
+        "Brazil",
+        "Germany",
+        "France",
+        "Netherlands",
+        "United Kingdom",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -117,7 +117,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
         .bind(mata_uang);
     let s_negara = select(negara())
         .label(LABEL_NEGARA)
-        .placeholder("Pilih negara…")
+        .placeholder("Pick a country…")
         .max_visible(NEGARA_TERLIHAT)
         .key("negara")
         .bind(negara_state);
@@ -149,7 +149,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
 /// really changes the value, not just closes the panel.
 pub fn ringkasan(mata_uang: &Select, negara: &Select) -> String {
     format!(
-        "Terpilih: {} · {}",
+        "Selected: {} · {}",
         mata_uang.selected_label().unwrap_or("—"),
         negara.selected_label().unwrap_or("—"),
     )
@@ -167,8 +167,8 @@ fn konten(t: &Theme, kontrol: [(&str, &Select); 3], ringkasan: String) -> View {
         .single_line();
 
     let keterangan = text(
-        "Klik kotaknya, atau Tab lalu tekan Space. Panah menyusuri, \
-         mengetik huruf melompat ke pilihan yang cocok, Esc menutup.",
+        "Click the box, or Tab to it and press Space. Arrows walk the \
+         options, typing a letter jumps to the matching one, Esc closes.",
     )
     .size(t.typography.body_size)
     .line_height(t.typography.body_line_height)
@@ -406,7 +406,7 @@ mod tests {
             layar.tekan(KeyCode::Named(NamedKey::ArrowDown));
         }
         layar.tekan(KeyCode::Named(NamedKey::Enter));
-        assert_eq!(layar.nilai(LABEL_NEGARA).as_deref(), Some("Tiongkok"));
+        assert_eq!(layar.nilai(LABEL_NEGARA).as_deref(), Some("China"));
         assert_eq!(layar.baris_menu(), 0);
     }
 

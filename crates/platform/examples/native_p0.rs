@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ikon = RgbaImage::solid(18, 18, [255, 255, 255, 255])?;
     let tray_icon = tray("utama").tooltip("Silka Native").icon(ikon).menu(
         menu("Silka")
-            .item(item("tray.show", "Tampilkan"))
+            .item(item("tray.show", "Show"))
             .separator()
             .role(MenuRole::Quit),
     );
@@ -61,28 +61,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match a.id().as_str() {
                 "file.open" => {
                     if let Some(path) = file_dialog()
-                        .title("Buka dokumen")
-                        .filter("Teks", &[".txt", "md"])
+                        .title("Open document")
+                        .filter("Text", &[".txt", "md"])
                         .pick_file()
                     {
-                        println!("dibuka: {}", path.display());
+                        println!("opened: {}", path.display());
                     }
                 }
                 "file.save_as" => {
-                    if let Some(path) = file_dialog().file_name("catatan.md").save_file() {
-                        println!("disimpan: {}", path.display());
+                    if let Some(path) = file_dialog().file_name("notes.md").save_file() {
+                        println!("saved: {}", path.display());
                     }
                 }
                 "edit.copy_time" => match clipboard() {
                     Ok(mut papan) => {
                         let teks = format!("{:?}", std::time::SystemTime::now());
                         if let Err(e) = papan.set_text(teks) {
-                            eprintln!("clipboard gagal: {e}");
+                            eprintln!("clipboard failed: {e}");
                         }
                     }
-                    Err(e) => eprintln!("clipboard tidak tersedia: {e}"),
+                    Err(e) => eprintln!("no clipboard available: {e}"),
                 },
-                lain => println!("menu belum ditangani: {lain}"),
+                other => println!("unhandled menu action: {other}"),
             }
             // Nothing on screen changed, so nothing is redrawn: opening a
             // dialog is not a reason to burn a frame (§3.5).
@@ -93,12 +93,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Dirty::NONE
         })
         .on_quit(|ctx| {
-            let jawab = message("Keluar?")
-                .body("Perubahan yang belum disimpan akan hilang.")
+            let answer = message("Quit?")
+                .body("Unsaved changes will be lost.")
                 .level(MessageLevel::Warning)
                 .buttons(MessageButtons::YesNo)
                 .ask();
-            if jawab != MessageAnswer::Yes {
+            if answer != MessageAnswer::Yes {
                 ctx.cancel();
             }
         })

@@ -322,7 +322,7 @@ impl GlyphAtlas {
         debug_assert_eq!(
             src.len(),
             rect.width as usize * rect.height as usize * bpp,
-            "ukuran sumber tidak cocok dengan kotak atlas"
+            "the source size does not match the atlas rect"
         );
         debug_assert!(rect.max_x() <= self.size && rect.max_y() <= self.size);
 

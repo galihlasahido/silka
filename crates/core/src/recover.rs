@@ -31,7 +31,7 @@
 //!
 //! The framework's own invariants survive unwinding because every ambient value
 //! is restored by a `Drop` guard rather than by a line at the end of a function:
-//! the host stack in [`crate::app`], the ambient theme in
+//! the host stack in [`mod@crate::app`], the ambient theme in
 //! [`crate::view::with_theme`], and the in-flight count in [`crate::task`]. That
 //! is the reason [`catch`] can use `AssertUnwindSafe` honestly instead of
 //! hopefully.
@@ -54,10 +54,10 @@
 //! install_hook();
 //!
 //! // A boundary turns "the process dies" into a value you can branch on.
-//! let result = catch("save-invoice", || -> u32 { panic!("berkas hilang") });
-//! let report = result.expect_err("harus tertangkap");
+//! let result = catch("save-invoice", || -> u32 { panic!("file missing") });
+//! let report = result.expect_err("the panic must be caught");
 //! assert_eq!(report.label(), "save-invoice");
-//! assert!(report.message().contains("berkas hilang"));
+//! assert!(report.message().contains("file missing"));
 //! // The location comes from the hook, not from the payload — a payload has
 //! // none, which is why `install_hook` exists at all.
 //! assert!(report.location().is_some());
@@ -113,7 +113,7 @@ impl PanicReport {
     ///
     /// `panic!("…")` and `.expect("…")` both arrive here in full. A payload that
     /// is neither `&str` nor `String` cannot be read at all, and then this is
-    /// the literal `"panic dengan payload yang tidak bisa dibaca"` — never
+    /// the literal `"a panic with an unreadable payload"` — never
     /// empty, because an empty crash message is worse than a vague one.
     pub fn message(&self) -> &str {
         &self.message
@@ -255,7 +255,7 @@ fn pesan_dari_payload(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<String>() {
         return s.clone();
     }
-    String::from("panic dengan payload yang tidak bisa dibaca")
+    String::from("a panic with an unreadable payload")
 }
 
 /// The same, from inside the hook (where the payload is behind `PanicHookInfo`).
@@ -267,7 +267,7 @@ fn pesan_dari_info(info: &PanicHookInfo<'_>) -> String {
     if let Some(s) = payload.downcast_ref::<String>() {
         return s.clone();
     }
-    String::from("panic dengan payload yang tidak bisa dibaca")
+    String::from("a panic with an unreadable payload")
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +326,7 @@ pub fn catch<R>(label: &str, f: impl FnOnce() -> R) -> Result<R, PanicReport> {
 /// // One row of three, and the middle one is broken.
 /// let page = column([
 ///     guard_view("a", || fixed(100.0, 20.0).into()),
-///     guard_view("b", || panic!("data baris ini rusak")),
+///     guard_view("b", || panic!("this row's data is corrupt")),
 ///     guard_view("c", || fixed(100.0, 20.0).into()),
 /// ]);
 ///
@@ -393,9 +393,9 @@ mod tests {
     #[test]
     fn catch_menangkap_pesan_dan_label() {
         install_hook();
-        let report = catch("simpan", || panic!("berkas hilang")).unwrap_err();
+        let report = catch("simpan", || panic!("file missing")).unwrap_err();
         assert_eq!(report.label(), "simpan");
-        assert!(report.message().contains("berkas hilang"));
+        assert!(report.message().contains("file missing"));
         assert!(
             report.location().is_some(),
             "hook harus menyediakan lokasi yang payload tidak punya"

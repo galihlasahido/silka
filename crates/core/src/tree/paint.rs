@@ -610,7 +610,7 @@ impl PaintCtx<'_> {
         debug_assert_eq!(
             self.tree.parent(child),
             Some(self.node),
-            "hanya boleh menggambar anak sendiri"
+            "a node may only paint its own children"
         );
         if self.clip_open {
             self.gambar_anak(child);
@@ -739,7 +739,7 @@ fn paint_node(
     let Some(render) = tree.take_render(id) else {
         debug_assert!(
             false,
-            "{id:?} sedang menggambar — paint rekursif tidak diizinkan"
+            "{id:?} is already painting — recursive paint is not allowed"
         );
         return;
     };

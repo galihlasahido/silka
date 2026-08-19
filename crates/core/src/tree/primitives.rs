@@ -421,7 +421,7 @@ impl RenderNode for Viewport {
                 Axis::Vertical => constraints.has_bounded_height(),
                 Axis::Horizontal => constraints.has_bounded_width(),
             },
-            "viewport {:?} menerima sumbu guliran tanpa batas — beri pembatas ukuran di atasnya",
+            "viewport {:?} was given an unbounded scroll axis — put a size constraint above it",
             self.axis
         );
         // The viewport takes as much as it is allowed; when there is no bound, it

@@ -84,9 +84,10 @@
 //! - **Frozen columns** and **row grouping**: both demand two windows at once;
 //!   waiting for a real need.
 //! - **AccessKit `size_of_set`/`position_in_set`**: the true row count cannot
-//!   be inferred from the a11y tree because only the window is materialized,
-//!   and [`silka_core::access::AccessNode`] has nowhere to put that number
-//!   yet — exactly the same debt as `list`.
+//!   be inferred from the a11y tree because only the window is materialized.
+//!   [`silka_core::access::AccessNode`] now carries both fields, so what is
+//!   left is wiring them onto each materialized row — exactly the same debt as
+//!   `list`.
 
 pub mod column;
 mod node;

@@ -109,7 +109,7 @@ impl ViewNode for ChartProps {
 
         let n = node
             .downcast_mut::<ChartBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
 
         // The callback is replaced unconditionally: two closures cannot be
         // compared, and a stale one would call into a signal the previous

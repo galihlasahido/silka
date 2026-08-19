@@ -33,16 +33,16 @@ use silka_widgets::{active_fonts, switch, switch_only, text};
 /// The page title.
 pub const JUDUL: &str = "Switch";
 /// The parent switch's name: turning it on turns everything below it off.
-pub const MODE_PESAWAT: &str = "Mode pesawat";
+pub const MODE_PESAWAT: &str = "Aeroplane mode";
 /// The name of each radio switch.
-pub const RADIO: [&str; 3] = ["Wi-Fi", "Bluetooth", "Data seluler"];
+pub const RADIO: [&str; 3] = ["Wi-Fi", "Bluetooth", "Mobile data"];
 /// The name of the switch deliberately disabled in the off state.
-pub const MATI: &str = "Tidak tersedia di paket ini";
+pub const MATI: &str = "Not available on this plan";
 /// The name of the switch deliberately disabled in the on state.
-pub const TERKUNCI: &str = "Wajib menyala";
+pub const TERKUNCI: &str = "Always on";
 /// The name of the switch with no visible label (its a11y name still
 /// exists).
-pub const TANPA_LABEL: &str = "Sinkronkan baris pertama";
+pub const TANPA_LABEL: &str = "Sync the first row";
 
 /// How many radios are on — used by the summary row **and** by the tests.
 pub fn menyala(radio: &[bool]) -> usize {
@@ -75,9 +75,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Jangan cuma diklik — tekan thumb-nya lalu seret. Ia mengikuti \
-                 jari 1:1, warnanya berganti tepat saat melewati tengah, dan saat \
-                 dilepas kecepatan jari diteruskan ke spring, bukan dibuang.",
+                "Do not just click it — press the thumb and drag. It follows the \
+                 finger 1:1, the colour flips exactly as it passes the middle, \
+                 and on release the finger's velocity is handed to the spring \
+                 rather than thrown away.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -147,8 +148,8 @@ fn kelompok(radio: Signal<[bool; RADIO.len()]>) -> View {
 /// control.
 pub fn ringkasan(radio: &[bool]) -> String {
     match menyala(radio) {
-        0 => "Semua radio mati.".to_string(),
-        n => format!("{n} dari {} radio menyala.", radio.len()),
+        0 => "All radios are off.".to_string(),
+        n => format!("{n} of {} radios are on.", radio.len()),
     }
 }
 
@@ -236,8 +237,8 @@ mod tests {
     #[test]
     fn ringkasan_ikut_data() {
         assert_eq!(menyala(&[true, false, true]), 2);
-        assert_eq!(ringkasan(&[false, false, false]), "Semua radio mati.");
-        assert_eq!(ringkasan(&[true, false, true]), "2 dari 3 radio menyala.");
+        assert_eq!(ringkasan(&[false, false, false]), "All radios are off.");
+        assert_eq!(ringkasan(&[true, false, true]), "2 of 3 radios are on.");
     }
 
     #[test]

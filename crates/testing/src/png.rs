@@ -105,16 +105,16 @@ pub enum PngError {
 impl fmt::Display for PngError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            PngError::NotPng => f.write_str("bukan berkas PNG (tanda tangan salah)"),
-            PngError::Truncated => f.write_str("berkas PNG terpotong"),
-            PngError::BadCrc { chunk } => write!(f, "CRC chunk {chunk} tidak cocok"),
-            PngError::BadAdler => f.write_str("checksum Adler-32 zlib tidak cocok"),
-            PngError::Unsupported { detail } => write!(f, "PNG tidak didukung: {detail}"),
+            PngError::NotPng => f.write_str("not a PNG file (wrong signature)"),
+            PngError::Truncated => f.write_str("truncated PNG file"),
+            PngError::BadCrc { chunk } => write!(f, "chunk {chunk} CRC mismatch"),
+            PngError::BadAdler => f.write_str("zlib Adler-32 checksum mismatch"),
+            PngError::Unsupported { detail } => write!(f, "unsupported PNG: {detail}"),
             PngError::Compressed => f.write_str(
-                "PNG memakai blok DEFLATE terkompresi; berkas golden harus \
-                 dibuat ulang dengan SILKA_GOLDEN=update",
+                "the PNG uses compressed DEFLATE blocks; the golden file must be \
+                 rebuilt with SILKA_GOLDEN=update",
             ),
-            PngError::Malformed(e) => write!(f, "isi PNG tidak konsisten: {e}"),
+            PngError::Malformed(e) => write!(f, "inconsistent PNG contents: {e}"),
         }
     }
 }
@@ -514,7 +514,7 @@ fn fixed_symbol(r: &mut BitReader<'_>) -> Result<u16, PngError> {
         return Ok(144 + code - 0x190);
     }
     Err(PngError::Unsupported {
-        detail: "kode Huffman tetap tidak valid".to_string(),
+        detail: "invalid fixed Huffman code".to_string(),
     })
 }
 
@@ -583,14 +583,14 @@ fn inflate_fixed_block(r: &mut BitReader<'_>, out: &mut Vec<u8>) -> Result<(), P
                 let li = (symbol - 257) as usize;
                 if li >= LENGTH_BASE.len() {
                     return Err(PngError::Unsupported {
-                        detail: format!("kode panjang {symbol}"),
+                        detail: format!("length code {symbol}"),
                     });
                 }
                 let length = LENGTH_BASE[li] + r.read(LENGTH_EXTRA[li])? as usize;
                 let di = r.read_code(5)? as usize;
                 if di >= DIST_BASE.len() {
                     return Err(PngError::Unsupported {
-                        detail: format!("kode jarak {di}"),
+                        detail: format!("distance code {di}"),
                     });
                 }
                 let distance = DIST_BASE[di] + r.read(DIST_EXTRA[di])? as usize;
@@ -666,12 +666,12 @@ fn parse_ihdr(body: &[u8]) -> Result<(u32, u32), PngError> {
     let (depth, color, interlace) = (body[8], body[9], body[12]);
     if depth != 8 || color != COLOR_RGBA {
         return Err(PngError::Unsupported {
-            detail: format!("bit depth {depth}, color type {color}; hanya 8-bit RGBA"),
+            detail: format!("bit depth {depth}, color type {color}; only 8-bit RGBA"),
         });
     }
     if interlace != 0 {
         return Err(PngError::Unsupported {
-            detail: "interlace Adam7".to_string(),
+            detail: "Adam7 interlacing".to_string(),
         });
     }
     Ok((width, height))
@@ -712,7 +712,7 @@ fn unfilter(raw: &[u8], width: u32, height: u32) -> Result<Vec<u8>, PngError> {
                 4 => src[x].wrapping_add(paeth(a, b, c)),
                 other => {
                     return Err(PngError::Unsupported {
-                        detail: format!("filter baris {other}"),
+                        detail: format!("row filter {other}"),
                     })
                 }
             };

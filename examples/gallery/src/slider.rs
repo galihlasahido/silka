@@ -6,7 +6,7 @@
 //!   track (the thumb *travels there on a spring*, it does not teleport), then
 //!   Tab to the slider and press arrows/Home/End/PageUp — the number changes in
 //!   the same place.
-//! - **Snapping to steps.** The "Ukuran teks" slider steps by 1pt and "Rentang
+//! - **Snapping to steps.** The "Text size" slider steps by 1pt and "Rentang
 //!   harga" by 50; your finger may stop anywhere, the value still lands on a
 //!   step.
 //! - **Focus ring + hit target.** The focus ring appears around whichever thumb
@@ -44,11 +44,11 @@ pub const JUDUL: &str = "Slider";
 /// tree.
 pub const VOLUME: &str = "Volume";
 /// The text-size slider's name (stepped).
-pub const UKURAN: &str = "Ukuran teks";
+pub const UKURAN: &str = "Text size";
 /// The price-range slider's name (two thumbs).
-pub const HARGA: &str = "Rentang harga";
+pub const HARGA: &str = "Price range";
 /// The name of the deliberately disabled slider.
-pub const MATI: &str = "Sedang dikunci";
+pub const MATI: &str = "Currently locked";
 
 /// The control column's maximum width, in spacing steps (§2.6).
 const LEBAR_LANGKAH: f32 = 120.0;
@@ -79,8 +79,8 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Seret, klik di track, atau Tab lalu tekan panah. Nilainya \
-                 mendarat di undakan; thumb-nya menyusul lewat spring.",
+                "Drag it, click the track, or Tab to it and press an arrow. The \
+                 value lands on a step; the thumb follows on a spring.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -168,7 +168,7 @@ fn baris_ukuran(ukuran: Signal<f32>) -> View {
             // A live example: the text really is the size of the slider's
             // value.
             View::from(
-                text("Ukuran teks mengikuti nilai di atas.")
+                text("The text size follows the value above.")
                     .size(v)
                     .color(t.color.label)
                     .single_line()
@@ -345,7 +345,7 @@ mod tests {
         let mut ui = ui(Theme::tailwind(Appearance::Dark));
         ui.frame();
 
-        // Tab until the "Ukuran teks" slider holds focus.
+        // Tab until the "Text size" slider holds focus.
         for _ in 0..2 {
             tombol(&mut ui, NamedKey::Tab);
         }

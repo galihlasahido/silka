@@ -5,7 +5,7 @@
 //! the tutorial's opening snippet is compiled by CI like any other code.
 //!
 //! ```text
-//! cargo run -p silka-todo --bin jendela
+//! cargo run -p silka-todo --bin first_window
 //! ```
 
 use silka_core::app::{BuildCtx, ScaleFactor};

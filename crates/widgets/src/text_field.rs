@@ -12,8 +12,8 @@
 //! # let fonts = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! text_field_in(&fonts, &t, nama.get())
-//!     .placeholder("Nama lengkap")
-//!     .label("Nama")
+//!     .placeholder("Full name")
+//!     .label("Name")
 //!     .on_change(move |s| nama.set(s.to_string()));
 //! ```
 //!
@@ -1063,7 +1063,7 @@ impl ViewNode for TextFieldProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<TextFieldBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         // **The contents are overwritten only when the app actually changed

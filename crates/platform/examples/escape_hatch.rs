@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_native_event(move |e| {
             if e.is_close_requested() && !untuk_hook.get() {
                 untuk_hook.set(true);
-                println!("close ditahan hook native — tutup sekali lagi untuk keluar");
+                println!("close held by the native hook — close once more to quit");
                 // The framework never sees this event: the window stays open.
                 return NativeFlow::Consume;
             }
@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if detik != frame_terakhir_dicetak.get() {
                     frame_terakhir_dicetak.set(detik);
                     println!(
-                        "frame {} — handle masih hidup: {}",
+                        "frame {} — the handle is still alive: {}",
                         ctx.frame(),
                         native.window_system()
                     );
@@ -99,7 +99,7 @@ fn polish_native(native: &NativeWindow) {
     // `fullSizeContentView`: the content view extends behind the titlebar, so
     // the traffic lights float over the application's own drawing.
     w.setStyleMask(w.styleMask() | NSWindowStyleMask::FullSizeContentView);
-    println!("macOS: titlebar transparan + fullSizeContentView terpasang");
+    println!("macOS: transparent titlebar + fullSizeContentView applied");
 }
 
 /// Windows: everything hangs off the `HWND`.
@@ -116,7 +116,7 @@ fn polish_native(native: &NativeWindow) {
     let hwnd = HWND(hwnd as *mut core::ffi::c_void);
     // From this point on it is ordinary Win32 code, e.g.
     // `DwmExtendFrameIntoClientArea(hwnd, &MARGINS { .. })`.
-    println!("Windows: HWND {hwnd:?} siap dipakai FFI");
+    println!("Windows: HWND {hwnd:?} is ready for FFI");
 }
 
 /// Linux: the ids Wayland and X11 protocols ask for.
@@ -128,7 +128,7 @@ fn polish_native(native: &NativeWindow) {
     match (native.wl_surface(), native.xlib_window()) {
         (Some(surface), _) => println!("Wayland: wl_surface {surface:?}"),
         (None, Some(window)) => println!("X11: window id {window:#x}"),
-        (None, None) => println!("tidak ada handle window — sesi tanpa display?"),
+        (None, None) => println!("no window handle — a session without a display?"),
     }
 }
 

@@ -23,7 +23,7 @@ Yang akan kita bangun:
 Seluruh kode di halaman ini adalah kode sungguhan yang ikut dikompilasi CI. Kamu bisa
 membacanya utuh di:
 
-- [`examples/todo/src/bin/jendela.rs`](../examples/todo/src/bin/jendela.rs) — langkah 2 (jendela pertama)
+- [`examples/todo/src/bin/first_window.rs`](../examples/todo/src/bin/first_window.rs) — langkah 2 (jendela pertama)
 - [`examples/todo/src/main.rs`](../examples/todo/src/main.rs) — aplikasi todo lengkap
 
 Kalau ada potongan di sini yang tidak bisa di-`cargo run`, itu **bug dokumen**, bukan salahmu.
@@ -120,7 +120,7 @@ Empat crate, dan masing-masing punya satu tugas:
 
 Kita mulai dari program terkecil yang masih jujur: satu jendela sungguhan, satu frame GPU
 sungguhan, teks sungguhan dari atlas glyph. Supaya nanti tidak tertimpa aplikasi todo, taruh
-langkah ini sebagai binary terpisah — buat berkas baru `examples/todo/src/bin/jendela.rs`
+langkah ini sebagai binary terpisah — buat berkas baru `examples/todo/src/bin/first_window.rs`
 (Cargo otomatis menjadikan setiap berkas di `src/bin/` sebuah binary bernama sama):
 
 ```rust
@@ -184,7 +184,7 @@ fn halaman(cx: &BuildCtx) -> View {
 ```
 
 ```bash
-cargo run -p silka-todo --bin jendela
+cargo run -p silka-todo --bin first_window
 ```
 
 Jendela terbuka. Tiga hal yang baru saja terjadi, dan ketiganya layak dilihat sebentar:

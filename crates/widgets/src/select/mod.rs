@@ -185,7 +185,7 @@ pub fn select_in<S: Into<String>>(
         theme: *theme,
         options: Rc::new(options.into_iter().map(Into::into).collect()),
         label: None,
-        placeholder: String::from("Pilih…"),
+        placeholder: String::from("Select…"),
         state: SelectState::new(),
         disabled: false,
         width: None,

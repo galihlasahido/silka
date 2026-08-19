@@ -357,9 +357,12 @@ impl WysiwygBody {
             }
         }
 
-        // Underlines and strikethroughs are quads, not font features: the paint
-        // layer has no stroke command yet (§3.2), and a link that is only
-        // coloured is not accessible enough on its own.
+        // Underlines and strikethroughs are quads, not font features. A quad is
+        // the right shape for them even now that the paint layer does have a
+        // stroke command: a rule is an axis-aligned rectangle, and going
+        // through `Stroke` would only add caps and joins nothing here uses.
+        // (A link that is only coloured is not accessible enough on its own,
+        // which is why the rule is drawn at all.)
         self.rules.clear();
         let tebal = self.style.rule;
         for b in &l.blocks {

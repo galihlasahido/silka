@@ -334,7 +334,7 @@ impl ViewNode for SelectOptionProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<SelectOption>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         let berubah = n.style != self.style

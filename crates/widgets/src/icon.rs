@@ -55,7 +55,7 @@
 //!
 //! Mirroring it is not the caller's job, because a call site has no idea which
 //! direction is in force. It is the icon node's, which learns the direction
-//! from its [`LayoutCtx`](silka_core::tree::LayoutCtx) — the same root
+//! from its [`LayoutCtx`] — the same root
 //! `AUDIT.md` P-6 closed for every other self-drawing widget. So the vocabulary
 //! is [`chevron_back`]/[`chevron_forward`] (and [`Icon::mirrored`] for your own
 //! artwork), never a constant chosen at the call site:

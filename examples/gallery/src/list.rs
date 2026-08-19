@@ -36,17 +36,17 @@ use silka_widgets::{
 };
 
 /// The page title.
-pub const JUDUL: &str = "List (tervirtualisasi)";
+pub const JUDUL: &str = "List (virtualised)";
 /// The list's name for screen readers — and the anchor the tests look for.
-pub const NAMA_DAFTAR: &str = "Transaksi";
+pub const NAMA_DAFTAR: &str = "Transactions";
 /// How many rows. A hundred thousand, and that is exactly the point of the
 /// demo.
 pub const BARIS: usize = 100_000;
 
 /// The jump-far button.
-pub const TOMBOL_TENGAH: &str = "Ke baris 50.000";
+pub const TOMBOL_TENGAH: &str = "Jump to row 50,000";
 /// The back-to-the-start button.
-pub const TOMBOL_AWAL: &str = "Ke awal";
+pub const TOMBOL_AWAL: &str = "Back to top";
 
 /// One row's height — which is also the HIG's minimum hit target.
 const TINGGI_BARIS: f32 = 44.0;
@@ -81,11 +81,11 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Seratus ribu baris, dan hanya belasan di antaranya yang pernah \
-                 menjadi node. Gulir sejauh apa pun: yang dibangun selalu \
-                 sebanyak yang muat di layar. Klik satu baris lalu tekan ↓ — \
-                 sorotannya meluncur, dan daftar menggulirkan dirinya sendiri \
-                 saat barisnya keluar layar.",
+                "A hundred thousand rows, and only a dozen or so of them ever \
+                 become nodes. Scroll as far as you like: what gets built is \
+                 always just what fits on screen. Click a row and press ↓ — the \
+                 highlight glides, and the list scrolls itself when the row \
+                 leaves the screen.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -140,7 +140,7 @@ fn baris(t: &Theme, i: usize) -> View {
         .weight(FontWeight::MEDIUM)
         .color(t.color.tertiary_label)
         .single_line();
-    let nama = text(format!("Transaksi {}", nama_pihak(i)))
+    let nama = text(format!("Transaction {}", nama_pihak(i)))
         .size(t.typography.body_size)
         .color(t.color.label)
         .single_line();
@@ -188,7 +188,7 @@ fn judul_kolom(t: &Theme) -> View {
                 .single_line(),
         ),
         View::from(
-            text("Pihak")
+            text("Party")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
@@ -198,7 +198,7 @@ fn judul_kolom(t: &Theme) -> View {
         // single layout number on this page.
         View::from(spacer()),
         View::from(
-            text("Nominal")
+            text("Amount")
                 .size(t.typography.footnote.size)
                 .weight(FontWeight::SEMIBOLD)
                 .color(t.color.secondary_label)
@@ -234,13 +234,13 @@ fn status(state: ListState, dibuka: Signal<Option<usize>>) -> View {
         let t: Theme = cx.expect_env::<Signal<Theme>>().get();
         let terpilih = state
             .selected()
-            .map(|i| format!("baris #{:06}", i + 1))
-            .unwrap_or_else(|| "belum ada".to_string());
+            .map(|i| format!("row #{:06}", i + 1))
+            .unwrap_or_else(|| "none yet".to_string());
         let aktif = dibuka
             .get()
-            .map(|i| format!("dibuka #{:06}", i + 1))
-            .unwrap_or_else(|| "ketuk-ganda atau Enter untuk membuka".to_string());
-        text(format!("Terpilih: {terpilih} · {aktif}"))
+            .map(|i| format!("opened #{:06}", i + 1))
+            .unwrap_or_else(|| "double-tap or Enter to open".to_string());
+        text(format!("Selected: {terpilih} · {aktif}"))
             .size(t.typography.body_size)
             .color(t.color.tertiary_label)
             .single_line()
@@ -379,7 +379,7 @@ mod tests {
         // The first row really does have its content announced.
         assert!(pohon.find_label("#000001").is_some());
         // And the column heading is **not** one of the rows.
-        assert!(pohon.find_label("Nominal").is_some());
+        assert!(pohon.find_label("Amount").is_some());
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
         let pohon = ui.access_tree();
         assert!(
             pohon
-                .find_label("Terpilih: baris #000002 · ketuk-ganda atau Enter untuk membuka")
+                .find_label("Selected: row #000002 · double-tap or Enter to open")
                 .is_some(),
             "status tidak ikut berubah:\n{}",
             pohon.dump()
@@ -406,7 +406,7 @@ mod tests {
                 .node
                 .label
                 .as_deref()
-                .is_some_and(|l| l.contains("dibuka #000002"))),
+                .is_some_and(|l| l.contains("opened #000002"))),
             "ketuk-ganda tidak membuka baris:\n{}",
             pohon.dump()
         );

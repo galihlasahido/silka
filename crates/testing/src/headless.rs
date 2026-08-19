@@ -52,7 +52,7 @@ pub const REQUIRE_ENV: &str = "SILKA_REQUIRE_GPU";
 /// Convert a renderer capture into the crate's own image type.
 pub fn to_image(src: &Rgba8Image) -> Image {
     Image::new(src.width(), src.height(), src.pixels().to_vec())
-        .expect("renderer selalu mengembalikan buffer RGBA yang konsisten")
+        .expect("the renderer always returns a consistent RGBA buffer")
 }
 
 /// A device plus a cache of offscreen targets.
@@ -100,9 +100,9 @@ impl Headless {
             }),
             Err(e) => {
                 if require_gpu() {
-                    panic!("{REQUIRE_ENV}=1 tapi tidak ada GPU headless: {e}");
+                    panic!("{REQUIRE_ENV}=1 but there is no headless GPU: {e}");
                 }
-                eprintln!("tidak ada GPU headless ({e})");
+                eprintln!("no headless GPU ({e})");
                 None
             }
         }
@@ -157,7 +157,7 @@ impl Headless {
             Some(i) => i,
             None => {
                 let target = OffscreenTarget::new(&self.gpu, geometry)
-                    .expect("target offscreen untuk ukuran yang bisa digambar");
+                    .expect("an offscreen target for a drawable size");
                 self.targets.push((key, target));
                 self.targets.len() - 1
             }
@@ -199,7 +199,7 @@ macro_rules! gpu_or_skip {
             Some(gpu) => gpu,
             None => {
                 eprintln!(
-                    "dilewati: uji visual butuh GPU (set {}=1 untuk menjadikannya kegagalan)",
+                    "skipped: visual tests need a GPU (set {}=1 to make this a failure)",
                     $crate::headless::REQUIRE_ENV
                 );
                 return;

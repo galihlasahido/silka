@@ -67,6 +67,10 @@
 //!   three drivers rasterise the same SDF three slightly different ways, and a
 //!   suite that demands equality is a suite that gets deleted.
 
+// `deny` rather than the `warn` the other eight library crates use: this crate
+// is the tool a third-party widget author reaches for first, and an undocumented
+// knob in a test harness is discovered at the worst possible moment — while a
+// test is already failing for some other reason.
 #![deny(missing_docs)]
 // Documentation is part of the public contract, so the checks rustdoc offers
 // are turned on here rather than left to a reviewer's eye. A broken intra-doc

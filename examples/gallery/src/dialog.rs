@@ -10,7 +10,7 @@
 //!   immediately press Esc — the dialog reverses carrying its velocity, it does
 //!   not first jump to zero.
 //! - **Per-OS button convention**: the first dialog uses
-//!   [`ButtonOrder::Platform`] (on macOS "Batal" on the left, "Simpan" on the
+//!   [`ButtonOrder::Platform`] (on macOS "Cancel" on the left, "Save" on the
 //!   right), while the two dialogs below it force both orderings so they can be
 //!   seen side by side without switching OS.
 //! - **Keyboard**: Tab enters the dialog's focus trap and never escapes to the
@@ -56,21 +56,21 @@ use silka_widgets::{
 pub const JUDUL: &str = "Dialog";
 
 /// The button that opens the ordinary dialog.
-pub const BUKA_SIMPAN: &str = "Simpan perubahan…";
+pub const BUKA_SIMPAN: &str = "Save changes…";
 /// The button that opens the destructive alert.
-pub const BUKA_HAPUS: &str = "Hapus berkas…";
+pub const BUKA_HAPUS: &str = "Delete files…";
 /// The button that opens the dialog with Windows-style button order.
-pub const BUKA_WINDOWS: &str = "Susunan Windows…";
+pub const BUKA_WINDOWS: &str = "Windows layout…";
 
 /// The ordinary dialog's title.
-pub const JUDUL_SIMPAN: &str = "Simpan perubahan?";
+pub const JUDUL_SIMPAN: &str = "Save changes?";
 /// The destructive alert's title.
-pub const JUDUL_HAPUS: &str = "Hapus 3 berkas?";
+pub const JUDUL_HAPUS: &str = "Delete 3 files?";
 /// The title of the Windows-button-order example dialog.
-pub const JUDUL_WINDOWS: &str = "Susunan tombol Windows";
+pub const JUDUL_WINDOWS: &str = "Windows button order";
 
 /// The answer before the user presses anything.
-pub const BELUM_DIJAWAB: &str = "belum ada";
+pub const BELUM_DIJAWAB: &str = "none yet";
 
 /// Which dialog is currently open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -78,9 +78,9 @@ enum Buka {
     /// None.
     #[default]
     Tidak,
-    /// The "Simpan perubahan?" dialog.
+    /// The "Save changes?" dialog.
     Simpan,
-    /// The "Hapus 3 berkas?" alert.
+    /// The "Delete 3 files?" alert.
     Hapus,
     /// The Windows-button-order example dialog.
     Windows,
@@ -113,32 +113,32 @@ pub fn halaman(cx: &BuildCtx) -> View {
         .overlay(
             dialog(JUDUL_SIMPAN)
                 .message(
-                    "Dokumen ini punya perubahan yang belum disimpan. \
-                     Menutupnya sekarang akan membuang perubahan itu.",
+                    "This document has unsaved changes. Closing it now \
+                     will throw them away.",
                 )
                 .open(buka.get() == Buka::Simpan)
-                .action(silka_widgets::action("Jangan Simpan").on_press(jawab("Jangan Simpan")))
-                .cancel("Batal", jawab("Batal"))
-                .confirm("Simpan", jawab("Simpan")),
+                .action(silka_widgets::action("Don't Save").on_press(jawab("Don't Save")))
+                .cancel("Cancel", jawab("Cancel"))
+                .confirm("Save", jawab("Save")),
         )
         .overlay(
             // A destructive alert: clicking outside does not close it, and
-            // Return never runs "Hapus" (HIG).
+            // Return never runs "Delete" (HIG).
             alert(JUDUL_HAPUS)
-                .message("Berkas yang dihapus tidak bisa dikembalikan.")
+                .message("Deleted files cannot be recovered.")
                 .open(buka.get() == Buka::Hapus)
-                .cancel("Batal", jawab("Batal"))
-                .destructive("Hapus", jawab("Hapus")),
+                .cancel("Cancel", jawab("Cancel"))
+                .destructive("Delete", jawab("Delete")),
         )
         .overlay(
             dialog(JUDUL_WINDOWS)
                 .message(
-                    "Susunan yang sama dipaksa ke konvensi Windows: tombol \
-                     default di kiri, batal di kanannya.",
+                    "The same layout forced into the Windows convention: \
+                     the default button on the left, cancel to its right.",
                 )
                 .open(buka.get() == Buka::Windows)
                 .order(ButtonOrder::ConfirmFirst)
-                .cancel("Batal", tutup)
+                .cancel("Cancel", tutup)
                 .confirm("Ok", tutup),
         )
         .into()
@@ -157,9 +157,9 @@ fn konten(t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>) -> View {
         ),
         View::from(
             text(
-                "Modal dengan backdrop dim di atas sistem overlay yang sama \
-                 dengan popover dan toast. Urutan tombolnya mengikuti konvensi \
-                 OS; Esc membatalkan, Return menjalankan tombol default.",
+                "A modal with a dimmed backdrop, on the same overlay system \
+                 as popover and toast. The button order follows the OS \
+                 convention; Esc cancels, Return runs the default button.",
             )
             .size(t.typography.body.size)
             .line_height(t.typography.body.line_height)
@@ -167,7 +167,7 @@ fn konten(t: &Theme, buka: Signal<Buka>, jawaban: Signal<String>) -> View {
             .max_width(t.space(120.0)),
         ),
         View::from(
-            text(format!("Jawaban terakhir: {}", jawaban.get()))
+            text(format!("Last answer: {}", jawaban.get()))
                 .size(t.typography.callout.size)
                 .color(t.color.tertiary_label)
                 .single_line(),
@@ -293,7 +293,7 @@ mod tests {
                 .entries()
                 .iter()
                 .filter_map(|e| e.node.label.clone())
-                .find(|l| l.starts_with("Jawaban terakhir: "))
+                .find(|l| l.starts_with("Last answer: "))
                 .unwrap_or_else(|| panic!("baris jawaban hilang:\n{}", pohon.dump()))
         }
 
@@ -362,10 +362,10 @@ mod tests {
 
         uji.tombol(BUKA_SIMPAN);
         uji.diam();
-        uji.tombol("Simpan");
+        uji.tombol("Save");
         uji.diam();
 
-        assert!(uji.jawaban().ends_with("Simpan"));
+        assert!(uji.jawaban().ends_with("Save"));
         assert!(
             !uji.ada(JUDUL_SIMPAN),
             "setelah transisi keluar habis, dialog benar-benar tidak ada"
@@ -387,7 +387,7 @@ mod tests {
         uji.key(NamedKey::Escape);
         uji.diam();
 
-        assert!(uji.jawaban().ends_with("Batal"));
+        assert!(uji.jawaban().ends_with("Cancel"));
         assert!(!uji.ada(JUDUL_SIMPAN));
     }
 
@@ -419,7 +419,7 @@ mod tests {
         uji.klik(pojok);
         uji.diam();
         assert!(!uji.ada(JUDUL_SIMPAN), "dialog biasa: klik luar = batal");
-        assert!(uji.jawaban().ends_with("Batal"));
+        assert!(uji.jawaban().ends_with("Cancel"));
 
         uji.tombol(BUKA_HAPUS);
         uji.diam();
@@ -483,7 +483,7 @@ mod tests {
         uji.diam();
 
         let pohon = uji.ui.access_tree();
-        for label in ["Simpan", "Batal", "Jangan Simpan"] {
+        for label in ["Save", "Cancel", "Don't Save"] {
             let e = pohon
                 .find_label(label)
                 .unwrap_or_else(|| panic!("{label} hilang:\n{}", pohon.dump()));

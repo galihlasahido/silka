@@ -13,7 +13,7 @@
 //!
 //! # The shape, and why it is this shape
 //!
-//! [`Signal`](crate::signals::Signal) is deliberately **not** `Send`: it is a
+//! [`Signal`] is deliberately **not** `Send`: it is a
 //! handle into a thread-local runtime, and making it cross threads would turn
 //! every state write into a lock. So a task is split in two halves that never
 //! meet:
@@ -778,7 +778,7 @@ where
     if !started.peek() {
         started.set(true);
         let tasks = crate::app::current_tasks()
-            .expect("use_resource() butuh AppRuntime yang sedang membangun");
+            .expect("use_resource() needs an AppRuntime that is currently building");
         tasks.spawn_blocking(work, move |result| {
             state.set(match result {
                 Ok(value) => Load::Ready(value),

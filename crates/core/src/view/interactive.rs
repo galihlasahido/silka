@@ -99,7 +99,7 @@ impl ViewNode for InteractiveProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<Interactive>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
         if n.corners != self.corners {
             n.corners = self.corners;

@@ -9,14 +9,14 @@
 //! use silka_platform::dialog::{file_dialog, message, MessageAnswer};
 //!
 //! if let Some(path) = file_dialog()
-//!     .title("Buka dokumen")
+//!     .title("Open a document")
 //!     .filter("Teks", &["txt", "md"])
 //!     .pick_file()
 //! {
 //!     println!("{}", path.display());
 //! }
 //!
-//! let jawab = message("Simpan?").body("Perubahan belum disimpan.").ask();
+//! let jawab = message("Save?").body("There are unsaved changes.").ask();
 //! assert!(matches!(jawab, MessageAnswer::Yes | MessageAnswer::No));
 //! ```
 //!

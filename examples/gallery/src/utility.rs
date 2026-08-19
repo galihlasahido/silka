@@ -28,16 +28,16 @@ use silka_theme::{ColorToken, FontToken, Preset, RadiusToken, ShadowToken, Space
 use silka_widgets::{active_fonts, text};
 
 /// The page title.
-pub const JUDUL: &str = "Kosakata utility";
+pub const JUDUL: &str = "Utility vocabulary";
 
 /// The a11y name of the hover tile — also what the tests aim at.
-pub const TILE_HOVER: &str = "Kotak hover";
+pub const TILE_HOVER: &str = "Hover box";
 /// The a11y name of the pressed tile.
-pub const TILE_TEKAN: &str = "Kotak pressed";
+pub const TILE_TEKAN: &str = "Pressed box";
 /// The a11y name of the focus tile.
-pub const TILE_FOKUS: &str = "Kotak focused";
+pub const TILE_FOKUS: &str = "Focused box";
 /// The a11y name of the disabled tile.
-pub const TILE_MATI: &str = "Kotak disabled";
+pub const TILE_MATI: &str = "Disabled box";
 
 /// Which spacing steps get a row of their own.
 ///
@@ -79,9 +79,9 @@ pub fn halaman(cx: &BuildCtx) -> View {
                 .text_color(ColorToken::SecondaryLabel)
                 .max_width(t.space(120.0)),
         )
-        .child(bagian("Spacing · skala 4pt", spacing()))
+        .child(bagian("Spacing · 4pt scale", spacing()))
         .child(bagian("Radius · per preset", radius()))
-        .child(bagian("Shadow · elevasi", shadow()))
+        .child(bagian("Shadow · elevation", shadow()))
         .child(bagian("State · hover, pressed, focused", keadaan()))
         .into()
 }
@@ -91,12 +91,13 @@ pub fn halaman(cx: &BuildCtx) -> View {
 fn keterangan(preset: Preset) -> String {
     let bentuk = match preset {
         Preset::Cupertino => "squircle",
-        Preset::Tailwind => "busur lingkaran",
+        Preset::Tailwind => "circular arc",
     };
     format!(
-        "Setiap nilai di halaman ini adalah token, bukan angka. Preset aktif: \
-         {preset:?} — sudutnya digambar sebagai {bentuk}. Ganti preset di bilah \
-         atas: bentuk dan ukurannya berubah, kode halamannya tidak."
+        "Every value on this page is a token, not a number. Active preset: \
+         {preset:?} — its corners are drawn as {bentuk}. Switch the preset in \
+         the top bar: the shapes and the sizes change, the page's code does \
+         not."
     )
 }
 
@@ -203,7 +204,7 @@ fn keadaan() -> View {
         .items_stretch()
         .gap_4()
         .child(
-            tile(TILE_HOVER, "Arahkan pointer")
+            tile(TILE_HOVER, "Point at it")
                 .hover(|s| {
                     s.bg(ColorToken::SurfaceHover)
                         .border_color(ColorToken::Border)
@@ -211,7 +212,7 @@ fn keadaan() -> View {
                 .tab_order(1),
         )
         .child(
-            tile(TILE_TEKAN, "Tahan tombol tetikus")
+            tile(TILE_TEKAN, "Hold the mouse button")
                 .hover(|s| s.bg(ColorToken::SurfaceHover))
                 // `scale` is decorative motion: under reduced motion it does not
                 // happen at all, while the colour change keeps running (§3.5).
@@ -219,12 +220,12 @@ fn keadaan() -> View {
                 .tab_order(2),
         )
         .child(
-            tile(TILE_FOKUS, "Tab ke sini")
+            tile(TILE_FOKUS, "Tab to here")
                 .focused(|s| s.ring(ColorToken::FocusRing))
                 .tab_order(3),
         )
         .child(
-            tile(TILE_MATI, "Tidak bisa dipakai")
+            tile(TILE_MATI, "Not usable")
                 .disabled(true)
                 .disabled_style(|s| s.bg(ColorToken::SurfaceSunken)),
         )

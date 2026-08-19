@@ -16,7 +16,7 @@
 //!    tight loop of `Instant::now()` would report — the trap §3.5 warns about,
 //!    and the one that makes a settle-loop spin forever.
 //! 2. **Aim by accessible name, not by coordinate.** [`Simulator::click_label`]
-//!    asks the accessibility tree where "Simpan" is and presses its centre. The
+//!    asks the accessibility tree where "Save" is and presses its centre. The
 //!    coordinates then come from the real layout, the test survives a padding
 //!    change, and it fails when the a11y contract (§3.8) is broken — which is
 //!    exactly when it should.
@@ -346,8 +346,8 @@ impl Simulator {
             }
             if frames >= self.settle_limit {
                 panic!(
-                    "aplikasi tidak pernah tenang setelah {frames} frame \
-                     (masih animasi: {}, masih kotor: {:?})",
+                    "the application never settled after {frames} frames \
+                     (still animating: {}, still dirty: {:?})",
                     self.ui.is_animating(),
                     self.ui.pending()
                 );
@@ -554,7 +554,7 @@ impl Simulator {
     pub fn require_center(&self, label: &str) -> Point {
         self.center_of(label).unwrap_or_else(|| {
             panic!(
-                "tidak ada node beraksesibilitas berlabel {label:?}\n{}",
+                "no accessible node labelled {label:?}\n{}",
                 self.access_tree().dump()
             )
         })
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "tidak pernah tenang")]
+    #[should_panic(expected = "never settled")]
     fn settle_menyerah_dan_melapor_bukan_menggantung() {
         let mut s = sim().settle_limit(5).animator(|_tree, tick| {
             // An animation that never finishes: exactly the bug the limit is

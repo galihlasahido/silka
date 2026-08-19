@@ -102,7 +102,7 @@ impl Toolbar {
         self
     }
 
-    /// What the "Tautan" button does when there is **no** link yet.
+    /// What the "Link" button does when there is **no** link yet.
     ///
     /// A toolbar cannot open a modal — it owns no overlay layer — so it asks,
     /// and the application opens the [`LinkDialog`] it already mounted. Without
@@ -138,8 +138,8 @@ impl Toolbar {
             &self.theme,
             BlockKind::ALL.iter().map(|k| k.label()),
         )
-        .label("Jenis blok")
-        .placeholder("Campuran")
+        .label("Block type")
+        .placeholder("Mixed")
         .selected(terpilih)
         .on_select(move |i| {
             if let Some(kind) = BlockKind::ALL.get(i) {
@@ -170,8 +170,8 @@ impl Toolbar {
         }
         anak.push(self.link_button());
         if self.show_history {
-            anak.push(self.history_button("Urungkan", EditorCommand::Undo, self.state.can_undo));
-            anak.push(self.history_button("Ulangi", EditorCommand::Redo, self.state.can_redo));
+            anak.push(self.history_button("Undo", EditorCommand::Undo, self.state.can_undo));
+            anak.push(self.history_button("Redo", EditorCommand::Redo, self.state.can_redo));
         }
         row(anak)
             .spacing(t.space(1.0))
@@ -215,7 +215,7 @@ impl Toolbar {
         button_variant_in(
             &self.fonts,
             &self.theme,
-            "Tautan",
+            "Link",
             if ada {
                 ButtonVariant::Secondary
             } else {
@@ -350,23 +350,23 @@ impl LinkDialog {
         let hapus_handle = self.handle.clone();
 
         let mut kolom = text_field_in(&self.fonts, &t, self.url.clone())
-            .label("Alamat tautan")
+            .label("Link address")
             .placeholder("https://");
         if let Some(cb) = self.on_url.clone() {
             kolom = kolom.on_change(move |s| cb.call(s));
         }
 
         let judul = if self.text.is_empty() {
-            "Sisipkan tautan".to_string()
+            "Insert link".to_string()
         } else {
-            format!("Tautkan “{}”", self.text)
+            format!("Link “{}”", self.text)
         };
 
         let mut d = crate::dialog::dialog_in(&self.fonts, &t, judul)
             .open(self.open)
             .content(View::from(kolom))
             .action(
-                action("Sisipkan")
+                action("Insert")
                     .confirm()
                     // An empty address is not a link — it is a way to lose the
                     // text you were pointing at.
@@ -378,7 +378,7 @@ impl LinkDialog {
                         }
                     }),
             )
-            .action(action("Batal").cancel().on_press(move || {
+            .action(action("Cancel").cancel().on_press(move || {
                 if let Some(c) = &tutup_batal {
                     c.call();
                 }
@@ -389,7 +389,7 @@ impl LinkDialog {
                 }
             });
         if !self.url.is_empty() {
-            d = d.action(action("Hapus tautan").destructive().on_press(move || {
+            d = d.action(action("Remove link").destructive().on_press(move || {
                 hapus_handle.post(EditorCommand::SetLink(None));
             }));
         }

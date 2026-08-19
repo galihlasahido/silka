@@ -91,8 +91,10 @@
 //!   single header for the whole list. The geometry is ready — [`ListMetrics`]
 //!   treats the header as a content offset — but the API waits on a real need.
 //! - **AccessKit `size_of_set`/`position_in_set`**: the true row count cannot be
-//!   inferred from the a11y tree because only the window is materialized, and
-//!   [`silka_core::access::AccessNode`] has no home for that number yet.
+//!   inferred from the a11y tree because only the window is materialized.
+//!   [`silka_core::access::AccessNode`] now carries both fields — `tree` and
+//!   `segmented_control` already fill them — so what is left here is purely
+//!   wiring them from [`ListMetrics::count`] onto each materialized row.
 
 mod geometry;
 mod node;

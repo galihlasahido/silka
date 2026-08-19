@@ -525,7 +525,7 @@ impl ViewNode for MenuRowProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<MenuRowBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         let berubah = n.style != self.style || n.highlighted != self.highlighted;
@@ -663,7 +663,7 @@ impl ViewNode for MenuSeparatorProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<MenuSeparatorBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let baru = (self.color, self.thickness, self.inset, self.height);
         if (n.color, n.thickness, n.inset, n.height) == baru {
             return Dirty::NONE;

@@ -23,7 +23,7 @@
 //!
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! let _ = scroll_view_in(&t, column((0..50).map(|_| fixed(320.0, 44.0))))
-//!     .label("Daftar transaksi");
+//!     .label("Transaction list");
 //! ```
 //!
 //! ## Momentum is not reimplemented — that is a decision, not a gap
@@ -285,16 +285,26 @@ pub struct ScrollView {
     direction: TextDirection,
 }
 
+/// A **blank** node: no size, no color, no spacing.
+///
+/// Every visual value is deliberately zero. `Default` exists so that
+/// [`ScrollProps`] can fill in the interaction state (springs, viewport,
+/// gesture bookkeeping) without repeating it, and the caller is expected to set
+/// every style field explicitly from theme tokens — see
+/// [`ScrollbarStyle::from_theme`]. Writing a plausible-looking literal here
+/// (`thickness: 7.0`) would be a back door for hard-coded numbers to re-enter
+/// the render tree without passing through the token layer (§2.7); the
+/// `default_is_blank` test below keeps that door shut.
 impl Default for ScrollView {
     fn default() -> Self {
         Self {
             axis: Axis::Vertical,
-            line_height: 40.0,
+            line_height: 0.0,
             scrollbar: Scrollbar::default(),
             bar: ScrollbarStyle {
-                thickness: 7.0,
-                thickness_hover: 12.0,
-                margin: 2.0,
+                thickness: 0.0,
+                thickness_hover: 0.0,
+                margin: 0.0,
                 thumb: Color::TRANSPARENT,
                 thumb_active: Color::TRANSPARENT,
                 track: Color::TRANSPARENT,
@@ -891,7 +901,7 @@ impl RenderNode for ScrollView {
                 Axis::Vertical => constraints.has_bounded_height(),
                 Axis::Horizontal => constraints.has_bounded_width(),
             },
-            "scroll_view {:?} menerima sumbu guliran tanpa batas — beri pembatas ukuran di atasnya",
+            "scroll_view {:?} was given an unbounded scroll axis — put a size constraint above it",
             self.axis
         );
         let ukuran = Size::new(
@@ -1151,7 +1161,7 @@ impl ViewNode for ScrollProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<ScrollView>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         let mut dirty = Dirty::NONE;
 
         if n.axis != self.axis {

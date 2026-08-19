@@ -1087,7 +1087,7 @@ impl core::fmt::Debug for Radio {
 /// This node owns every decision a single option cannot make on its own —
 /// exactly the division of labour [`crate::tabs::TabListBox`] uses:
 ///
-/// - **Placement.** Options are stacked along [`RadioGroupBox::axis`],
+/// - **Placement.** Options are stacked along [`RadioGroup::axis`],
 ///   following the reading direction when that axis is horizontal (§9.8).
 /// - **Keyboard.** One group = one Tab stop. Inside it the arrows move *and
 ///   change* the selection (WAI-ARIA "selection follows focus"), Home/End jump

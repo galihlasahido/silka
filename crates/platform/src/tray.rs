@@ -187,10 +187,10 @@ pub enum TrayError {
 impl fmt::Display for TrayError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            TrayError::NoMenu => write!(f, "tray tanpa menu tidak berguna di Linux"),
-            TrayError::NoIcon => write!(f, "tray tanpa ikon tidak bisa digambar"),
-            TrayError::Menu(e) => write!(f, "menu tray tidak sah: {e}"),
-            TrayError::Os(m) => write!(f, "tray ditolak OS: {m}"),
+            TrayError::NoMenu => write!(f, "a tray icon without a menu is useless on Linux"),
+            TrayError::NoIcon => write!(f, "a tray item without an icon cannot be drawn"),
+            TrayError::Menu(e) => write!(f, "invalid tray menu: {e}"),
+            TrayError::Os(m) => write!(f, "the OS refused the tray item: {m}"),
         }
     }
 }

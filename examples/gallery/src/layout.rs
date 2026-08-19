@@ -33,14 +33,14 @@ use silka_widgets::{
 };
 
 /// The page title.
-pub const JUDUL: &str = "Tata letak & media";
+pub const JUDUL: &str = "Layout & media";
 
 /// The a11y name of the divider that opens the separator section — proof that
 /// a divider can carry a name at all.
-pub const NAMA_PEMISAH: &str = "Batas bagian";
+pub const NAMA_PEMISAH: &str = "Section divider";
 
 /// The a11y name of the specimen picture.
-pub const NAMA_GAMBAR: &str = "Spesimen papan catur";
+pub const NAMA_GAMBAR: &str = "Chequerboard specimen";
 
 /// Width of the page content, in spacing steps.
 const LEBAR_LANGKAH: f32 = 120.0;
@@ -120,11 +120,11 @@ pub fn halaman(cx: &BuildCtx) -> View {
         )
         .child(
             text(
-                "Tujuh komponen paling dasar di katalog, dan yang paling akhir \
-                 ditulis. Sebelum ada, galeri dan dashboard sama-sama merakit \
-                 garis pemisah dari kotak kosong ber-constraint dan celah dari \
-                 flex child berukuran nol. Semuanya sudah diganti — halaman ini \
-                 penggantinya.",
+                "The seven most basic components in the catalogue, and the \
+                 last ones written. Before they existed, the gallery and the \
+                 dashboard each built separators out of constrained empty boxes \
+                 and gaps out of zero-sized flex children. All of that is gone — \
+                 this page is what replaced it.",
             )
             .text_base()
             .text_color(ColorToken::SecondaryLabel)
@@ -208,22 +208,22 @@ fn bagian_pemisah(t: &Theme) -> View {
         .rounded_lg()
         .border_1()
         .border_color(ColorToken::Separator)
-        .child(judul_baris("Pinjaman aktif", "128"))
+        .child(judul_baris("Active loans", "128"))
         // A named divider: the one case where a separator earns a name, because
         // it genuinely opens a section.
         .child(divider().label(NAMA_PEMISAH))
-        .child(judul_baris("Menunggu akad", "12"))
+        .child(judul_baris("Awaiting akad", "12"))
         // …and an inset one, the shape a list separator takes when it lines up
         // with the row's text. The inset is reading-relative, so it mirrors.
         .child(divider().inset_start(SpaceToken::S4))
-        .child(judul_baris("Ditolak", "3"))
+        .child(judul_baris("Rejected", "3"))
         .child(divider().inset(SpaceToken::S4))
-        .child(judul_baris("Lunas", "1.204"));
+        .child(judul_baris("Paid", "1.204"));
 
     let vertikal = row([
-        View::from(keterangan("kiri")),
+        View::from(keterangan("left")),
         divider().vertical().into(),
-        View::from(keterangan("kanan")),
+        View::from(keterangan("right")),
     ])
     .gap_3()
     .cross(CrossAlign::Stretch);
@@ -441,7 +441,7 @@ fn bagian_ikon(_t: &Theme) -> View {
         .child(semua)
         .child(spesimen_kolom(
             warna.into(),
-            "satu bitmap, empat token warna",
+            "one bitmap, four colour tokens",
         ))
         .into()
 }
@@ -453,7 +453,7 @@ fn bagian_ikon(_t: &Theme) -> View {
 /// The same 2:1 specimen in four fits, inside one square box.
 fn bagian_gambar(t: &Theme) -> View {
     let Some(id) = spesimen() else {
-        return keterangan("atlas gambar penuh — spesimen tidak masuk");
+        return keterangan("image atlas is full — the specimen did not fit");
     };
 
     let sisi = t.space(18.0);

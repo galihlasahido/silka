@@ -13,7 +13,7 @@
 //! | A spring-driven indicator | Click the farthest tab and then immediately another: the indicator **reverses carrying its velocity**, it does not jump |
 //! | A spring-driven hover highlight | Sweep the cursor across the row quickly |
 //! | Keyboard + focus ring | Tab enters the row (a single stop), then ←/→/Home/End select; the focus ring slides along |
-//! | A disabled tab | "Arsip" is skipped by the arrows and cannot be clicked |
+//! | A disabled tab | "Archive" is skipped by the arrows and cannot be clicked |
 //! | Hit target ≥ 44pt | Even the shortest tab is still 44pt tall |
 //! | AccessKit nodes | VoiceOver announces "tab list" + which tab is selected |
 //! | Reduced motion | Turn on "Reduce motion" in the OS: the hover highlight goes away, the indicator still moves but without bouncing |
@@ -37,18 +37,18 @@ use silka_widgets::{active_fonts, text};
 pub const JUDUL: &str = "Tabs";
 
 /// Labels for the segmented row.
-pub const SEGMENTED: [&str; 3] = ["Hari", "Minggu", "Bulan"];
+pub const SEGMENTED: [&str; 3] = ["Day", "Week", "Month"];
 /// Labels for the underline row; the last one is deliberately disabled.
-pub const UNDERLINE: [&str; 3] = ["Ringkasan", "Rincian", "Arsip"];
+pub const UNDERLINE: [&str; 3] = ["Summary", "Details", "Archive"];
 /// Labels for the enclosed row.
-pub const ENCLOSED: [&str; 3] = ["Kode", "Pratinjau", "Log"];
+pub const ENCLOSED: [&str; 3] = ["Code", "Preview", "Log"];
 
 /// Panel content per index — also used by the tests to read it back from the
 /// a11y tree, so what is tested is exactly what a screen reader announces.
 pub const PANEL: [&str; 3] = [
-    "Panel pertama: ringkasan seminggu terakhir.",
-    "Panel kedua: rincian per transaksi.",
-    "Panel ketiga: arsip yang sudah ditutup.",
+    "First panel: a summary of the past week.",
+    "Second panel: details per transaction.",
+    "Third panel: the archive that has been closed.",
 ];
 
 /// The view tree for the whole page — this is what gets handed to
@@ -73,9 +73,9 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Tiga varian, satu mesin, dan satu signal yang sama untuk \
-                 ketiganya. Klik, atau Tab lalu ←/→: indikatornya meluncur \
-                 lewat spring yang bisa di-retarget di tengah jalan.",
+                "Three variants, one engine, and the same single signal behind \
+                 all three. Click, or Tab and then ←/→: the indicator glides on \
+                 a spring that can be retargeted mid-flight.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -104,7 +104,7 @@ fn deretan(terpilih: Signal<usize>) -> View {
         let segmented = tabs(SEGMENTED.map(tab))
             .variant(TabsVariant::Segmented)
             .selected(aktif)
-            .label("Rentang waktu")
+            .label("Time range")
             .on_select(move |i| terpilih.set(i));
 
         let underline = tabs([
@@ -116,13 +116,13 @@ fn deretan(terpilih: Signal<usize>) -> View {
         ])
         .variant(TabsVariant::Underline)
         .selected(aktif)
-        .label("Tampilan laporan")
+        .label("Report view")
         .on_select(move |i| terpilih.set(i));
 
         let enclosed = tabs(ENCLOSED.map(tab))
             .variant(TabsVariant::Enclosed)
             .selected(aktif)
-            .label("Sumber")
+            .label("Source")
             .on_select(move |i| terpilih.set(i));
 
         column([

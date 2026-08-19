@@ -70,7 +70,7 @@ fn runtime_by_id(id: RuntimeId) -> Option<Runtime> {
 /// The runtime that owns `id`; panics if that runtime is already dead.
 pub(crate) fn runtime_of(id: SignalId) -> Runtime {
     runtime_by_id(id.rt).unwrap_or_else(|| {
-        panic!("signal {id:?} dipakai setelah runtime-nya mati (atau di thread lain)")
+        panic!("signal {id:?} used after its runtime died (or from another thread)")
     })
 }
 
@@ -573,7 +573,7 @@ impl Runtime {
     /// Build (or rebuild) the root scope.
     pub fn build_root<R>(&self, body: impl FnOnce() -> R) -> R {
         self.run_scope(self.inner.root, body)
-            .expect("scope akar selalu hidup")
+            .expect("the root scope is always alive")
     }
 
     /// Rebuild a single scope — this is the "per-component rebuild".
@@ -599,7 +599,7 @@ impl Runtime {
         let slot = st.scope_mut(id)?;
         assert!(
             !slot.building,
-            "{id:?} sudah sedang dibangun — build rekursif tidak diizinkan"
+            "{id:?} is already being built — recursive build is not allowed"
         );
         slot.building = true;
         slot.dirty = false;
@@ -646,7 +646,7 @@ impl Runtime {
         drop(st);
         assert_eq!(
             cursor, hooks,
-            "jumlah use_signal berubah antar-build di {id:?} — hook tidak boleh dipanggil di dalam if/loop"
+            "the number of use_signal calls changed between builds of {id:?} — hooks must not be called inside an if/loop"
         );
     }
 
@@ -655,14 +655,14 @@ impl Runtime {
         let mut st = self.inner.state.borrow_mut();
         let slot = st
             .scope_mut(parent)
-            .unwrap_or_else(|| panic!("{parent:?} sudah mati"));
+            .unwrap_or_else(|| panic!("{parent:?} is already dead"));
         assert!(
             slot.building,
-            "scope(...) hanya boleh dipanggil saat komponen dibangun"
+            "scope(...) may only be called while a component is being built"
         );
         assert!(
             slot.seen_keys.insert(key.clone()),
-            "kunci ganda {key:?} di bawah {parent:?} — identitas anak harus unik (REKOMENDASI §2.5)"
+            "duplicate key {key:?} under {parent:?} — child identity must be unique (REKOMENDASI §2.5)"
         );
         if let Some(existing) = slot.old_children.remove(&key) {
             slot.new_children.push(existing);
@@ -688,17 +688,17 @@ impl Runtime {
             let mut st = self.inner.state.borrow_mut();
             let slot = st
                 .scope_mut(scope)
-                .unwrap_or_else(|| panic!("{scope:?} sudah mati"));
+                .unwrap_or_else(|| panic!("{scope:?} is already dead"));
             assert!(
                 slot.building,
-                "use_signal hanya boleh dipanggil saat komponen dibangun"
+                "use_signal may only be called while a component is being built"
             );
             let cursor = slot.hook_cursor;
             slot.hook_cursor += 1;
             if let Some(hook) = slot.hooks.get(cursor) {
                 assert!(
                     hook.type_id == TypeId::of::<T>(),
-                    "urutan use_signal berubah antar-build di {scope:?} (hook #{cursor})"
+                    "the order of use_signal calls changed between builds of {scope:?} (hook #{cursor})"
                 );
                 return hook.signal;
             }
@@ -711,11 +711,11 @@ impl Runtime {
         let id = st.alloc_signal(self.inner.id, Box::new(value), Some(scope));
         let slot = st
             .scope_mut(scope)
-            .unwrap_or_else(|| panic!("{scope:?} sudah mati"));
+            .unwrap_or_else(|| panic!("{scope:?} is already dead"));
         assert_eq!(
             slot.hooks.len(),
             cursor,
-            "urutan hook rusak di {scope:?} (hook #{cursor})"
+            "the hook order is broken in {scope:?} (hook #{cursor})"
         );
         slot.hooks.push(Hook {
             signal: id,
@@ -739,13 +739,13 @@ impl Runtime {
 
     fn take_value(&self, id: SignalId) -> ValueGuard<'_> {
         let mut st = self.inner.state.borrow_mut();
-        let slot = st
-            .signal_mut(id)
-            .unwrap_or_else(|| panic!("{id:?} sudah mati — scope pemiliknya sudah dibuang"));
+        let slot = st.signal_mut(id).unwrap_or_else(|| {
+            panic!("{id:?} is already dead — the scope that owned it was dropped")
+        });
         let value = slot
             .value
             .take()
-            .unwrap_or_else(|| panic!("akses rekursif ke {id:?}: nilainya sedang dipinjam"));
+            .unwrap_or_else(|| panic!("recursive access to {id:?}: its value is already borrowed"));
         drop(st);
         ValueGuard {
             inner: &self.inner,
@@ -759,9 +759,9 @@ impl Runtime {
         let value = guard
             .value
             .as_ref()
-            .expect("nilai ada di guard")
+            .expect("the value is held by the guard")
             .downcast_ref::<T>()
-            .unwrap_or_else(|| panic!("tipe {id:?} tidak cocok"));
+            .unwrap_or_else(|| panic!("type mismatch for {id:?}"));
         f(value)
     }
 
@@ -775,9 +775,9 @@ impl Runtime {
             let value = guard
                 .value
                 .as_mut()
-                .expect("nilai ada di guard")
+                .expect("the value is held by the guard")
                 .downcast_mut::<T>()
-                .unwrap_or_else(|| panic!("tipe {id:?} tidak cocok"));
+                .unwrap_or_else(|| panic!("type mismatch for {id:?}"));
             f(value)
         };
         self.notify(id);
@@ -790,9 +790,9 @@ impl Runtime {
             let slot = guard
                 .value
                 .as_mut()
-                .expect("nilai ada di guard")
+                .expect("the value is held by the guard")
                 .downcast_mut::<T>()
-                .unwrap_or_else(|| panic!("tipe {id:?} tidak cocok"));
+                .unwrap_or_else(|| panic!("type mismatch for {id:?}"));
             std::mem::replace(slot, value)
         };
         self.notify(id);

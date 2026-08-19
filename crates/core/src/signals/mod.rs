@@ -19,7 +19,7 @@
 //!
 //! // A component that reads a signal while building subscribes to it.
 //! rt.build_root(|| {
-//!     let _teks = format!("Nilai: {}", count.get());
+//!     let _teks = format!("Value: {}", count.get());
 //! });
 //! assert!(!rt.is_dirty(rt.root()));
 //!
@@ -359,8 +359,8 @@ impl<T: 'static> fmt::Debug for Signal<T> {
 /// ```
 pub fn use_signal<T: 'static>(init: impl FnOnce() -> T) -> Signal<T> {
     let (rt_id, scope) = current_build()
-        .expect("use_signal hanya boleh dipanggil saat komponen dibangun (di dalam build_root/scope/rebuild)");
-    let rt = Runtime::current().expect("runtime yang sedang membangun harus hidup");
+        .expect("use_signal may only be called while a component is being built (inside build_root/scope/rebuild)");
+    let rt = Runtime::current().expect("the runtime that is building must be alive");
     debug_assert_eq!(rt.id(), rt_id);
     Signal::from_id(rt.use_signal_hook::<T>(scope, init))
 }
@@ -396,11 +396,11 @@ pub fn use_signal<T: 'static>(init: impl FnOnce() -> T) -> Signal<T> {
 /// ```
 pub fn scope<R>(key: impl Into<Key>, body: impl FnOnce() -> R) -> R {
     let (_, parent) =
-        current_build().expect("scope() hanya boleh dipanggil saat komponen dibangun");
-    let rt = Runtime::current().expect("runtime yang sedang membangun harus hidup");
+        current_build().expect("scope() may only be called while a component is being built");
+    let rt = Runtime::current().expect("the runtime that is building must be alive");
     let child = rt.reconcile_child(parent, key.into());
     rt.run_scope(child, body)
-        .expect("scope anak baru saja dibuat, tidak mungkin mati")
+        .expect("the child scope was just created, so it cannot be dead")
 }
 
 /// Build one child component per item, keyed by `key`.

@@ -11,11 +11,11 @@
 //! # let f = Fonts::bundled_only();
 //! # let t = Theme::cupertino(Appearance::Dark);
 //! overlay_layer(fixed(800.0, 600.0).background(t.color.background)).overlay(
-//!     dialog_in(&f, &t, "Simpan perubahan?")
-//!         .message("Perubahan yang belum disimpan akan hilang.")
+//!     dialog_in(&f, &t, "Save changes?")
+//!         .message("Unsaved changes will be lost.")
 //!         .open(terbuka.get())
-//!         .cancel("Batal", move || terbuka.set(false))
-//!         .confirm("Simpan", move || terbuka.set(false)),
+//!         .cancel("Cancel", move || terbuka.set(false))
+//!         .confirm("Save", move || terbuka.set(false)),
 //! );
 //! ```
 //!
@@ -195,11 +195,11 @@ impl ButtonOrder {
     /// use silka_widgets::dialog::{action, ButtonOrder};
     ///
     /// let urut = ButtonOrder::ConfirmLast.arrange(vec![
-    ///     action("Simpan").confirm(),
-    ///     action("Batal").cancel(),
+    ///     action("Save").confirm(),
+    ///     action("Cancel").cancel(),
     /// ]);
     /// let nama: Vec<&str> = urut.iter().map(|a| a.label()).collect();
-    /// assert_eq!(nama, ["Batal", "Simpan"]);
+    /// assert_eq!(nama, ["Cancel", "Save"]);
     /// ```
     pub fn arrange(self, actions: Vec<DialogAction>) -> Vec<DialogAction> {
         // One rule, not two: split into three role groups, then concatenate
@@ -501,7 +501,7 @@ impl ViewNode for DialogPanelProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<DialogPanel>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         n.open = self.open;
         // The callback is always replaced without comparison: the closure is
         // rebuilt on every rebuild and captures fresh values (see

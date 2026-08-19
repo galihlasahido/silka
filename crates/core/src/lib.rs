@@ -283,10 +283,19 @@
 //! layout arithmetic, gaining hover/press/focus on the way) and `utility.rs`
 //! (the vocabulary itself as a live reference).
 //!
-//! What is still missing, and what comes next: layer/offscreen-based repaint
-//! boundaries, and wiring [`animation::AnimationDriver`] into
-//! [`app::AppRuntime::frame`] (for now springs are still driven by the
-//! application through `request_animation_frame`).
+//! Springs are no longer the application's problem: [`app::AppRuntime`] owns an
+//! [`animation::AnimationDriver`], every frame opens and closes with it
+//! ([`app::AppRuntime::animate_at`]), and the driver is what answers "does this
+//! need another frame?" — so an app that never calls `request_animation_frame`
+//! still animates, and one that stops interacting still comes to a complete
+//! stop ([`app::AppRuntime::is_idle`]).
+//!
+//! What is still missing, and what comes next: **incremental** repaint. Layers
+//! exist all the way down — [`tree::PaintCtx::with_layer`],
+//! [`silka_paint::Command::PushLayer`], and an offscreen target in the renderer
+//! — and they already buy group opacity and blur. What they do not buy yet is
+//! keeping a layer's texture **across** frames so an unchanged subtree is
+//! composited rather than repainted.
 
 #![warn(missing_docs)]
 // Documentation is part of the public contract, so the checks rustdoc offers

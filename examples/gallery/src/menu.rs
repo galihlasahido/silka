@@ -48,45 +48,43 @@ use silka_widgets::menu::{cmd, cmd_shift, item, menu, separator, MenuEntry, Menu
 use silka_widgets::{active_fonts, overlay_layer, text};
 
 /// The page title.
-pub const JUDUL: &str = "Menu & menu konteks";
+pub const JUDUL: &str = "Menu & context menu";
 
 /// The name of the button-triggered menu.
-pub const LABEL_TAMPILAN: &str = "Tampilan";
+pub const LABEL_TAMPILAN: &str = "View";
 /// The name of the chip-triggered menu.
 pub const LABEL_FILTER: &str = "Filter";
 /// The name of the right-click region.
-pub const LABEL_KANVAS: &str = "Kanvas";
+pub const LABEL_KANVAS: &str = "Canvas";
 
-/// The entries of the "Tampilan" menu — icons, shortcuts, checkables, a
+/// The entries of the "View" menu — icons, shortcuts, checkables, a
 /// disabled row, a separator, and a nested submenu, all in one place so the
 /// page shows every kind of row at once.
 pub fn isi_tampilan() -> Vec<MenuEntry> {
     vec![
-        item("view.zoom_in", "Perbesar")
+        item("view.zoom_in", "Zoom in")
             .icon("+")
             .shortcut(cmd(KeyCode::Character('+')))
             .into(),
-        item("view.zoom_out", "Perkecil")
+        item("view.zoom_out", "Zoom out")
             .icon("−")
             .shortcut(cmd(KeyCode::Character('-')))
             .into(),
-        item("view.zoom_reset", "Ukuran asli")
+        item("view.zoom_reset", "Actual size")
             .shortcut(cmd(KeyCode::Character('0')))
             .into(),
         separator(),
-        item("view.grid", "Tampilkan kisi").checkbox(true).into(),
-        item("view.ruler", "Tampilkan penggaris")
-            .checkbox(false)
-            .into(),
+        item("view.grid", "Show grid").checkbox(true).into(),
+        item("view.ruler", "Show ruler").checkbox(false).into(),
         separator(),
-        item("view.sort", "Urutkan menurut")
+        item("view.sort", "Sort by")
             .submenu([
-                item("sort.name", "Nama").radio(true),
-                item("sort.date", "Tanggal diubah").radio(false),
-                item("sort.size", "Ukuran").radio(false),
+                item("sort.name", "Name").radio(true),
+                item("sort.date", "Date modified").radio(false),
+                item("sort.size", "Size").radio(false),
             ])
             .into(),
-        item("view.export", "Ekspor tampilan…")
+        item("view.export", "Export view…")
             .shortcut(cmd_shift(KeyCode::Character('e')))
             .enabled(false)
             .into(),
@@ -96,35 +94,35 @@ pub fn isi_tampilan() -> Vec<MenuEntry> {
 /// The entries of the "Filter" chip menu — one radio group, nothing else.
 pub fn isi_filter() -> Vec<MenuEntry> {
     vec![
-        item("filter.all", "Semua transaksi").radio(true).into(),
-        item("filter.in", "Pemasukan").radio(false).into(),
-        item("filter.out", "Pengeluaran").radio(false).into(),
+        item("filter.all", "All transactions").radio(true).into(),
+        item("filter.in", "Money in").radio(false).into(),
+        item("filter.out", "Money out").radio(false).into(),
         separator(),
-        item("filter.clear", "Hapus filter").into(),
+        item("filter.clear", "Clear filter").into(),
     ]
 }
 
 /// The entries of the canvas context menu.
 pub fn isi_konteks() -> Vec<MenuEntry> {
     vec![
-        item("ctx.cut", "Potong")
+        item("ctx.cut", "Cut")
             .shortcut(cmd(KeyCode::Character('x')))
             .into(),
-        item("ctx.copy", "Salin")
+        item("ctx.copy", "Copy")
             .shortcut(cmd(KeyCode::Character('c')))
             .into(),
-        item("ctx.paste", "Tempel")
+        item("ctx.paste", "Paste")
             .shortcut(cmd(KeyCode::Character('v')))
             .enabled(false)
             .into(),
         separator(),
-        item("ctx.arrange", "Susun")
+        item("ctx.arrange", "Arrange")
             .submenu([
-                item("ctx.front", "Bawa ke depan"),
-                item("ctx.back", "Kirim ke belakang"),
+                item("ctx.front", "Bring to front"),
+                item("ctx.back", "Send to back"),
             ])
             .into(),
-        item("ctx.delete", "Hapus").into(),
+        item("ctx.delete", "Delete").into(),
     ]
 }
 
@@ -194,14 +192,14 @@ pub fn halaman(cx: &BuildCtx) -> View {
 fn kanvas(t: &Theme) -> View {
     let isi = column([
         View::from(
-            text("Klik kanan di sini")
+            text("Right-click here")
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.label)
                 .single_line(),
         ),
         View::from(
-            text("Shift+F10 membukanya lewat papan ketik.")
+            text("Shift+F10 opens it from the keyboard.")
                 .size(t.typography.body_size)
                 .color(t.color.secondary_label)
                 .single_line(),
@@ -233,10 +231,10 @@ fn konten(t: &Theme, pemicu: View, kanvas: View, terakhir: String) -> View {
         .single_line();
 
     let keterangan = text(
-        "Menu di dalam aplikasi: digambar sendiri, bertema, beranimasi spring. \
-         Menu global macOS dan menu tray bukan ini — itu milik silka-platform. \
-         Panah menyusuri, → membuka submenu, ← kembali, Esc menutup satu tingkat, \
-         mengetik huruf melompat ke baris yang cocok.",
+        "An in-application menu: drawn by us, themed, spring-animated. The \
+         global macOS menu and the tray menu are not this — those belong to \
+         silka-platform. Arrows walk the rows, → opens a submenu, ← goes back, \
+         Esc closes one level, and typing a letter jumps to the matching row.",
     )
     .size(t.typography.body_size)
     .line_height(t.typography.body_line_height)
@@ -249,7 +247,7 @@ fn konten(t: &Theme, pemicu: View, kanvas: View, terakhir: String) -> View {
         pemicu,
         kanvas,
         View::from(
-            text(format!("Terakhir dipilih: {terakhir}"))
+            text(format!("Last picked: {terakhir}"))
                 .size(t.typography.body_size)
                 .weight(FontWeight::MEDIUM)
                 .color(t.color.accent)
@@ -415,10 +413,10 @@ mod tests {
             }
         }
 
-        layar.klik_label("Perbesar");
+        layar.klik_label("Zoom in");
         assert_eq!(layar.baris_menu(), 0, "memilih menutup menu");
         assert!(
-            layar.ada("Terakhir dipilih: view.zoom_in"),
+            layar.ada("Last picked: view.zoom_in"),
             "teks di layar harus ikut berubah:\n{}",
             layar.pohon().dump()
         );
@@ -437,13 +435,13 @@ mod tests {
         // skipped), which is the submenu parent.
         layar.tekan(KeyCode::Named(NamedKey::End));
         layar.tekan(KeyCode::Named(NamedKey::ArrowRight));
-        assert!(layar.ada("Tanggal diubah"), "submenu terbuka di samping");
+        assert!(layar.ada("Date modified"), "submenu terbuka di samping");
 
         // The submenu opens with its first row highlighted, so ↓ moves to the
         // second one and Return chooses that.
         layar.tekan(KeyCode::Named(NamedKey::ArrowDown));
         layar.tekan(KeyCode::Named(NamedKey::Enter));
-        assert!(layar.ada("Terakhir dipilih: sort.date"));
+        assert!(layar.ada("Last picked: sort.date"));
         assert_eq!(layar.baris_menu(), 0);
     }
 
@@ -454,18 +452,15 @@ mod tests {
         layar.tekan(KeyCode::Named(NamedKey::Space));
         layar.tekan(KeyCode::Named(NamedKey::End));
         layar.tekan(KeyCode::Named(NamedKey::ArrowRight));
-        assert!(layar.ada("Ukuran asli") && layar.ada("Nama"));
+        assert!(layar.ada("Actual size") && layar.ada("Name"));
 
         layar.tekan(KeyCode::Named(NamedKey::Escape));
-        assert!(!layar.ada("Nama"), "submenu tertutup");
-        assert!(layar.ada("Ukuran asli"), "menu induk masih terbuka");
+        assert!(!layar.ada("Name"), "submenu tertutup");
+        assert!(layar.ada("Actual size"), "menu induk masih terbuka");
 
         layar.tekan(KeyCode::Named(NamedKey::Escape));
         assert_eq!(layar.baris_menu(), 0);
-        assert!(
-            layar.ada("Terakhir dipilih: —"),
-            "Esc tidak memilih apa pun"
-        );
+        assert!(layar.ada("Last picked: —"), "Esc tidak memilih apa pun");
     }
 
     #[test]
@@ -477,18 +472,18 @@ mod tests {
         layar.klik(titik, PointerButton::Secondary);
 
         assert!(
-            layar.ada("Potong"),
+            layar.ada("Cut"),
             "menu konteks terbuka:\n{}",
             layar.pohon().dump()
         );
-        let baris = layar.kotak("Potong");
+        let baris = layar.kotak("Cut");
         assert!(
             baris.min_x() >= titik.x - 8.0 && baris.min_y() >= titik.y - 8.0,
             "panel {baris:?} harus muncul di dekat kursor {titik:?}"
         );
 
-        layar.klik_label("Salin");
-        assert!(layar.ada("Terakhir dipilih: ctx.copy"));
+        layar.klik_label("Copy");
+        assert!(layar.ada("Last picked: ctx.copy"));
     }
 
     #[test]

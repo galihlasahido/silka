@@ -37,17 +37,17 @@ use silka_widgets::{active_fonts, text, text_area, TabBehavior};
 /// The page title.
 pub const JUDUL: &str = "Text Area";
 /// The note field's a11y name.
-pub const CATATAN: &str = "Catatan rapat";
+pub const CATATAN: &str = "Meeting notes";
 /// The code field's a11y name.
-pub const KODE: &str = "Cuplikan kode";
+pub const KODE: &str = "Code snippet";
 /// The read-only field's a11y name.
-pub const SYARAT: &str = "Syarat lisensi";
+pub const SYARAT: &str = "Licence terms";
 /// The read-only field's fixed content.
-pub const ISI_SYARAT: &str = "Perangkat lunak ini disediakan apa adanya, tanpa \
-jaminan apa pun. Penulis tidak bertanggung jawab atas kerugian yang timbul \
-dari penggunaannya.\n\nLisensi berlaku selama masa berlangganan aktif.";
+pub const ISI_SYARAT: &str = "This software is provided as is, without warranty \
+of any kind. The authors are not liable for any damage arising from its \
+use.\n\nThe licence is valid for as long as the subscription is active.";
 /// The code field's starting content.
-pub const ISI_KODE: &str = "fn sapa(nama: &str) -> String {\n\tformat!(\"Halo, {nama}\")\n}";
+pub const ISI_KODE: &str = "fn greet(name: &str) -> String {\n\tformat!(\"Hello, {name}\")\n}";
 
 /// The field width in spacing-scale steps (4pt) — 110 steps = 440pt.
 const LEBAR: f32 = 110.0;
@@ -75,10 +75,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Ketik kalimat panjang: teks melipat mengikuti lebar, bukan \
-                 menggulir ke samping. Tahan panah bawah melewati baris \
-                 pendek — caret kembali ke kolom yang sama (goal column). \
-                 Enter membuka baris baru, ⌘Enter mengirim.",
+                "Type a long sentence: the text wraps to the width rather than \
+                 scrolling sideways. Hold the down arrow past a short line — \
+                 the caret returns to the same column (the goal column). Enter \
+                 opens a new line, ⌘Enter sends.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -136,7 +136,7 @@ fn formulir(t: &Theme, catatan: Signal<String>, terkirim: Signal<u32>) -> View {
                 CATATAN,
                 text_area(catatan.get())
                     .key("catatan")
-                    .placeholder("Tulis catatan rapat…")
+                    .placeholder("Write the meeting notes…")
                     .label(CATATAN)
                     // Grows with what is written, then scrolls — the shape of
                     // every comment box worth using.
@@ -188,12 +188,12 @@ fn gema(catatan: Signal<String>, terkirim: Signal<u32>) -> View {
         let huruf = isi.chars().count();
         let kirim = terkirim.get();
         let teks = if isi.is_empty() {
-            "Catatan masih kosong.".to_string()
+            "The notes are still empty.".to_string()
         } else {
-            format!("{baris} baris · {huruf} karakter")
+            format!("{baris} lines · {huruf} characters")
         };
         let teks = if kirim > 0 {
-            format!("{teks} (⌘Enter ditekan {kirim}×)")
+            format!("{teks} (⌘Enter pressed {kirim}×)")
         } else {
             teks
         };
@@ -258,7 +258,7 @@ mod tests {
             .entries()
             .iter()
             .filter_map(|e| e.node.label.clone())
-            .find(|l| l.contains("karakter") || l.contains("kosong"))
+            .find(|l| l.contains("characters") || l.contains("empty"))
             .unwrap_or_else(|| panic!("tidak ada baris gema:\n{}", pohon.dump()))
     }
 
@@ -314,7 +314,7 @@ mod tests {
     fn enter_membuka_baris_baru_dan_command_enter_mengirim() {
         let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
-        assert!(gema_terbaca(&ui).contains("kosong"));
+        assert!(gema_terbaca(&ui).contains("empty"));
 
         let titik = kotak(&ui, CATATAN).center();
         klik(&mut ui, titik);
@@ -323,8 +323,8 @@ mod tests {
 
         assert_eq!(nilai(&ui, CATATAN), "satu\ndua");
         assert!(
-            gema_terbaca(&ui).starts_with("2 baris"),
-            "gema: {}",
+            gema_terbaca(&ui).starts_with("2 lines"),
+            "echo: {}",
             gema_terbaca(&ui)
         );
 
@@ -333,7 +333,7 @@ mod tests {
                 .modifiers(Modifiers::COMMAND),
         ));
         ui.frame();
-        assert!(gema_terbaca(&ui).contains("ditekan 1×"));
+        assert!(gema_terbaca(&ui).contains("pressed 1×"));
         assert_eq!(nilai(&ui, CATATAN), "satu\ndua", "kirim bukan baris baru");
     }
 
@@ -425,7 +425,7 @@ mod tests {
         }));
         ui.frame();
         assert_eq!(nilai(&ui, CATATAN), "", "komposisi belum jadi isi");
-        assert!(gema_terbaca(&ui).contains("kosong"));
+        assert!(gema_terbaca(&ui).contains("empty"));
 
         ui.dispatch(&Event::Ime(ImeEvent::Commit("日本".into())));
         ui.frame();

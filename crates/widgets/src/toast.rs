@@ -613,6 +613,13 @@ impl ToastBox {
         // message.
         if !self.leaving && !self.paused && self.dragging.is_none() {
             if let Some(_total) = self.duration {
+                // A countdown is motion the driver cannot see: it owns no
+                // spring, so nothing would flag the frame as active and the
+                // clock would be forgotten — leaving every following `dt` at
+                // zero and the toast frozen one frame after its entrance
+                // settled. Same reason `skeleton` and an indeterminate
+                // `progress` keep the frame awake.
+                tick.keep_awake();
                 let sisa = self.remaining.saturating_sub(tick.dt());
                 if sisa != self.remaining {
                     self.remaining = sisa;

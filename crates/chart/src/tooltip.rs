@@ -13,7 +13,7 @@
 //!    be placed against.
 //! 2. [`tooltip`] — the panel's *content* as an ordinary view, and
 //!    [`tooltip_overlay`] which hands that content to
-//!    [`silka_widgets::tooltip`], the general component. Where the panel ends
+//!    [`mod@silka_widgets::tooltip`], the general component. Where the panel ends
 //!    up, whether it flips above or below, how it springs in, what barrier it
 //!    uses and what role it announces are all somebody else's answers,
 //!    unchanged.

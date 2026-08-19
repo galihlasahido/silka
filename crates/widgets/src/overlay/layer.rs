@@ -106,7 +106,7 @@ impl ViewNode for InertProps {
     fn update(&self, node: &mut dyn RenderNode) -> Dirty {
         let n = node
             .downcast_mut::<InertBox>()
-            .expect("tipe view sama berarti tipe render node sama");
+            .expect("same view type means same render node type");
         if n.inert == self.inert {
             return Dirty::NONE;
         }
@@ -213,7 +213,7 @@ impl ViewNode for LayerProps {
 ///         .open(terbuka.get())
 ///         .backdrop(t.color.scrim)
 ///         .barrier(Barrier::Modal)
-///         .label("Simpan perubahan?")
+///         .label("Save changes?")
 ///         .on_dismiss(move || terbuka.set(false)),
 /// );
 /// ```

@@ -53,7 +53,7 @@ use silka_theme::{ColorToken, FontToken, RadiusToken, ShadowToken, Theme};
 use silka_widgets::{active_fonts, text};
 
 /// The page title.
-pub const JUDUL: &str = "Teks & kontainer";
+pub const JUDUL: &str = "Text & containers";
 
 /// The sample line rendered at every step of the type scale.
 pub const CONTOH: &str = "Sphinx of black quartz, judge my vow";
@@ -112,19 +112,19 @@ pub fn halaman(cx: &BuildCtx) -> View {
         )
         .child(
             text(
-                "Dua primitif Tier 0 yang dipakai semua komponen lain: satu \
-                 baris teks yang mengukur dirinya sendiri, dan satu kotak yang \
-                 mengambil sudut serta bayangannya dari token. Ganti preset di \
-                 bilah atas — seluruh halaman ini ikut berubah tanpa satu pun \
-                 angka di berkas ini berubah.",
+                "The two Tier 0 primitives every other component is built \
+                 from: a line of text that measures itself, and a box that takes \
+                 its corners and its shadows from tokens. Switch the preset in \
+                 the top bar — this whole page follows without a single number \
+                 in this file changing.",
             )
             .text_base()
             .text_color(ColorToken::SecondaryLabel)
             .max_width(t.space(LEBAR_LANGKAH)),
         )
-        .child(judul_bagian("Skala tipografi"))
+        .child(judul_bagian("The type scale"))
         .child(spesimen())
-        .child(judul_bagian("Sudut & bayangan"))
+        .child(judul_bagian("Corners & shadows"))
         .child(kartu_kartu(&t))
         .into()
 }

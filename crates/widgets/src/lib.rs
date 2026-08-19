@@ -23,7 +23,7 @@
 //! # let rt = Runtime::new();
 //! # let count = rt.signal(0i32);
 //! column([
-//!     View::from(text(format!("Nilai: {}", count.get())).text_color(ColorToken::Label)),
+//!     View::from(text(format!("Value: {}", count.get())).text_color(ColorToken::Label)),
 //!     View::from(button("Tambah").on_press(move || count.set(count.get() + 1))),
 //! ])
 //! .gap_3();
@@ -100,7 +100,7 @@
 //!   the one thing an icon-only button cannot borrow from what it draws; the
 //!   symbol stays 20pt while the target is 44pt, and the interaction contract
 //!   is [`ButtonBox`] itself, not a copy of it.
-//! - [`label`] / [`field`] / [`form`] (Tier 2) — the macOS Settings layout:
+//! - [`label`] / [`field`] / [`mod@form`] (Tier 2) — the macOS Settings layout:
 //!   one label column measured **once for the whole form** through the same
 //!   text engine that will draw it, a required marker, and a help line that an
 //!   error replaces. Each field is a [`silka_core::access::AccessRole::Group`]

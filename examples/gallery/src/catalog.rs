@@ -66,15 +66,15 @@ impl Kelompok {
     /// The group heading shown in the sidebar.
     pub fn judul(self) -> &'static str {
         match self {
-            Kelompok::Fondasi => "Fondasi",
-            Kelompok::Primitif => "Tier 0 · Primitif",
+            Kelompok::Fondasi => "Foundations",
+            Kelompok::Primitif => "Tier 0 · Primitives",
             Kelompok::Layout => "Tier 1 · Layout",
-            Kelompok::Kontrol => "Tier 2 · Kontrol",
-            Kelompok::Navigasi => "Tier 3 · Navigasi",
+            Kelompok::Kontrol => "Tier 2 · Controls",
+            Kelompok::Navigasi => "Tier 3 · Navigation",
             Kelompok::Overlay => "Tier 4 · Overlay",
             Kelompok::Data => "Tier 5 · Data",
-            Kelompok::Lanjutan => "Tier 6 · Lanjutan",
-            Kelompok::Gerak => "Gerak",
+            Kelompok::Lanjutan => "Tier 6 · Advanced",
+            Kelompok::Gerak => "Motion",
         }
     }
 }
@@ -119,10 +119,42 @@ pub enum Halaman {
     MenuHalaman,
     /// Tier 4: modal dialogs and alerts on the overlay system.
     Dialog,
+    /// Tier 4: the macOS `sheet`, hinged to the top edge.
+    Sheet,
+    /// Tier 4: `popover` — a panel with an arrow that points at its trigger.
+    Popover,
+    /// Tier 4: `tooltip` — the wait is the component.
+    Tooltip,
+    /// Tier 4: `hover_card` — the preview you are allowed to move into.
+    HoverCard,
+    /// Tier 4: `drawer` — a full-height panel on a window edge.
+    Laci,
+    /// Tier 4: the `toast` stack.
+    Toast,
+    /// Tier 4: the `badge` tone matrix.
+    Lencana,
+    /// Tier 4: determinate and indeterminate `progress`.
+    Kemajuan,
+    /// Tier 4: the `skeleton` placeholder and its shimmer.
+    Skeleton,
     /// Tier 1: `scroll_view` — rubber banding, momentum, overlay scrollbars.
     Gulir,
     /// Tier 1: the **virtualized** list.
     Daftar,
+    /// Tier 5: the `card` surface vocabulary.
+    Kartu,
+    /// Tier 5: `accordion` / `collapsible`.
+    Akordeon,
+    /// Tier 5: the `tag` chip — what a badge is not.
+    Tag,
+    /// Tier 5: `avatar` and `avatar_group`.
+    Avatar,
+    /// Tier 5: the `calendar` grid, and the i18n trap it closes.
+    Kalender,
+    /// Tier 5: the `date_picker` field plus its calendar.
+    PemilihTanggal,
+    /// Tier 5: the `color_picker` palette.
+    PemilihWarna,
     /// Tier 5: the **virtualized** table.
     Tabel,
     /// Tier 5: the **virtualized** tree (outline view).
@@ -137,7 +169,7 @@ pub enum Halaman {
 
 impl Halaman {
     /// Every page, in sidebar order (grouped by tier).
-    pub const SEMUA: [Halaman; 22] = [
+    pub const SEMUA: [Halaman; 38] = [
         Halaman::Counter,
         Halaman::Reaktif,
         Halaman::Utility,
@@ -155,6 +187,22 @@ impl Halaman {
         Halaman::Tabs,
         Halaman::MenuHalaman,
         Halaman::Dialog,
+        Halaman::Sheet,
+        Halaman::Popover,
+        Halaman::Tooltip,
+        Halaman::HoverCard,
+        Halaman::Laci,
+        Halaman::Toast,
+        Halaman::Lencana,
+        Halaman::Kemajuan,
+        Halaman::Skeleton,
+        Halaman::Kartu,
+        Halaman::Akordeon,
+        Halaman::Tag,
+        Halaman::Avatar,
+        Halaman::Kalender,
+        Halaman::PemilihTanggal,
+        Halaman::PemilihWarna,
         Halaman::Tabel,
         Halaman::Pohon,
         Halaman::Chart,
@@ -187,6 +235,22 @@ impl Halaman {
             Halaman::Tabs => "tabs",
             Halaman::MenuHalaman => "menu",
             Halaman::Dialog => "dialog",
+            Halaman::Sheet => "sheet",
+            Halaman::Popover => "popover",
+            Halaman::Tooltip => "tooltip",
+            Halaman::HoverCard => "hover-card",
+            Halaman::Laci => "drawer",
+            Halaman::Toast => "toast",
+            Halaman::Lencana => "badge",
+            Halaman::Kemajuan => "progress",
+            Halaman::Skeleton => "skeleton",
+            Halaman::Kartu => "card",
+            Halaman::Akordeon => "accordion",
+            Halaman::Tag => "tag",
+            Halaman::Avatar => "avatar",
+            Halaman::Kalender => "calendar",
+            Halaman::PemilihTanggal => "date-picker",
+            Halaman::PemilihWarna => "color-picker",
             Halaman::Gulir => "scroll",
             Halaman::Daftar => "list",
             Halaman::Tabel => "table",
@@ -201,11 +265,11 @@ impl Halaman {
     /// so what a test clicks is exactly what a screen reader announces (§3.8).
     pub fn judul(self) -> &'static str {
         match self {
-            Halaman::Primitif => "Teks & kontainer",
+            Halaman::Primitif => "Text & containers",
             Halaman::TataLetak => crate::layout::JUDUL,
             Halaman::Counter => "Counter",
-            Halaman::Reaktif => "Grid reaktif",
-            Halaman::Utility => "Kosakata utility",
+            Halaman::Reaktif => "Reactive grid",
+            Halaman::Utility => "Utility vocabulary",
             Halaman::Tombol => "Button",
             Halaman::KolomTeks => "Text field",
             Halaman::AreaTeks => "Text area",
@@ -216,6 +280,22 @@ impl Halaman {
             Halaman::Tabs => "Tabs",
             Halaman::MenuHalaman => "Menu & context menu",
             Halaman::Dialog => "Dialog & alert",
+            Halaman::Sheet => crate::sheet::JUDUL,
+            Halaman::Popover => crate::popover::JUDUL,
+            Halaman::Tooltip => crate::tooltip::JUDUL,
+            Halaman::HoverCard => crate::hover_card::JUDUL,
+            Halaman::Laci => crate::drawer::JUDUL,
+            Halaman::Toast => crate::toast::JUDUL,
+            Halaman::Lencana => crate::badge::JUDUL,
+            Halaman::Kemajuan => crate::progress::JUDUL,
+            Halaman::Skeleton => crate::skeleton::JUDUL,
+            Halaman::Kartu => crate::card::JUDUL,
+            Halaman::Akordeon => crate::accordion::JUDUL,
+            Halaman::Tag => crate::tag::JUDUL,
+            Halaman::Avatar => crate::avatar::JUDUL,
+            Halaman::Kalender => crate::calendar::JUDUL,
+            Halaman::PemilihTanggal => crate::date_picker::JUDUL,
+            Halaman::PemilihWarna => crate::color_picker::JUDUL,
             Halaman::Gulir => "Scroll view",
             Halaman::Daftar => "List (virtual)",
             Halaman::Tabel => "Table (virtual)",
@@ -240,8 +320,26 @@ impl Halaman {
             | Halaman::Slider
             | Halaman::Pilihan => Kelompok::Kontrol,
             Halaman::Tabs | Halaman::MenuHalaman => Kelompok::Navigasi,
-            Halaman::Dialog => Kelompok::Overlay,
-            Halaman::Tabel | Halaman::Pohon | Halaman::Chart => Kelompok::Data,
+            Halaman::Dialog
+            | Halaman::Sheet
+            | Halaman::Popover
+            | Halaman::Tooltip
+            | Halaman::HoverCard
+            | Halaman::Laci
+            | Halaman::Toast
+            | Halaman::Lencana
+            | Halaman::Kemajuan
+            | Halaman::Skeleton => Kelompok::Overlay,
+            Halaman::Kartu
+            | Halaman::Akordeon
+            | Halaman::Tag
+            | Halaman::Avatar
+            | Halaman::Kalender
+            | Halaman::PemilihTanggal
+            | Halaman::PemilihWarna
+            | Halaman::Tabel
+            | Halaman::Pohon
+            | Halaman::Chart => Kelompok::Data,
             Halaman::Wysiwyg => Kelompok::Lanjutan,
             Halaman::Animasi => Kelompok::Gerak,
         }
@@ -272,6 +370,13 @@ impl Halaman {
                 | Halaman::Chart
                 | Halaman::Reaktif
                 | Halaman::Dialog
+                | Halaman::Sheet
+                | Halaman::Popover
+                | Halaman::Tooltip
+                | Halaman::HoverCard
+                | Halaman::Laci
+                | Halaman::Toast
+                | Halaman::PemilihTanggal
                 | Halaman::Pilihan
                 | Halaman::MenuHalaman
                 | Halaman::Wysiwyg
@@ -297,6 +402,22 @@ impl Halaman {
             "tabs" | "tab" => Halaman::Tabs,
             "menu" | "context-menu" | "context_menu" | "menu-konteks" => Halaman::MenuHalaman,
             "dialog" | "alert" => Halaman::Dialog,
+            "sheet" | "lembar" => Halaman::Sheet,
+            "popover" => Halaman::Popover,
+            "tooltip" | "tip" => Halaman::Tooltip,
+            "hover-card" | "hover_card" | "hovercard" => Halaman::HoverCard,
+            "drawer" | "laci" => Halaman::Laci,
+            "toast" | "notifikasi" => Halaman::Toast,
+            "badge" | "lencana" => Halaman::Lencana,
+            "progress" | "kemajuan" => Halaman::Kemajuan,
+            "skeleton" | "rangka" => Halaman::Skeleton,
+            "card" => Halaman::Kartu,
+            "accordion" | "collapsible" | "akordeon" => Halaman::Akordeon,
+            "tag" | "chip" => Halaman::Tag,
+            "avatar" => Halaman::Avatar,
+            "calendar" | "kalender" => Halaman::Kalender,
+            "date-picker" | "date_picker" | "datepicker" | "tanggal" => Halaman::PemilihTanggal,
+            "color-picker" | "color_picker" | "colorpicker" | "warna" => Halaman::PemilihWarna,
             "scroll" | "scroll_view" | "gulir" => Halaman::Gulir,
             "list" | "daftar" => Halaman::Daftar,
             "table" | "tabel" => Halaman::Tabel,
@@ -330,6 +451,22 @@ impl Halaman {
             Halaman::Tabs => crate::tabs::halaman(cx),
             Halaman::MenuHalaman => crate::menu::halaman(cx),
             Halaman::Dialog => crate::dialog::halaman(cx),
+            Halaman::Sheet => crate::sheet::halaman(cx),
+            Halaman::Popover => crate::popover::halaman(cx),
+            Halaman::Tooltip => crate::tooltip::halaman(cx),
+            Halaman::HoverCard => crate::hover_card::halaman(cx),
+            Halaman::Laci => crate::drawer::halaman(cx),
+            Halaman::Toast => crate::toast::halaman(cx),
+            Halaman::Lencana => crate::badge::halaman(cx),
+            Halaman::Kemajuan => crate::progress::halaman(cx),
+            Halaman::Skeleton => crate::skeleton::halaman(cx),
+            Halaman::Kartu => crate::card::halaman(cx),
+            Halaman::Akordeon => crate::accordion::halaman(cx),
+            Halaman::Tag => crate::tag::halaman(cx),
+            Halaman::Avatar => crate::avatar::halaman(cx),
+            Halaman::Kalender => crate::calendar::halaman(cx),
+            Halaman::PemilihTanggal => crate::date_picker::halaman(cx),
+            Halaman::PemilihWarna => crate::color_picker::halaman(cx),
             Halaman::Gulir => crate::scroll_view::halaman(cx),
             Halaman::Daftar => crate::list::halaman(cx),
             Halaman::Tabel => crate::table::halaman(cx),
@@ -430,6 +567,97 @@ mod tests {
             ("bagan", Halaman::Chart),
         ] {
             assert_eq!(Halaman::dari_nama(alias), Some(halaman), "alias {alias}");
+        }
+    }
+
+    /// Every Tier 4 component of `KOMPONEN.md` has a page, and every one of
+    /// them is filed under Tier 4.
+    ///
+    /// The roster is written out by hand on purpose: that is what turns
+    /// "someone shipped a component and forgot the gallery" into a red test
+    /// instead of an omission nobody notices for a year (REKOMENDASI §9.9).
+    /// `dialog` and `alert` share one page, which is why the list has nine
+    /// entries and the document's table has ten rows.
+    #[test]
+    fn setiap_komponen_tier_4_punya_halaman() {
+        for slug in [
+            "dialog",
+            "sheet",
+            "popover",
+            "tooltip",
+            "toast",
+            "progress",
+            "skeleton",
+            "badge",
+            "hover-card",
+            "drawer",
+        ] {
+            let h = Halaman::dari_nama(slug)
+                .unwrap_or_else(|| panic!("Tier 4 '{slug}' tidak punya halaman galeri"));
+            assert_eq!(h.kelompok(), Kelompok::Overlay, "{slug} salah kelompok");
+            assert!(Halaman::SEMUA.contains(&h), "{slug} tidak masuk sidebar");
+        }
+    }
+
+    /// The same pin for Tier 5. `chart` lives in its own crate and keeps its
+    /// own page; everything else here is a `silka-widgets` component.
+    #[test]
+    fn setiap_komponen_tier_5_punya_halaman() {
+        for slug in [
+            "table",
+            "tree",
+            "card",
+            "accordion",
+            "avatar",
+            "tag",
+            "calendar",
+            "date-picker",
+            "color-picker",
+            "chart",
+        ] {
+            let h = Halaman::dari_nama(slug)
+                .unwrap_or_else(|| panic!("Tier 5 '{slug}' tidak punya halaman galeri"));
+            assert_eq!(h.kelompok(), Kelompok::Data, "{slug} salah kelompok");
+            assert!(Halaman::SEMUA.contains(&h), "{slug} tidak masuk sidebar");
+        }
+    }
+
+    /// A page that mounts an overlay layer must be handed a **bounded** box,
+    /// or its panel is clipped by the scroll viewport the shell would
+    /// otherwise wrap it in.
+    #[test]
+    fn halaman_beroverlay_mengurus_ruangnya_sendiri() {
+        for slug in [
+            "dialog",
+            "sheet",
+            "popover",
+            "tooltip",
+            "hover-card",
+            "drawer",
+            "toast",
+            "date-picker",
+            "select",
+            "menu",
+        ] {
+            let h = Halaman::dari_nama(slug).expect(slug);
+            assert!(
+                h.gulir_sendiri(),
+                "'{slug}' memasang lapisan overlay tetapi masih dibungkus                  scroll_view: panelnya akan terpotong viewport"
+            );
+        }
+    }
+
+    /// The two pages that predate the widget layer are reached through
+    /// `--page` and are **not** catalogue entries; a slug shadowing one of them
+    /// would make them unreachable without anyone noticing.
+    #[test]
+    fn nama_halaman_scene_lama_tidak_direbut_katalog() {
+        for nama in ["kartu", "cards", "teks", "typography", "text"] {
+            assert_eq!(
+                Halaman::dari_nama(nama),
+                None,
+                "'{nama}' direbut katalog: halaman scene lama jadi tidak bisa                  dibuka"
+            );
         }
     }
 

@@ -13,7 +13,7 @@
 //! | Drag-select | Press and drag: the highlight follows, and the drag may leave the field |
 //! | Full keyboard support | ←/→, ⌥←/⌥→ by word, ⌘←/⌘→ to the ends, Shift extends, ⌘A, ⌘Z/⇧⌘Z |
 //! | Focus ring on a spring | Tab in and out quickly: the ring **grows**, it does not snap on |
-//! | Inline IME preedit | Turn on a CJK input, start typing: the composition text appears underlined inside the field, and the "Halo" line below has **not** changed yet |
+//! | Inline IME preedit | Turn on a CJK input, start typing: the composition text appears underlined inside the field, and the "Hello" line below has **not** changed yet |
 //! | Hit target ≥ 44pt | The field is 44pt tall even though its line is far shorter |
 //! | AccessKit nodes | VoiceOver announces the field's name **and** its content |
 //! | Reduced motion | Turn on "Reduce motion" in the OS: the focus ring still moves, without bouncing |
@@ -35,13 +35,13 @@ use silka_widgets::{active_fonts, text, text_field};
 /// The page title.
 pub const JUDUL: &str = "Text Field";
 /// The main field's a11y name.
-pub const KOLOM_NAMA: &str = "Nama";
+pub const KOLOM_NAMA: &str = "Name";
 /// The second field's a11y name.
-pub const KOLOM_SUREL: &str = "Surel";
+pub const KOLOM_SUREL: &str = "Email";
 /// The read-only field's a11y name.
-pub const KOLOM_KUNCI: &str = "Kunci lisensi";
+pub const KOLOM_KUNCI: &str = "Licence key";
 /// The disabled field's a11y name.
-pub const KOLOM_MATI: &str = "Nomor pelanggan";
+pub const KOLOM_MATI: &str = "Customer number";
 /// The read-only field's fixed content.
 pub const KUNCI: &str = "SILKA-2026-XYZ7";
 
@@ -71,9 +71,10 @@ pub fn halaman(cx: &BuildCtx) -> View {
         ),
         View::from(
             text(
-                "Caret dan seleksi berjalan per grapheme cluster, klik ganda \
-                 menyeleksi kata, dan komposisi IME dirender inline bergaris \
-                 bawah — isinya baru sampai ke aplikasi setelah IME commit.",
+                "The caret and the selection move by grapheme cluster, a double \
+                 click selects a word, and IME composition is rendered inline \
+                 and underlined — the text only reaches the application once \
+                 the IME commits.",
             )
             .size(t.typography.body_size)
             .line_height(t.typography.body_line_height)
@@ -133,7 +134,7 @@ fn formulir(t: &Theme, nama: Signal<String>, surel: Signal<String>, terkirim: Si
                 KOLOM_NAMA,
                 text_field(nama.get())
                     .key("nama")
-                    .placeholder("Nama lengkap")
+                    .placeholder("Full name")
                     .label(KOLOM_NAMA)
                     .on_change(move |s| nama.set(s.to_string()))
                     .on_submit(move |_| terkirim.update(|n| *n += 1))
@@ -144,7 +145,7 @@ fn formulir(t: &Theme, nama: Signal<String>, surel: Signal<String>, terkirim: Si
                 KOLOM_SUREL,
                 text_field(surel.get())
                     .key("surel")
-                    .placeholder("nama@contoh.id")
+                    .placeholder("name@example.com")
                     .label(KOLOM_SUREL)
                     .on_change(move |s| surel.set(s.to_string()))
                     .on_submit(move |_| terkirim.update(|n| *n += 1))
@@ -164,7 +165,7 @@ fn formulir(t: &Theme, nama: Signal<String>, surel: Signal<String>, terkirim: Si
                 KOLOM_MATI,
                 text_field("")
                     .key("mati")
-                    .placeholder("Belum tersedia")
+                    .placeholder("Not available yet")
                     .label(KOLOM_MATI)
                     .disabled(true)
                     .into(),
@@ -188,13 +189,13 @@ fn gema(nama: Signal<String>, surel: Signal<String>, terkirim: Signal<u32>) -> V
         let s = surel.get();
         let kirim = terkirim.get();
         let isi = match (n.is_empty(), s.is_empty()) {
-            (true, true) => "Halo — kolomnya masih kosong.".to_string(),
-            (false, true) => format!("Halo, {n}."),
-            (true, false) => format!("Halo — surel: {s}"),
-            (false, false) => format!("Halo, {n} — surel: {s}"),
+            (true, true) => "Hello — the field is still empty.".to_string(),
+            (false, true) => format!("Hello, {n}."),
+            (true, false) => format!("Hello — email: {s}"),
+            (false, false) => format!("Hello, {n} — email: {s}"),
         };
         let isi = if kirim > 0 {
-            format!("{isi} (Enter ditekan {kirim}×)")
+            format!("{isi} (Enter pressed {kirim}×)")
         } else {
             isi
         };
@@ -262,7 +263,7 @@ mod tests {
             .entries()
             .iter()
             .filter_map(|e| e.node.label.clone())
-            .find(|l| l.starts_with("Halo"))
+            .find(|l| l.starts_with("Hello"))
             .unwrap_or_else(|| panic!("tidak ada baris gema:\n{}", pohon.dump()))
     }
 
@@ -315,7 +316,7 @@ mod tests {
     fn mengetik_di_kolom_mengubah_isinya_dan_baris_gema() {
         let mut ui = ui(Theme::cupertino(Appearance::Light));
         ui.frame();
-        assert!(gema_terbaca(&ui).contains("masih kosong"));
+        assert!(gema_terbaca(&ui).contains("still empty"));
 
         let titik = kotak(&ui, KOLOM_NAMA).center();
         klik(&mut ui, titik);
@@ -323,7 +324,7 @@ mod tests {
         ui.frame();
 
         assert_eq!(nilai(&ui, KOLOM_NAMA), "Ayu");
-        assert_eq!(gema_terbaca(&ui), "Halo, Ayu.");
+        assert_eq!(gema_terbaca(&ui), "Hello, Ayu.");
         // The other fields stay empty: focus really belongs to one field.
         assert_eq!(nilai(&ui, KOLOM_SUREL), "");
     }
@@ -376,7 +377,7 @@ mod tests {
             Duration::from_millis(400),
         )));
         ui.frame();
-        assert!(gema_terbaca(&ui).contains("Enter ditekan 1×"));
+        assert!(gema_terbaca(&ui).contains("Enter pressed 1×"));
     }
 
     #[test]
@@ -411,12 +412,12 @@ mod tests {
         }));
         ui.frame();
         assert_eq!(nilai(&ui, KOLOM_NAMA), "", "komposisi belum jadi isi");
-        assert!(gema_terbaca(&ui).contains("masih kosong"));
+        assert!(gema_terbaca(&ui).contains("still empty"));
 
         ui.dispatch(&Event::Ime(ImeEvent::Commit("日本".into())));
         ui.frame();
         assert_eq!(nilai(&ui, KOLOM_NAMA), "日本");
-        assert_eq!(gema_terbaca(&ui), "Halo, 日本.");
+        assert_eq!(gema_terbaca(&ui), "Hello, 日本.");
     }
 
     #[test]
