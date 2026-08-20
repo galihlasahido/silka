@@ -1,0 +1,30 @@
+[package]
+name = "silka-files"
+description = "File explorer example: the first application to drag files out of the window, plus a lazily loaded virtualized tree"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+silka-core.workspace = true
+silka-paint.workspace = true
+silka-platform.workspace = true
+silka-text.workspace = true
+silka-theme.workspace = true
+silka-widgets.workspace = true
+
+# Thumbnail decoding, and the only third-party crate this example adds.
+#
+# `default-features = false` on purpose: the default set pulls in every decoder
+# the crate can build (GIF, TIFF, WebP, AVIF, EXR, …) plus rayon. A file
+# explorer that compiles an AVIF decoder in order to draw a 64-point thumbnail
+# is not an example anyone should copy, so exactly two formats are enabled —
+# the two that account for essentially every picture sitting in a folder.
+#
+# This is also the honest reason a decoder is a dependency at all rather than
+# something written here: `silka_testing::png` exists but reads only the
+# fixed-Huffman DEFLATE its own encoder writes, which no camera and no
+# screenshot tool produces.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

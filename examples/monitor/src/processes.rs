@@ -1,4 +1,4 @@
-//! The process table: a virtualized [`silka_widgets::table`] over the process
+//! The process table: a virtualized [`silka_widgets::table()`] over the process
 //! list, ordered by usage.
 //!
 //! The table is the reason the process list gets a signal of its own. A

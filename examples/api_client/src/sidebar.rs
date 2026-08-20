@@ -1,7 +1,7 @@
 //! The left-hand outline: saved requests over the top, everything that has been
 //! sent underneath.
 //!
-//! It is a [`tree`](silka_widgets::tree) rather than two columns of buttons for
+//! It is a [`tree()`] rather than two columns of buttons for
 //! the reason the catalogue gives: ←/→ step in and out of a group, ↑/↓ walk,
 //! typing jumps to a row by name, the disclosure is a spring on the height of
 //! the subtree, and every row is an AccessKit `TreeItem` carrying its level and

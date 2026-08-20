@@ -1,0 +1,16 @@
+[package]
+name = "silka-mdi"
+description = "MDI example: floating internal frames built entirely on the public API, for a pattern the framework deliberately does not bless"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+silka-core.workspace = true
+silka-paint.workspace = true
+silka-platform.workspace = true
+silka-text.workspace = true
+silka-theme.workspace = true
+silka-widgets.workspace = true

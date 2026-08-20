@@ -2,7 +2,7 @@
 //!
 //! ## The bug this module exists to not have
 //!
-//! [`SpringValue`](silka_core::animation::SpringValue) decides it has arrived
+//! [`SpringValue`] decides it has arrived
 //! by comparing a distance and a speed against a
 //! [`Tolerance`](silka_core::animation::Tolerance), and the default tolerance
 //! is [`Tolerance::POINTS`](silka_core::animation::Tolerance::POINTS): 1/512 of

@@ -1,6 +1,6 @@
 //! ⌘K: jump to any note by typing a few of the letters in its name.
 //!
-//! The palette's own matcher does the ranking ([`silka_widgets::fuzzy_match`]),
+//! The palette's own matcher does the ranking ([`silka_widgets::command_palette::fuzzy_match`]),
 //! so what is left for the application is what the palette cannot know: what
 //! the commands **are**. Here they are the notes, one each, plus the two
 //! actions that have nowhere else to live.

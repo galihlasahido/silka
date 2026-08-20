@@ -1,6 +1,6 @@
 //! # silka-notes — a Markdown note-taking application
 //!
-//! The application that finally uses [`silka_widgets::wysiwyg`], the heaviest
+//! The application that finally uses [`silka_widgets::wysiwyg()`], the heaviest
 //! component in the catalogue and, until this crate existed, the only one no
 //! application had ever opened. A component proved by unit tests is a component
 //! whose *pieces* work; this is the one that says whether the thing can be

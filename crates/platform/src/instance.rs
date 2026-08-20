@@ -269,17 +269,27 @@ fn write_lock(path: &Path, lock: &Lock) -> Result<(), InstanceError> {
 ///
 /// Not cryptographic, and not claimed to be: it exists so that a process which
 /// merely scans loopback ports cannot inject arguments, and it is written to a
-/// file only this user can read. Building it from the clock **and** the process
-/// id **and** a stack address means two instances started in the same
-/// microsecond still differ.
+/// file only this user can read.
+///
+/// The unguessable half comes from [`RandomState`], which std seeds from the
+/// operating system's randomness — the one source of entropy available here
+/// without taking a dependency. The clock deliberately is **not** part of it:
+/// `SystemTime::now` is microsecond-grained on macOS, so two calls in the same
+/// process routinely read the same instant, and neither the process id nor the
+/// address of a local ever differs between them. A counter is what actually
+/// guarantees that no two tokens from one process collide; the process id stays
+/// only so that a human reading a stuck lock file can see who wrote it.
 fn new_token() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    let entropy = RandomState::new().build_hasher().finish();
+    let seq = NEXT.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let stack = &nanos as *const u128 as usize;
-    format!("{nanos:x}-{pid:x}-{stack:x}")
+    format!("{pid:x}-{seq:x}-{entropy:016x}")
 }
 
 /// The wire format: the token, then one argument per line.
@@ -368,6 +378,12 @@ impl InstanceListener {
     /// per frame from the event loop without a thread and without stalling a
     /// frame on a socket that has nothing to say.
     ///
+    /// **Call it every frame, not once.** Accepting a loopback connection is
+    /// not synchronous with the `connect` that made it: the kernel can finish
+    /// the handshake after the forwarding process has already written its
+    /// arguments and exited. A launch that a poll does not see is not lost —
+    /// it is waiting in the accept queue for the next one, a frame later.
+    ///
     /// A connection that does not present the right token is dropped in
     /// silence. Reporting it would let any local process make an application
     /// log whatever it liked.
@@ -425,6 +441,38 @@ impl Drop for InstanceListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Poll the way an event loop does: again next frame, until something
+    /// arrives or the deadline passes.
+    ///
+    /// A test that polls exactly once after a forward is measuring how fast the
+    /// kernel moved a finished handshake into the accept queue, not whether
+    /// this module delivers — and on macOS that first poll routinely sees
+    /// nothing.
+    fn poll_until(listener: &InstanceListener, deadline: Duration) -> Vec<Vec<String>> {
+        let start = std::time::Instant::now();
+        loop {
+            let launches = listener.poll();
+            if !launches.is_empty() || start.elapsed() >= deadline {
+                return launches;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    /// Keep polling for the whole span and collect everything.
+    ///
+    /// What an assertion that *nothing* arrives needs: the connection has to be
+    /// given time to land before its absence means anything.
+    fn poll_throughout(listener: &InstanceListener, span: Duration) -> Vec<Vec<String>> {
+        let start = std::time::Instant::now();
+        let mut all = Vec::new();
+        while start.elapsed() < span {
+            all.extend(listener.poll());
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        all
+    }
 
     fn temp_dir(name: &str) -> PathBuf {
         let dir =
@@ -498,10 +546,15 @@ mod tests {
 
     #[test]
     fn token_dua_proses_tidak_pernah_sama() {
-        let a = new_token();
-        let b = new_token();
-        assert_ne!(a, b);
-        assert!(!a.is_empty());
+        // A batch rather than a pair: two calls close enough together to read
+        // the same microsecond off the clock are exactly the case that used to
+        // collide, and a pair only catches it some of the time.
+        let tokens: std::collections::HashSet<String> = (0..1000).map(|_| new_token()).collect();
+        assert_eq!(tokens.len(), 1000);
+        assert!(tokens.iter().all(|t| !t.is_empty()));
+        // The wire format is one token per line; a token that carried a newline
+        // or a space would be a token the far end reads back differently.
+        assert!(tokens.iter().all(|t| !t.contains(char::is_whitespace)));
     }
 
     #[test]
@@ -541,10 +594,10 @@ mod tests {
             .expect("penerusan berhasil");
         assert!(!second.is_primary());
 
-        let launches = listener.poll();
+        let launches = poll_until(&listener, Duration::from_secs(2));
         assert_eq!(launches, vec![vec!["/tmp/notes.md".to_string()]]);
         // …and nothing is delivered twice.
-        assert!(listener.poll().is_empty());
+        assert!(poll_throughout(&listener, Duration::from_millis(50)).is_empty());
     }
 
     #[test]
@@ -588,7 +641,10 @@ mod tests {
             token: "salah".into(),
         };
         let _ = forward(&bogus, &["/tmp/a.md".to_string()]);
-        assert!(listener.poll().is_empty());
+        // Long enough that the connection has certainly been accepted, so the
+        // empty result means the token was rejected rather than that nothing
+        // had arrived yet.
+        assert!(poll_throughout(&listener, Duration::from_millis(250)).is_empty());
     }
 
     #[test]

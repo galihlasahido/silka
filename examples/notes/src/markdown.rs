@@ -35,7 +35,7 @@
 //! structure every time the file is saved and reopened. Soft wrapping is the
 //! editor's job at display time — it is not stored.
 //!
-//! The consequence is pinned by [`tests::round_trip_survives_every_block_kind`]:
+//! The consequence is pinned by `tests::round_trip_survives_every_block_kind`:
 //! `from_markdown(to_markdown(d)) == d` for every document this application can
 //! produce.
 

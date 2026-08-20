@@ -557,7 +557,7 @@ pub fn build(
 ///
 /// What makes the reuse safe is [`block_key`]: two blocks with the same key
 /// produce the same glyphs, because the key covers everything
-/// [`layout_one`] reads — the kind, every span's text and style, the list
+/// `layout_one` reads — the kind, every span's text and style, the list
 /// number, and the disabled flag. Width, scale and [`EditorStyle`] are not in
 /// the key because they are not per block; the caller must pass `previous` only
 /// when all three are unchanged, which is exactly what

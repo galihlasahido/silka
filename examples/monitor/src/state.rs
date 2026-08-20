@@ -68,7 +68,7 @@ impl GaugeReading {
 /// What the frame-time indicator shows.
 ///
 /// A plain copyable summary rather than a borrow of
-/// [`FrameStats`](silka_core::scheduler::FrameStats): it lives in a signal, and
+/// [`FrameStats`]: it lives in a signal, and
 /// a signal holding a reference into the runtime it belongs to is not a thing
 /// that can exist.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]

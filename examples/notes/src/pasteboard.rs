@@ -5,7 +5,7 @@
 //! own encoding, which carries block kinds and inline styles, and plain text
 //! for everyone else. Putting both on the system pasteboard would be the
 //! obvious thing to do — and `arboard` (through
-//! [`silka_platform::clipboard`]) offers text, HTML and images, not private
+//! [`mod@silka_platform::clipboard`]) offers text, HTML and images, not private
 //! flavours. So the rich flavour stays here, in the application, and the
 //! pasteboard gets the plain one.
 //!

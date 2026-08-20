@@ -66,7 +66,7 @@ pub struct Outline {
 }
 
 impl Outline {
-    /// The children of `parent`, for [`silka_widgets::tree`].
+    /// The children of `parent`, for [`silka_widgets::tree()`].
     pub fn children(&self, parent: Option<TreeKey>) -> Vec<TreeNode> {
         self.children.get(&parent).cloned().unwrap_or_default()
     }

@@ -8,10 +8,10 @@
 //!
 //! | Claim | Where it is proved |
 //! |---|---|
-//! | A chart survives being redrawn 60 times a second | [`tests::a_chart_keeps_up_with_sixty_updates_a_second`] |
-//! | A spring genuinely **settles**, and does not spin forever | [`smooth`] and [`tests::a_gigabyte_scale_spring_settles_and_the_window_sleeps`] |
-//! | Idle really costs nothing — no data, no frames | [`tests::when_the_data_stops_the_window_stops`] |
-//! | Updates faster than frames do not queue up frames | [`tests::ten_samples_between_two_frames_cost_one_frame`] |
+//! | A chart survives being redrawn 60 times a second | `tests::a_chart_keeps_up_with_sixty_updates_a_second` |
+//! | A spring genuinely **settles**, and does not spin forever | [`smooth`] and `tests::a_gigabyte_scale_spring_settles_and_the_window_sleeps` |
+//! | Idle really costs nothing — no data, no frames | `tests::when_the_data_stops_the_window_stops` |
+//! | Updates faster than frames do not queue up frames | `tests::ten_samples_between_two_frames_cost_one_frame` |
 //!
 //! The second claim had a known way of failing, recorded in
 //! `catatan/STATUS.md`: a spring that decides it has arrived by an **absolute**
@@ -40,7 +40,7 @@
 //!   the latter plotted in raw bytes, which is where a naive axis prints
 //!   `13421772800` and a naive spring never settles;
 //! - one **sparkline per core**, wrapped into as many columns as fit;
-//! - a **virtualized process table** ([`silka_widgets::table`]) ordered by
+//! - a **virtualized process table** ([`silka_widgets::table()`]) ordered by
 //!   usage, with the sort re-run when a column heading is clicked;
 //! - the application's **own frame time** — p95 against the display's budget,
 //!   which is the number that decides whether the window feels smooth.

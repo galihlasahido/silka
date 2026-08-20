@@ -2,7 +2,7 @@
 //!
 //! ## Why this is a plain function and not a component
 //!
-//! The method picker is a [`select`](silka_widgets::select), and a select is
+//! The method picker is a [`select()`], and a select is
 //! two pieces: a trigger where it stands and a popup that has to be mounted in
 //! the window's overlay layer. There is no portal in the framework yet, so the
 //! popup has to be handed upwards — which a `component` cannot do, because

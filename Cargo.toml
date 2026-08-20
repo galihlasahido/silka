@@ -17,6 +17,8 @@ members = [
     "examples/notes",
     "examples/api_client",
     "examples/monitor",
+    "examples/files",
+    "examples/mdi",
 ]
 
 [workspace.package]
