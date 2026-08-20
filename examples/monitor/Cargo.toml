@@ -1,0 +1,45 @@
+[package]
+name = "silka-monitor"
+description = "System monitor example: charts under continuous data, springs that settle, and a window that goes idle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# Deliberately **not** `rust-version.workspace = true`. `sysinfo` 0.39 declares
+# an MSRV of 1.95, and claiming 1.80 here would be a promise this crate cannot
+# keep. The framework crates keep the workspace floor; the example that reads
+# the machine's process table pays the price of the crate that can do it.
+rust-version = "1.95"
+publish = false
+
+[dev-dependencies]
+# Headless rendering for the pixel proof: the very page that shows up in the
+# window is drawn into an offscreen texture and its pixels are counted. A
+# dev-dependency only — the application itself never touches a backend, it goes
+# through `silka-platform`.
+silka-renderer.workspace = true
+
+[dependencies]
+silka-widgets.workspace = true
+silka-chart.workspace = true
+silka-core.workspace = true
+silka-theme.workspace = true
+silka-platform.workspace = true
+silka-paint.workspace = true
+silka-text.workspace = true
+
+# The data source, and the only third-party crate this example adds.
+#
+# Two things about the version are load-bearing rather than incidental:
+#
+# 1. **`0.39` and not something older.** Every `sysinfo` up to 0.34 pins
+#    `windows` to `>=0.54, <=0.57`, and this workspace pins `windows = "0.62"`
+#    for `accesskit_windows` and the escape hatch. Taking one of those would put
+#    a *second* Win32 binding tree in the binary — the exact thing the root
+#    `Cargo.toml` spends a paragraph forbidding. 0.39 requires
+#    `>=0.62, <0.63`, so on Windows there is still one tree.
+# 2. **`default-features = false`.** The default set turns on disks, networks,
+#    thermal components and users; this example reads CPU, memory and
+#    processes, so it compiles the `system` feature and nothing else. An
+#    example that pulls in WMI to draw a line chart is not an example anyone
+#    should copy.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }

@@ -38,7 +38,7 @@ use crate::fonts::Fonts;
 use crate::text_area::AreaLink;
 
 use super::clipboard;
-use super::document::{BlockKind, DocPos, DocSelection, Document, Marks};
+use super::document::{BlockKind, DocPos, DocSelection, Document, Marks, Span};
 use super::editor::RichEdit;
 use super::layout::{self, BlockInput, DocLayout, EditorStyle};
 use super::state::{
@@ -261,30 +261,66 @@ impl WysiwygBody {
         {
             return;
         }
-        let doc = self.edit.document();
-        let mut tampil = Vec::with_capacity(doc.block_count());
-        for i in 0..doc.block_count() {
-            tampil.push((
-                doc.block(i).kind,
-                self.edit.display_spans(i).0,
-                doc.list_number(i),
-            ));
-        }
-        let masukan: Vec<BlockInput<'_>> = tampil
-            .iter()
-            .map(|(kind, spans, number)| BlockInput {
-                kind: *kind,
-                spans,
-                number: *number,
-            })
-            .collect();
         let gaya = self.style.clone();
         let dinonaktifkan = self.disabled;
         let asal = self.origin();
-        let mut hasil = self
-            .fonts
-            .with(|m| layout::build(m, &masukan, &gaya, lebar, dinonaktifkan));
-        layout::place_runs(&mut hasil, asal);
+
+        // The previous layout is reusable only when the width, the screen
+        // resolution and the style are all unchanged. `invalidate()` is what
+        // says otherwise: it stamps NaN over `shaped_scale`, so the comparison
+        // below can never be true after it has run.
+        let sebelumnya = if self.shaped_width == lebar && self.shaped_scale == scale {
+            self.layout.take()
+        } else {
+            self.layout = None;
+            None
+        };
+
+        let hasil = if self.edit.is_composing() {
+            // An IME preedit is spliced into one block, so that block's spans
+            // have to be materialized — and, because the splice is invisible to
+            // the block cache, so do all the others. It is one composition at a
+            // time and it lasts a few keystrokes, so the copy is affordable
+            // here and nowhere else.
+            let doc = self.edit.document();
+            let tampil: Vec<(BlockKind, Vec<Span>, usize)> = (0..doc.block_count())
+                .map(|i| {
+                    (
+                        doc.block(i).kind,
+                        self.edit.display_spans(i).0,
+                        doc.list_number(i),
+                    )
+                })
+                .collect();
+            let masukan: Vec<BlockInput<'_>> = tampil
+                .iter()
+                .map(|(kind, spans, number)| BlockInput {
+                    kind: *kind,
+                    spans,
+                    number: *number,
+                })
+                .collect();
+            self.fonts.with(|m| {
+                layout::rebuild(m, &masukan, &gaya, lebar, dinonaktifkan, asal, sebelumnya)
+            })
+        } else {
+            // The ordinary path, and the one a long note lives or dies by: the
+            // blocks are handed to the shaper **by reference**. Copying every
+            // span of the document once per frame was the second half of "typing
+            // in a thousand-paragraph note is slow"; re-shaping them was the
+            // first, and `layout::rebuild` is the answer to that one.
+            let doc = self.edit.document();
+            let masukan: Vec<BlockInput<'_>> = (0..doc.block_count())
+                .map(|i| BlockInput {
+                    kind: doc.block(i).kind,
+                    spans: &doc.block(i).spans,
+                    number: doc.list_number(i),
+                })
+                .collect();
+            self.fonts.with(|m| {
+                layout::rebuild(m, &masukan, &gaya, lebar, dinonaktifkan, asal, sebelumnya)
+            })
+        };
         self.layout = Some(hasil);
         self.shaped_width = lebar;
         self.shaped_scale = scale;

@@ -35,6 +35,8 @@
 //! are the price of not owning a shaper, and both disappear the day `parley`
 //! lands (§3.3).
 
+use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::ops::Range;
 
 use silka_paint::{Color, Corners, GlyphRun, Insets, Point, Rect, Size};
@@ -306,6 +308,13 @@ impl BlockLayout {
 pub struct DocLayout {
     /// The blocks, top to bottom.
     pub blocks: Vec<BlockLayout>,
+    /// One [`block_key`] per block, in the same order.
+    ///
+    /// This is what makes [`rebuild`] incremental: it is the only way to know
+    /// that the paragraph now at index 700 is the very same paragraph that was
+    /// at index 699 before a block was inserted above it, and therefore does
+    /// not need to be shaped again.
+    pub keys: Vec<u64>,
     /// The width it was laid out for.
     pub width: f32,
     /// The size it occupies.
@@ -519,6 +528,7 @@ pub fn build(
 ) -> DocLayout {
     let mut hasil = DocLayout {
         blocks: Vec::with_capacity(blocks.len()),
+        keys: blocks.iter().map(|b| block_key(b, disabled)).collect(),
         width,
         size: Size::ZERO,
     };
@@ -527,31 +537,195 @@ pub fn build(
         if i > 0 {
             y += style.block_gap;
         }
-        let indent = style.indent_of(input.kind);
-        let padding = if input.kind == BlockKind::Code {
-            style.code_padding
-        } else {
-            Insets::ZERO
-        };
-        let content_width = (width - indent - padding.right).max(1.0);
-        let lines = layout_block(engine, input, style, content_width, disabled);
-        let tinggi_isi: f32 = lines.iter().map(|l| l.height).sum();
-        let marker = build_marker(engine, input, style, indent, disabled);
-        let tinggi = tinggi_isi + padding.vertical();
-        hasil.blocks.push(BlockLayout {
-            kind: input.kind,
-            top: y,
-            height: tinggi,
-            content_x: indent,
-            content_y: padding.top,
-            content_width,
-            lines,
-            marker,
-        });
-        y += tinggi;
+        let b = layout_one(engine, input, style, width, disabled, y);
+        y += b.height;
+        hasil.blocks.push(b);
     }
     hasil.size = Size::new(width, y);
     hasil
+}
+
+/// Lay out a whole document, **reusing every block that did not change**.
+///
+/// The difference between this and [`build`] is the difference between an
+/// editor a long note can be typed into and one it cannot. Shaping is by far
+/// the most expensive thing this module does, and a keystroke changes exactly
+/// one block — so re-shaping all of them costs the length of the document per
+/// character typed. On a thousand-paragraph note that is the whole frame
+/// budget several times over, and it is not a constant factor that can be
+/// optimised away: it is the wrong complexity.
+///
+/// What makes the reuse safe is [`block_key`]: two blocks with the same key
+/// produce the same glyphs, because the key covers everything
+/// [`layout_one`] reads — the kind, every span's text and style, the list
+/// number, and the disabled flag. Width, scale and [`EditorStyle`] are not in
+/// the key because they are not per block; the caller must pass `previous` only
+/// when all three are unchanged, which is exactly what
+/// [`WysiwygBody::invalidate`](super::body::WysiwygBody) exists to say.
+///
+/// Blocks are matched **by key rather than by index**, so inserting a paragraph
+/// at the top of a note shifts a thousand blocks down without re-shaping one of
+/// them: they are found by what they say, and moved by translating their glyph
+/// runs.
+///
+/// Unlike [`build`], the result comes back already placed at `origin` — the
+/// reused runs are still sitting where the last frame put them, so placement
+/// cannot be a separate pass over the whole document any more.
+pub fn rebuild(
+    engine: &mut TextEngine,
+    blocks: &[BlockInput<'_>],
+    style: &EditorStyle,
+    width: f32,
+    disabled: bool,
+    origin: Point,
+    previous: Option<DocLayout>,
+) -> DocLayout {
+    let keys: Vec<u64> = blocks.iter().map(|b| block_key(b, disabled)).collect();
+
+    // The blocks of the previous layout, indexed by what they say.
+    let mut spare: HashMap<u64, VecDeque<usize>> = HashMap::new();
+    let mut old: Vec<Option<BlockLayout>> = Vec::new();
+    if let Some(p) = previous {
+        // A previous layout for another width is not reusable at all: every
+        // line break in it was decided against a width that no longer applies.
+        if p.width == width && p.keys.len() == p.blocks.len() {
+            for (i, key) in p.keys.iter().enumerate() {
+                spare.entry(*key).or_default().push_back(i);
+            }
+            old = p.blocks.into_iter().map(Some).collect();
+        }
+    }
+
+    let mut hasil = DocLayout {
+        blocks: Vec::with_capacity(blocks.len()),
+        keys,
+        width,
+        size: Size::ZERO,
+    };
+    let mut y = 0.0f32;
+    for (i, input) in blocks.iter().enumerate() {
+        if i > 0 {
+            y += style.block_gap;
+        }
+        let reused = spare
+            .get_mut(&hasil.keys[i])
+            .and_then(VecDeque::pop_front)
+            .and_then(|index| old.get_mut(index).and_then(Option::take));
+        let b = match reused {
+            Some(mut b) => {
+                // The glyphs are already in node coordinates from the frame
+                // that shaped them; all that can have changed is how far down
+                // the block sits.
+                let dy = y - b.top;
+                if dy != 0.0 {
+                    shift_block(&mut b, dy);
+                    b.top = y;
+                }
+                b
+            }
+            None => {
+                let mut b = layout_one(engine, input, style, width, disabled, y);
+                place_block(&mut b, origin);
+                b
+            }
+        };
+        y += b.height;
+        hasil.blocks.push(b);
+    }
+    hasil.size = Size::new(width, y);
+    hasil
+}
+
+/// Everything about one block that decides the glyphs it produces.
+///
+/// FNV-1a, and deliberately not a cryptographic hash: this is a cache key
+/// inside one process, and the cost of computing it is paid for every block of
+/// the document on every frame. What it must never do is collide *usefully* —
+/// two different paragraphs hashing alike would show one of them twice — so
+/// every byte that reaches the shaper reaches the hash too, including the
+/// separators that stop `["ab", "c"]` from hashing like `["a", "bc"]`.
+pub fn block_key(input: &BlockInput<'_>, disabled: bool) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut eat = |bytes: &[u8]| {
+        for b in bytes {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    eat(&[input.kind as u8, u8::from(disabled), 0xff]);
+    eat(&input.number.to_le_bytes());
+    for span in input.spans {
+        eat(&[0xfe]);
+        eat(span.text.as_bytes());
+        eat(&[0xfd, span.style.marks.bits()]);
+        if let Some(url) = &span.style.link {
+            eat(url.as_bytes());
+        }
+    }
+    h
+}
+
+/// Lay out one block, with its top edge at `y`.
+fn layout_one(
+    engine: &mut TextEngine,
+    input: &BlockInput<'_>,
+    style: &EditorStyle,
+    width: f32,
+    disabled: bool,
+    y: f32,
+) -> BlockLayout {
+    let indent = style.indent_of(input.kind);
+    let padding = if input.kind == BlockKind::Code {
+        style.code_padding
+    } else {
+        Insets::ZERO
+    };
+    let content_width = (width - indent - padding.right).max(1.0);
+    let lines = layout_block(engine, input, style, content_width, disabled);
+    let tinggi_isi: f32 = lines.iter().map(|l| l.height).sum();
+    let marker = build_marker(engine, input, style, indent, disabled);
+    BlockLayout {
+        kind: input.kind,
+        top: y,
+        height: tinggi_isi + padding.vertical(),
+        content_x: indent,
+        content_y: padding.top,
+        content_width,
+        lines,
+        marker,
+    }
+}
+
+/// Move one already-placed block down (or up) by `dy`.
+fn shift_block(block: &mut BlockLayout, dy: f32) {
+    let offset = Point::new(0.0, dy);
+    if let Some(m) = &mut block.marker {
+        translate_run(&mut m.run, offset);
+    }
+    for line in &mut block.lines {
+        for seg in &mut line.segments {
+            translate_run(&mut seg.run, offset);
+        }
+    }
+}
+
+/// Move one freshly shaped block's glyphs into node coordinates.
+fn place_block(block: &mut BlockLayout, origin: Point) {
+    let atas = origin.y + block.top;
+    if let Some(m) = &mut block.marker {
+        translate_run(&mut m.run, Point::new(origin.x, atas + block.content_y));
+    }
+    for line in &mut block.lines {
+        for seg in &mut line.segments {
+            translate_run(
+                &mut seg.run,
+                Point::new(
+                    origin.x + block.content_x + seg.x,
+                    atas + block.content_y + line.top,
+                ),
+            );
+        }
+    }
 }
 
 /// A chunk of one span: a word plus the spaces that follow it.
@@ -726,18 +900,7 @@ pub fn translate_run(run: &mut GlyphRun, offset: Point) {
 /// not rasterize anything anyway, since it has no `&mut` on the text engine.
 pub fn place_runs(layout: &mut DocLayout, origin: Point) {
     for b in &mut layout.blocks {
-        let atas = origin.y + b.top;
-        if let Some(m) = &mut b.marker {
-            translate_run(&mut m.run, Point::new(origin.x, atas + b.content_y));
-        }
-        for l in &mut b.lines {
-            for seg in &mut l.segments {
-                translate_run(
-                    &mut seg.run,
-                    Point::new(origin.x + b.content_x + seg.x, atas + b.content_y + l.top),
-                );
-            }
-        }
+        place_block(b, origin);
     }
 }
 

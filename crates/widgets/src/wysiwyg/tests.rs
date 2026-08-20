@@ -618,3 +618,193 @@ fn editor_tumbuh_bersama_isinya_sampai_batas() {
     assert!(min < max, "auto_grow punya jangkauan: {min}..{max}");
     assert!(min >= crate::button::MIN_HIT_TARGET, "tetap bisa disentuh");
 }
+
+// ---------------------------------------------------------------------------
+// The incremental block layout
+// ---------------------------------------------------------------------------
+
+/// The layout cache ([`layout::rebuild`]) is what makes a long note typable at
+/// all — before it, one keystroke re-shaped every block in the document — so it
+/// gets its own tests rather than riding on the widget's.
+mod tata_letak_bertahap {
+    use super::*;
+    use crate::wysiwyg::layout::{block_key, rebuild, BlockInput, DocLayout, EditorStyle};
+    use silka_paint::{Point, Rect};
+
+    /// The blocks a test document is made of.
+    fn blok(teks: &[(BlockKind, &str)]) -> Vec<Block> {
+        teks.iter()
+            .map(|(kind, t)| Block::plain(*kind, *t))
+            .collect()
+    }
+
+    /// Lay out `blocks`, reusing `previous` when there is one.
+    fn susun(blocks: &[Block], previous: Option<DocLayout>) -> DocLayout {
+        let f = fonts();
+        let gaya = EditorStyle::from_theme(&tema());
+        let masukan: Vec<BlockInput<'_>> = blocks
+            .iter()
+            .enumerate()
+            .map(|(i, b)| BlockInput {
+                kind: b.kind,
+                spans: &b.spans,
+                number: if b.kind == BlockKind::Numbered {
+                    i + 1
+                } else {
+                    1
+                },
+            })
+            .collect();
+        f.with(|m| {
+            rebuild(
+                m,
+                &masukan,
+                &gaya,
+                320.0,
+                false,
+                Point::new(8.0, 6.0),
+                previous,
+            )
+        })
+    }
+
+    /// Every glyph rectangle of a laid-out document, in order.
+    fn kotak_glyph(l: &DocLayout) -> Vec<Rect> {
+        let mut out = Vec::new();
+        for b in &l.blocks {
+            if let Some(m) = &b.marker {
+                out.extend(m.run.glyphs.iter().map(|g| g.bounds));
+            }
+            for baris in &b.lines {
+                for seg in &baris.segments {
+                    out.extend(seg.run.glyphs.iter().map(|g| g.bounds));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn kunci_blok_menutupi_semua_yang_dibaca_pembentuk() {
+        let polos = Block::plain(BlockKind::Paragraph, "halo");
+        let tebal = Block::new(
+            BlockKind::Paragraph,
+            vec![Span::new("halo", InlineStyle::with_marks(Marks::BOLD))],
+        );
+        let tautan = Block::new(
+            BlockKind::Paragraph,
+            vec![Span::new("halo", InlineStyle::link("https://a"))],
+        );
+        let judul = Block::plain(BlockKind::Heading1, "halo");
+
+        let kunci = |b: &Block, nomor: usize, nonaktif: bool| {
+            block_key(
+                &BlockInput {
+                    kind: b.kind,
+                    spans: &b.spans,
+                    number: nomor,
+                },
+                nonaktif,
+            )
+        };
+
+        // Sama isi, sama kunci — itulah yang membuat pemakaian ulang aman.
+        assert_eq!(kunci(&polos, 1, false), kunci(&polos.clone(), 1, false));
+        // …dan setiap hal yang mengubah glyph mengubah kunci.
+        assert_ne!(kunci(&polos, 1, false), kunci(&tebal, 1, false));
+        assert_ne!(kunci(&polos, 1, false), kunci(&tautan, 1, false));
+        assert_ne!(kunci(&polos, 1, false), kunci(&judul, 1, false));
+        assert_ne!(kunci(&polos, 1, false), kunci(&polos, 2, false));
+        assert_ne!(kunci(&polos, 1, false), kunci(&polos, 1, true));
+
+        // Batas antar-span ikut terhitung: ["ab","c"] bukan ["a","bc"].
+        let a = Block::new(
+            BlockKind::Paragraph,
+            vec![
+                Span::new("ab", InlineStyle::with_marks(Marks::BOLD)),
+                Span::plain("c"),
+            ],
+        );
+        let b = Block::new(
+            BlockKind::Paragraph,
+            vec![
+                Span::new("a", InlineStyle::with_marks(Marks::BOLD)),
+                Span::plain("bc"),
+            ],
+        );
+        assert_ne!(kunci(&a, 1, false), kunci(&b, 1, false));
+    }
+
+    #[test]
+    fn menyisipkan_blok_di_atas_tidak_menggeser_glyph_secara_salah() {
+        // The whole point of matching blocks **by content** instead of by
+        // index: inserting a paragraph at the top moves everything below it,
+        // and the moved blocks must land exactly where a fresh layout would
+        // have put them.
+        let awal = blok(&[
+            (BlockKind::Paragraph, "satu"),
+            (BlockKind::Bullet, "dua"),
+            (BlockKind::Quote, "tiga"),
+        ]);
+        let sebelumnya = susun(&awal, None);
+
+        let mut sesudah = vec![Block::plain(BlockKind::Heading1, "Judul baru")];
+        sesudah.extend(awal.iter().cloned());
+
+        let bertahap = susun(&sesudah, Some(sebelumnya));
+        let dari_nol = susun(&sesudah, None);
+
+        assert_eq!(bertahap.size, dari_nol.size);
+        assert_eq!(kotak_glyph(&bertahap), kotak_glyph(&dari_nol));
+    }
+
+    #[test]
+    fn mengubah_satu_blok_tidak_merusak_tetangganya() {
+        let awal = blok(&[
+            (BlockKind::Paragraph, "satu"),
+            (BlockKind::Paragraph, "dua"),
+            (BlockKind::Paragraph, "tiga"),
+        ]);
+        let sebelumnya = susun(&awal, None);
+
+        let mut sesudah = awal.clone();
+        sesudah[1] = Block::plain(BlockKind::Paragraph, "dua dengan tambahan");
+
+        let bertahap = susun(&sesudah, Some(sebelumnya));
+        let dari_nol = susun(&sesudah, None);
+        assert_eq!(bertahap.size, dari_nol.size);
+        assert_eq!(kotak_glyph(&bertahap), kotak_glyph(&dari_nol));
+    }
+
+    #[test]
+    fn menghapus_blok_menarik_sisanya_ke_atas() {
+        let awal = blok(&[
+            (BlockKind::Heading1, "Judul"),
+            (BlockKind::Paragraph, "satu"),
+            (BlockKind::Paragraph, "dua"),
+        ]);
+        let sebelumnya = susun(&awal, None);
+
+        let sesudah = vec![awal[0].clone(), awal[2].clone()];
+        let bertahap = susun(&sesudah, Some(sebelumnya));
+        let dari_nol = susun(&sesudah, None);
+        assert_eq!(bertahap.size, dari_nol.size);
+        assert_eq!(kotak_glyph(&bertahap), kotak_glyph(&dari_nol));
+    }
+
+    #[test]
+    fn blok_kembar_tidak_saling_tertukar() {
+        // Two identical paragraphs share a key, so the cache has to hand out
+        // each cached block **once** — handing the same one out twice would
+        // draw one paragraph in two places and leave a hole.
+        let awal = blok(&[
+            (BlockKind::Paragraph, "sama"),
+            (BlockKind::Paragraph, "sama"),
+            (BlockKind::Paragraph, "beda"),
+        ]);
+        let sebelumnya = susun(&awal, None);
+        let bertahap = susun(&awal, Some(sebelumnya));
+        let dari_nol = susun(&awal, None);
+        assert_eq!(kotak_glyph(&bertahap), kotak_glyph(&dari_nol));
+    }
+}

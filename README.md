@@ -85,6 +85,17 @@ page, reachable from the sidebar or directly: `--page chart` opens the chart
 catalogue, `--page date-picker` the date field and its calendar, `--page toast`
 the notification stack. Adding `--solo` gives that page the whole window.
 
+## Example applications
+
+```bash
+cargo run -p silka-todo        # the app built step by step in docs/TUTORIAL.md
+cargo run -p silka-dashboard   # an internal ERP dashboard: table, chart, navigation
+cargo run -p silka-notes       # a Markdown note editor: wysiwyg, tree, split view, auto-save
+```
+
+`silka-notes` keeps its notes as ordinary `.md` files — `--dir <path>` says
+where, and `$SILKA_NOTES_DIR` does the same without an argument.
+
 ## Shipping an application
 
 Bundling, code signing, notarization, the update feed, and crash symbols are a

@@ -1,0 +1,22 @@
+[package]
+name = "silka-api-client"
+description = "A Postman-shaped HTTP client: the first real workout for silka's async bridge and panic boundaries"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+silka-core.workspace = true
+silka-widgets.workspace = true
+silka-theme.workspace = true
+silka-platform.workspace = true
+silka-paint.workspace = true
+silka-text.workspace = true
+
+# Deliberately no HTTP crate, and no TLS stack. See the module docs of `http`
+# and `serve`: the request path is HTTP/1.1 over `std::net::TcpStream`, and the
+# server the example talks to ships inside this binary. The reason is written
+# down there rather than here, because it is an architectural decision and not
+# a packaging one.
