@@ -31,12 +31,15 @@
 
 use silka_core::access::{AccessNode, AccessRole};
 use silka_core::input::{
-    CursorIcon, Event, EventCtx, FocusPolicy, HitBehavior, PointerButton, PointerPhase,
+    CursorIcon, DragPhase, DragUpdate, Event, EventCtx, FocusPolicy, HitBehavior, PointerButton,
+    PointerPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::signals::{Key, Signal};
 use silka_core::tree::{BoxConstraints, CrossAlign, LayoutCtx, MainAlign, RenderNode};
-use silka_core::view::{column, constrained, expanded, row, Builder, View, ViewNode};
+use silka_core::view::{
+    column, constrained, draggable, draggable_area, expanded, row, Builder, View, ViewNode,
+};
 use silka_paint::{Point, Size};
 use silka_theme::{ColorToken, FontToken, RadiusToken, ShadowToken, SpaceToken, Theme};
 use silka_widgets::overlay::{
@@ -44,7 +47,6 @@ use silka_widgets::overlay::{
 };
 use silka_widgets::{button, icon_button, spacer, text, text_field, ButtonVariant, IconName};
 
-use crate::gesture::{grab, grab_around, Gesture};
 use crate::model::{DragKind, Edge, Frame, FrameId, FrameState, Mdi};
 
 /// How wide the draggable band along each edge is.
@@ -418,7 +420,7 @@ fn side_band(state: Signal<Mdi>, f: &Frame, live: bool, edge: Edge) -> View {
 /// One resize edge.
 fn edge_handle(state: Signal<Mdi>, f: &Frame, live: bool, edge: Edge) -> View {
     let id = f.id;
-    let mut handle = grab()
+    let mut handle = draggable_area()
         .key(Key::text(edge.name()))
         // The cursor vocabulary has a horizontal and a vertical resize arrow
         // and nothing diagonal, so a corner borrows the axis it mostly moves
@@ -430,7 +432,7 @@ fn edge_handle(state: Signal<Mdi>, f: &Frame, live: bool, edge: Edge) -> View {
         })
         .label(edge_label(&f.title, edge));
     if live {
-        handle = handle.on_gesture(move |g| drag(state, id, DragKind::Resize(edge), g));
+        handle = handle.on_drag(move |g| drag(state, id, DragKind::Resize(edge), g));
     }
     handle.into()
 }
@@ -495,14 +497,15 @@ fn titlebar(t: &Theme, state: Signal<Mdi>, f: &Frame, active: bool) -> View {
 
     // The whole bar is the drag surface; the buttons sit inside it and are
     // offered the pointer first, because they are deeper in the hit path.
-    grab_around(bar)
+    draggable(bar)
         .key("titlebar")
         .cursor(CursorIcon::Grab)
         .label(titlebar_label(&title))
         // The one tab stop that moves a window: arrows nudge it, and that is
         // the whole keyboard story for direct manipulation.
         .focusable(true)
-        .on_gesture(move |g| drag(state, id, DragKind::Move, g))
+        .keyboard_step(crate::model::KEY_STEP)
+        .on_drag(move |g| drag(state, id, DragKind::Move, g))
         .into()
 }
 
@@ -549,13 +552,13 @@ fn body(t: &Theme, state: Signal<Mdi>, f: &Frame) -> View {
 /// Every window in the desktop shares this one function, which is why "a drag
 /// is measured from the rectangle it started on" is a property of the desktop
 /// rather than of nine separate handles.
-fn drag(state: Signal<Mdi>, id: FrameId, kind: DragKind, g: Gesture) {
-    match g {
-        Gesture::Begin => state.update(|m| m.begin_drag(id, kind)),
-        Gesture::Update { delta } => state.update(|m| m.drag_to(delta)),
-        Gesture::End { delta, velocity } => {
-            state.update(|m| m.end_drag(delta, velocity));
+fn drag(state: Signal<Mdi>, id: FrameId, kind: DragKind, g: DragUpdate) {
+    match g.phase {
+        DragPhase::Down => state.update(|m| m.begin_drag(id, kind)),
+        DragPhase::Start | DragPhase::Update => state.update(|m| m.drag_to(g.delta)),
+        DragPhase::End => {
+            state.update(|m| m.end_drag(g.delta, g.velocity));
         }
-        Gesture::Cancel => state.update(|m| m.cancel_drag()),
+        DragPhase::Cancel => state.update(|m| m.cancel_drag()),
     }
 }

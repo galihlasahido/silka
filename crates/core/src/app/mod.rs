@@ -19,6 +19,9 @@
 //!    1. drain_dirty()   → [ScopeId] ordered root→leaf, already pruned
 //!    2. per scope       → re-run its closure INSIDE that scope
 //!                       → reconcile_children(tree, anchor, [new view])
+//!   2b. InputRouter::sync(tree)   ← focus/capture/hover/IME pointing at a
+//!                                   node the diff has just removed is
+//!                                   dropped, before the next event arrives
 //!    3. perform_layout(window constraints)
 //!    4. paint_into(scene)
 //! ```

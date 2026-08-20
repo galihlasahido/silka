@@ -39,6 +39,7 @@
 
 mod boxes;
 mod diff;
+mod draggable;
 mod interactive;
 mod primitives;
 #[cfg(test)]
@@ -58,6 +59,7 @@ pub use boxes::{
     ASPECT_3_2, ASPECT_4_3, ASPECT_SQUARE,
 };
 pub use diff::{reconcile, reconcile_children, DiffStats};
+pub use draggable::{draggable, draggable_area, DragProps};
 pub use interactive::{interactive, InteractiveProps};
 pub use primitives::{
     column, constrained, expanded, fixed, flexible, grid, item, measured, pad, row, viewport,

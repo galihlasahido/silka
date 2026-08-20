@@ -66,7 +66,7 @@ use std::time::Duration;
 use silka_core::access::{AccessNode, AccessRole};
 use silka_core::animation::{Spring, SpringValue, Tick};
 use silka_core::input::{
-    Event, EventCtx, HitBehavior, HitShape, PointerButton, PointerPhase, VelocityTracker,
+    DragAxis, DragGesture, DragPhase, Event, EventCtx, HitBehavior, HitShape, PointerPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::signals::{use_signal, Key, Runtime, Signal};
@@ -506,14 +506,6 @@ impl ToastStyle {
 // Node
 // ---------------------------------------------------------------------------
 
-/// A drag in progress.
-#[derive(Debug)]
-struct Seret {
-    awal_x: f32,
-    bergeser: bool,
-    velocity: VelocityTracker,
-}
-
 /// One toast card: the countdown, the swipe, and the exit.
 pub struct ToastBox {
     /// Every resolved drawing value.
@@ -530,7 +522,9 @@ pub struct ToastBox {
     offset: SpringValue<f32>,
     remaining: Duration,
     paused: bool,
-    dragging: Option<Seret>,
+    /// The swipe: capture, slop, total delta and the fling velocity all come
+    /// from the shared recogniser (§3.5).
+    dragging: DragGesture,
     leaving: bool,
     fired: bool,
     width: f32,
@@ -559,7 +553,7 @@ impl ToastBox {
 
     /// True while a finger really is dragging it.
     pub fn is_dragging(&self) -> bool {
-        self.dragging.as_ref().is_some_and(|d| d.bergeser)
+        self.dragging.is_dragging()
     }
 
     /// True while anything is still moving.
@@ -611,7 +605,7 @@ impl ToastBox {
         // The countdown is held while the pointer is over the card and while a
         // finger is on it: a message that vanishes mid-read is worse than no
         // message.
-        if !self.leaving && !self.paused && self.dragging.is_none() {
+        if !self.leaving && !self.paused && !self.dragging.is_active() {
             if let Some(_total) = self.duration {
                 // A countdown is motion the driver cannot see: it owns no
                 // spring, so nothing would flag the frame as active and the
@@ -648,6 +642,12 @@ impl ToastBox {
     fn threshold(&self) -> f32 {
         self.style.swipe_threshold.max(1.0)
     }
+}
+
+/// The travel that turns a press into a swipe — a quarter of the distance that
+/// dismisses, so the card starts following well before it commits.
+fn ambang_geser(style: &ToastStyle) -> f32 {
+    style.swipe_threshold.max(1.0) * 0.25
 }
 
 impl RenderNode for ToastBox {
@@ -738,71 +738,50 @@ impl RenderNode for ToastBox {
                     ctx.request_animation();
                 }
             }
-            PointerPhase::Down if self.dismissible && p.button == Some(PointerButton::Primary) => {
-                let mut velocity = VelocityTracker::new();
-                velocity.add(p.time, ctx.local());
-                self.dragging = Some(Seret {
-                    awal_x: ctx.local().x,
-                    bergeser: false,
-                    velocity,
-                });
-                ctx.capture_pointer();
-                ctx.handled();
-            }
-            PointerPhase::Move => {
-                let ambang = self.threshold();
-                let lokal = ctx.local();
-                let Some(d) = self.dragging.as_mut() else {
+            // A press is only this card's business when it can be swiped at
+            // all — an undismissible toast never starts the gesture, so the
+            // recogniser stays inactive and every later event reports nothing.
+            PointerPhase::Down if !self.dismissible => {}
+            _ => {
+                let Some(u) = self.dragging.pointer(ctx, p) else {
                     return;
                 };
-                d.velocity.add(p.time, lokal);
-                let dx = lokal.x - d.awal_x;
-                if !d.bergeser && dx.abs() >= ambang * 0.25 {
-                    d.bergeser = true;
-                }
-                if d.bergeser {
-                    // The card follows the finger 1:1, with no spring: a
-                    // gesture that lags the finger feels broken.
-                    self.offset.jump_to(dx);
-                    ctx.request_paint();
-                }
-                ctx.handled();
-            }
-            PointerPhase::Up if p.button == Some(PointerButton::Primary) => {
-                let ambang = self.threshold();
-                let selesai = self.dragging.take();
-                ctx.release_pointer();
-                ctx.request_animation();
-                ctx.handled();
-                match selesai {
-                    Some(d) if d.bergeser => {
-                        let v = d.velocity.velocity().x;
-                        let jauh = self.offset.position().abs() >= ambang;
+                match u.phase {
+                    DragPhase::Down => {}
+                    DragPhase::Start | DragPhase::Update => {
+                        // The card follows the finger 1:1, with no spring: a
+                        // gesture that lags the finger feels broken.
+                        self.offset.jump_to(u.delta.x);
+                        ctx.request_paint();
+                    }
+                    DragPhase::End => {
+                        ctx.request_animation();
+                        if !u.moved {
+                            // A press that never became a drag leaves the card
+                            // where it is.
+                            self.offset.set_target(0.0);
+                            return;
+                        }
+                        let v = u.velocity.x;
+                        let jauh = self.offset.position().abs() >= self.threshold();
                         let lempar = v.abs() >= SWIPE_FLING;
+                        // The finger's velocity is handed to the spring exactly
+                        // as it is (§3.5) — the card carries on in the
+                        // direction it was already going.
+                        self.offset.set_velocity(v);
                         if jauh || lempar {
-                            // The finger's velocity is handed to the spring
-                            // exactly as it is (§3.5) — the card carries on in
-                            // the direction it was already going.
-                            self.offset.set_velocity(v);
                             let arah = if lempar { v } else { self.offset.position() };
                             self.begin_leaving(arah);
                         } else {
-                            self.offset.set_velocity(v);
                             self.offset.set_target(0.0);
                         }
                     }
-                    // A press that never became a drag leaves the card where it
-                    // is; the buttons inside it handle their own clicks.
-                    _ => self.offset.set_target(0.0),
+                    DragPhase::Cancel => {
+                        self.offset.set_target(0.0);
+                        ctx.request_animation();
+                    }
                 }
             }
-            PointerPhase::Cancel => {
-                if self.dragging.take().is_some() {
-                    self.offset.set_target(0.0);
-                    ctx.request_animation();
-                }
-            }
-            _ => {}
         }
     }
 }
@@ -840,7 +819,9 @@ impl ViewNode for ToastProps {
             offset: SpringValue::new(0.0).with_spring(self.spring),
             remaining: self.duration.unwrap_or(Duration::ZERO),
             paused: false,
-            dragging: None,
+            dragging: DragGesture::new()
+                .axis(DragAxis::Horizontal)
+                .threshold(ambang_geser(&self.style)),
             leaving: false,
             fired: false,
             width: 0.0,
@@ -858,6 +839,7 @@ impl ViewNode for ToastProps {
             dirty |= Dirty::PAINT;
         }
         n.style = self.style;
+        n.dragging.set_threshold(ambang_geser(&self.style));
         // The duration is **not** reset on a rebuild: a toast whose countdown
         // restarted every time the application re-rendered would never leave.
         if n.duration != self.duration {
@@ -1259,7 +1241,7 @@ impl core::fmt::Debug for Toaster {
 mod tests {
     use super::*;
     use silka_core::animation::Motion;
-    use silka_core::input::PointerEvent;
+    use silka_core::input::{PointerButton, PointerEvent};
     use silka_core::view::{fixed, reconcile};
     use silka_theme::{Appearance, Preset};
     use std::cell::RefCell;

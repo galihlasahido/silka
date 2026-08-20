@@ -34,22 +34,24 @@
 //! | Minimize / restore motion | The overlay entry's transition spring, retargetable mid-flight (§3.5) | nothing |
 //! | Tab trapped in the front window | [`FocusPolicy`](silka_core::input::FocusPolicy) `scope` + `skip_subtree` | the policy table in [`frame`] |
 //! | A Window menu listing every window | [`silka_widgets::menu()`], driven from application state | the rows |
-//! | Fling velocity at the end of a drag | [`VelocityTracker`](silka_core::input::VelocityTracker) | the plumbing in [`gesture`] |
+//! | Fling velocity at the end of a drag | [`draggable`](silka_core::view::draggable) hands it over on release (§3.5) | nothing |
 //! | An a11y node per window | [`AccessRole::Window`](silka_core::access::AccessRole::Window) | one `access` impl |
-//! | Dragging and resizing | — | **all of [`gesture`]** |
+//! | Dragging and resizing | [`draggable`](silka_core::view::draggable) / [`draggable_area`](silka_core::view::draggable_area) | the four lines in [`frame`] that turn a phase into a model call |
 //!
 //! ## What the framework was missing
 //!
 //! Recorded here rather than in a commit message, because this is the most
 //! valuable thing the example produced. Each of these cost real code above:
 //!
-//! 1. **No drag gesture.** [`interactive`](silka_core::view::interactive) ends
-//!    at "was pressed". Every dragging widget in the catalogue — the switch
-//!    thumb, the slider, the split-view divider, the table's column resizer —
-//!    reimplements down/move/up, capture and velocity inside its own render
-//!    node, and so does this example ([`gesture::grab`], ~200 lines). A
-//!    `draggable()` primitive reporting `(phase, total delta, velocity)` would
-//!    delete that code from five places.
+//! 1. ~~**No drag gesture.**~~ **Fixed.** `interactive()` ended at "was
+//!    pressed", so every dragging widget in the catalogue — and this example,
+//!    in a 630-line `gesture` module of its own — reimplemented down/move/up,
+//!    capture and velocity inside its own render node.
+//!    [`draggable`](silka_core::view::draggable) now reports
+//!    `(phase, total delta, velocity)` and that module is gone: the titlebar
+//!    and all eight resize edges are `draggable()` calls, and the arrow keys
+//!    come with [`keyboard_step`](silka_core::view::DragProps) rather than
+//!    being hand-rolled.
 //! 2. **No ancestor-first (capture) event phase.** Events run innermost
 //!    outwards and stop at the first node that claims them, so a window cannot
 //!    see the press that one of its own buttons consumed. Click-to-front had to
@@ -82,8 +84,8 @@
 //!    label.
 //! 8. **No generic callback type.** [`Callback`](silka_core::Callback)
 //!    takes no arguments, so every widget that reports a value declares its own
-//!    `Rc<dyn Fn(T)>` — `TextCallback`, the chart's hover callback, and now
-//!    [`gesture::GestureCallback`].
+//!    `Rc<dyn Fn(T)>` — `TextCallback`, the chart's hover callback, and
+//!    [`DragCallback`](silka_core::input::DragCallback).
 //! 9. **Cursor vocabulary has no diagonal resize** (`ResizeNwSe`/`ResizeNeSw`)
 //!    and no `Move`/`Grabbing` distinction for a window drag, so the four
 //!    corners borrow the horizontal arrow.
@@ -96,7 +98,6 @@
 mod app;
 mod desktop;
 mod frame;
-mod gesture;
 mod model;
 #[cfg(test)]
 mod tests;

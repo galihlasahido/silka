@@ -86,8 +86,8 @@ use silka_core::access::{
 };
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
 use silka_core::input::{
-    Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, Modifiers, NamedKey,
-    PointerButton, PointerPhase, ScrollPhase,
+    DragAxis, DragGesture, DragPhase, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior,
+    HitShape, KeyCode, Modifiers, NamedKey, PointerButton, PointerPhase, ScrollPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::tree::{
@@ -263,9 +263,11 @@ pub struct ScrollView {
     focused: bool,
     /// The pointer is over the scrollbar track.
     over_bar: bool,
-    /// Currently dragging the thumb; the value is the grab distance from the
-    /// thumb's start.
-    drag: Option<f32>,
+    /// The scrollbar thumb's drag: capture and `Esc` come from the shared
+    /// recogniser (§3.5), `grab` is the distance from the press point to the
+    /// thumb's start, fixed at the press so the thumb never jumps.
+    drag: DragGesture,
+    grab: f32,
     /// A trackpad gesture is in progress (fingers still down).
     gesture: bool,
     /// Time of the last scroll event — the basis for estimating momentum
@@ -329,7 +331,8 @@ impl Default for ScrollView {
             idle: Duration::ZERO,
             focused: false,
             over_bar: false,
-            drag: None,
+            drag: DragGesture::new().axis(DragAxis::Vertical),
+            grab: 0.0,
             gesture: false,
             last_scroll: None,
             controlled: None,
@@ -481,7 +484,7 @@ impl ScrollView {
     /// True while the user is touching this scroll view (fingers, thumb,
     /// hover).
     fn interacting(&self) -> bool {
-        self.gesture || self.drag.is_some() || self.over_bar
+        self.gesture || self.drag.is_active() || self.over_bar
     }
 
     /// Advance every spring by one frame; what comes back is **what** changed.
@@ -752,22 +755,37 @@ impl ScrollView {
         let di_jalur =
             self.scrollbar.is_visible() && self.can_scroll() && self.bar_region().contains(lokal);
 
-        match e.phase {
-            PointerPhase::Enter | PointerPhase::Move => {
-                if let Some(genggam) = self.drag {
+        // Once the thumb has been grabbed the gesture owns every phase but
+        // `Leave`, which is hover bookkeeping and belongs to the track.
+        if self.drag.is_active() && e.phase != PointerPhase::Leave {
+            if let Some(u) = self.drag.pointer(ctx, e) {
+                if u.phase.is_final() {
+                    // Let go: the bar stays wide only while the pointer is
+                    // genuinely still on it.
+                    let atas = self.over_bar && u.phase == DragPhase::End;
+                    self.expand.set_target(if atas { 1.0 } else { 0.0 });
+                    ctx.request_animation();
+                    ctx.request_paint();
+                } else {
+                    let utama = self.main_of_point(u.local) - self.grab;
                     let tujuan = physics::scroll_for_thumb(
                         self.extent(),
                         self.content,
-                        utama - genggam,
+                        utama,
                         MIN_HIT_TARGET,
                     );
                     if self.offset.position() != tujuan {
                         self.offset.jump_to(tujuan);
                         ctx.request_layout();
                     }
-                    ctx.handled();
-                    return;
                 }
+            }
+            ctx.handled();
+            return;
+        }
+
+        match e.phase {
+            PointerPhase::Enter | PointerPhase::Move => {
                 if di_jalur != self.over_bar {
                     self.over_bar = di_jalur;
                     self.expand.set_target(if di_jalur { 1.0 } else { 0.0 });
@@ -793,10 +811,10 @@ impl ScrollView {
                 if di_jalur {
                     if let Some(t) = self.thumb() {
                         if t.contains(utama) {
-                            self.drag = Some(utama - t.offset);
+                            self.grab = utama - t.offset;
+                            self.drag.pointer(ctx, e);
                             self.expand.set_target(1.0);
                             self.show_bar();
-                            ctx.capture_pointer();
                             ctx.request_animation();
                             ctx.request_paint();
                         } else {
@@ -816,23 +834,6 @@ impl ScrollView {
                 // that is what makes the arrow keys work without Tabbing first.
                 if self.focusable && self.can_scroll() && !ctx.is_handled() {
                     ctx.request_focus();
-                }
-            }
-            PointerPhase::Up if e.button == Some(PointerButton::Primary) => {
-                if self.drag.take().is_some() {
-                    self.expand
-                        .set_target(if self.over_bar { 1.0 } else { 0.0 });
-                    ctx.release_pointer();
-                    ctx.request_animation();
-                    ctx.request_paint();
-                    ctx.handled();
-                }
-            }
-            PointerPhase::Cancel => {
-                if self.drag.take().is_some() {
-                    self.expand.set_target(0.0);
-                    ctx.request_animation();
-                    ctx.request_paint();
                 }
             }
             _ => {}
@@ -949,7 +950,7 @@ impl RenderNode for ScrollView {
         // space at the bottom. What gets clamped is the **target**, not the
         // position, so a scroll already in flight stays smooth.
         let max = self.max_scroll();
-        if !self.gesture && self.drag.is_none() {
+        if !self.gesture && !self.drag.is_active() {
             let tujuan = self.offset.target();
             let jepit = physics::clamp_scroll(tujuan, max);
             if jepit != tujuan {
@@ -1166,6 +1167,7 @@ impl ViewNode for ScrollProps {
 
         if n.axis != self.axis {
             n.axis = self.axis;
+            n.drag.set_axis(DragAxis::from(self.axis));
             dirty |= Dirty::LAYOUT | Dirty::PAINT;
         }
         if n.line_height != self.line_height {

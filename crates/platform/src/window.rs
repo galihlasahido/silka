@@ -89,6 +89,9 @@ pub struct FrameContext<'a> {
     elapsed: Duration,
     vsync: Vsync,
     animate: &'a Cell<bool>,
+    /// Where an IME request produced **by the frame itself** is left for the
+    /// shell. `None` headlessly, exactly like `native`.
+    ime: Option<&'a Cell<Option<ImeRequest>>>,
     /// The platform window, when there is one — the escape hatch reached from
     /// inside a frame (INTEGRASI-NATIVE §8). `None` headlessly.
     native: Option<&'a NativeWindow>,
@@ -141,6 +144,20 @@ impl<'a> FrameContext<'a> {
     /// frame and stops on its own once it reaches its target.
     pub fn request_animation_frame(&self) {
         self.animate.set(true);
+    }
+
+    /// Ask the shell to carry out an IME request that this frame produced.
+    ///
+    /// Almost every IME request is born from an event and travels back through
+    /// `on_input`. The exception is the one the frame cycle itself discovers:
+    /// the text field that owned the IME session was removed by this frame's
+    /// diff, so the session has to be turned off with no event to hang it on
+    /// (REKOMENDASI §3.8). Headlessly this is a no-op — there is no window to
+    /// tell.
+    pub fn request_ime(&self, request: ImeRequest) {
+        if let Some(slot) = self.ime {
+            slot.set(Some(request));
+        }
     }
 
     /// The OS lifecycle settings in effect this frame (INTEGRASI-NATIVE §6).
@@ -1074,7 +1091,15 @@ fn sambungkan_app_with(
             // 16.6 ms constant.
             ui.animate(&mut animate);
 
-            ui.frame();
+            let laporan = ui.frame();
+            // The frame reconciled the router with the tree it just produced
+            // (`InputRouter::sync`). Everything that reconciliation asks for is
+            // already in the scheduler except the IME session of a text field
+            // that has just been removed — that one has no event to travel back
+            // on and must be handed to the shell here.
+            if let Some(permintaan) = laporan.ime {
+                ctx.request_ime(permintaan);
+            }
 
             // The only way a next frame happens: something is still dirty (an
             // unsettled spring, a signal written during build).
@@ -1095,6 +1120,36 @@ fn sambungkan_app_with(
 /// frame get?" is exactly the kind of question that must not go untested.
 fn tema_efektif(theme: Theme, settings: SystemSettings, accent: AccentSource) -> Theme {
     settings.apply(theme, accent)
+}
+
+/// Carry out one IME request on the window, keeping `aktif` in step with what
+/// the OS has actually been told.
+///
+/// Shared by the two paths that can produce one: an event routed through
+/// [`Shell::masukan`], and a frame that pruned the focus of a text field which
+/// has just been removed from the tree. Without the second one, the candidate
+/// window keeps hovering over a panel that no longer exists.
+fn terapkan_ime(window: &Window, aktif: &mut bool, request: Option<ImeRequest>) {
+    match request {
+        Some(ImeRequest::Enable { area }) => {
+            if !*aktif {
+                window.set_ime_allowed(true);
+                *aktif = true;
+            }
+            let (posisi, ukuran) = ime_area_to_winit(area);
+            window.set_ime_cursor_area(posisi, ukuran);
+        }
+        Some(ImeRequest::Update { area }) => {
+            let (posisi, ukuran) = ime_area_to_winit(area);
+            window.set_ime_cursor_area(posisi, ukuran);
+        }
+        Some(ImeRequest::Disable) if *aktif => {
+            window.set_ime_allowed(false);
+            *aktif = false;
+        }
+        // An IME that is already off does not need turning off again.
+        Some(ImeRequest::Disable) | None => {}
+    }
 }
 
 fn latar_dari_token(ctx: &FrameContext<'_>) -> Scene {
@@ -1550,37 +1605,26 @@ impl Shell {
     /// Route one input event into the application, then carry out what it asks
     /// for.
     ///
-    /// This is the only place routing results meet winit: dirty wakes the
-    /// renderer, an IME request becomes
-    /// `set_ime_allowed`/`set_ime_cursor_area` (the CJK candidate window
-    /// anchors to the caret, §3.8), and a cursor becomes `set_cursor`.
+    /// This is where routing results meet winit: dirty wakes the renderer, an
+    /// IME request becomes `set_ime_allowed`/`set_ime_cursor_area` (the CJK
+    /// candidate window anchors to the caret, §3.8), and a cursor becomes
+    /// `set_cursor`. The frame path has one IME request of its own — the
+    /// session of a text field the diff removed — and it goes through the same
+    /// [`terapkan_ime`].
     fn masukan(&mut self, event: InputEvent) {
-        let Some(input_fn) = self.input_fn.as_mut() else {
+        let Shell {
+            input_fn,
+            state,
+            ime_aktif,
+            ..
+        } = self;
+        let Some(input_fn) = input_fn.as_mut() else {
             return;
         };
         let hasil = input_fn(&event);
 
-        if let Some(state) = self.state.as_ref() {
-            match hasil.ime {
-                Some(ImeRequest::Enable { area }) => {
-                    if !self.ime_aktif {
-                        state.window.set_ime_allowed(true);
-                        self.ime_aktif = true;
-                    }
-                    let (posisi, ukuran) = ime_area_to_winit(area);
-                    state.window.set_ime_cursor_area(posisi, ukuran);
-                }
-                Some(ImeRequest::Update { area }) => {
-                    let (posisi, ukuran) = ime_area_to_winit(area);
-                    state.window.set_ime_cursor_area(posisi, ukuran);
-                }
-                Some(ImeRequest::Disable) if self.ime_aktif => {
-                    state.window.set_ime_allowed(false);
-                    self.ime_aktif = false;
-                }
-                // An IME that is already off does not need turning off again.
-                Some(ImeRequest::Disable) | None => {}
-            }
+        if let Some(state) = state.as_ref() {
+            terapkan_ime(&state.window, ime_aktif, hasil.ime);
             if let Some(cursor) = hasil.cursor {
                 state.window.set_cursor(cursor_to_winit(cursor));
             }
@@ -1678,6 +1722,7 @@ impl Shell {
             images,
             started,
             logger,
+            ime_aktif,
             ..
         } = self;
         let Some(state) = state.as_mut() else {
@@ -1690,6 +1735,7 @@ impl Shell {
 
         let mut start = scheduler.begin_frame(Instant::now());
         let animate = Cell::new(false);
+        let ime = Cell::new(None);
         // One reference-count bump per frame buys the frame closure the escape
         // hatch (§8) — and, because it is an owned handle, the guarantee that
         // the window outlives every pointer read from it.
@@ -1702,10 +1748,15 @@ impl Shell {
             elapsed: started.elapsed(),
             vsync: scheduler.vsync(),
             animate: &animate,
+            ime: Some(&ime),
             native: Some(&native),
             settings: setelan,
         };
         let scene = (scene_fn)(&ctx);
+
+        // A frame can prune the focus of a node its own diff removed; when that
+        // node owned the IME session, this is the only chance to turn it off.
+        terapkan_ime(&state.window, ime_aktif, ime.get());
 
         // The boundary between our work and the swapchain queue. Without this
         // marker, time spent waiting for vsync would be recorded as a "slow
@@ -2217,6 +2268,8 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless too: a frame-born IME request has nowhere to go.
+            ime: None,
             // Headless: there is no window, and a test must not be able to
             // pretend there is one.
             native: None,
@@ -2241,6 +2294,8 @@ mod tests {
             elapsed: Duration::from_millis(120),
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless too: a frame-born IME request has nowhere to go.
+            ime: None,
             // Headless: there is no window, and a test must not be able to
             // pretend there is one.
             native: None,
@@ -2294,6 +2349,7 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate,
+            ime: None,
             native: None,
             settings: SystemSettings::DEFAULT,
         }
@@ -2771,6 +2827,8 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless too: a frame-born IME request has nowhere to go.
+            ime: None,
             // Headless: there is no window, and a test must not be able to
             // pretend there is one.
             native: None,
@@ -2792,6 +2850,8 @@ mod tests {
             elapsed: Duration::ZERO,
             vsync: Vsync::UNKNOWN,
             animate: &animate,
+            // Headless too: a frame-born IME request has nowhere to go.
+            ime: None,
             // Headless: there is no window, and a test must not be able to
             // pretend there is one.
             native: None,
@@ -2800,5 +2860,31 @@ mod tests {
         assert!(!animate.get(), "frame tanpa animasi harus kembali idle");
         ctx.request_animation_frame();
         assert!(animate.get());
+    }
+
+    #[test]
+    fn permintaan_ime_dari_frame_sampai_ke_shell() {
+        let theme = Theme::cupertino(Appearance::Light);
+        let animate = Cell::new(false);
+        let ime = Cell::new(None);
+        let ctx = FrameContext {
+            ime: Some(&ime),
+            ..frame_ctx(&theme, &animate)
+        };
+
+        // A frame that changed nothing about the IME leaves the slot empty —
+        // the shell must not be told to turn anything off for no reason.
+        assert_eq!(ime.get(), None);
+
+        // The case this exists for: the frame's diff removed the text field
+        // that owned the IME session, so the session has to be closed with no
+        // event to hang the request on.
+        ctx.request_ime(ImeRequest::Disable);
+        assert_eq!(ime.get(), Some(ImeRequest::Disable));
+
+        // Headlessly there is no window to tell, and a test must not be able to
+        // pretend there is one.
+        let buta = frame_ctx(&theme, &animate);
+        buta.request_ime(ImeRequest::Disable);
     }
 }

@@ -10,6 +10,7 @@
 //! | [`hit`] | Hit-testing over the render tree | Corner geometry is tested too: a squircle is not just a drawing concern (§3.6) |
 //! | [`focus`] | Focus & tab order | "Full keyboard navigation" is part of every component's DoD (`KOMPONEN.md`) |
 //! | [`velocity`] | Velocity tracker | A prerequisite for the fling → spring handoff (§3.5) |
+//! | [`drag`] | The drag recogniser | Capture + total delta + velocity + cancel, written once instead of once per widget |
 //! | [`router`] | Routing + IME | One place that knows about capture, hover, focus and the IME session |
 //!
 //! The contract for widget authors lives on [`crate::tree::RenderNode`]:
@@ -53,11 +54,15 @@
 //!   (INTEGRASI-NATIVE §3); imitating it produces double scrolling. The
 //!   gesture phase is passed through as-is via [`ScrollPhase`] so that the
 //!   scroll widget can decide.
-//! - **High-level gesture recognition** (tap/drag/long-press recognisers).
-//!   That is a layer above, and it stands on the two things provided here:
-//!   pointer capture and [`VelocityTracker`].
+//! - **A gesture arena.** [`drag`] recognises a drag, but nothing here
+//!   arbitrates between competing recognisers the way Flutter does: the routing
+//!   rules already decide who gets an event, and a node that wants to yield
+//!   simply does not feed its recogniser. Long-press, double-tap and pinch are
+//!   likewise still absent — [`DragGesture`] covers the one gesture the widget
+//!   catalogue kept rewriting by hand, not the whole family.
 //! - **Any winit type at all.** The translator lives in `silka-platform`.
 
+pub mod drag;
 pub mod event;
 pub mod focus;
 pub mod hit;
@@ -67,6 +72,7 @@ pub mod velocity;
 #[cfg(test)]
 mod tests;
 
+pub use drag::{DragAxis, DragCallback, DragGesture, DragNudge, DragPhase, DragSource, DragUpdate};
 pub use event::{
     Buttons, Event, FocusEvent, ImeEvent, KeyCode, KeyEvent, KeyState, Modifiers, NamedKey,
     PointerButton, PointerEvent, PointerId, PointerKind, PointerPhase, ScrollDelta, ScrollEvent,

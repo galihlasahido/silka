@@ -1,6 +1,6 @@
 //! Event routing: from one raw event to the nodes that handle it.
 //!
-//! Four rules determine everything in this module:
+//! Five rules determine everything in this module:
 //!
 //! 1. **Pointers follow geometry** — the route is the hit-test path
 //!    ([`super::hit_test`]), from the innermost node to the root, stopping at
@@ -15,6 +15,12 @@
 //! 4. **The IME belongs to whoever has focus** — preedit/commit are delivered
 //!    only to the focused node, and the `set_ime_cursor_area` request flows
 //!    back to the platform through [`Response`] (REKOMENDASI §3.8).
+//! 5. **Escape belongs to the gesture in flight** — while a pointer is
+//!    captured, `Esc` is offered to the capturing node *before* the focused
+//!    one. A drag is exactly what a user pressing Escape means to abandon, and
+//!    the node dragging is usually not the node holding focus. Escape alone
+//!    takes this route: handing the capture holder every key would let a
+//!    button held down swallow typing.
 //!
 //! A node may **not** change the tree structure from inside an event handler:
 //! all it can do is change itself and leave requests behind through
@@ -227,6 +233,13 @@ struct Sink {
     focus: Option<Option<NodeId>>,
     /// `Some(Some(n))` = capture the pointer for n, `Some(None)` = release it.
     capture: Option<Option<NodeId>>,
+    /// Which node asked to let go, when it did.
+    ///
+    /// Recorded separately from `capture` because a release can arrive through
+    /// an event that belongs to **no** pointer — `Esc` cancelling a drag (rule
+    /// 5) — and then the only way to know whose capture to drop is to know who
+    /// asked.
+    released: Option<NodeId>,
     ime: Option<(NodeId, Option<Rect>)>,
 }
 
@@ -367,6 +380,7 @@ impl EventCtx<'_> {
     /// Release the pointer capture.
     pub fn release_pointer(&mut self) {
         self.sink.capture = Some(None);
+        self.sink.released = Some(self.node);
     }
 
     /// Ask for the IME to be enabled with `area` as the candidate area (global
@@ -552,6 +566,20 @@ impl InputRouter {
     pub fn move_focus(&mut self, tree: &mut RenderTree, direction: FocusDirection) -> Response {
         let mut out = Response::default();
         let change = self.focus.move_focus(tree, direction);
+        self.terapkan_fokus(tree, change, &mut out);
+        out
+    }
+
+    /// Focus the first element in `scope`'s tab order.
+    ///
+    /// What "a panel became active" means for the keyboard: the caller names
+    /// the container, the tab order decides which element inside it actually
+    /// receives the keystrokes. `Response::focus` is empty when the scope holds
+    /// nothing focusable — the previous focus is then left alone rather than
+    /// silently dropped.
+    pub fn focus_first(&mut self, tree: &mut RenderTree, scope: NodeId) -> Response {
+        let mut out = Response::default();
+        let change = self.focus.focus_first(tree, scope);
         self.terapkan_fokus(tree, change, &mut out);
         out
     }
@@ -753,7 +781,7 @@ impl InputRouter {
                 local: Point::ZERO,
             })
             .collect();
-        let rute = if rute.is_empty() {
+        let mut rute = if rute.is_empty() {
             vec![HitEntry {
                 node: tree.root(),
                 local: Point::ZERO,
@@ -761,6 +789,24 @@ impl InputRouter {
         } else {
             rute
         };
+
+        // Rule 5: **Escape belongs to the gesture in flight.** A node holding a
+        // pointer capture is, by definition, in the middle of something the
+        // user may want to abandon — and it is usually not the node that holds
+        // keyboard focus (a divider being dragged, a card being swiped). So for
+        // Escape, and for Escape only, the capture path is tried first.
+        //
+        // Only Escape: giving the capture holder every key would mean a button
+        // held with the mouse could swallow typing, which is a different and
+        // much worse bug than the one being fixed.
+        if event.is_pressed() && event.code.is(NamedKey::Escape) {
+            for node in self.node_tertangkap(tree) {
+                let mut depan = jalur_ke_akar(tree, node);
+                depan.retain(|e| !rute.iter().any(|r| r.node == e.node));
+                depan.extend(std::mem::take(&mut rute));
+                rute = depan;
+            }
+        }
 
         let mut sink = Sink::default();
         out.handled = self.kirim(tree, &rute, &Event::Key(event.clone()), &mut sink);
@@ -812,6 +858,17 @@ impl InputRouter {
 
     /// Send an event along a route (innermost first) until something handles
     /// it.
+    /// Every node currently holding a pointer capture, ordered by pointer id so
+    /// two fingers cannot make the outcome depend on hash order.
+    fn node_tertangkap(&self, tree: &RenderTree) -> Vec<NodeId> {
+        let mut id: Vec<PointerId> = self.pointers.keys().copied().collect();
+        id.sort_by_key(|p| p.0);
+        id.into_iter()
+            .filter_map(|p| self.pointers.get(&p).and_then(|s| s.capture))
+            .filter(|n| tree.contains(*n))
+            .collect()
+    }
+
     fn kirim(
         &mut self,
         tree: &mut RenderTree,
@@ -884,8 +941,24 @@ impl InputRouter {
     ) {
         out.dirty |= sink.dirty;
 
-        if let (Some(capture), Some(id)) = (sink.capture, pointer) {
-            self.pointers.entry(id).or_default().capture = capture;
+        match (sink.capture, pointer) {
+            (Some(capture), Some(id)) => {
+                self.pointers.entry(id).or_default().capture = capture;
+            }
+            // A release with no pointer of its own: `Esc` ending a drag. Only
+            // the asking node's own captures are dropped — a window-level
+            // shortcut must not be able to prise a finger off somebody else's
+            // slider.
+            (Some(None), None) => {
+                if let Some(node) = sink.released {
+                    for state in self.pointers.values_mut() {
+                        if state.capture == Some(node) {
+                            state.capture = None;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
 
         if let Some(target) = sink.focus {
@@ -965,6 +1038,24 @@ impl InputRouter {
             }
         }
     }
+}
+
+/// The route from a node up to the root with no local coordinates at all —
+/// for keyboard events, which have no position.
+fn jalur_ke_akar(tree: &RenderTree, node: NodeId) -> Vec<HitEntry> {
+    let mut rute = Vec::new();
+    let mut cur = Some(node);
+    while let Some(id) = cur {
+        if !tree.contains(id) {
+            break;
+        }
+        rute.push(HitEntry {
+            node: id,
+            local: Point::ZERO,
+        });
+        cur = tree.parent(id);
+    }
+    rute
 }
 
 /// The route from a node up to the root, with local coordinates computed from

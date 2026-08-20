@@ -11,11 +11,13 @@ use std::time::Duration;
 
 use silka_paint::{Color, Command, Point, Quad, Scene, Size};
 
-use crate::input::{Event, PointerButton, PointerEvent, PointerPhase};
+use crate::input::{
+    Event, FocusDirection, KeyCode, KeyEvent, NamedKey, PointerButton, PointerEvent, PointerPhase,
+};
 use crate::scheduler::{Dirty, Wake};
 use crate::signals::{list, use_signal, Key, Signal};
 use crate::tree::TextDirection;
-use crate::view::{column, fixed, interactive, row};
+use crate::view::{column, fixed, interactive, row, View};
 
 use super::*;
 
@@ -808,4 +810,326 @@ fn komponen_yang_dibangun_ulang_sendiri_tetap_dapat_theme() {
     let laporan = ui.frame();
     assert_eq!(laporan.rebuilt, 1);
     assert_eq!(quads(ui.scene())[0].background, tema.color.surface_pressed);
+}
+
+// ---------------------------------------------------------------------------
+// Focus across the frame cycle
+// ---------------------------------------------------------------------------
+//
+// The two halves of the same promise: the frame **prunes** input state that
+// points at nodes its own diff has just buried, and the application can move
+// focus on purpose through a public door instead of not at all.
+
+/// An app whose single focusable child can be taken away by flipping a signal.
+///
+/// Deliberately built out of the root closure alone: the removal then happens
+/// in exactly the pass this test is about, the view diff.
+fn app_dengan_tombol_yang_bisa_hilang() -> (AppRuntime, Rc<Cell<Option<Signal<bool>>>>) {
+    let pegangan: Rc<Cell<Option<Signal<bool>>>> = Rc::default();
+    let simpan = pegangan.clone();
+    let ui = app(move |_cx| {
+        let tampil = use_signal(|| true);
+        simpan.set(Some(tampil));
+        let anak: Vec<View> = if tampil.get() {
+            vec![interactive(fixed(120.0, 40.0))
+                .focusable(true)
+                .label("Tutup")
+                .into()]
+        } else {
+            Vec::new()
+        };
+        column(anak).into()
+    })
+    .sized(320.0, 240.0);
+    (ui, pegangan)
+}
+
+/// The first focusable child of the root column.
+fn tombol(ui: &AppRuntime) -> crate::tree::NodeId {
+    let kolom = ui.tree().children(ui.tree().root())[0];
+    ui.tree().children(kolom)[0]
+}
+
+#[test]
+fn fokus_dipangkas_saat_node_pemegangnya_mati_di_rebuild() {
+    let (mut ui, pegangan) = app_dengan_tombol_yang_bisa_hilang();
+    ui.frame();
+
+    let mati = tombol(&ui);
+    ui.focus_node(Some(mati));
+    assert_eq!(ui.focused(), Some(mati), "fokus terpasang lebih dulu");
+
+    // Closing the panel takes the focused button with it.
+    pegangan.get().unwrap().set(false);
+    let laporan = ui.frame();
+    assert!(laporan.diff.removed > 0, "tombol benar-benar dibuang");
+    assert!(!ui.tree().contains(mati), "node-nya sudah tidak ada");
+
+    // The whole point: the router no longer points at the grave, and it said so
+    // in the frame report rather than silently.
+    assert_eq!(ui.focused(), None, "fokus tidak boleh menunjuk node mati");
+    assert_eq!(laporan.focus.lost, Some(mati));
+    assert_eq!(laporan.focus.gained, None);
+    // Pruning happens before this frame's layout and paint, so it does not cost
+    // an extra frame — "idle = zero work" still holds.
+    assert!(
+        ui.is_idle(),
+        "pemangkasan fokus tidak menjadwalkan frame lagi"
+    );
+
+    // And the next event finds a consistent router: routed to the root, no
+    // panic, nothing handled.
+    let hasil = ui.dispatch(&Event::Key(KeyEvent::pressed(
+        KeyCode::Named(NamedKey::Enter),
+        Duration::from_millis(10),
+    )));
+    assert!(!hasil.handled);
+    assert_eq!(ui.focused(), None);
+
+    let klik = PointerEvent::new(PointerPhase::Down, Point::new(10.0, 10.0), Duration::ZERO)
+        .button(PointerButton::Primary);
+    let hasil = ui.dispatch(&Event::Pointer(klik));
+    assert!(!hasil.handled, "tidak ada lagi yang bisa menerima klik itu");
+}
+
+#[test]
+fn aplikasi_bisa_memindahkan_fokus_dan_fokusnya_bertahan_melewati_rebuild() {
+    let pegangan: Rc<Cell<Option<Signal<i32>>>> = Rc::default();
+    let simpan = pegangan.clone();
+    let mut ui = app(move |_cx| {
+        let angka = use_signal(|| 0i32);
+        simpan.set(Some(angka));
+        column([
+            View::from(
+                interactive(fixed(120.0, 40.0 + angka.get() as f32))
+                    .focusable(true)
+                    .label("Pertama"),
+            ),
+            View::from(
+                interactive(fixed(120.0, 40.0))
+                    .focusable(true)
+                    .label("Kedua"),
+            ),
+        ])
+        .into()
+    })
+    .sized(320.0, 240.0);
+    ui.frame();
+
+    let kolom = ui.tree().children(ui.tree().root())[0];
+    let pertama = ui.tree().children(kolom)[0];
+    let kedua = ui.tree().children(kolom)[1];
+
+    // Tab, spoken by the application rather than by a key.
+    let hasil = ui.move_focus(FocusDirection::Next);
+    assert_eq!(hasil.focus.gained, Some(pertama));
+    assert_eq!(ui.focused(), Some(pertama));
+
+    // "Put the keyboard on this one" — the panel-activation move.
+    let hasil = ui.focus_node(Some(kedua));
+    assert_eq!(hasil.focus.lost, Some(pertama));
+    assert_eq!(ui.focused(), Some(kedua));
+    assert!(
+        !hasil.dirty.is_empty(),
+        "cincin fokus pindah, jadi ada yang harus digambar ulang"
+    );
+
+    // A rebuild that keeps the node keeps the focus with it — this is the case
+    // the prune must NOT touch.
+    pegangan.get().unwrap().set(3);
+    let laporan = ui.frame();
+    assert_eq!(laporan.rebuilt, 1);
+    assert!(!laporan.focus.changed(), "tidak ada yang perlu dipangkas");
+    assert_eq!(ui.focused(), Some(kedua), "fokus bertahan melewati rebuild");
+
+    // The keyboard really does arrive there: the focused node handles Space.
+    let hasil = ui.dispatch(&Event::Key(KeyEvent::pressed(
+        KeyCode::Named(NamedKey::Space),
+        Duration::from_millis(20),
+    )));
+    assert!(
+        hasil.handled,
+        "keyboard mengikuti fokus yang dipasang aplikasi"
+    );
+
+    // Wrapping around the end lands back on the first element.
+    ui.focus_node(None);
+    assert_eq!(ui.focused(), None);
+    ui.move_focus(FocusDirection::Previous);
+    assert_eq!(
+        ui.focused(),
+        Some(kedua),
+        "Shift+Tab dari nol = elemen terakhir"
+    );
+}
+
+#[test]
+fn focus_first_menaruh_keyboard_di_dalam_panel_yang_baru_aktif() {
+    let mut ui = app(|_cx| {
+        column([component("panel", |_| {
+            column([
+                View::from(fixed(120.0, 20.0).label("Judul")),
+                View::from(
+                    interactive(fixed(120.0, 40.0))
+                        .focusable(true)
+                        .label("Batal"),
+                ),
+                View::from(interactive(fixed(120.0, 40.0)).focusable(true).label("Ya")),
+            ])
+            .into()
+        })])
+        .into()
+    })
+    .sized(320.0, 240.0);
+    ui.frame();
+
+    // The application names the container it just opened; the tab order picks
+    // the element. Nothing here needs a NodeId of a widget.
+    // The anchor node of the component that was just opened.
+    let panel = ui.anchor(ui.root_scope()).expect("jangkar root");
+    let panel = ui.tree().children(ui.tree().children(panel)[0])[0];
+    let hasil = ui.focus_first(panel);
+
+    let isi = ui.tree().children(panel)[0];
+    let batal = ui.tree().children(isi)[1];
+    assert_eq!(
+        hasil.focus.gained,
+        Some(batal),
+        "elemen pertama yang fokusabel"
+    );
+    assert_eq!(ui.focused(), Some(batal));
+
+    // A container with nothing focusable in it leaves focus where it was — it
+    // does not silently drop the keyboard on the floor.
+    let judul = ui.tree().children(isi)[0];
+    let hasil = ui.focus_first(judul);
+    assert!(!hasil.focus.changed());
+    assert_eq!(ui.focused(), Some(batal));
+}
+
+// ---------------------------------------------------------------------------
+// The IME session of a node that died
+// ---------------------------------------------------------------------------
+
+use crate::access::{AccessNode, AccessRole};
+use crate::input::{EventCtx, FocusEvent, FocusPolicy, ImeRequest};
+use crate::tree::{BoxConstraints, LayoutCtx, RenderNode};
+use crate::view::ViewNode;
+
+/// A minimal text field: it owns an IME session for exactly as long as it has
+/// focus.
+///
+/// The real one lives in `silka-widgets`, which this crate cannot depend on —
+/// and the rule being proven here belongs to the frame cycle, not to the
+/// widget.
+#[derive(Debug, Default)]
+struct KolomTeksUji;
+
+impl RenderNode for KolomTeksUji {
+    fn layout(&mut self, _ctx: &mut LayoutCtx<'_>, constraints: BoxConstraints) -> Size {
+        constraints.constrain(Size::new(160.0, 24.0))
+    }
+
+    fn access(&self, node: &mut AccessNode) {
+        node.role = AccessRole::TextInput;
+    }
+
+    fn focus_policy(&self) -> FocusPolicy {
+        FocusPolicy::FOCUSABLE
+    }
+
+    fn event(&mut self, ctx: &mut EventCtx<'_>, event: &Event) {
+        match event {
+            Event::Focus(FocusEvent::Gained) => {
+                let b = ctx.bounds();
+                ctx.request_ime(silka_paint::Rect::new(b.origin.x, b.origin.y, 1.0, 18.0));
+            }
+            Event::Focus(FocusEvent::Lost) => ctx.disable_ime(),
+            _ => {}
+        }
+    }
+}
+
+struct PropKolomTeks;
+
+impl ViewNode for PropKolomTeks {
+    fn build(&self) -> Box<dyn RenderNode> {
+        Box::new(KolomTeksUji)
+    }
+
+    fn update(&self, _node: &mut dyn RenderNode) -> Dirty {
+        Dirty::NONE
+    }
+}
+
+#[test]
+fn sesi_ime_ditutup_oleh_frame_yang_membuang_kolomnya() {
+    let pegangan: Rc<Cell<Option<Signal<bool>>>> = Rc::default();
+    let simpan = pegangan.clone();
+    let mut ui = app(move |_cx| {
+        let tampil = use_signal(|| true);
+        simpan.set(Some(tampil));
+        let anak: Vec<View> = if tampil.get() {
+            vec![View::new(PropKolomTeks)]
+        } else {
+            Vec::new()
+        };
+        column(anak).into()
+    })
+    .sized(320.0, 240.0);
+    ui.frame();
+
+    let kolom = ui.tree().children(ui.tree().root())[0];
+    let field = ui.tree().children(kolom)[0];
+    let hasil = ui.focus_node(Some(field));
+    assert!(
+        matches!(hasil.ime, Some(ImeRequest::Enable { .. })),
+        "fokus menyalakan IME"
+    );
+
+    // The field is removed while it still owns the IME session: there is no
+    // event left to carry the "turn it off" back to the shell, so the frame
+    // itself has to.
+    pegangan.get().unwrap().set(false);
+    let laporan = ui.frame();
+    assert_eq!(laporan.ime, Some(ImeRequest::Disable));
+    assert_eq!(ui.focused(), None);
+}
+
+/// The other half of the prune: the node is still **alive**, it merely stopped
+/// being focusable (a button that just got disabled). It has to be told, and
+/// the frame it asks for on the way out has to be scheduled — otherwise its
+/// focus ring freezes half-drawn until the next click.
+#[test]
+fn tombol_yang_berhenti_fokusabel_kehilangan_fokus_dan_cincinnya_keluar() {
+    let pegangan: Rc<Cell<Option<Signal<bool>>>> = Rc::default();
+    let simpan = pegangan.clone();
+    let mut ui = app(move |_cx| {
+        let aktif = use_signal(|| true);
+        simpan.set(Some(aktif));
+        column([interactive(fixed(120.0, 40.0))
+            .focusable(aktif.get())
+            .label("Simpan")])
+        .into()
+    })
+    .sized(320.0, 240.0);
+    ui.frame();
+
+    let node = tombol(&ui);
+    ui.focus_node(Some(node));
+    ui.frame();
+    while !ui.is_idle() {
+        ui.advance_animations();
+        ui.frame();
+    }
+
+    pegangan.get().unwrap().set(false);
+    let laporan = ui.frame();
+    assert!(ui.tree().contains(node), "node-nya masih hidup");
+    assert_eq!(laporan.focus.lost, Some(node), "tapi tidak lagi fokusabel");
+    assert_eq!(ui.focused(), None);
+    assert!(
+        !ui.is_idle(),
+        "cincin fokus keluar dengan spring, jadi frame berikutnya harus terjadwal"
+    );
 }

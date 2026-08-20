@@ -52,6 +52,9 @@
 mod arena;
 mod boxes;
 mod constraints;
+mod draggable;
+#[cfg(test)]
+mod draggable_tests;
 mod interactive;
 #[cfg(test)]
 mod interactive_tests;
@@ -72,6 +75,7 @@ pub use crate::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
 pub use arena::{AsAny, LayoutCtx, NodeId, RenderNode, RenderTree, TextDirection, TreeId};
 pub use boxes::{AlignBox, Alignment, AspectRatioBox, StackBox, StackFit};
 pub use constraints::BoxConstraints;
+pub use draggable::DragArea;
 pub use interactive::{FocusRing, Interactive, StateStyle};
 pub use paint::{Decoration, PaintCtx};
 pub use primitives::{Axis, ConstrainedBox, FixedBox, MeasuredBox, PaddingBox, Viewport};

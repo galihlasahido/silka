@@ -13,7 +13,8 @@ use std::time::Duration;
 
 use silka_core::animation::{Motion, Tick};
 use silka_core::input::{
-    Event, FocusDirection, InputRouter, KeyCode, KeyEvent, PointerEvent, PointerPhase,
+    Event, FocusDirection, InputRouter, KeyCode, KeyEvent, PointerButton, PointerEvent,
+    PointerPhase,
 };
 use silka_core::tree::{NodeId, RenderTree};
 use silka_core::view::{reconcile, View};

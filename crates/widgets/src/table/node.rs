@@ -28,8 +28,9 @@ use std::rc::Rc;
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
 use silka_core::animation::{Spring, SpringValue, Tick};
 use silka_core::input::{
-    CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyCode, KeyEvent,
-    Modifiers, NamedKey, PointerButton, PointerEvent, PointerPhase,
+    CursorIcon, DragAxis, DragGesture, DragPhase, DragUpdate, Event, EventCtx, FocusEvent,
+    FocusPolicy, HitBehavior, KeyCode, KeyEvent, Modifiers, NamedKey, PointerButton, PointerEvent,
+    PointerPhase,
 };
 use silka_core::tree::{BoxConstraints, Decoration, FocusRing, LayoutCtx, PaintCtx, RenderNode};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
@@ -1017,8 +1018,9 @@ pub struct TableHeaderBox {
     /// Column boundary currently highlighted by the pointer (resize handle).
     handle: Option<usize>,
     pressed: Option<usize>,
-    /// The initial press point, used to tell a sort click from a reorder drag.
-    press_x: f32,
+    /// The press: capture, total travel from the press point, and `Esc` — one
+    /// recogniser for a header that has three different jobs (§3.5).
+    gesture: DragGesture,
     drag: Option<Drag>,
     hover_alpha: SpringValue<f32>,
     hover_x: SpringValue<f32>,
@@ -1068,7 +1070,7 @@ impl TableHeaderBox {
             hovered: None,
             handle: None,
             pressed: None,
-            press_x: 0.0,
+            gesture: DragGesture::new().axis(DragAxis::Horizontal),
             drag: None,
             hover_alpha: sorotan_spring(props.spring),
             hover_x: sorotan_spring(props.spring),
@@ -1184,24 +1186,14 @@ impl TableHeaderBox {
     fn penunjuk(&mut self, ctx: &mut EventCtx<'_>, p: &PointerEvent) {
         let widths = self.column_widths();
         let x = self.reading_x(ctx.local().x);
+        if self.gesture.is_active() || p.phase != PointerPhase::Down {
+            if let Some(u) = self.gesture.pointer(ctx, p) {
+                self.seret_fase(ctx, &u, &widths);
+                return;
+            }
+        }
         match p.phase {
             PointerPhase::Enter | PointerPhase::Move => {
-                if let Some(drag) = self.drag {
-                    self.seret(ctx, drag, &widths, x);
-                    return;
-                }
-                if let Some(k) = self.pressed {
-                    // Reorder threshold: below it this is still a candidate
-                    // sort click.
-                    if (ctx.local().x - self.press_x).abs() > REORDER_THRESHOLD
-                        && self.columns.get(k).is_some_and(|c| c.movable)
-                    {
-                        self.drag = Some(Drag::Reorder { from: k, to: k });
-                        self.drop_x.jump_to(self.column_x(&widths, k));
-                        ctx.request_paint();
-                    }
-                    return;
-                }
                 let pegangan = handle_at(&self.columns, &widths, x);
                 let kolom = column_at(&widths, x);
                 if pegangan != self.handle {
@@ -1230,58 +1222,64 @@ impl TableHeaderBox {
                 if let Some(k) = handle_at(&self.columns, &widths, x) {
                     self.drag = Some(Drag::Resize { boundary: k });
                     self.handle = Some(k);
-                    ctx.capture_pointer();
-                    ctx.request_paint();
-                    ctx.handled();
+                } else if let Some(k) = column_at(&widths, x) {
+                    self.pressed = Some(k);
+                } else {
                     return;
                 }
-                if let Some(k) = column_at(&widths, x) {
-                    self.pressed = Some(k);
-                    self.press_x = ctx.local().x;
-                    ctx.capture_pointer();
-                    ctx.request_paint();
-                    ctx.handled();
-                }
-            }
-            PointerPhase::Up if p.button == Some(PointerButton::Primary) => {
-                let drag = self.drag.take();
-                let ditekan = self.pressed.take();
-                ctx.release_pointer();
-                match drag {
-                    Some(Drag::Reorder { from, to }) => {
-                        if from != to {
-                            self.commit_reorder(from, to);
-                        }
-                        ctx.request_paint();
-                        ctx.handled();
-                    }
-                    Some(Drag::Resize { .. }) => {
-                        ctx.request_paint();
-                        ctx.handled();
-                    }
-                    // No drag at all: this is the sort click.
-                    None => {
-                        if let Some(k) = ditekan {
-                            if column_at(&widths, x) == Some(k) {
-                                self.urutkan(k);
-                            }
-                            ctx.request_paint();
-                            ctx.handled();
-                        }
-                    }
-                }
-            }
-            PointerPhase::Cancel => {
-                // Both `take` calls must still run — an OS cancellation means
-                // the drag **and** the press are both released, not one of
-                // them.
-                let seret = self.drag.take().is_some();
-                let tekan = self.pressed.take().is_some();
-                if seret || tekan {
-                    ctx.request_paint();
-                }
+                self.gesture.pointer(ctx, p);
+                ctx.request_paint();
             }
             _ => {}
+        }
+    }
+
+    /// One phase of the press this header already owns.
+    fn seret_fase(&mut self, ctx: &mut EventCtx<'_>, u: &DragUpdate, widths: &[f32]) {
+        let x = self.reading_x(u.local.x);
+        match (u.phase, self.drag) {
+            (DragPhase::Down, _) => {}
+            (DragPhase::Start | DragPhase::Update, Some(drag)) => self.seret(ctx, drag, widths, x),
+            // Reorder slop: below it the press is still a candidate sort
+            // click, which is why the header cannot just set a threshold on
+            // the recogniser and be done with it.
+            (DragPhase::Start | DragPhase::Update, None) => {
+                let k = self.pressed.filter(|k| {
+                    u.delta.x.abs() > REORDER_THRESHOLD
+                        && self.columns.get(*k).is_some_and(|c| c.movable)
+                });
+                if let Some(k) = k {
+                    self.drag = Some(Drag::Reorder { from: k, to: k });
+                    self.drop_x.jump_to(self.column_x(widths, k));
+                    ctx.request_paint();
+                }
+            }
+            (DragPhase::End, Some(Drag::Reorder { from, to })) => {
+                self.pressed = None;
+                self.drag = None;
+                if from != to {
+                    self.commit_reorder(from, to);
+                }
+                ctx.request_paint();
+            }
+            // No reorder in flight: a release is either the end of a resize or
+            // — if nothing was ever dragged — the sort click.
+            (DragPhase::End, _) => {
+                let ditekan = self.pressed.take();
+                if self.drag.take().is_none() && ditekan == column_at(widths, x) {
+                    if let Some(k) = ditekan {
+                        self.urutkan(k);
+                    }
+                }
+                ctx.request_paint();
+            }
+            // A cancellation releases the drag **and** the press, not one.
+            (DragPhase::Cancel, _) => {
+                let seret = self.drag.take().is_some();
+                if seret || self.pressed.take().is_some() {
+                    ctx.request_paint();
+                }
+            }
         }
     }
 

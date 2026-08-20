@@ -18,7 +18,7 @@ use silka_theme::Theme;
 
 use crate::access::AccessTree;
 use crate::animation::{AnimationDriver, Motion, Tick};
-use crate::input::{Event, InputRouter, Response};
+use crate::input::{Event, FocusChange, FocusDirection, ImeRequest, InputRouter, Response};
 use crate::scheduler::{Dirty, FrameScheduler, FrameTiming, Wake};
 use crate::signals::{current_scope, Runtime, ScopeId, Signal};
 use crate::task::{Cancel, TaskHandle, Tasks};
@@ -412,6 +412,20 @@ pub struct FrameReport {
     pub size: Size,
     /// Frame time measurements.
     pub timing: FrameTiming,
+    /// The focus this frame **took away** because the node holding it died in
+    /// the diff (or stopped being focusable).
+    ///
+    /// Normally [`FocusChange::NONE`]: focus only changes by itself when the
+    /// tree changed underneath it.
+    pub focus: FocusChange,
+    /// An IME request the frame produced — always
+    /// [`ImeRequest::Disable`](crate::input::ImeRequest::Disable), for the case
+    /// where the text field owning the IME session has just been removed.
+    ///
+    /// The shell must apply it exactly like the one coming out of
+    /// [`AppRuntime::dispatch`]; leaving it unapplied is what makes a CJK
+    /// candidate window hang over a panel that no longer exists.
+    pub ime: Option<ImeRequest>,
 }
 
 impl FrameReport {
@@ -874,6 +888,86 @@ impl AppRuntime {
         hasil
     }
 
+    // -- focus from the application -------------------------------------------
+    //
+    // Focus is the one piece of input state an application legitimately owns:
+    // "this dialog just opened, the keyboard belongs inside it". These three
+    // methods are the whole vocabulary. There is deliberately **no**
+    // `router_mut()`: a `&mut InputRouter` would also let application code
+    // forge pointer events, hand out captures nobody releases, and take the
+    // tree out of step with the router — none of which any application needs,
+    // and all of which would be routed around `frame`'s reconciliation.
+
+    /// The node that currently holds keyboard focus.
+    pub fn focused(&self) -> Option<NodeId> {
+        self.router.focus().focused()
+    }
+
+    /// Give keyboard focus to `node`, or drop focus entirely with `None`.
+    ///
+    /// A node that is not focusable is refused (focus stays where it was), so
+    /// this cannot park the keyboard on a decorative box. Node ids come from
+    /// the tree the last frame produced — [`AppRuntime::anchor`] for a
+    /// component, [`RenderTree::children`](crate::tree::RenderTree::children)
+    /// from there.
+    ///
+    /// ```
+    /// use silka_core::app::app;
+    /// use silka_core::view::{column, fixed, interactive};
+    ///
+    /// let mut ui = app(|_cx| {
+    ///     column([interactive(fixed(120.0, 40.0)).focusable(true).label("Save")]).into()
+    /// })
+    /// .sized(320.0, 240.0);
+    /// ui.frame();
+    ///
+    /// let kolom = ui.tree().children(ui.tree().root())[0];
+    /// let simpan = ui.tree().children(kolom)[0];
+    /// ui.focus_node(Some(simpan));
+    /// assert_eq!(ui.focused(), Some(simpan));
+    ///
+    /// // Focus survives a rebuild that keeps the node…
+    /// ui.frame();
+    /// assert_eq!(ui.focused(), Some(simpan));
+    /// // …and dropping it is just as explicit.
+    /// ui.focus_node(None);
+    /// assert_eq!(ui.focused(), None);
+    /// ```
+    pub fn focus_node(&mut self, node: Option<NodeId>) -> Response {
+        let hasil = self.router.focus_node(&mut self.tree, node);
+        self.selesaikan_fokus(hasil)
+    }
+
+    /// Move focus one step — a Tab / Shift+Tab the application triggered
+    /// itself.
+    pub fn move_focus(&mut self, direction: FocusDirection) -> Response {
+        let hasil = self.router.move_focus(&mut self.tree, direction);
+        self.selesaikan_fokus(hasil)
+    }
+
+    /// Put the keyboard on the first focusable element inside `scope`.
+    ///
+    /// This is the "a panel became active" move (§3.8): the application names
+    /// the container — usually [`AppRuntime::anchor`] of the component it just
+    /// opened — and the tab order picks the element.
+    pub fn focus_first(&mut self, scope: NodeId) -> Response {
+        let hasil = self.router.focus_first(&mut self.tree, scope);
+        self.selesaikan_fokus(hasil)
+    }
+
+    /// Shared tail of the three focus methods: exactly what
+    /// [`AppRuntime::dispatch`] does with a routing result, so a focus move
+    /// made from the application schedules its frame the same way one made by a
+    /// Tab key does.
+    fn selesaikan_fokus(&mut self, mut hasil: Response) -> Response {
+        hasil.dirty |= self.tree.take_dirty();
+        if !hasil.dirty.is_empty() {
+            self.request(hasil.dirty);
+        }
+        hasil.dirty |= self.pending();
+        hasil
+    }
+
     // -- one frame ------------------------------------------------------------
 
     /// Run one full turn and return its summary.
@@ -933,6 +1027,51 @@ impl AppRuntime {
             self.kumpulkan_sampah();
         }
 
+        // 2b. Reconcile the input state with the tree that just came out of the
+        //     diff.
+        //
+        // Here and nowhere else: the graves have been dug (the diff removed the
+        // nodes and `kumpulkan_sampah` dropped their scopes) and no event can
+        // arrive before the frame returns, so this is the last moment at which
+        // focus, pointer capture, hover and the IME session can still be
+        // corrected **before** the next event is routed. Closing a panel whose
+        // button had focus used to leave the router pointing at a dead node,
+        // which leaves the keyboard dead until the user clicks something.
+        //
+        // Before layout and paint on purpose: a node told `Focus::Lost` drops
+        // its focus ring in this frame's scene rather than the next one's.
+        let fokus = self.router.sync(&mut self.tree);
+        // Which of those reasons still need a frame after this one?
+        //
+        // A node that is **still alive** — one that merely stopped being
+        // focusable, a button that just got disabled — received `Focus::Lost`
+        // and re-aimed its springs on the way out (the focus ring drawing
+        // itself off, `Interactive::berubah`). One requested frame is what
+        // starts that chain, so everything it asked for is passed on as is.
+        //
+        // A node that is **dead** handled nothing: the only reason present is
+        // the router's own `Dirty::PAINT` bookkeeping, and the paint pass a few
+        // lines below has already served it. Forwarding that would schedule a
+        // second, empty frame after every prune and quietly break "idle = zero
+        // work" — so it is dropped, and any genuinely unserved reason is not.
+        if fokus.focus.lost.is_some_and(|n| self.tree.contains(n)) {
+            if !fokus.dirty.is_empty() {
+                self.request(fokus.dirty);
+            }
+        } else {
+            for alasan in [
+                Dirty::LAYOUT,
+                Dirty::THEME,
+                Dirty::SURFACE,
+                Dirty::ANIMATION,
+                Dirty::EXTERNAL,
+            ] {
+                if fokus.dirty.contains(alasan) {
+                    self.request(alasan);
+                }
+            }
+        }
+
         // 3. Layout: full when the constraints changed or the root is dirty,
         //    otherwise only the dirty boundaries.
         let relayouts = self.tree.pending_boundaries();
@@ -971,6 +1110,8 @@ impl AppRuntime {
             relayouts,
             size,
             timing,
+            focus: fokus.focus,
+            ime: fokus.ime,
         }
     }
 

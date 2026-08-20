@@ -15,7 +15,7 @@ use silka_core::input::{
     PointerPhase,
 };
 use silka_core::signals::Signal;
-use silka_core::tree::{NodeId, RenderTree};
+use silka_core::tree::{DragArea, NodeId, RenderTree};
 use silka_paint::{Point, Rect, Size};
 use silka_theme::{Appearance, Theme};
 use silka_widgets::{install_fonts, Fonts};
@@ -28,6 +28,21 @@ use crate::frame::{
 use crate::model::{Edge, FrameState, Mdi, MIN_FRAME};
 
 const VIEWPORT: Size = Size::new(1_100.0, 760.0);
+
+/// True when any drag surface in `tree` still holds a pointer.
+///
+/// Proves a release really ended the gesture instead of leaving a handle
+/// latched to a pointer that is no longer down.
+fn any_dragging(tree: &RenderTree) -> bool {
+    fn walk(tree: &RenderTree, id: NodeId) -> bool {
+        let held = tree
+            .render(id)
+            .and_then(|n| n.downcast_ref::<DragArea>())
+            .is_some_and(|h| h.is_active());
+        held || tree.children(id).iter().any(|c| walk(tree, *c))
+    }
+    walk(tree, tree.root())
+}
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -301,7 +316,7 @@ fn a_drag_that_is_released_lets_go() {
     let (mut ui, state) = ui();
     let bar = box_of(&ui, &titlebar_label("Notes")).center();
     drag(&mut ui, state, bar, Point::new(30.0, 30.0), 30);
-    assert!(!crate::gesture::any_dragging(ui.tree()));
+    assert!(!any_dragging(ui.tree()));
     assert_eq!(state.peek_with(|m| m.drag()), None);
 }
 

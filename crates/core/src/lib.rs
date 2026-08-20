@@ -290,6 +290,31 @@
 //! still animates, and one that stops interacting still comes to a complete
 //! stop ([`app::AppRuntime::is_idle`]).
 //!
+//! **Milestone `gesture-drag`** — [`input::DragGesture`]: the gesture primitive
+//! `interactive()` stopped short of. `interactive()` turns a press into an
+//! *activation*; this turns one into a **(phase, total delta, velocity)**
+//! report. Before it, every widget that drags — the switch thumb, the slider,
+//! the split-view divider, the table's column resizer, the toast's swipe —
+//! rewrote pointer down/move/up, the capture, and the velocity tracking inside
+//! its own render node, and an application that wanted to drag something the
+//! catalogue never anticipated had to write a whole [`tree::RenderNode`] for it.
+//!
+//! The five decisions are made once: capture on press so a fast drag cannot
+//! come loose; a delta measured from the **press point** rather than from the
+//! previous event, so a value that gets clamped recovers instead of drifting;
+//! velocity from the input layer's own [`input::VelocityTracker`] for the
+//! fling → spring handoff (§3.5); `Esc` and OS cancellation both arriving as
+//! [`input::DragPhase::Cancel`] rather than as a release; and an axis filter on
+//! delta *and* velocity. Two shapes use it — a recogniser held as node state,
+//! and [`view::draggable`], a surface that draws nothing and reports to a
+//! callback. The arrow keys perform the same gesture, because
+//! `KOMPONEN.md` grants no gesture a mouse-only exemption.
+//!
+//! It also adds the fifth routing rule ([`input::InputRouter`]): while a
+//! pointer is captured, `Esc` reaches the capturing node before the focused
+//! one. A drag is what a user pressing Escape means to abandon, and the node
+//! being dragged is usually not the node holding focus.
+//!
 //! What is still missing, and what comes next: **incremental** repaint. Layers
 //! exist all the way down — [`tree::PaintCtx::with_layer`],
 //! [`silka_paint::Command::PushLayer`], and an offscreen target in the renderer

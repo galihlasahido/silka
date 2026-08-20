@@ -62,8 +62,8 @@ use silka_core::access::{
 };
 use silka_core::animation::{Spring, SpringValue, Tick};
 use silka_core::input::{
-    CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, HitShape, KeyCode, NamedKey,
-    PointerButton, PointerPhase,
+    CursorIcon, DragAxis, DragGesture, DragPhase, Event, EventCtx, FocusEvent, FocusPolicy,
+    HitBehavior, HitShape, KeyCode, NamedKey, PointerPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
@@ -512,6 +512,9 @@ pub struct Slider {
 
     hovered: bool,
     hover_thumb: usize,
+    /// Capture, total travel and the tap/drag question all come from the
+    /// shared recogniser (§3.5); this only remembers **which** thumb.
+    drag: DragGesture,
     dragging: Option<usize>,
     /// The offset between the press point and the thumb centre when a drag began.
     grab: f32,
@@ -561,6 +564,9 @@ impl Slider {
             ],
             hovered: false,
             hover_thumb: 0,
+            drag: DragGesture::new()
+                .axis(DragAxis::Horizontal)
+                .focus_on_press(true),
             dragging: None,
             grab: 0.0,
             focused: false,
@@ -824,6 +830,13 @@ impl Slider {
     }
 
     /// The value requested by an x coordinate (grab offset already applied).
+    /// Put thumb `i` at `v`, telling the application only when it really moved.
+    fn pindahkan(&mut self, i: usize, v: f32) {
+        if self.set_thumb(i, v) {
+            self.beritahu();
+        }
+    }
+
     fn nilai_di(&self, g: &SliderGeometry, x: f32) -> f32 {
         let t = g.t_at(x - self.grab, self.direction);
         denormalize(t, self.min, self.max)
@@ -983,24 +996,11 @@ impl RenderNode for Slider {
         let g = SliderGeometry::new(ctx.size(), &self.style);
         match event {
             Event::Pointer(p) => match p.phase {
-                PointerPhase::Enter | PointerPhase::Move => {
-                    let x = ctx.local().x;
-                    if p.phase == PointerPhase::Enter {
-                        self.hovered = true;
-                    }
-                    match self.dragging {
-                        Some(i) => {
-                            let v = self.nilai_di(&g, x);
-                            if self.set_thumb(i, v) {
-                                self.beritahu();
-                            }
-                            ctx.handled();
-                        }
-                        None => {
-                            self.hovered = true;
-                            self.hover_thumb = self.thumb_terdekat(&g, x);
-                        }
-                    }
+                // Hover only — a pointer that is holding a thumb goes through
+                // the recogniser below, which reports where it is.
+                PointerPhase::Enter | PointerPhase::Move if !self.drag.is_active() => {
+                    self.hovered = true;
+                    self.hover_thumb = self.thumb_terdekat(&g, ctx.local().x);
                     self.perbarui_lift();
                     ctx.request_paint();
                     if self.is_animating() {
@@ -1015,60 +1015,48 @@ impl RenderNode for Slider {
                         ctx.request_animation();
                     }
                 }
-                PointerPhase::Down if p.button == Some(PointerButton::Primary) => {
-                    let x = ctx.local().x;
-                    let i = self.thumb_terdekat(&g, x);
-                    self.active = i;
-                    self.hover_thumb = i;
-                    self.hovered = true;
-                    // Pressing **on the thumb** means grabbing it: the value
-                    // does not jump, the finger merely drags from that point.
-                    // Pressing the track means "bring the thumb here".
-                    let thumb = self.thumb_rect(&g, i);
-                    self.grab = if thumb.contains(ctx.local()) {
-                        x - thumb.center().x
-                    } else {
-                        0.0
+                _ => {
+                    let Some(u) = self.drag.pointer(ctx, p) else {
+                        return;
                     };
-                    self.dragging = Some(i);
-                    let v = self.nilai_di(&g, x);
-                    if self.set_thumb(i, v) {
-                        self.beritahu();
+                    if u.phase == DragPhase::Down {
+                        let i = self.thumb_terdekat(&g, u.local.x);
+                        self.active = i;
+                        self.hover_thumb = i;
+                        self.hovered = true;
+                        self.dragging = Some(i);
+                        // Pressing **on the thumb** means grabbing it: the
+                        // value does not jump, the finger merely drags from
+                        // that point. Pressing the track means "bring the thumb
+                        // here".
+                        let thumb = self.thumb_rect(&g, i);
+                        self.grab = (thumb.contains(u.local))
+                            .then(|| u.local.x - thumb.center().x)
+                            .unwrap_or(0.0);
                     }
-                    self.perbarui_lift();
-                    ctx.capture_pointer();
-                    ctx.request_focus();
-                    ctx.request_paint();
-                    ctx.request_animation();
-                    ctx.handled();
-                }
-                PointerPhase::Up if p.button == Some(PointerButton::Primary) => {
-                    if let Some(i) = self.dragging.take() {
-                        let v = self.nilai_di(&g, ctx.local().x);
-                        let berubah = self.set_thumb(i, v);
-                        // Release = the finger no longer holds it: the thumb
-                        // position follows the value on a spring (snap to step).
-                        self.retarget(i, normalize(self.values[i], self.min, self.max));
-                        if berubah {
-                            self.beritahu();
+                    if let Some(i) = self.dragging {
+                        if u.phase != DragPhase::Cancel {
+                            self.pindahkan(i, self.nilai_di(&g, u.local.x));
+                        }
+                        if u.phase.is_final() {
+                            // Let go = the finger no longer holds it: the thumb
+                            // position follows the value on a spring, which is
+                            // what snaps it to the step.
+                            self.retarget(i, normalize(self.values[i], self.min, self.max));
+                            self.dragging = None;
+                            self.grab = 0.0;
                         }
                     }
-                    self.grab = 0.0;
                     self.perbarui_lift();
-                    ctx.release_pointer();
                     ctx.request_paint();
-                    ctx.request_animation();
-                    ctx.handled();
-                }
-                PointerPhase::Cancel => {
-                    if let Some(i) = self.dragging.take() {
-                        self.retarget(i, normalize(self.values[i], self.min, self.max));
+                    // A finger sliding along a settled thumb must not keep the
+                    // GPU awake for nothing; a press or a release retargets the
+                    // lift and always does (§3.5).
+                    let batas = !matches!(u.phase, DragPhase::Start | DragPhase::Update);
+                    if batas || self.is_animating() {
+                        ctx.request_animation();
                     }
-                    self.grab = 0.0;
-                    self.perbarui_lift();
-                    ctx.request_paint();
                 }
-                _ => {}
             },
 
             Event::Key(k) if k.is_pressed() && k.modifiers.is_empty() => {
@@ -1114,6 +1102,7 @@ impl RenderNode for Slider {
                 self.focused = *f == FocusEvent::Gained;
                 if !self.focused {
                     self.dragging = None;
+                    self.drag.reset();
                     self.perbarui_lift();
                 }
                 ctx.request_paint();
@@ -1563,7 +1552,9 @@ mod tests {
     use super::*;
     use crate::motion::{advance, is_animating, settle};
     use silka_core::animation::Motion;
-    use silka_core::input::{Event, InputRouter, KeyEvent, Modifiers, PointerEvent, PointerPhase};
+    use silka_core::input::{
+        Event, InputRouter, KeyEvent, Modifiers, PointerButton, PointerEvent, PointerPhase,
+    };
     use silka_core::view::{reconcile, View};
     use silka_paint::{Command, Point, Scene};
     use silka_theme::{Appearance, Preset};

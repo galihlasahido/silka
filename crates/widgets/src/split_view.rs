@@ -63,8 +63,8 @@
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick, Tolerance};
 use silka_core::input::{
-    CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyCode, NamedKey,
-    PointerButton, PointerPhase,
+    CursorIcon, DragAxis, DragGesture, DragPhase, Event, EventCtx, FocusEvent, FocusPolicy,
+    HitBehavior, KeyCode, NamedKey, PointerButton, PointerPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
@@ -304,12 +304,12 @@ pub struct SplitHandleBox {
 
     hovered: bool,
     focused: bool,
-    dragging: bool,
+    /// The gesture: capture, total delta along the axis, `Esc`, and the tap /
+    /// drag distinction — none of it written here (§3.5).
+    drag: DragGesture,
     /// The proportion when the drag started — a drag is relative, so that a
     /// clamped divider does not jump when the pointer comes back into range.
     drag_from: f32,
-    /// Where along the axis the drag started, in global points.
-    drag_origin: f32,
     tint: SpringValue<Color>,
     driven: bool,
 }
@@ -327,7 +327,7 @@ impl SplitHandleBox {
 
     /// A drag is in flight.
     pub fn is_dragging(&self) -> bool {
-        self.dragging
+        self.drag.is_active()
     }
 
     /// The pointer is over the grab band.
@@ -358,7 +358,7 @@ impl SplitHandleBox {
     }
 
     fn target_tint(&self) -> Color {
-        if self.dragging {
+        if self.is_dragging() {
             self.style.pressed
         } else if self.hovered {
             self.style.hover
@@ -421,6 +421,14 @@ impl SplitHandleBox {
         true
     }
 
+    /// The component of `p` that lies along this divider's axis, signed.
+    fn axis_of(&self, p: silka_paint::Point) -> f32 {
+        match self.axis {
+            Axis::Horizontal => p.x,
+            Axis::Vertical => p.y,
+        }
+    }
+
     /// Move the divider by `points` along the axis.
     ///
     /// Without a published track length this does nothing rather than dividing
@@ -431,17 +439,6 @@ impl SplitHandleBox {
             return false;
         }
         self.request(self.fraction + points / self.length)
-    }
-
-    fn along(&self, ctx: &EventCtx<'_>) -> f32 {
-        // Global rather than local: the handle moves while it is being dragged,
-        // so a local coordinate would chase its own tail.
-        let b = ctx.bounds();
-        let l = ctx.local();
-        match self.axis {
-            Axis::Horizontal => b.min_x() + l.x,
-            Axis::Vertical => b.min_y() + l.y,
-        }
     }
 
     /// The drawn line's rect inside `box_` — a pure function.
@@ -503,7 +500,7 @@ impl RenderNode for SplitHandleBox {
         }
         // The grip only appears once the pointer is on the divider: an idle
         // window should read as two panes, not as a control between them.
-        if (self.hovered || self.dragging)
+        if (self.hovered || self.is_dragging())
             && self.style.grip.a > 0.0
             && self.style.grip_thickness > 0.0
         {
@@ -601,63 +598,48 @@ impl RenderNode for SplitHandleBox {
                     ctx.request_paint();
                     ctx.request_animation();
                 }
-                PointerPhase::Leave if self.hovered && !self.dragging => {
+                PointerPhase::Leave if self.hovered && !self.is_dragging() => {
                     self.hovered = false;
                     self.arahkan();
                     ctx.request_paint();
                     ctx.request_animation();
                 }
-                PointerPhase::Down if p.button == Some(PointerButton::Primary) => {
-                    // A double-click on a divider collapses the pane — the
-                    // AppKit habit, and the reason `click_count` exists.
-                    if p.click_count >= 2 {
-                        ctx.handled();
-                        if let Some(cb) = self.on_toggle.clone() {
-                            cb.call();
+                // A double-click on a divider collapses the pane — the AppKit
+                // habit. The press is simply never handed to the recogniser,
+                // which is how a node with two jobs keeps them apart.
+                PointerPhase::Down
+                    if p.button == Some(PointerButton::Primary) && p.click_count >= 2 =>
+                {
+                    ctx.handled();
+                    if let Some(cb) = self.on_toggle.clone() {
+                        cb.call();
+                    }
+                }
+                _ => {
+                    let Some(u) = self.drag.pointer(ctx, p) else {
+                        return;
+                    };
+                    match u.phase {
+                        DragPhase::Down => self.drag_from = self.fraction,
+                        DragPhase::Start | DragPhase::Update => {
+                            if self.length > 0.0 {
+                                // Relative to where the drag began, not to
+                                // where the divider is now: a divider held
+                                // against its minimum must come back the moment
+                                // the pointer does, instead of creeping.
+                                let geser = self.axis_of(u.delta);
+                                self.request(self.drag_from + geser / self.length);
+                            }
+                            return;
                         }
-                        return;
+                        // Cancelled by the OS is not an undo: the divider stays
+                        // where the pointer last put it, exactly like AppKit.
+                        DragPhase::End | DragPhase::Cancel => {}
                     }
-                    self.dragging = true;
-                    self.drag_from = self.fraction;
-                    self.drag_origin = self.along(ctx);
                     self.arahkan();
-                    ctx.capture_pointer();
-                    ctx.request_focus();
-                    ctx.handled();
                     ctx.request_paint();
                     ctx.request_animation();
                 }
-                PointerPhase::Move if self.dragging => {
-                    ctx.handled();
-                    if self.length <= 0.0 {
-                        return;
-                    }
-                    let geser = self.along(ctx) - self.drag_origin;
-                    // Relative to where the drag began, not to where the
-                    // divider is now: a divider held against its minimum must
-                    // come back the moment the pointer does, instead of
-                    // creeping.
-                    let target = self.drag_from + geser / self.length;
-                    self.request(target);
-                }
-                PointerPhase::Up if self.dragging => {
-                    self.dragging = false;
-                    self.arahkan();
-                    ctx.release_pointer();
-                    ctx.handled();
-                    ctx.request_paint();
-                    ctx.request_animation();
-                }
-                // Cancelled by the OS is not an undo: the divider stays where
-                // the pointer last put it, exactly like AppKit.
-                PointerPhase::Cancel if self.dragging => {
-                    self.dragging = false;
-                    self.arahkan();
-                    ctx.release_pointer();
-                    ctx.request_paint();
-                    ctx.request_animation();
-                }
-                _ => {}
             },
             _ => {}
         }
@@ -670,7 +652,7 @@ impl core::fmt::Debug for SplitHandleBox {
             .field("axis", &self.axis)
             .field("fraction", &self.fraction)
             .field("length", &self.length)
-            .field("dragging", &self.dragging)
+            .field("dragging", &self.is_dragging())
             .finish()
     }
 }
@@ -700,9 +682,10 @@ impl ViewNode for SplitHandleProps {
             limits: (0.0, 1.0),
             hovered: false,
             focused: false,
-            dragging: false,
+            drag: DragGesture::new()
+                .axis(DragAxis::from(self.axis))
+                .focus_on_press(true),
             drag_from: self.fraction,
-            drag_origin: 0.0,
             tint: SpringValue::new(self.style.hover.with_alpha(0.0))
                 .with_spring(self.spring)
                 .with_tolerance(Tolerance::COLOR)
@@ -723,6 +706,9 @@ impl ViewNode for SplitHandleProps {
         }
         if n.axis != self.axis {
             n.axis = self.axis;
+            // Written onto the live recogniser rather than replacing it: a
+            // split view that rotates mid-drag must not drop the finger.
+            n.drag.set_axis(DragAxis::from(self.axis));
             dirty |= Dirty::LAYOUT | Dirty::PAINT;
         }
         if (n.fraction - self.fraction).abs() > f32::EPSILON {

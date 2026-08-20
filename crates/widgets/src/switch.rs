@@ -22,10 +22,12 @@
 //! general-purpose interactive wrapper only knows press-and-release; a switch
 //! has to drag its thumb 1:1 along the track and then **hand the finger's
 //! velocity to the spring** on release (REKOMENDASI §3.5: fling → spring
-//! handoff, through the input layer's [`VelocityTracker`] — not a guess of
-//! its own). Two other things demand a node of its own: an on/off state that
-//! reaches the screen reader as [`AccessToggled`], and a small track inside a
-//! hit area of ≥ 44pt.
+//! handoff). The gesture itself is not written here: capture, slop, total
+//! delta and that velocity all come from [`DragGesture`], so what is left in
+//! this file is the part only a switch knows — where the thumb sits and which
+//! side it lands on. Two other things demand a node of its own: an on/off
+//! state that reaches the screen reader as [`AccessToggled`], and a small
+//! track inside a hit area of ≥ 44pt.
 //!
 //! ## Who owns the value
 //!
@@ -66,8 +68,8 @@ use std::rc::Rc;
 use silka_core::access::{AccessActions, AccessNode, AccessRole, AccessToggled};
 use silka_core::animation::{MotionRole, Spring, SpringValue, Tick};
 use silka_core::input::{
-    CursorIcon, Event, EventCtx, FocusEvent, FocusPolicy, HitBehavior, KeyCode, NamedKey,
-    PointerButton, PointerPhase, VelocityTracker,
+    CursorIcon, DragAxis, DragGesture, DragPhase, Event, EventCtx, FocusEvent, FocusPolicy,
+    HitBehavior, KeyCode, NamedKey, PointerPhase,
 };
 use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
@@ -416,19 +418,6 @@ impl core::fmt::Debug for SwitchCallback {
 // Node
 // ---------------------------------------------------------------------------
 
-/// A drag in progress.
-#[derive(Debug, Clone)]
-struct Seretan {
-    /// The local x coordinate where the finger touched down.
-    awal_x: f32,
-    /// The thumb position when the finger touched down.
-    awal_fraksi: f32,
-    /// True once the finger passes the drag threshold — before that, a tap.
-    bergeser: bool,
-    /// The input layer's velocity tracker, for the handoff to the spring (§3.5).
-    velocity: VelocityTracker,
-}
-
 /// Render node of a switch: track + thumb, with an optional label as its only
 ///
 /// ```
@@ -491,7 +480,11 @@ pub struct SwitchNode {
     focused: bool,
     activations: u32,
     track_rect: Rect,
-    seret: Option<Seretan>,
+    /// The gesture: capture, total delta, velocity, slop — all of it in
+    /// [`DragGesture`] rather than rewritten here (§3.5).
+    seret: DragGesture,
+    /// The thumb position when the finger touched down.
+    awal_fraksi: f32,
 }
 
 impl SwitchNode {
@@ -521,7 +514,11 @@ impl SwitchNode {
             focused: false,
             activations: 0,
             track_rect: Rect::new(0.0, 0.0, style.track.width, style.track.height),
-            seret: None,
+            seret: DragGesture::new()
+                .axis(DragAxis::Horizontal)
+                .threshold(ambang_seret(&style))
+                .focus_on_press(true),
+            awal_fraksi: 0.0,
         }
     }
 
@@ -587,7 +584,7 @@ impl SwitchNode {
 
     /// True while a finger really is dragging the thumb.
     pub fn is_dragging(&self) -> bool {
-        self.seret.as_ref().is_some_and(|s| s.bergeser)
+        self.seret.is_dragging()
     }
 
     /// How many times the user has activated it since the node was built.
@@ -601,9 +598,10 @@ impl SwitchNode {
     /// This is what makes the track color change exactly as the thumb passes
     /// the middle, rather than a moment after the finger lifts.
     pub fn visual_on(&self) -> bool {
-        match &self.seret {
-            Some(s) if s.bergeser => self.progress.position() >= 0.5,
-            _ => self.on,
+        if self.is_dragging() {
+            self.progress.position() >= 0.5
+        } else {
+            self.on
         }
     }
 
@@ -678,17 +676,22 @@ impl SwitchNode {
         }
     }
 
-    /// The threshold where a finger turns from a tap into a drag, in points.
-    fn ambang_seret(&self) -> f32 {
-        (self.style.inset * 2.0).max(1.0)
-    }
-
     /// The thumb rect actually drawn this frame.
     fn thumb_tergambar(&self) -> Rect {
         let stretch = self.press_t.position() * self.style.press_stretch;
         self.style
             .thumb_rect(self.track_rect, self.fraction(), stretch)
     }
+}
+
+/// True when `local` still lies inside a node of `size`.
+fn di_dalam(size: Size, local: Point) -> bool {
+    local.x >= 0.0 && local.y >= 0.0 && local.x < size.width && local.y < size.height
+}
+
+/// The threshold where a finger turns from a tap into a drag, in points.
+fn ambang_seret(style: &SwitchStyle) -> f32 {
+    (style.inset * 2.0).max(1.0)
 }
 
 fn maju(value: &mut SpringValue<f32>, tick: &Tick) -> bool {
@@ -871,98 +874,67 @@ impl RenderNode for SwitchNode {
                         ctx.request_paint();
                     }
                 }
-                PointerPhase::Down if p.button == Some(PointerButton::Primary) => {
-                    let mut velocity = VelocityTracker::new();
-                    velocity.add(p.time, ctx.local());
-                    self.seret = Some(Seretan {
-                        awal_x: ctx.local().x,
-                        awal_fraksi: self.progress.position(),
-                        bergeser: false,
-                        velocity,
-                    });
-                    self.pressed = true;
-                    self.retarget();
-                    ctx.capture_pointer();
-                    ctx.request_focus();
-                    ctx.request_animation();
-                    ctx.request_paint();
-                    ctx.handled();
-                }
-                PointerPhase::Move => {
-                    let ambang = self.ambang_seret();
-                    let travel = self.style.travel();
-                    let lokal = ctx.local();
-                    let Some(s) = self.seret.as_mut() else {
+                _ => {
+                    // Everything below the hover bookkeeping is the gesture's:
+                    // capture, slop, total delta and the velocity handed to the
+                    // spring all live in `DragGesture` now (§3.5).
+                    let Some(u) = self.seret.pointer(ctx, p) else {
                         return;
                     };
-                    s.velocity.add(p.time, lokal);
-                    let dx = lokal.x - s.awal_x;
-                    if !s.bergeser && dx.abs() >= ambang {
-                        s.bergeser = true;
-                    }
-                    if s.bergeser && travel > 0.0 {
-                        // The thumb follows the finger **1:1**, with no
-                        // spring: a control that lags the finger feels broken.
-                        let f = (s.awal_fraksi + dx / travel).clamp(0.0, 1.0);
-                        self.progress.jump_to(f);
-                        self.retarget();
-                        ctx.request_animation();
-                        ctx.request_paint();
-                    }
-                    ctx.handled();
-                }
-                PointerPhase::Up if p.button == Some(PointerButton::Primary) => {
                     let travel = self.style.travel();
-                    let di_dalam = {
-                        let size = ctx.size();
-                        let l = ctx.local();
-                        l.x >= 0.0 && l.y >= 0.0 && l.x < size.width && l.y < size.height
-                    };
-                    let selesai = self.seret.take();
-                    self.pressed = false;
-                    ctx.release_pointer();
+                    match u.phase {
+                        DragPhase::Down => {
+                            self.awal_fraksi = self.progress.position();
+                            self.pressed = true;
+                            self.retarget();
+                        }
+                        DragPhase::Start | DragPhase::Update if travel > 0.0 => {
+                            // The thumb follows the finger **1:1**, with no
+                            // spring: a control that lags the finger feels
+                            // broken.
+                            let f = (self.awal_fraksi + u.delta.x / travel).clamp(0.0, 1.0);
+                            self.progress.jump_to(f);
+                            self.retarget();
+                        }
+                        DragPhase::Start | DragPhase::Update => {}
+                        DragPhase::End => {
+                            self.pressed = false;
+                            if u.moved {
+                                // A drag: the finger's position **and**
+                                // velocity decide, and that velocity is handed
+                                // to the spring exactly as it is (§3.5).
+                                let f = self.progress.position().clamp(0.0, 1.0);
+                                let v = if travel > 0.0 {
+                                    (u.velocity.x / travel).clamp(-MAX_FLING, MAX_FLING)
+                                } else {
+                                    0.0
+                                };
+                                let baru = if v.abs() >= FLING { v > 0.0 } else { f >= 0.5 };
+                                self.progress.set_velocity(v);
+                                // Retarget first so the thumb keeps moving even
+                                // if the application refuses the change.
+                                self.retarget();
+                                self.minta(baru);
+                            } else if di_dalam(ctx.size(), u.local) {
+                                // An ordinary tap — and, like an AppKit button,
+                                // a finger dragged out before release means
+                                // cancelled.
+                                self.retarget();
+                                self.minta(!self.on);
+                            } else {
+                                self.retarget();
+                            }
+                        }
+                        // Cancelled by the OS ≠ released: the value does not
+                        // change and the thumb returns to where it was.
+                        DragPhase::Cancel => {
+                            self.pressed = false;
+                            self.retarget();
+                        }
+                    }
                     ctx.request_animation();
                     ctx.request_paint();
-                    ctx.handled();
-
-                    match selesai {
-                        // A drag: the finger's position **and** velocity
-                        // decide, and that velocity is then handed to the
-                        // spring exactly as it is (§3.5).
-                        Some(s) if s.bergeser => {
-                            let f = self.progress.position().clamp(0.0, 1.0);
-                            let v = if travel > 0.0 {
-                                (s.velocity.velocity().x / travel).clamp(-MAX_FLING, MAX_FLING)
-                            } else {
-                                0.0
-                            };
-                            let baru = if v.abs() >= FLING { v > 0.0 } else { f >= 0.5 };
-                            self.progress.set_velocity(v);
-                            // Retarget first so the thumb keeps moving even
-                            // if the application refuses the change.
-                            self.retarget();
-                            self.minta(baru);
-                        }
-                        // An ordinary tap — and, like an AppKit button, a
-                        // finger dragged out before release means cancelled.
-                        Some(_) if di_dalam => {
-                            self.retarget();
-                            self.minta(!self.on);
-                        }
-                        _ => self.retarget(),
-                    }
                 }
-                // Cancelled by the OS ≠ released: the value does not change
-                // and the thumb returns to where it was.
-                PointerPhase::Cancel => {
-                    if self.seret.take().is_some() || self.pressed {
-                        self.pressed = false;
-                        self.retarget();
-                        ctx.request_animation();
-                        ctx.request_paint();
-                    }
-                }
-                _ => {}
             },
 
             Event::Key(k) if k.is_pressed() && k.modifiers.is_empty() => match k.code {
@@ -992,7 +964,7 @@ impl RenderNode for SwitchNode {
                 self.focused = *f == FocusEvent::Gained;
                 if !self.focused {
                     self.pressed = false;
-                    self.seret = None;
+                    self.seret.reset();
                 }
                 self.retarget();
                 ctx.request_animation();
@@ -1101,6 +1073,7 @@ impl ViewNode for SwitchProps {
             // Track size and the gap to the label are in here too, so a
             // preset switch really needs a relayout — not just a repaint.
             n.style = self.style;
+            n.seret.set_threshold(ambang_seret(&self.style));
             dirty |= Dirty::LAYOUT | Dirty::PAINT | Dirty::ANIMATION;
         }
         if n.label != self.label {
@@ -1124,7 +1097,7 @@ impl ViewNode for SwitchProps {
                 // pressed/hovered state: its pointer is never coming back.
                 n.pressed = false;
                 n.hovered = false;
-                n.seret = None;
+                n.seret.reset();
             }
             dirty |= Dirty::PAINT | Dirty::ANIMATION;
         }
