@@ -637,3 +637,46 @@ fn the_toolbar_and_the_keyboard_go_through_the_same_one_implementation() {
     screen.click_label(app::NEW_TAB);
     assert_eq!(screen.shell.store().tabs.peek_with(Vec::len), 2);
 }
+
+/// After a text field takes focus, does the application ever go back to sleep?
+///
+/// The frame log from a real window showed `animation` on every sampled frame
+/// with nothing moving, which would mean the process redraws forever.
+#[test]
+#[ignore = "diagnostic, not a gate"]
+fn diagnosis_apakah_aplikasi_kembali_diam_setelah_fokus() {
+    let mut s = Screen::new();
+    s.quiesce();
+    eprintln!("setelah startup: idle = {}", s.shell.is_idle());
+
+    let kotak = s.rect(request::URL_LABEL);
+    s.click(Point::new(
+        kotak.origin.x + 20.0,
+        kotak.origin.y + kotak.size.height / 2.0,
+    ));
+
+    let mut n = 0;
+    while !s.shell.is_idle() && n < 2_000 {
+        s.frame();
+        n += 1;
+    }
+    eprintln!(
+        "setelah klik: {} frame untuk diam lagi ({:.2} detik) · idle = {}",
+        n,
+        n as f64 / 120.0,
+        s.shell.is_idle()
+    );
+
+    s.key(KeyCode::Character('h'), Modifiers::NONE);
+    let mut m = 0;
+    while !s.shell.is_idle() && m < 2_000 {
+        s.frame();
+        m += 1;
+    }
+    eprintln!(
+        "setelah ketik: {} frame untuk diam lagi ({:.2} detik) · idle = {}",
+        m,
+        m as f64 / 120.0,
+        s.shell.is_idle()
+    );
+}

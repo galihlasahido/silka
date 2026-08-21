@@ -718,3 +718,32 @@ fn handoff_dibatasi_besarannya_sebelum_diserahkan() {
     v.hand_off(liar);
     assert!(v.velocity().magnitude() <= 4_000.0 + 1e-3);
 }
+
+/// Does a 0 → 1 spring ever stop, at the tick rate a 120 Hz display produces?
+///
+/// Diagnostic for an application that kept redrawing forever once a text field
+/// took focus.
+#[test]
+#[ignore = "diagnostic, not a gate"]
+fn diagnosis_spring_fokus_berhenti_atau_tidak() {
+    for (nama, spring) in [
+        ("snappy", Spring::snappy()),
+        ("smooth", Spring::smooth()),
+        ("bouncy", Spring::bouncy()),
+    ] {
+        let mut v = SpringValue::new(0.0f32).with_spring(spring);
+        v.set_target(1.0);
+        let dt = Duration::from_secs_f64(1.0 / 120.0);
+        let mut n = 0;
+        while v.is_animating() && n < 100_000 {
+            v.advance(dt, Motion::Full);
+            n += 1;
+        }
+        eprintln!(
+            "  {nama:8} -> {n} tick ({:.2} detik) · posisi {:.6} · masih animasi: {}",
+            n as f64 / 120.0,
+            v.position(),
+            v.is_animating()
+        );
+    }
+}

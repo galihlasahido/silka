@@ -1293,7 +1293,7 @@ impl Shell {
             state: None,
             started: Instant::now(),
             scheduler: FrameScheduler::new(),
-            logger: FrameLogger::every(config.frame_log_every),
+            logger: FrameLogger::every(frame_log_every(config.frame_log_every)),
             error: None,
         }
     }
@@ -2114,6 +2114,28 @@ impl ApplicationHandler<ShellEvent> for Shell {
 /// ```
 pub fn default_clear_color(theme: &Theme) -> Color {
     theme.color.background
+}
+
+/// How often frame timings are printed, honouring `SILKA_FRAME_LOG`.
+///
+/// The variable doubles as a switch and a dial: `1`/`true`/`on`/`yes` keep the
+/// application's own interval, a number turns into that interval, and `all`
+/// prints every frame — which is what a report like "one keystroke takes
+/// seconds" needs, since sampling every hundredth frame cannot show a gap.
+///
+/// Resolved once; this feeds a value read on the frame path.
+fn frame_log_every(default: u64) -> u64 {
+    use std::sync::OnceLock;
+    static EVERY: OnceLock<Option<u64>> = OnceLock::new();
+    let dari_env = *EVERY.get_or_init(|| {
+        let v = std::env::var("SILKA_FRAME_LOG").ok()?;
+        let v = v.trim().to_ascii_lowercase();
+        match v.as_str() {
+            "all" | "every" => Some(1),
+            _ => v.parse::<u64>().ok().filter(|n| *n > 0),
+        }
+    });
+    dari_env.unwrap_or(default)
 }
 
 /// Whether frame timings are printed to stderr this run.
