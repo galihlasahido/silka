@@ -45,9 +45,10 @@ use silka_theme::{ColorToken, FontToken, RadiusToken, ShadowToken, SpaceToken, T
 use silka_widgets::overlay::{
     overlay, Align, Anchor, Barrier, Dismiss, OverlayBuilder, Placement, Side,
 };
-use silka_widgets::{button, icon_button, spacer, text, text_field, ButtonVariant, IconName};
+use silka_widgets::{button, spacer, text, text_field, ButtonVariant};
 
 use crate::model::{DragKind, Edge, Frame, FrameId, FrameState, Mdi};
+use crate::traffic;
 
 /// How wide the draggable band along each edge is.
 ///
@@ -264,13 +265,14 @@ pub fn internal_frame(
     f: &Frame,
     active: bool,
     dragging: bool,
+    lit: bool,
 ) -> OverlayBuilder {
     let id = f.id;
     let minimized = !f.is_visible();
     let title = f.title.clone();
 
     let content = column([
-        titlebar(t, state, f, active),
+        titlebar(t, state, f, active, lit),
         View::from(expanded(body(t, state, f))),
     ])
     .cross(CrossAlign::Stretch)
@@ -437,57 +439,44 @@ fn edge_handle(state: Signal<Mdi>, f: &Frame, live: bool, edge: Edge) -> View {
     handle.into()
 }
 
-/// The titlebar: a name, a drag surface, and three buttons.
-fn titlebar(t: &Theme, state: Signal<Mdi>, f: &Frame, active: bool) -> View {
+/// The titlebar: three traffic lights on the left, the name in the middle, and
+/// the whole thing a drag surface.
+///
+/// The arrangement is the Mac's, and both halves of it are deliberate: the
+/// controls sit where a Mac user's hand already goes, and the title is
+/// **centred** rather than pushed against them, which is what stops a long
+/// document name from crowding the buttons. Centring is done with a spacer as
+/// wide as the light cluster on the opposite side — the title is then centred
+/// on the window rather than on whatever room happens to be left over.
+fn titlebar(t: &Theme, state: Signal<Mdi>, f: &Frame, active: bool, lit: bool) -> View {
     let id = f.id;
-    let maximized = f.state == FrameState::Maximized;
     let title = f.title.clone();
 
     let bar = row([
-        View::from(
-            text(f.title.clone())
-                .font(FontToken::Headline)
-                .color(if active {
-                    t.color.label
-                } else {
-                    t.color.secondary_label
-                })
-                .single_line(),
-        ),
-        View::from(expanded(spacer())),
-        View::from(
-            // A chevron pointing down, matching the direction the window
-            // actually travels when it is minimized.
-            icon_button(IconName::ChevronDown, minimize_label(&title))
-                .key("minimize")
-                .variant(ButtonVariant::Ghost)
-                .on_press(move || state.update(|m| m.minimize(id))),
-        ),
-        View::from(
-            icon_button(
-                if maximized {
-                    IconName::Minus
-                } else {
-                    IconName::Plus
-                },
-                maximize_label(&title, maximized),
-            )
-            .key("maximize")
-            .variant(ButtonVariant::Ghost)
-            .on_press(move || state.update(|m| m.toggle_maximize(id))),
-        ),
-        View::from(
-            icon_button(IconName::Close, close_label(&title))
-                .key("close")
-                .variant(ButtonVariant::Ghost)
-                .on_press(move || {
-                    state.update(|m| m.close(id));
-                }),
-        ),
+        traffic::lights(t, state, f, active, lit),
+        View::from(expanded(
+            row([View::from(
+                text(f.title.clone())
+                    .font(FontToken::Headline)
+                    .color(if active {
+                        t.color.label
+                    } else {
+                        t.color.secondary_label
+                    })
+                    .single_line(),
+            )])
+            .main(MainAlign::Center)
+            .cross(CrossAlign::Center),
+        )),
+        // The counterweight: the same width as the lights, so the middle band
+        // really is the middle of the window.
+        View::from(constrained(
+            BoxConstraints::new(traffic::GROUP_WIDTH, traffic::GROUP_WIDTH, 0.0, 0.0),
+            spacer(),
+        )),
     ])
     .cross(CrossAlign::Center)
     .main(MainAlign::Start)
-    .spacing(t.space(1.0))
     .padding(silka_paint::Insets::symmetric(t.space(3.0), 0.0))
     .bg(if active {
         ColorToken::SurfaceHover

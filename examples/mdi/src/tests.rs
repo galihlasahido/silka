@@ -7,7 +7,7 @@
 //! prove is that the arithmetic is *wired up* — to the pointer, to the
 //! keyboard, and to assistive technology.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use silka_core::app::AppRuntime;
 use silka_core::input::{
@@ -17,7 +17,7 @@ use silka_core::input::{
 use silka_core::signals::Signal;
 use silka_core::tree::{DragArea, NodeId, RenderTree};
 use silka_paint::{Point, Rect, Size};
-use silka_theme::{Appearance, Theme};
+use silka_theme::{Appearance, ColorToken, Theme};
 use silka_widgets::{install_fonts, Fonts};
 
 use crate::app;
@@ -26,6 +26,7 @@ use crate::frame::{
     close_label, edge_label, maximize_label, minimize_label, note_label, titlebar_label, FrameShell,
 };
 use crate::model::{Edge, FrameState, Mdi, MIN_FRAME};
+use crate::traffic::{self, Light, LightButton};
 
 const VIEWPORT: Size = Size::new(1_100.0, 760.0);
 
@@ -80,6 +81,46 @@ fn settle(ui: &mut AppRuntime, state: Signal<Mdi>) {
             return;
         }
     }
+}
+
+/// A made-up 60 Hz clock.
+///
+/// [`settle`] runs on the wall clock, which is right for the tests that only
+/// need the frame loop to converge — but a **spring** driven by wall time in a
+/// loop that takes microseconds per frame barely moves at all. Anything that
+/// asserts on a finished animation drives its frames from here instead (§9.5).
+struct Clock(Instant);
+
+impl Clock {
+    fn new() -> Self {
+        Clock(Instant::now())
+    }
+
+    /// The next frame's timestamp, 16 ms after the last.
+    fn tick(&mut self) -> Instant {
+        self.0 += Duration::from_millis(16);
+        self.0
+    }
+}
+
+/// One frame of the shell's loop, on `clock`.
+fn frame_at(ui: &mut AppRuntime, state: Signal<Mdi>, clock: &mut Clock) {
+    ui.animate_at(clock.tick(), app::advance);
+    ui.frame();
+    app::after_frame(ui, state);
+}
+
+/// Run frames on a made-up clock until everything — springs included — has
+/// come to rest.
+fn settle_motion(ui: &mut AppRuntime, state: Signal<Mdi>) {
+    let mut clock = Clock::new();
+    for _ in 0..240 {
+        frame_at(ui, state, &mut clock);
+        if ui.is_idle() {
+            return;
+        }
+    }
+    panic!("the desktop never came to rest");
 }
 
 /// A node's rectangle according to the accessibility tree — so the tests press
@@ -688,4 +729,365 @@ fn the_window_menu_tiles_every_window_without_overlap() {
     for title in ["Ledger", "Journal", "Notes"] {
         assert!(exists(&ui, &titlebar_label(title)));
     }
+}
+
+// ---------------------------------------------------------------------------
+// The traffic lights
+// ---------------------------------------------------------------------------
+
+/// How many stroked commands the whole scene holds.
+///
+/// The glyphs are the only strokes any of these windows draws, so this number
+/// is the honest answer to "is a symbol on screen?" — a question a flag on a
+/// node cannot answer, because a flag can be true while nothing is painted.
+fn strokes(ui: &AppRuntime) -> usize {
+    ui.scene()
+        .commands()
+        .iter()
+        .filter(|c| matches!(c, silka_paint::Command::Stroke(_)))
+        .count()
+}
+
+/// Every node in the tree, parents before children.
+fn all_nodes(tree: &RenderTree) -> Vec<NodeId> {
+    fn walk(tree: &RenderTree, id: NodeId, out: &mut Vec<NodeId>) {
+        out.push(id);
+        for child in tree.children(id) {
+            walk(tree, *child, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(tree, tree.root(), &mut out);
+    out
+}
+
+/// One light of one window, as the render tree has it.
+fn light_of<'a>(ui: &'a AppRuntime, title: &str, which: Light) -> &'a LightButton {
+    let tree = ui.tree();
+    all_nodes(tree)
+        .into_iter()
+        .find_map(|id| {
+            let node = tree.render(id)?.downcast_ref::<LightButton>()?;
+            (node.light() == which && window_of(tree, id).as_deref() == Some(title)).then_some(node)
+        })
+        .unwrap_or_else(|| panic!("{title} has no {} light", which.name()))
+}
+
+/// The three a11y names of one window's lights.
+fn light_labels(title: &str, maximized: bool) -> Vec<String> {
+    vec![
+        close_label(title),
+        minimize_label(title),
+        maximize_label(title, maximized),
+    ]
+}
+
+/// A point on the taskbar, far from every window and every light.
+fn elsewhere(ui: &AppRuntime) -> Point {
+    let bar = box_of(ui, desktop::TASKBAR);
+    Point::new(bar.max_x() - 8.0, bar.center().y)
+}
+
+/// The name of the light that holds the keyboard, if a light does.
+fn focused_light(ui: &AppRuntime) -> Option<String> {
+    let node = ui
+        .router()
+        .focus()
+        .focused()
+        .and_then(|id| ui.tree().render(id))?
+        .downcast_ref::<LightButton>()?;
+    Some(node.label().to_string())
+}
+
+/// Tab around the front window and collect the names of the lights focus
+/// landed on.
+fn lights_reached_by_tab(ui: &mut AppRuntime, state: Signal<Mdi>) -> Vec<String> {
+    let mut seen = Vec::new();
+    for _ in 0..16 {
+        tab(ui, state);
+        let Some(label) = focused_light(ui) else {
+            continue;
+        };
+        if !seen.contains(&label) {
+            seen.push(label);
+        }
+    }
+    seen
+}
+
+/// Tab until the light named `label` has the keyboard.
+fn tab_to_light(ui: &mut AppRuntime, state: Signal<Mdi>, label: &str) {
+    for _ in 0..16 {
+        tab(ui, state);
+        if focused_light(ui).as_deref() == Some(label) {
+            return;
+        }
+    }
+    panic!("Tab never reached {label}");
+}
+
+#[test]
+fn pointing_at_one_light_shows_all_three_glyphs_and_leaving_puts_them_away() {
+    let (mut ui, state) = ui();
+
+    // At rest the cluster is three plain dots: nothing is stroked anywhere.
+    let bare = strokes(&ui);
+    assert_eq!(
+        light_of(&ui, "Notes", Light::Close).glyph_opacity(),
+        0.0,
+        "a glyph was showing before the pointer arrived"
+    );
+
+    // Point at the **red** one only…
+    let at = box_of(&ui, &close_label("Notes")).center();
+    moved(&mut ui, at, 0);
+    settle_motion(&mut ui, state);
+
+    // …and all three symbols are on screen, which is the macOS rule this whole
+    // module exists for. Counted from the scene, not from a flag.
+    assert_eq!(
+        strokes(&ui) - bare,
+        traffic::GLYPH_STROKES,
+        "hovering one light did not draw the group's glyphs"
+    );
+    for light in Light::ALL {
+        assert_eq!(
+            light_of(&ui, "Notes", light).glyph_opacity(),
+            1.0,
+            "the {} glyph stayed behind",
+            light.name()
+        );
+    }
+    // And only this window's: hover belongs to one group, not to every
+    // titlebar on the desktop.
+    for title in ["Ledger", "Journal"] {
+        assert_eq!(
+            light_of(&ui, title, Light::Close).glyph_opacity(),
+            0.0,
+            "{title} lit up as well"
+        );
+    }
+
+    // Leaving takes all three away again, back to exactly the resting picture.
+    let away = elsewhere(&ui);
+    moved(&mut ui, away, 40);
+    settle_motion(&mut ui, state);
+    assert_eq!(
+        strokes(&ui),
+        bare,
+        "a glyph outlived the pointer that summoned it"
+    );
+
+    // The buttons are still buttons, though — the difference between "not
+    // drawn" and "not there".
+    for label in light_labels("Notes", false) {
+        assert!(exists(&ui, &label), "{label} vanished with its glyph");
+    }
+}
+
+#[test]
+fn the_glyphs_fade_in_on_a_spring_rather_than_appearing_whole() {
+    let (mut ui, state) = ui();
+    let at = box_of(&ui, &close_label("Notes")).center();
+    moved(&mut ui, at, 0);
+
+    // Frame one publishes the hover, frame two starts the fade. Somewhere in
+    // between the glyph is *partly* drawn, which no cut could ever produce.
+    let mut clock = Clock::new();
+    let mut caught = false;
+    for _ in 0..24 {
+        frame_at(&mut ui, state, &mut clock);
+        let a = light_of(&ui, "Notes", Light::Close).glyph_opacity();
+        if a > 0.0 && a < 1.0 {
+            caught = true;
+            break;
+        }
+    }
+    assert!(caught, "the glyphs cut in instead of springing");
+    settle_motion(&mut ui, state);
+    assert_eq!(light_of(&ui, "Notes", Light::Close).glyph_opacity(), 1.0);
+}
+
+#[test]
+fn a_window_that_is_not_in_front_greys_every_light() {
+    let (ui, _state) = ui();
+    let theme = Theme::cupertino(Appearance::Dark);
+    assert_eq!(front(_state), "Notes");
+
+    let mut dimmed = Vec::new();
+    for light in Light::ALL {
+        // The window in front carries the semantic colour, straight from the
+        // token — no hex anywhere in this file or in the one it tests.
+        assert_eq!(
+            light_of(&ui, "Notes", light).dot_color(),
+            theme.color_of(light.token()),
+            "the front window's {} light is not on its token",
+            light.name()
+        );
+
+        // The one behind carries none of the three.
+        let back = light_of(&ui, "Ledger", light).dot_color();
+        for other in Light::ALL {
+            assert_ne!(
+                back,
+                theme.color_of(other.token()),
+                "a background window still shows {}",
+                other.token().name()
+            );
+        }
+        assert_eq!(
+            light_of(&ui, "Ledger", light).glyph_opacity(),
+            0.0,
+            "a background window drew a glyph"
+        );
+        dimmed.push(back);
+    }
+    // All three greys are the same grey: a window that is not in front stops
+    // saying which of its buttons is the dangerous one.
+    assert!(dimmed.windows(2).all(|w| w[0] == w[1]), "{dimmed:?}");
+}
+
+#[test]
+fn a_window_brought_forward_gets_its_colours_back() {
+    let (mut ui, state) = ui();
+    let theme = Theme::cupertino(Appearance::Dark);
+    let dim = light_of(&ui, "Ledger", Light::Close).dot_color();
+    assert_ne!(dim, theme.color_of(ColorToken::Destructive));
+
+    click_titlebar(&mut ui, state, "Ledger");
+    settle_motion(&mut ui, state);
+    assert_eq!(front(state), "Ledger");
+    assert_eq!(
+        light_of(&ui, "Ledger", Light::Close).dot_color(),
+        theme.color_of(ColorToken::Destructive)
+    );
+    // …and the window it displaced greys out in its place.
+    assert_eq!(light_of(&ui, "Notes", Light::Close).dot_color(), dim);
+}
+
+#[test]
+fn every_light_keeps_a_44pt_touch_box_around_its_12pt_dot() {
+    let (ui, _state) = ui();
+    for label in light_labels("Notes", false) {
+        let b = box_of(&ui, &label);
+        assert!(
+            b.size.width >= 44.0 && b.size.height >= 44.0,
+            "{label} is only {:?} — under the HIG minimum",
+            b.size
+        );
+    }
+
+    // The dots themselves stay a Mac's distance apart: the boxes overlap, the
+    // drawings do not.
+    let centres: Vec<f32> = light_labels("Notes", false)
+        .iter()
+        .map(|l| box_of(&ui, l).center().x)
+        .collect();
+    for pair in centres.windows(2) {
+        assert!(
+            (pair[1] - pair[0] - traffic::PITCH).abs() < 0.5,
+            "the dots are {:?} apart, not {}pt",
+            pair[1] - pair[0],
+            traffic::PITCH
+        );
+    }
+}
+
+#[test]
+fn the_lights_are_first_and_the_title_is_centred() {
+    let (ui, _state) = ui();
+    let bar = box_of(&ui, &titlebar_label("Notes"));
+    for label in light_labels("Notes", false) {
+        let b = box_of(&ui, &label);
+        assert!(
+            b.center().x < bar.center().x,
+            "{label} is not on the left of the bar"
+        );
+    }
+    // The title sits in the middle of the window, not shoved against the
+    // controls: the counterweight spacer is what makes that true.
+    let title = box_of(&ui, "Notes");
+    assert!((title.center().x - bar.center().x).abs() < 1.0);
+}
+
+#[test]
+fn all_three_lights_stay_on_the_tab_route_glyphs_or_no_glyphs() {
+    let (mut ui, state) = ui();
+    click_titlebar(&mut ui, state, "Notes");
+    let wanted = light_labels("Notes", false);
+
+    // Glyphs down: the pointer is nowhere near the cluster.
+    assert_eq!(light_of(&ui, "Notes", Light::Close).glyph_opacity(), 0.0);
+    let seen = lights_reached_by_tab(&mut ui, state);
+    for label in &wanted {
+        assert!(seen.contains(label), "Tab never reached {label}: {seen:?}");
+    }
+
+    // Glyphs up: the same three stops, in the same order.
+    let at = box_of(&ui, &minimize_label("Notes")).center();
+    moved(&mut ui, at, 0);
+    settle_motion(&mut ui, state);
+    assert_eq!(light_of(&ui, "Notes", Light::Close).glyph_opacity(), 1.0);
+    let lit = lights_reached_by_tab(&mut ui, state);
+    assert_eq!(lit, seen, "the tab route changed when the glyphs came up");
+}
+
+/// The seam between the red and the yellow light, and the height to press at.
+///
+/// The two touch boxes overlap right here — that is the price of a 44pt target
+/// around a 12pt dot — so a press one point either side of the midpoint is the
+/// sharpest question there is about who owns what.
+fn red_yellow_seam(ui: &AppRuntime) -> (f32, f32) {
+    let red = box_of(ui, &close_label("Notes")).center();
+    let yellow = box_of(ui, &minimize_label("Notes")).center();
+    ((red.x + yellow.x) * 0.5, red.y)
+}
+
+#[test]
+fn the_red_side_of_the_seam_closes_rather_than_minimizes() {
+    let (mut ui, state) = ui();
+    let (seam, y) = red_yellow_seam(&ui);
+    click(&mut ui, state, Point::new(seam - 1.0, y));
+    assert_eq!(
+        state.peek_with(|m| m.len()),
+        2,
+        "the red side did not close"
+    );
+}
+
+#[test]
+fn the_yellow_side_of_the_seam_minimizes_rather_than_closes() {
+    let (mut ui, state) = ui();
+    let (seam, y) = red_yellow_seam(&ui);
+    click(&mut ui, state, Point::new(seam + 1.0, y));
+    assert_eq!(state.peek_with(|m| m.len()), 3, "the yellow side closed it");
+    assert_eq!(
+        state.peek_with(|m| m.get(3).unwrap().state),
+        FrameState::Minimized
+    );
+}
+
+#[test]
+fn a_light_can_be_worked_from_the_keyboard_alone() {
+    let (mut ui, state) = ui();
+    click_titlebar(&mut ui, state, "Notes");
+
+    // No pointer anywhere near the cluster, so no glyph is drawn — and the
+    // button still works, which is the whole point of keeping the node when
+    // the picture goes away.
+    tab_to_light(&mut ui, state, &minimize_label("Notes"));
+    assert_eq!(light_of(&ui, "Notes", Light::Minimize).glyph_opacity(), 0.0);
+
+    key(
+        &mut ui,
+        state,
+        KeyCode::Named(NamedKey::Space),
+        Modifiers::NONE,
+    );
+    settle_motion(&mut ui, state);
+    assert_eq!(
+        state.peek_with(|m| m.get(3).unwrap().state),
+        FrameState::Minimized,
+        "Space on the yellow light did nothing"
+    );
 }

@@ -35,6 +35,7 @@ use silka_widgets::{active_fonts, overlay_layer, Fonts};
 use crate::desktop;
 use crate::frame::FrameShell;
 use crate::model::Mdi;
+use crate::traffic;
 
 /// Everything that moves, in one call per frame.
 ///
@@ -45,7 +46,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
     silka_widgets::advance(tree, tick)
 }
 
-/// The two things the desktop can only do **after** a frame has been laid out.
+/// The three things the desktop can only do **after** a frame has been laid out.
 ///
 /// Both read the finished tree and write a signal, which wakes the scheduler —
 /// so a shell that only asks for another frame while something is dirty still
@@ -58,7 +59,10 @@ pub fn after_frame(ui: &AppRuntime, state: Signal<Mdi>) -> bool {
         .expect("the shell puts a LastFocus in Env");
     let raised = raise_focused(ui.tree(), ui.router(), state, last);
     let resized = !desktop::sync(ui.tree(), state).is_empty();
-    raised || resized
+    // The third pass of the same shape: hover on a *group* of nodes is a fact
+    // only the finished tree holds, and the view is what has to act on it.
+    let lit = !traffic::sync(ui.tree(), state).is_empty();
+    raised || resized || lit
 }
 
 /// The node that held keyboard focus at the end of the last frame.

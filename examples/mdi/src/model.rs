@@ -334,6 +334,13 @@ pub struct Mdi {
     next_id: FrameId,
     /// The drag in flight, if any.
     drag: Option<Drag>,
+    /// The window whose traffic lights the pointer is resting on, published
+    /// after layout by [`crate::traffic::sync`].
+    ///
+    /// It lives here rather than in the nodes that draw the lights because the
+    /// three lights of one window light up **together**: the fact belongs to
+    /// the group, and only the view can hand it to all three.
+    lit: Option<FrameId>,
 }
 
 impl Default for Mdi {
@@ -350,6 +357,7 @@ impl Mdi {
             desktop: INITIAL_DESKTOP,
             next_id: 1,
             drag: None,
+            lit: None,
         }
     }
 
@@ -402,6 +410,24 @@ impl Mdi {
     /// The desktop's size in points.
     pub fn desktop(&self) -> Size {
         self.desktop
+    }
+
+    /// The window whose traffic lights are showing their glyphs.
+    pub fn lit_lights(&self) -> Option<FrameId> {
+        self.lit
+    }
+
+    /// Record which window's traffic lights the pointer is on.
+    ///
+    /// Returns false when nothing changed, exactly like [`Mdi::set_desktop`]:
+    /// the pass that calls this runs after **every** frame, and a write that
+    /// changes nothing would still rebuild the whole desktop.
+    pub fn set_lit_lights(&mut self, id: Option<FrameId>) -> bool {
+        if self.lit == id {
+            return false;
+        }
+        self.lit = id;
+        true
     }
 
     /// The drag in flight.

@@ -37,6 +37,7 @@
 //! | Fling velocity at the end of a drag | [`draggable`](silka_core::view::draggable) hands it over on release (§3.5) | nothing |
 //! | An a11y node per window | [`AccessRole::Window`](silka_core::access::AccessRole::Window) | one `access` impl |
 //! | Dragging and resizing | [`draggable`](silka_core::view::draggable) / [`draggable_area`](silka_core::view::draggable_area) | the four lines in [`frame`] that turn a phase into a model call |
+//! | macOS traffic lights, glyphs shown per **group** | nothing in the catalogue — a button only knows about itself | [`traffic`]: three dots, one hover, one after-layout pass |
 //!
 //! ## What the framework was missing
 //!
@@ -91,6 +92,13 @@
 //!    corners borrow the horizontal arrow.
 //! 10. **A flex container cannot clip.** The window's rounded corners do not
 //!     clip their content; only a viewport clips today.
+//! 11. **No "the pointer is on this node" outside the node itself.** The
+//!     traffic lights show all three glyphs when any one of them is pointed
+//!     at, and nothing in the frame cycle reports pointer enter/leave to
+//!     anyone but the node that received it — so [`traffic::sync`] reads the
+//!     flag back out of the tree after layout and publishes it into the model,
+//!     which is the same workaround the gallery's tooltips use and the same
+//!     gap `SISA-PEKERJAAN.md` records for them.
 //!
 //! Nothing on that list blocked the example. That is the point: the primitives
 //! held, and the gaps are ergonomic rather than architectural.
@@ -101,6 +109,7 @@ mod frame;
 mod model;
 #[cfg(test)]
 mod tests;
+mod traffic;
 
 use silka_platform::{window, PlatformError};
 use silka_theme::{Appearance, Preset, Theme};

@@ -474,6 +474,10 @@ pub fn desktop(t: &Theme, state: Signal<Mdi>) -> View {
             f,
             m.is_active(f.id),
             m.is_dragging(f.id),
+            // Published by `traffic::sync` after the previous frame: the one
+            // window whose traffic lights the pointer is resting on, and
+            // therefore the one window that shows its glyphs.
+            m.lit_lights() == Some(f.id),
         ));
     }
     layer.into()
