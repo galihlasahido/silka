@@ -123,6 +123,7 @@ pub mod edit;
 pub mod engine;
 pub mod font;
 pub mod layout;
+mod lru;
 pub mod measure;
 pub mod style;
 

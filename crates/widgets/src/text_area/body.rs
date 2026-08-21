@@ -281,9 +281,16 @@ impl TextAreaBody {
         if self.layout.is_some()
             && self.shaped == yang_dishape
             && self.shaped_scale == scale
-            && self.shaped_width == lebar
             && self.showing_placeholder == kosong
+            // A width that changed is only a reason to reshape when the lines
+            // would actually break differently at it — otherwise every frame of
+            // a window resize would re-shape the whole document.
+            && self
+                .layout
+                .as_ref()
+                .is_some_and(|l| self.shaped_width == lebar || l.valid_for_width(lebar))
         {
+            self.shaped_width = lebar;
             return;
         }
         let gaya = &self.style;

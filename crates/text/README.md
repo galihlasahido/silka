@@ -54,6 +54,33 @@ engine.draw(
 assert_eq!(scene.len(), 1);
 ```
 
+## Measuring while a window is resized
+
+A resize hands down a different `max_width` on every frame, but hardly any text
+actually *wraps*: a file name, a button title or a column header measures the
+same in a 900 pt column as in a 1200 pt one. So the measure cache keys that text
+**without the width in the key**, and only text the width really broke stays
+pinned to the width that broke it.
+
+```rust
+use silka_text::{TextConstraints, TextEngine, TextStyle};
+
+let mut engine = TextEngine::bundled_only();
+let style = TextStyle::new().size(13.0);
+
+let before = engine.shape_count();
+for w in 300..900 {
+    engine.measure("annual-report.pdf", &style, TextConstraints::width(w as f32));
+}
+// Six hundred widths, one shaping.
+assert_eq!(engine.shape_count() - before, 1);
+```
+
+Widgets that keep their own shaping result ask
+`TextLayout::minimum_valid_width` the same question, and a full cache evicts its
+least recently used entry instead of emptying itself — throwing everything away
+in the middle of a gesture is the one thing a resize cannot afford.
+
 ## What the backend sees
 
 A `GlyphRun` carries **atlas ids plus logical destination rects**. The backend

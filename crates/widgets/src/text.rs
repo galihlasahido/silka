@@ -94,6 +94,11 @@ pub struct TextBox {
     shaped_width: f32,
     /// Scale factor at the last rasterization — atlas glyphs are tied to it.
     shaped_scale: f32,
+    /// The smallest width limit the last shaping is still exactly right for.
+    /// `Some(0.0)` means "any width at all" (wrapping is off); `None` means
+    /// "only the width it was shaped at" — centred, right-to-left, or genuinely
+    /// wrapped text.
+    lebar_minimum: Option<f32>,
 }
 
 impl TextBox {
@@ -109,6 +114,7 @@ impl TextBox {
             size: Size::ZERO,
             shaped_width: f32::NAN,
             shaped_scale: f32::NAN,
+            lebar_minimum: None,
         };
         node.bentuk(node.batas_awal());
         node
@@ -128,33 +134,56 @@ impl TextBox {
         let teks = &self.text;
         let gaya = &self.style;
         let warna = self.color;
-        let (run, size) = self.fonts.with(|mesin| {
+        let (run, size, lebar_minimum) = self.fonts.with(|mesin| {
             // `TextConstraints::width(INFINITY)` = unbounded, so a single path
             // serves both a one-line label and a column of paragraph text.
             let layout = mesin.layout(teks, gaya, TextConstraints::width(batas_lebar));
             let size = layout.measure().content_size;
+            let minimum = layout.minimum_valid_width();
             let run = mesin.rasterize(&layout, Point::ZERO, warna);
-            (run, size)
+            (run, size, minimum)
         });
         self.run = run;
         self.size = size;
+        self.lebar_minimum = lebar_minimum;
         self.shaped_width = batas_lebar;
         self.shaped_scale = scale;
     }
 
     /// Make sure the shaping result is still valid for this width limit and DPI.
     ///
-    /// There are two legitimate reasons to reshape, and only two: the column
-    /// width changed (lines must be re-wrapped) and the scale factor changed
+    /// There are two legitimate reasons to reshape, and only two: the lines
+    /// would break differently at this width, and the scale factor changed
     /// (atlas glyph bitmaps are tied to the display resolution, §3.3).
+    ///
+    /// "The width changed" is **not** one of them. A file name, a button title
+    /// or a column header does not wrap, so the shaping it already has is
+    /// exactly what a new pass would produce — and a window resize hands down a
+    /// different width on every single frame. Asking the text layer for the
+    /// narrowest width its result still holds for
+    /// ([`silka_text::TextLayout::minimum_valid_width`]) turns the whole gesture
+    /// into one shaping instead of one per frame per label.
     fn pastikan_bentuk(&mut self, batas_lebar: f32) {
         let scale = self.fonts.scale_factor();
-        let sama_lebar = self.shaped_width == batas_lebar
-            || (self.shaped_width.is_infinite() && batas_lebar.is_infinite());
-        if sama_lebar && self.shaped_scale == scale {
+        if self.shaped_scale == scale && self.masih_berlaku(batas_lebar) {
+            // Remembering the new limit keeps the next comparison a cheap
+            // equality rather than a repeat of this one.
+            self.shaped_width = batas_lebar;
             return;
         }
         self.bentuk(batas_lebar);
+    }
+
+    /// True when the shaping in hand is exactly what shaping at `batas_lebar`
+    /// would produce.
+    fn masih_berlaku(&self, batas_lebar: f32) -> bool {
+        if self.shaped_width == batas_lebar
+            || (self.shaped_width.is_infinite() && batas_lebar.is_infinite())
+        {
+            return true;
+        }
+        self.lebar_minimum
+            .is_some_and(|minimum| batas_lebar >= minimum)
     }
 
     /// The text currently being displayed.
@@ -286,8 +315,11 @@ impl ViewNode for TextProps {
         n.max_width = self.max_width;
         n.fonts = self.fonts.clone();
         // Reshaping is deferred to layout: that is where the effective column
-        // width is known, so changed text is not shaped twice.
+        // width is known, so changed text is not shaped twice. Both fields have
+        // to be cleared — the second is what says "any width still fits", and
+        // it belongs to the *old* text.
         n.shaped_width = f32::NAN;
+        n.lebar_minimum = None;
         Dirty::LAYOUT | Dirty::PAINT
     }
 }
@@ -768,6 +800,162 @@ mod tests {
         assert_eq!(e.node.role, AccessRole::Label);
         // The a11y bounds come from the layout result, not from the widget.
         assert_eq!(e.bounds.size, tree.size(e.id));
+    }
+
+    // -- resize (§3.4) ----------------------------------------------------
+
+    /// A file listing: many rows of short labels, exactly the tree whose layout
+    /// used to cost 12–14 ms per frame while the window was being resized.
+    fn daftar_berkas(f: &Fonts, baris: usize) -> silka_core::view::View {
+        use silka_core::view::{column, row};
+        column((0..baris).map(|i| {
+            row([
+                silka_core::view::View::from(
+                    text_in(f, format!("laporan-{i:04}.pdf"))
+                        .size(13.0)
+                        .single_line(),
+                ),
+                silka_core::view::View::from(
+                    text_in(f, format!("{} KB", 12 + i * 7 % 900))
+                        .size(13.0)
+                        .single_line(),
+                ),
+                silka_core::view::View::from(
+                    text_in(f, "17 Agu 2026 10:24").size(13.0).single_line(),
+                ),
+            ])
+            .spacing(12.0)
+        }))
+        .spacing(4.0)
+        .into()
+    }
+
+    /// The gate, stated as a count rather than as a duration: a resize sweeping
+    /// the tree through a hundred widths must not shape a single glyph run
+    /// again. Text is the most expensive work in the framework (§3.3), so the
+    /// number of shaping passes *is* the cost model.
+    #[test]
+    fn resize_pohon_besar_tidak_membentuk_ulang_teks_sama_sekali() {
+        let f = Fonts::bundled_only();
+        let mut tree = RenderTree::new();
+        reconcile(&mut tree, daftar_berkas(&f, 200));
+        tree.layout(BoxConstraints::loose(Size::new(1280.0, 900.0)));
+
+        let sebelum = f.with(|m| m.shape_count());
+        for i in 0..100 {
+            // A drag of the window's right edge: a new width every frame.
+            let w = 1280.0 - i as f32 * 4.0;
+            tree.invalidate_all();
+            tree.layout(BoxConstraints::loose(Size::new(w, 900.0)));
+        }
+        assert_eq!(
+            f.with(|m| m.shape_count()),
+            sebelum,
+            "resize tidak boleh membentuk ulang teks yang tidak membungkus"
+        );
+    }
+
+    /// The same thing measured in time: a hundred frames at a changing width
+    /// against a hundred frames at a fixed one. Both walk the whole tree; the
+    /// only difference is the number handed down. Before the measure cache
+    /// stopped keying on the width, the moving case cost tens of times more.
+    #[test]
+    fn biaya_layout_lebar_berubah_setara_dengan_lebar_tetap() {
+        use std::time::{Duration, Instant};
+
+        let f = Fonts::bundled_only();
+        let mut tree = RenderTree::new();
+        reconcile(&mut tree, daftar_berkas(&f, 200));
+        tree.layout(BoxConstraints::loose(Size::new(1280.0, 900.0)));
+
+        let jalankan = |tree: &mut RenderTree, berubah: bool| -> Duration {
+            let mulai = Instant::now();
+            for i in 0..50 {
+                let w = if berubah {
+                    1280.0 - (i % 50) as f32 * 4.0
+                } else {
+                    1280.0
+                };
+                tree.invalidate_all();
+                tree.layout(BoxConstraints::loose(Size::new(w, 900.0)));
+            }
+            mulai.elapsed()
+        };
+
+        // Warm both paths before the clock matters.
+        jalankan(&mut tree, true);
+        jalankan(&mut tree, false);
+
+        // Best of three: the shortest run is the one least disturbed by
+        // whatever else the machine was doing.
+        let tetap = (0..3)
+            .map(|_| jalankan(&mut tree, false))
+            .min()
+            .expect("tiga putaran");
+        let berubah = (0..3)
+            .map(|_| jalankan(&mut tree, true))
+            .min()
+            .expect("tiga putaran");
+
+        let rasio = berubah.as_secs_f64() / tetap.as_secs_f64().max(1e-9);
+        eprintln!(
+            "layout 50 frame · 600 simpul teks — lebar tetap {:.2} ms, lebar berubah {:.2} ms (rasio {rasio:.2}x)",
+            tetap.as_secs_f64() * 1000.0,
+            berubah.as_secs_f64() * 1000.0,
+        );
+        assert!(
+            rasio < 4.0,
+            "lebar yang berubah tidak boleh jauh lebih mahal daripada lebar tetap: {rasio:.2}x"
+        );
+    }
+
+    /// Skipping the reshape must not skip the *wrapping*: a paragraph narrowed
+    /// past its natural width still has to be broken again.
+    #[test]
+    fn menyempit_di_bawah_lebar_alami_tetap_membungkus_ulang() {
+        let f = Fonts::bundled_only();
+        let isi = "Musuh terbesar framework GUI baru bukan rendering, melainkan teks.";
+        let mut tree = RenderTree::new();
+        reconcile(&mut tree, text_in(&f, isi).size(13.0));
+
+        let tinggi = |t: &RenderTree| t.size(t.children(t.root())[0]).height;
+        tree.layout(BoxConstraints::loose(Size::new(900.0, 400.0)));
+        let satu_baris = tinggi(&tree);
+        tree.layout(BoxConstraints::loose(Size::new(180.0, 400.0)));
+        let membungkus = tinggi(&tree);
+        assert!(membungkus > satu_baris, "{membungkus} vs {satu_baris}");
+
+        // …and widening it again brings the single line back.
+        tree.layout(BoxConstraints::loose(Size::new(900.0, 400.0)));
+        assert_eq!(tinggi(&tree), satu_baris);
+    }
+
+    /// A label whose width limit changes keeps drawing the same glyphs in the
+    /// same places — the reuse must be invisible in the scene, not just fast.
+    #[test]
+    fn glyph_tidak_bergeser_ketika_lebar_berubah() {
+        let f = Fonts::bundled_only();
+        let mut tree = RenderTree::new();
+        reconcile(
+            &mut tree,
+            text_in(&f, "laporan-0007.pdf").size(13.0).single_line(),
+        );
+
+        tree.layout(BoxConstraints::loose(Size::new(900.0, 100.0)));
+        let a = glyph_run(&scene(&mut tree));
+        tree.layout(BoxConstraints::loose(Size::new(310.0, 100.0)));
+        let b = glyph_run(&scene(&mut tree));
+        tree.layout(BoxConstraints::loose(Size::new(40.0, 100.0)));
+        let c = glyph_run(&scene(&mut tree));
+
+        assert_eq!(a.len(), b.len());
+        assert_eq!(a.len(), c.len());
+        for (i, (x, y)) in a.glyphs.iter().zip(b.glyphs.iter()).enumerate() {
+            assert_eq!(x.bounds, y.bounds, "glyph ke-{i} bergeser");
+        }
+        for (i, (x, y)) in a.glyphs.iter().zip(c.glyphs.iter()).enumerate() {
+            assert_eq!(x.bounds, y.bounds, "glyph ke-{i} bergeser saat dipotong");
+        }
     }
 
     // -- the typography vocabulary (§2.6) ---------------------------------

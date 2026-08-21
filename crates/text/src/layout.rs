@@ -137,6 +137,15 @@ pub struct TextLayout {
     pub(crate) max_lines: Option<usize>,
     pub(crate) measure: TextMeasure,
     pub(crate) glyph_count: usize,
+    /// The same measurement as if the constraints had been unbounded.
+    pub(crate) intrinsic: TextMeasure,
+    /// No line was broken by the width limit, so this measurement is what any
+    /// wider limit would produce as well.
+    pub(crate) width_independent: bool,
+    /// …and the glyph positions are unchanged too (start-aligned, LTR).
+    pub(crate) glyphs_stable: bool,
+    /// Wrapping is off entirely, so even a *narrower* limit changes nothing.
+    pub(crate) never_wraps: bool,
 }
 
 impl std::fmt::Debug for TextLayout {
@@ -173,6 +182,79 @@ impl TextLayout {
     /// True when some content did not fit — the signal for ellipsis/clipping.
     pub fn overflowed(&self) -> bool {
         self.measure.overflowed
+    }
+
+    /// The measurement this text would have with **no width limit at all**.
+    ///
+    /// For text that did not wrap it is the same shaping result seen through
+    /// unbounded constraints; that is what makes it reusable while a window is
+    /// resized, since every width limit at or above
+    /// `intrinsic_measure().content_size.width` yields exactly this.
+    pub fn intrinsic_measure(&self) -> TextMeasure {
+        self.intrinsic
+    }
+
+    /// True when the **measurement** does not depend on the width limit any
+    /// more: no line was broken by it, so any wider limit gives the same
+    /// numbers.
+    ///
+    /// This is the property that stops a window resize from reshaping every
+    /// label on the screen: a file name, a button title or a column header is
+    /// measured once and then answered from the cache at any width that still
+    /// fits it.
+    ///
+    /// ```
+    /// use silka_text::{TextConstraints, TextEngine, TextStyle};
+    ///
+    /// let mut engine = TextEngine::bundled_only();
+    /// let style = TextStyle::new().size(15.0);
+    ///
+    /// // A short label inside a wide column: the width played no part.
+    /// let label = engine.layout("Documents", &style, TextConstraints::width(400.0));
+    /// assert!(label.width_independent());
+    ///
+    /// // A paragraph that the column actually broke: this one is tied to the
+    /// // width it was shaped at.
+    /// let wrapped = engine.layout(
+    ///     "a sentence long enough that it has to be broken in two",
+    ///     &style,
+    ///     TextConstraints::width(80.0),
+    /// );
+    /// assert!(!wrapped.width_independent());
+    /// ```
+    pub fn width_independent(&self) -> bool {
+        self.width_independent
+    }
+
+    /// The narrowest width limit this layout — **glyph positions included** —
+    /// is still exactly right for, or [`None`] when it only answers for the
+    /// width it was shaped at.
+    ///
+    /// Stricter than [`TextLayout::width_independent`]: centred, end-aligned
+    /// and right-to-left text is positioned relative to the width limit, so its
+    /// glyphs move even when its size does not. `Some(0.0)` means wrapping is
+    /// off and no width can change anything — the text is clipped, not
+    /// re-laid-out.
+    ///
+    /// A widget keeps this one number next to its shaping result and skips the
+    /// whole pass while a window is resized (§3.3: shaping is the most
+    /// expensive work in the framework and must not be redone every frame).
+    pub fn minimum_valid_width(&self) -> Option<f32> {
+        if !self.glyphs_stable {
+            return None;
+        }
+        Some(if self.never_wraps {
+            0.0
+        } else {
+            self.intrinsic.content_size.width
+        })
+    }
+
+    /// True when this layout — glyph positions included — is exactly what
+    /// shaping against `max_width` would produce.
+    pub fn valid_for_width(&self, max_width: f32) -> bool {
+        self.minimum_valid_width()
+            .is_some_and(|minimum| max_width >= minimum)
     }
 
     /// Per-**visual**-line metrics — used by the caret, selection,
@@ -427,6 +509,23 @@ fn x_caret(run: &cosmic_text::LayoutRun<'_>, index: usize) -> Option<f32> {
     }
 }
 
+/// What one measuring pass over a shaped buffer found.
+pub(crate) struct HasilUkur {
+    /// The measurement against the constraints that were handed down.
+    pub(crate) measure: TextMeasure,
+    /// The same numbers seen through unbounded constraints.
+    pub(crate) intrinsic: TextMeasure,
+    /// How many glyphs will be drawn.
+    pub(crate) glyph_count: usize,
+    /// True when the width limit broke at least one source line into several
+    /// visual lines — the only case where the measurement is tied to a
+    /// particular width.
+    pub(crate) soft_wrapped: bool,
+    /// True when any laid-out line runs right to left; such a line is
+    /// positioned from the width limit, so its glyphs move when the limit does.
+    pub(crate) rtl: bool,
+}
+
 /// Measure a buffer that has already been shaped.
 ///
 /// `max_lines` is applied here (cosmic-text has no such concept of its own), and
@@ -436,7 +535,7 @@ pub(crate) fn ukur(
     constraints: TextConstraints,
     max_lines: Option<usize>,
     line_height: f32,
-) -> (TextMeasure, usize) {
+) -> HasilUkur {
     let batas = max_lines.unwrap_or(usize::MAX);
 
     let mut width: f32 = 0.0;
@@ -446,11 +545,17 @@ pub(crate) fn ukur(
     let mut first_baseline = line_height;
     let mut last_baseline = line_height;
     let mut terpotong = false;
+    let mut rtl = false;
+    let mut baris_visual = 0usize;
 
     for run in buffer.layout_runs() {
+        // Counted past the `max_lines` cut as well: whether the *width* broke a
+        // line is a property of the shaping, not of how much of it is shown.
+        baris_visual += 1;
+        rtl |= run.rtl;
         if baris >= batas {
             terpotong = true;
-            break;
+            continue;
         }
         width = width.max(run.line_w);
         height = run.line_top + run.line_height;
@@ -473,18 +578,34 @@ pub(crate) fn ukur(
     let overflowed =
         terpotong || content_size.width > c.max_width || content_size.height > c.max_height;
 
-    (
-        TextMeasure {
-            size,
-            content_size,
-            line_count: baris,
-            line_height,
-            first_baseline,
-            last_baseline,
-            overflowed,
-        },
+    let measure = TextMeasure {
+        size,
+        content_size,
+        line_count: baris,
+        line_height,
+        first_baseline,
+        last_baseline,
+        overflowed,
+    };
+    // Under unbounded constraints nothing is clamped, and the only thing that
+    // can still overflow is the `max_lines` cut.
+    let intrinsic = TextMeasure {
+        size: content_size,
+        overflowed: terpotong,
+        ..measure
+    };
+
+    HasilUkur {
+        measure,
+        intrinsic,
         glyph_count,
-    )
+        // One visual line per source line means the width limit never had to
+        // break anything. Fewer visual lines than source lines would mean the
+        // buffer was only partially laid out, which is not something to draw a
+        // conclusion from either.
+        soft_wrapped: baris_visual != buffer.lines.len(),
+        rtl,
+    }
 }
 
 #[cfg(test)]

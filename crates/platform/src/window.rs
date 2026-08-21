@@ -1802,13 +1802,21 @@ impl Shell {
             matches!(hasil, Ok(FrameOutcome::Presented)),
         );
 
-        // Measurement always runs; printing happens only in debug builds.
-        #[cfg(debug_assertions)]
-        if let Some(line) = logger.line(scheduler.stats(), scheduler.vsync(), &timing) {
-            eprintln!("{line}");
+        // Measurement always runs. Printing is on by default in debug builds,
+        // and available in release through `SILKA_FRAME_LOG` — because the only
+        // frame times worth optimising are the ones a release build produces,
+        // and a figure nobody can read is a figure nobody acts on.
+        //
+        //   SILKA_FRAME_LOG=1  turn printing on  (any of 1/true/on/yes)
+        //   SILKA_FRAME_LOG=0  turn printing off (any of 0/false/off/no)
+        //
+        // The variable is read once and cached: this sits in the frame path,
+        // and an environment lookup per frame would be measuring the measurer.
+        if frame_log_enabled() {
+            if let Some(line) = logger.line(scheduler.stats(), scheduler.vsync(), &timing) {
+                eprintln!("{line}");
+            }
         }
-        #[cfg(not(debug_assertions))]
-        let _ = (logger, &timing);
 
         hasil?;
 
@@ -2108,8 +2116,46 @@ pub fn default_clear_color(theme: &Theme) -> Color {
     theme.color.background
 }
 
+/// Whether frame timings are printed to stderr this run.
+///
+/// Debug builds print by default, release builds stay silent by default, and
+/// `SILKA_FRAME_LOG` overrides either way. The value is resolved once — this is
+/// consulted from the frame path, where an environment lookup per frame would
+/// cost more than the line it decides to print.
+fn frame_log_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| match std::env::var("SILKA_FRAME_LOG") {
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "on" | "yes"
+        ),
+        Err(_) => cfg!(debug_assertions),
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    /// `SILKA_FRAME_LOG` decides printing; the build profile is only the
+    /// default. The parser is what this pins down — the cache in
+    /// `frame_log_enabled` reads the variable once per process, so the parsing
+    /// rule is the part a test can hold still.
+    #[test]
+    fn frame_log_variable_beats_the_build_profile() {
+        fn parse(v: &str) -> bool {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "on" | "yes"
+            )
+        }
+        for on in ["1", "true", "TRUE", "on", "Yes", "  1  "] {
+            assert!(parse(on), "{on:?} should turn printing on");
+        }
+        for off in ["0", "false", "off", "no", "", "maybe"] {
+            assert!(!parse(off), "{off:?} should leave printing off");
+        }
+    }
+
     use super::*;
     use silka_core::access::AccessRole;
 

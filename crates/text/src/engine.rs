@@ -57,15 +57,25 @@ use crate::atlas::AtlasFormat;
 use crate::cache::{FontId, GlyphCache, GlyphKey, GlyphLookup, RasterGlyph, SubpixelBin};
 use crate::font::{self, FontOptions};
 use crate::layout::{ukur, TextLayout};
+use crate::lru::LruMap;
 use crate::measure::{ConstraintsKey, TextConstraints, TextMeasure};
 use crate::style::{StyleKey, TextAlign, TextStyle, TextWrap};
 
-/// How many measure results are kept before the cache is emptied.
+/// How many **width-specific** measure results are kept.
 ///
-/// The measure cache makes a big difference when layout runs many times per
-/// frame (the Taffy pattern: one node can be measured several times in a single
-/// pass).
+/// Only text that the width limit really broke ends up here; everything else
+/// lives in the intrinsic cache below, where the width is not part of the key
+/// at all. Eviction is least-recently-used: emptying the whole cache when it
+/// fills up is the worst possible behaviour during a resize, which is a burst
+/// of new keys arriving on every frame.
 const KAPASITAS_CACHE_MEASURE: usize = 512;
+
+/// How many width-independent measurements are kept.
+///
+/// Bigger than the wrapped cache on purpose: this is where the bulk of an
+/// application's text lives — file names, button titles, column headers, table
+/// cells — and each entry answers *every* width the resize sweeps through.
+const KAPASITAS_CACHE_INTRINSIC: usize = 2048;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct MeasureKey {
@@ -73,6 +83,52 @@ struct MeasureKey {
     style: StyleKey,
     constraints: ConstraintsKey,
     scale_bits: u32,
+}
+
+/// The key of a measurement that no longer depends on the width limit.
+///
+/// The whole point of the type is what it does **not** contain: the
+/// constraints. A resize changes `max_width` on every frame, and keying on it
+/// meant that every label on the screen missed the cache and was reshaped from
+/// scratch, sixty times a second.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct IntrinsicKey {
+    text: String,
+    style: StyleKey,
+    scale_bits: u32,
+}
+
+/// A measurement taken with no width limit, plus how far it can be reused.
+#[derive(Debug, Clone, Copy)]
+struct Intrinsic {
+    /// The measurement as if the constraints had been unbounded.
+    measure: TextMeasure,
+    /// True when wrapping is off entirely, so even a narrower limit produces
+    /// exactly these numbers (the text is clipped, not re-laid-out).
+    never_wraps: bool,
+}
+
+impl Intrinsic {
+    /// True when this entry answers a request whose width limit is `max_width`.
+    fn covers(&self, max_width: f32) -> bool {
+        self.never_wraps || self.measure.content_size.width <= max_width
+    }
+
+    /// The answer for a concrete set of constraints.
+    ///
+    /// Only the clamping and the overflow flag depend on them; the shaped
+    /// content — its size, its line count, its baselines — does not.
+    fn under(&self, constraints: TextConstraints) -> TextMeasure {
+        let c = constraints.normalized();
+        let content = self.measure.content_size;
+        TextMeasure {
+            size: c.constrain(content),
+            overflowed: self.measure.overflowed
+                || content.width > c.max_width
+                || content.height > c.max_height,
+            ..self.measure
+        }
+    }
 }
 
 /// The text engine: shaping, measurement, and the glyph atlas.
@@ -112,7 +168,11 @@ pub struct TextEngine {
     ui_family: Option<String>,
     font_ids: HashMap<fontdb::ID, FontId>,
     scale_factor: f32,
-    measures: HashMap<MeasureKey, TextMeasure>,
+    /// Measurements of text the width limit actually broke.
+    measures: LruMap<MeasureKey, TextMeasure>,
+    /// Measurements that hold at every width that still fits them.
+    intrinsics: LruMap<IntrinsicKey, Intrinsic>,
+    shapes: u64,
 }
 
 impl std::fmt::Debug for TextEngine {
@@ -156,7 +216,9 @@ impl TextEngine {
             ui_family: loaded.ui_family,
             font_ids: HashMap::new(),
             scale_factor: 1.0,
-            measures: HashMap::new(),
+            measures: LruMap::new(KAPASITAS_CACHE_MEASURE),
+            intrinsics: LruMap::new(KAPASITAS_CACHE_INTRINSIC),
+            shapes: 0,
         }
     }
 
@@ -169,6 +231,7 @@ impl TextEngine {
     pub fn load_font_data(&mut self, data: Vec<u8>) {
         self.fonts.db_mut().load_font_data(data);
         self.measures.clear();
+        self.intrinsics.clear();
     }
 
     /// The scale factor of the screen the text will be rasterized for (2.0 on
@@ -188,8 +251,10 @@ impl TextEngine {
         if baru != self.scale_factor {
             self.scale_factor = baru;
             // Logical sizes do not change, but per-pixel rounding does — the
-            // measure cache is keyed per scale, so this is all it takes.
+            // measure caches are keyed per scale, so this is all it takes.
             self.measures.retain(|k, _| k.scale_bits == baru.to_bits());
+            self.intrinsics
+                .retain(|k, _| k.scale_bits == baru.to_bits());
         }
     }
 
@@ -204,42 +269,117 @@ impl TextEngine {
     }
 
     /// The number of measure-cache entries — for tests and diagnostics.
+    ///
+    /// Both halves counted: the width-independent measurements and the ones
+    /// that a wrapping width pinned down.
     pub fn measure_cache_len(&self) -> usize {
-        self.measures.len()
+        self.measures.len() + self.intrinsics.len()
+    }
+
+    /// How many times text has actually been **shaped** since this engine was
+    /// created — the number the caches exist to keep down.
+    ///
+    /// A resize sweeping a label through a hundred different widths must not
+    /// move this counter more than once; that is exactly what the test suite
+    /// asserts, and what a profiler would otherwise have to be trusted for.
+    ///
+    /// ```
+    /// use silka_text::{TextConstraints, TextEngine, TextStyle};
+    ///
+    /// let mut engine = TextEngine::bundled_only();
+    /// let style = TextStyle::new().size(13.0);
+    ///
+    /// let before = engine.shape_count();
+    /// for w in 300..400 {
+    ///     engine.measure("annual-report.pdf", &style, TextConstraints::width(w as f32));
+    /// }
+    /// assert_eq!(engine.shape_count() - before, 1);
+    /// ```
+    pub fn shape_count(&self) -> u64 {
+        self.shapes
     }
 
     /// Empty every cache (measure + glyph). Used when the fonts change.
     pub fn clear_caches(&mut self) {
         self.measures.clear();
+        self.intrinsics.clear();
         self.cache.clear();
     }
 
     /// **Measure** text against constraints — this is the leaf-node measure
     /// function for the layout system (§3.4).
     ///
-    /// Results are cached: repeated measurements with the same (text, style,
-    /// constraints) do not shape again.
+    /// Results are cached, and the cache is deliberately in two halves:
+    ///
+    /// - text the width limit **never breaks** (a file name, a button title, a
+    ///   column header — the overwhelming majority of text in a real
+    ///   application) is stored **without the width in the key**, because its
+    ///   measurement is the same for every limit it still fits inside;
+    /// - only text that really wrapped is pinned to the width it wrapped at.
+    ///
+    /// That split is what makes a window resize cheap. `max_width` changes on
+    /// every frame of the gesture; keying every measurement on it meant a
+    /// hundred-percent cache miss rate exactly when the frame budget was
+    /// tightest, and the whole screen was reshaped for each new width.
+    ///
+    /// ```
+    /// use silka_text::{TextConstraints, TextEngine, TextStyle};
+    ///
+    /// let mut engine = TextEngine::bundled_only();
+    /// let style = TextStyle::new().size(13.0);
+    ///
+    /// // One shaping pays for the entire drag.
+    /// let before = engine.shape_count();
+    /// let mut sizes = Vec::new();
+    /// for w in 200..500 {
+    ///     sizes.push(engine.measure("Downloads", &style, TextConstraints::width(w as f32)).size);
+    /// }
+    /// assert_eq!(engine.shape_count() - before, 1);
+    /// assert!(sizes.windows(2).all(|p| p[0] == p[1]));
+    /// ```
     pub fn measure(
         &mut self,
         text: &str,
         style: &TextStyle,
         constraints: TextConstraints,
     ) -> TextMeasure {
-        let key = MeasureKey {
+        let c = constraints.normalized();
+        let style_key = style.key();
+        let scale_bits = self.scale_factor.to_bits();
+        let intrinsic_key = IntrinsicKey {
             text: text.to_string(),
-            style: style.key(),
-            constraints: constraints.key(),
-            scale_bits: self.scale_factor.to_bits(),
+            style: style_key.clone(),
+            scale_bits,
         };
-        if let Some(m) = self.measures.get(&key) {
+        if let Some(i) = self.intrinsics.get(&intrinsic_key) {
+            if i.covers(c.max_width) {
+                return i.under(c);
+            }
+        }
+
+        let measure_key = MeasureKey {
+            text: intrinsic_key.text.clone(),
+            style: style_key,
+            constraints: c.key(),
+            scale_bits,
+        };
+        if let Some(m) = self.measures.get(&measure_key) {
             return *m;
         }
 
-        let m = self.layout(text, style, constraints).measure;
-        if self.measures.len() >= KAPASITAS_CACHE_MEASURE {
-            self.measures.clear();
+        let layout = self.layout(text, style, constraints);
+        let m = layout.measure;
+        if layout.width_independent {
+            self.intrinsics.insert(
+                intrinsic_key,
+                Intrinsic {
+                    measure: layout.intrinsic,
+                    never_wraps: layout.never_wraps,
+                },
+            );
+        } else {
+            self.measures.insert(measure_key, m);
         }
-        self.measures.insert(key, m);
         m
     }
 
@@ -282,13 +422,29 @@ impl TextEngine {
             align_cosmic(style.align),
         );
         buffer.shape_until_scroll(&mut self.fonts, false);
+        self.shapes += 1;
 
-        let (measure, glyph_count) = ukur(&buffer, constraints, style.max_lines, line_height);
+        let hasil = ukur(&buffer, constraints, style.max_lines, line_height);
+
+        // Justified text stretches its lines to the width limit, so its
+        // measurement really is a function of that limit; every other alignment
+        // reports the width of the content itself.
+        let justified = style.align == TextAlign::Justified;
+        let never_wraps = !justified && style.wrap == TextWrap::None;
+        let width_independent = !justified && (never_wraps || !hasil.soft_wrapped);
+        // Centred, end-aligned and RTL lines are laid out *from* the width
+        // limit, so their glyphs shift even when the size does not.
+        let glyphs_stable = width_independent && style.align == TextAlign::Start && !hasil.rtl;
+
         TextLayout {
             buffer,
             max_lines: style.max_lines,
-            measure,
-            glyph_count,
+            measure: hasil.measure,
+            glyph_count: hasil.glyph_count,
+            intrinsic: hasil.intrinsic,
+            width_independent,
+            glyphs_stable,
+            never_wraps,
         }
     }
 
@@ -584,6 +740,242 @@ mod tests {
             TextConstraints::UNBOUNDED,
         );
         assert_eq!(e.measure_cache_len(), 2);
+    }
+
+    // -- resize: the width must stop being part of the cache key ------------
+
+    /// One drag of a window edge sweeps a label through hundreds of widths.
+    /// Every one of them has to be answered from a single shaping.
+    #[test]
+    fn menyapu_banyak_lebar_hanya_membentuk_sekali() {
+        let mut e = engine();
+        let s = TextStyle::new().size(13.0);
+        let awal = e.shape_count();
+        let mut ukuran = Vec::new();
+        for i in 0..300 {
+            let m = e.measure(
+                "laporan-keuangan-q3.pdf",
+                &s,
+                TextConstraints::width(320.0 + i as f32 * 1.5),
+            );
+            ukuran.push(m.size);
+        }
+        assert_eq!(
+            e.shape_count() - awal,
+            1,
+            "hanya satu shaping untuk 300 lebar"
+        );
+        assert!(ukuran.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// The shape of the whole problem: a list of file names measured on every
+    /// frame of a resize. The shaping count must follow the number of *strings*,
+    /// never the number of widths.
+    #[test]
+    fn jumlah_shaping_tidak_tumbuh_mengikuti_jumlah_lebar() {
+        let daftar: Vec<String> = (0..40).map(|i| format!("berkas-{i:03}.txt")).collect();
+        let s = TextStyle::new().size(13.0);
+
+        let hitung = |frame: usize| {
+            let mut e = engine();
+            let awal = e.shape_count();
+            for f in 0..frame {
+                let w = 900.0 - f as f32 * 2.0;
+                for t in &daftar {
+                    e.measure(t, &s, TextConstraints::width(w));
+                }
+            }
+            e.shape_count() - awal
+        };
+
+        // Ten frames or two hundred: the same work, because the width is not
+        // part of what identifies a measurement any more.
+        assert_eq!(hitung(10), 40);
+        assert_eq!(hitung(200), 40);
+    }
+
+    /// Text that really does wrap stays pinned to its width — but only while it
+    /// is too wide. Once the column is wider than the paragraph, the same entry
+    /// answers again.
+    #[test]
+    fn paragraf_hanya_dibentuk_ulang_selama_masih_membungkus() {
+        let mut e = engine();
+        let s = TextStyle::new().size(13.0);
+        let teks = "Musuh terbesar framework GUI baru bukan rendering, melainkan teks.";
+
+        let lebar_alami = e
+            .measure(teks, &s, TextConstraints::UNBOUNDED)
+            .content_size
+            .width;
+        let awal = e.shape_count();
+        for i in 0..200 {
+            e.measure(
+                teks,
+                &s,
+                TextConstraints::width(lebar_alami + 1.0 + i as f32 * 3.0),
+            );
+        }
+        assert_eq!(e.shape_count() - awal, 0, "semua lebar itu sudah muat");
+
+        // Narrower than its natural width, so it genuinely has to be re-broken.
+        e.measure(teks, &s, TextConstraints::width(lebar_alami * 0.5));
+        assert_eq!(e.shape_count() - awal, 1);
+        e.measure(teks, &s, TextConstraints::width(lebar_alami * 0.5));
+        assert_eq!(e.shape_count() - awal, 1, "lebar yang sama tetap di-cache");
+    }
+
+    /// Text that never wraps is width-independent in both directions: clipping
+    /// it does not change its measurement, so a narrowing column must not
+    /// reshape it either.
+    #[test]
+    fn teks_tanpa_wrap_tidak_dibentuk_ulang_walau_menyempit() {
+        let mut e = engine();
+        let s = TextStyle::new().size(13.0).single_line();
+        let teks = "Dokumen Rahasia Perusahaan 2026.xlsx";
+        let awal = e.shape_count();
+        let mut isi = Vec::new();
+        for i in 0..200 {
+            let m = e.measure(teks, &s, TextConstraints::width(400.0 - i as f32 * 1.5));
+            isi.push(m.content_size);
+        }
+        assert_eq!(e.shape_count() - awal, 1);
+        assert!(isi.windows(2).all(|p| p[0] == p[1]), "isi tidak berubah");
+    }
+
+    /// The cached answer has to be **the same answer**, not merely a fast one.
+    /// Every combination is compared against a cold engine that shapes it fresh.
+    #[test]
+    fn hasil_dari_cache_identik_dengan_shaping_ulang() {
+        let teks = [
+            "",
+            "Downloads",
+            "laporan-keuangan-q3.pdf",
+            "Framework GUI desktop Rust dengan kualitas visual macOS di tiga sistem operasi",
+            "satu\ndua tiga empat lima",
+            "cafe\u{301} du monde",
+        ];
+        let gaya = [
+            TextStyle::new().size(13.0),
+            TextStyle::new().size(13.0).wrap(TextWrap::None),
+            TextStyle::new().size(13.0).wrap(TextWrap::Glyph),
+            TextStyle::new().size(13.0).max_lines(2),
+            TextStyle::new().size(13.0).align(TextAlign::Center),
+            TextStyle::new().size(13.0).align(TextAlign::End),
+            TextStyle::new().size(13.0).align(TextAlign::Justified),
+            TextStyle::new().size(17.0).single_line(),
+        ];
+        let lebar = [20.0, 48.5, 97.0, 160.0, 240.0, 533.0, 2000.0, f32::INFINITY];
+
+        let mut hangat = engine();
+        let mut segar = engine();
+        for t in teks {
+            for g in &gaya {
+                for w in lebar {
+                    for c in [
+                        TextConstraints::width(w),
+                        TextConstraints::loose(Size::new(w, 40.0)),
+                        TextConstraints::tight(Size::new(w.min(4000.0), 24.0)),
+                    ] {
+                        // The warm engine has every previous width in its cache;
+                        // the cold one has nothing and must shape.
+                        let dari_cache = hangat.measure(t, g, c);
+                        segar.clear_caches();
+                        let asli = segar.measure(t, g, c);
+                        assert_eq!(
+                            dari_cache, asli,
+                            "cache menyimpang untuk {t:?} pada lebar {w}: {g:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Wrapping still has to happen where it should: a cache that answers "it
+    /// fits" too eagerly would silently turn every paragraph into one long line.
+    #[test]
+    fn kolom_sempit_tetap_membungkus_setelah_diukur_lebar() {
+        let mut e = engine();
+        let s = TextStyle::new().size(13.0);
+        let teks = "Framework GUI desktop Rust dengan kualitas visual macOS";
+
+        let lebar = e.measure(teks, &s, TextConstraints::width(900.0));
+        assert_eq!(lebar.line_count, 1);
+        let sempit = e.measure(teks, &s, TextConstraints::width(120.0));
+        assert!(sempit.line_count > 1, "tetap harus membungkus: {sempit:?}");
+        assert_eq!(sempit.line_height, lebar.line_height);
+        assert!(sempit.height() > lebar.height());
+
+        // …and going back to the wide column returns the unwrapped answer.
+        assert_eq!(e.measure(teks, &s, TextConstraints::width(900.0)), lebar);
+    }
+
+    /// A full cache must drop its coldest entry, not everything it knows. The
+    /// old behaviour emptied the whole map, which is the worst possible thing to
+    /// do in the middle of a resize.
+    #[test]
+    fn cache_penuh_membuang_yang_terlama_bukan_seluruhnya() {
+        let mut e = engine();
+        let s = TextStyle::new().size(13.0);
+        // Every one of these wraps at 60 pt, so they all land in the
+        // width-specific half of the cache.
+        let teks: Vec<String> = (0..KAPASITAS_CACHE_MEASURE + 40)
+            .map(|i| format!("kalimat nomor {i} yang pasti membungkus"))
+            .collect();
+        for t in &teks {
+            let m = e.measure(t, &s, TextConstraints::width(60.0));
+            assert!(m.line_count > 1);
+        }
+        assert_eq!(
+            e.measures.len(),
+            KAPASITAS_CACHE_MEASURE,
+            "penuh, tidak dikosongkan"
+        );
+
+        // The most recent entries are still there — no shaping needed.
+        let sebelum = e.shape_count();
+        for t in teks.iter().rev().take(20) {
+            e.measure(t, &s, TextConstraints::width(60.0));
+        }
+        assert_eq!(e.shape_count(), sebelum, "entri terbaru masih hidup");
+    }
+
+    #[test]
+    fn layout_melaporkan_apakah_lebar_masih_berpengaruh() {
+        let mut e = engine();
+        let s = TextStyle::new().size(13.0);
+
+        let pendek = e.layout("Documents", &s, TextConstraints::width(400.0));
+        assert!(pendek.width_independent());
+        assert!(pendek.valid_for_width(f32::INFINITY));
+        assert!(pendek.valid_for_width(pendek.intrinsic_measure().content_size.width));
+        assert!(!pendek.valid_for_width(4.0), "lebih sempit dari isinya");
+
+        let membungkus = e.layout(
+            "Framework GUI desktop Rust dengan kualitas visual macOS",
+            &s,
+            TextConstraints::width(120.0),
+        );
+        assert!(!membungkus.width_independent());
+        assert!(!membungkus.valid_for_width(2000.0));
+
+        // Wrapping switched off: any width at all, narrower ones included.
+        let satu_baris = e.layout(
+            "Dokumen Rahasia Perusahaan 2026.xlsx",
+            &s.clone().single_line(),
+            TextConstraints::width(80.0),
+        );
+        assert!(satu_baris.width_independent());
+        assert!(satu_baris.valid_for_width(10.0));
+
+        // Centred text keeps its size but not its glyph positions.
+        let tengah = e.layout(
+            "Documents",
+            &s.clone().align(TextAlign::Center),
+            TextConstraints::width(400.0),
+        );
+        assert!(tengah.width_independent());
+        assert!(!tengah.valid_for_width(800.0));
     }
 
     #[test]
