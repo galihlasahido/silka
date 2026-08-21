@@ -2148,9 +2148,14 @@ fn frame_log_enabled() -> bool {
     use std::sync::OnceLock;
     static ENABLED: OnceLock<bool> = OnceLock::new();
     *ENABLED.get_or_init(|| match std::env::var("SILKA_FRAME_LOG") {
-        Ok(v) => matches!(
+        // Anything that is not an explicit "off" turns printing on. The
+        // variable is also the interval dial (see `frame_log_every`), so a
+        // value like `all` or `5` has to switch printing on as well —
+        // listing only the words for "yes" here once made `all` mean "off",
+        // which is the opposite of what anyone typing it wants.
+        Ok(v) => !matches!(
             v.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "on" | "yes"
+            "0" | "false" | "off" | "no" | ""
         ),
         Err(_) => cfg!(debug_assertions),
     })
@@ -2165,15 +2170,15 @@ mod tests {
     #[test]
     fn frame_log_variable_beats_the_build_profile() {
         fn parse(v: &str) -> bool {
-            matches!(
+            !matches!(
                 v.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "on" | "yes"
+                "0" | "false" | "off" | "no" | ""
             )
         }
-        for on in ["1", "true", "TRUE", "on", "Yes", "  1  "] {
+        for on in ["1", "true", "TRUE", "on", "Yes", "  1  ", "all", "5"] {
             assert!(parse(on), "{on:?} should turn printing on");
         }
-        for off in ["0", "false", "off", "no", "", "maybe"] {
+        for off in ["0", "false", "off", "no", "", "  OFF  "] {
             assert!(!parse(off), "{off:?} should leave printing off");
         }
     }
