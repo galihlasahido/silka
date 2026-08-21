@@ -34,6 +34,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # A runner starts from an empty target directory and is thrown away
+  # afterwards, so incremental compilation has nothing to be incremental
+  # against: it only writes a cache nobody will read, which costs time on
+  # every job and disk on the ones that cache the directory between runs.
+  CARGO_INCREMENTAL: 0
 
 jobs:
   lint:
