@@ -92,9 +92,16 @@ fn kpi_grid(t: &Theme, palette: &ChartPalette) -> View {
                 Tint::Slot(i) => Some(i),
             };
             View::from(
-                flexible(kit::kpi_tile(t, palette, k.label, &k.value.text(), slot))
-                    .grow(1.0)
-                    .basis(t.space(KPI_MIN_STEPS)),
+                flexible(kit::kpi_tile(
+                    t,
+                    palette,
+                    k.label,
+                    &k.value.text(),
+                    k.delta,
+                    slot,
+                ))
+                .grow(1.0)
+                .basis(t.space(KPI_MIN_STEPS)),
             )
         })
         .collect();

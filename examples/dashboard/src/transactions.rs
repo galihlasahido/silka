@@ -1,11 +1,24 @@
 //! The second page: the transactions table.
 //!
-//! It exists to prove two things at once — that navigating between pages works,
-//! and that [`silka_widgets::table()`] (a Tier 5, virtualized component) drops
-//! into an application without ceremony. Sorting, column resize and reorder,
-//! anchored multi-selection, sticky headers, and the AccessKit
-//! `Table`/`Row`/`Cell` nodes all come with it; this file writes columns, cells,
-//! and a sort comparator, and nothing else.
+//! It exists to prove three things at once — that navigating between pages
+//! works, that [`silka_widgets::table()`] (a Tier 5, virtualized component)
+//! drops into an application without ceremony, and that a table meant to be
+//! *paged* rather than endlessly scrolled reaches for
+//! [`silka_widgets::pagination()`] instead of hand-rolling one. Sorting,
+//! column resize and reorder, anchored multi-selection, sticky headers, and
+//! the AccessKit `Table`/`Row`/`Cell` nodes all come with `table()`; this
+//! file writes columns, cells, a sort comparator, and the slice of the sorted
+//! order one page shows.
+//!
+//! 2,500 rows is exactly the case [`silka_widgets::table()`]'s virtualization
+//! was built for — it would happily scroll all of them. Paging it anyway is a
+//! deliberate product choice, the same one an admin table almost always
+//! makes: "row 1,204 of 2,500" is not a place a person navigates to by
+//! scrolling.
+//!
+//! The row height is [`ControlToken::Row`], not a literal — under
+//! `--density compact` (see [`crate`]'s module docs) it draws visibly
+//! shorter, and this file never finds out.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,8 +28,8 @@ use silka_core::signals::{use_signal, Signal};
 use silka_core::tree::CrossAlign;
 use silka_core::view::{column, expanded, View};
 use silka_text::FontWeight;
-use silka_theme::{RadiusToken, Theme};
-use silka_widgets::{col, table, text, use_table_state, Column, SortBy, SortDirection};
+use silka_theme::{ControlToken, RadiusToken, SpaceToken, Theme};
+use silka_widgets::{col, pagination, table, text, use_table_state, Column, SortBy, SortDirection};
 
 use crate::data;
 use crate::kit;
@@ -26,8 +39,9 @@ use crate::nav::Page;
 pub const TABLE_NAME: &str = "Transaction ledger";
 /// What an empty table says.
 pub const EMPTY: &str = "No transactions for this period";
-/// One row's height, which is also the minimum hit target.
-const ROW_HEIGHT: f32 = 44.0;
+/// Rows shown per page — an ordinary admin-table default, not derived from
+/// anything.
+pub const PAGE_SIZE: usize = 25;
 /// The header's height, in spacing steps.
 const HEADER_STEPS: f32 = 11.0;
 
@@ -92,38 +106,53 @@ impl Order {
     }
 }
 
+/// How many pages [`PAGE_SIZE`] divides [`data::TRANSACTIONS`] into — always
+/// at least one, even if the dataset were ever empty.
+fn total_pages() -> usize {
+    data::TRANSACTIONS.div_ceil(PAGE_SIZE).max(1)
+}
+
 /// The whole page.
 pub fn page(cx: &BuildCtx) -> View {
     let t: Theme = cx.expect_env::<Signal<Theme>>().get();
     let state = use_table_state();
     let order = use_signal(|| Rc::new(RefCell::new(Order::default())));
+    // 0-based internally (it indexes straight into the sorted permutation);
+    // `pagination()` itself speaks the 1-based page numbers a person reads.
+    let page_idx = use_signal(|| 0usize);
 
     // Reading `sort()` here is what makes the table rebuild whenever a column
-    // heading is clicked — no callback needs wiring up (§2.5).
+    // heading is clicked — no callback needs wiring up (§2.5). The sort
+    // always runs over the **full** 2,500 rows, before pagination slices it:
+    // "sorted, then paged" is the only order that does not scatter one sorted
+    // page's rows across several unsorted ones.
     let permutation = order
         .peek()
         .borrow_mut()
         .for_sort(state.sort(), data::TRANSACTIONS);
 
+    let pages = total_pages();
+    // Clamped rather than trusted: `page_idx` is a controlled signal, and
+    // nothing stops it from momentarily outliving a smaller `total_pages()`
+    // the same way `Pagination::active_page` tolerates a stale `current`.
+    let current_page = page_idx.get().min(pages - 1);
+    let start = current_page * PAGE_SIZE;
+    let shown_here = PAGE_SIZE.min(data::TRANSACTIONS - start);
+
     let theme = t;
 
-    let body = table(
-        state,
-        columns(&t),
-        data::TRANSACTIONS,
-        move |row, column| {
-            let i = permutation[row] as usize;
-            cell(&theme, i, column)
-        },
-    )
-    .row_extent(ROW_HEIGHT)
+    let body = table(state, columns(&t), shown_here, move |row, column| {
+        let i = permutation[start + row] as usize;
+        cell(&theme, i, column)
+    })
+    .row_extent(t.control_of(ControlToken::Row))
     .header_extent(t.space(HEADER_STEPS))
-    .separators(t.space(0.25))
+    .separators(t.space_of(SpaceToken::Px))
     .striped()
     .label(TABLE_NAME)
     .background(t.color.surface)
     .corners(t.corners_of(RadiusToken::Lg))
-    .border(t.space_of(silka_theme::SpaceToken::Px), t.color.separator)
+    .border(t.space_of(SpaceToken::Px), t.color.separator)
     .empty(move || empty_state(&theme));
 
     column([
@@ -135,6 +164,11 @@ pub fn page(cx: &BuildCtx) -> View {
         .cross(CrossAlign::Start)
         .into(),
         View::from(expanded(body)),
+        View::from(
+            pagination(current_page + 1, pages)
+                .label("Transaction ledger pages")
+                .on_change(move |p| page_idx.set(p - 1)),
+        ),
     ])
     .spacing(t.space(5.0))
     .cross(CrossAlign::Stretch)

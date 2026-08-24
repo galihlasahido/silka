@@ -20,7 +20,7 @@ use silka_core::input::{
 };
 use silka_core::signals::Signal;
 use silka_paint::{Color, Point, Rect, Size};
-use silka_theme::{Appearance, Preset, Theme};
+use silka_theme::{Appearance, Density, Preset, Theme};
 use silka_widgets::{active_fonts, Fonts};
 
 use crate::app::{self, AppearanceMode};
@@ -278,6 +278,22 @@ fn the_dashboard_shows_all_ten_statistics() {
 }
 
 #[test]
+fn every_kpi_delta_shown_on_screen_carries_its_sign() {
+    let screen = Screen::new(theme());
+    let labels = screen.labels();
+    for kpi in data::KPIS {
+        let Some(d) = kpi.delta else { continue };
+        let text = data::delta_text(d);
+        assert!(
+            labels.iter().any(|l| l == &text),
+            "'{}' ({text}) never made it to the screen:\n{}",
+            kpi.label,
+            screen.tree().dump()
+        );
+    }
+}
+
+#[test]
 fn money_and_dates_on_screen_come_from_the_locale() {
     let screen = Screen::new(theme());
     let labels = screen.labels();
@@ -342,6 +358,70 @@ fn clicking_a_sidebar_item_opens_its_page() {
         screen.has(transactions::TABLE_NAME),
         "the transactions table did not open:\n{}",
         screen.tree().dump()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Transactions: pagination and density
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_transactions_table_starts_on_page_one() {
+    // The table is virtualized: only the rows that fit the window's height
+    // actually materialize, so this cannot assert every one of the 25 rows
+    // `PAGE_SIZE` promises is on screen — only that page one never shows a
+    // row that belongs to page two.
+    let screen = Screen::at(theme(), Page::Transactions);
+    assert!(
+        screen.has(&data::contract(0)),
+        "row 1 is missing from page one:\n{}",
+        screen.tree().dump()
+    );
+    assert!(
+        !screen.has(&data::contract(transactions::PAGE_SIZE)),
+        "page one leaked a row that belongs to page two"
+    );
+}
+
+#[test]
+fn clicking_page_two_shows_the_next_batch_of_rows() {
+    let mut screen = Screen::at(theme(), Page::Transactions);
+    assert!(screen.has(&data::contract(0)));
+
+    screen.click("2");
+
+    assert!(
+        !screen.has(&data::contract(0)),
+        "page one's first row is still on screen after paging to two"
+    );
+    assert!(
+        screen.has(&data::contract(transactions::PAGE_SIZE)),
+        "page two's first row never showed up:\n{}",
+        screen.tree().dump()
+    );
+}
+
+#[test]
+fn compact_density_shows_more_rows_in_the_same_window() {
+    // `table()`'s virtualization only materializes what is actually visible,
+    // and the table itself always fills the height the page gives it
+    // (`expanded`) — so a shorter `ControlToken::Row` cannot shrink the
+    // table's own wrapper, only how many of the 25-row page fit inside it at
+    // once. That is the metric `control.rs`'s own measurement used (14 → 21
+    // table rows in the same 600pt), so it is the one to repeat here.
+    let roomy = Screen::at(theme(), Page::Transactions);
+    let tight = Screen::at(theme().with_density(Density::Compact), Page::Transactions);
+
+    let visible = |s: &Screen| -> usize {
+        (0..transactions::PAGE_SIZE)
+            .filter(|&i| s.has(&data::contract(i)))
+            .count()
+    };
+    let roomy_rows = visible(&roomy);
+    let tight_rows = visible(&tight);
+    assert!(
+        tight_rows > roomy_rows,
+        "compact ({tight_rows} rows) is not denser than comfortable ({roomy_rows} rows)"
     );
 }
 

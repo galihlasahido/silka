@@ -222,18 +222,26 @@ pub fn avatar(_t: &Theme, name: &str, diameter: f32) -> View {
 // KPI tile
 // ---------------------------------------------------------------------------
 
-/// One statistic: a small caps label over a big number, on an optionally
-/// tinted card.
+/// One statistic: a small caps label over a big number — and, when the
+/// dataset has one, a signed change against the previous period — on an
+/// optionally tinted card.
 ///
 /// The tint is a **categorical palette slot**, never a literal: those hues are
 /// validated for protanopia and deuteranopia and are re-stepped for dark mode,
 /// so a dashboard that borrows them stays readable in cases nobody on the team
 /// can see for themselves.
+///
+/// The delta's direction is read literally — up in [`ColorToken::Success`]
+/// with [`IconName::ChevronUp`], down in [`ColorToken::Destructive`] with
+/// [`IconName::ChevronDown`] — which is [`crate::data::Kpi::delta`]'s decision to
+/// make, not this function's: see its doc for why "smaller is better" is not
+/// something this dataset attempts to encode.
 pub fn kpi_tile(
     t: &Theme,
     palette: &ChartPalette,
     label: &str,
     value: &str,
+    delta: Option<f32>,
     slot: Option<usize>,
 ) -> View {
     let (background, border) = match slot {
@@ -244,7 +252,7 @@ pub fn kpi_tile(
         None => (t.color.surface, t.color.separator),
     };
 
-    column([
+    let mut children = vec![
         overline(t, label),
         text(value)
             .size(t.typography.title1.size)
@@ -253,15 +261,39 @@ pub fn kpi_tile(
             .color(t.color.label)
             .single_line()
             .into(),
-    ])
-    .spacing(t.space(2.0))
-    .cross(CrossAlign::Start)
-    .p_4()
-    .bg_raw(background)
-    .rounded_lg()
-    .border_1()
-    .border_color_raw(border)
-    .into()
+    ];
+    if let Some(d) = delta {
+        let (tone, chevron) = if d < 0.0 {
+            (t.color.destructive, IconName::ChevronDown)
+        } else {
+            (t.color.success, IconName::ChevronUp)
+        };
+        children.push(
+            row([
+                View::from(icon(chevron).sm().color_raw(tone)),
+                View::from(
+                    text(crate::data::delta_text(d))
+                        .size(t.typography.footnote.size)
+                        .weight(FontWeight::SEMIBOLD)
+                        .color(tone)
+                        .single_line(),
+                ),
+            ])
+            .spacing(t.space(0.5))
+            .cross(CrossAlign::Center)
+            .into(),
+        );
+    }
+
+    column(children)
+        .spacing(t.space(2.0))
+        .cross(CrossAlign::Start)
+        .p_4()
+        .bg_raw(background)
+        .rounded_lg()
+        .border_1()
+        .border_color_raw(border)
+        .into()
 }
 
 // ---------------------------------------------------------------------------

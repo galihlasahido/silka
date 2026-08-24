@@ -252,13 +252,20 @@ impl Theme {
     /// [`Theme::with_colors`]) are therefore **lost** — an app with its own
     /// brand must rebuild its theme through the same function it used at
     /// startup.
+    ///
+    /// [`Theme::density`] is the one exception: it survives, the same way
+    /// [`Theme::preset`] already does. An app that runs `Compact` and then
+    /// follows the OS into dark mode does not want density silently reset to
+    /// `Comfortable` on the very next appearance change.
     pub fn with_appearance(self, appearance: Appearance) -> Self {
-        Theme::new(self.preset, appearance)
+        Theme::new(self.preset, appearance).with_density(self.density)
     }
 
     /// The same theme under a different preset (the gallery app's switcher).
+    ///
+    /// [`Theme::density`] survives this too — see [`Theme::with_appearance`].
     pub fn with_preset(self, preset: Preset) -> Self {
-        Theme::new(preset, self.appearance)
+        Theme::new(preset, self.appearance).with_density(self.density)
     }
 
     /// The same theme at a different [`Density`].
@@ -589,6 +596,24 @@ mod tests {
         let t = Theme::tailwind(Appearance::Light).with_appearance(Appearance::Dark);
         assert_eq!(t.preset, Preset::Tailwind);
         assert_eq!(t.color, Theme::tailwind(Appearance::Dark).color);
+    }
+
+    /// The bug this guards against: an app running `Compact` that follows the
+    /// OS into dark mode (or lets the user flip presets) must not wake up
+    /// back at `Comfortable` — density is a preference, not a customization
+    /// that `with_appearance`/`with_preset` are entitled to discard.
+    #[test]
+    fn switch_appearance_dan_preset_mempertahankan_density() {
+        let padat = Theme::cupertino(Appearance::Light).with_density(Density::Compact);
+
+        let gelap = padat.with_appearance(Appearance::Dark);
+        assert_eq!(gelap.density, Density::Compact);
+        assert_eq!(gelap.spacing, padat.spacing);
+        assert_eq!(gelap.control, padat.control);
+
+        let tailwind = padat.with_preset(Preset::Tailwind);
+        assert_eq!(tailwind.density, Density::Compact);
+        assert!(tailwind.spacing.unit < Theme::tailwind(Appearance::Light).spacing.unit);
     }
 
     #[test]

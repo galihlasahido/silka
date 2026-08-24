@@ -17,16 +17,23 @@
 //! | A virtualized table reached by navigating | [`transactions`] |
 //! | Locale-aware money and dates | [`data`] — `Rp 121.000.000` and `28 Jul 2026` both come from `silka_chart::format` |
 //! | The components the framework is still missing | [`kit`] — every one of them, with a note on why it hurts |
+//! | A dense admin table, from the same tokens as the roomy one | [`transactions`] under `--density compact` — the row height is [`silka_theme::ControlToken::Row`], not a literal, so `Density` reaches it without the table knowing |
+//! | Pagination on a table too large to hand-roll a page picker for | [`transactions`] — 2,500 rows, [`silka_widgets::pagination()`] |
 //!
 //! ```text
 //! cargo run -p silka-dashboard
 //! cargo run -p silka-dashboard -- --preset tailwind --appearance dark
 //! cargo run -p silka-dashboard -- --page transactions
+//! cargo run -p silka-dashboard -- --density compact
 //! ```
 //!
-//! `--preset` and `--appearance` set the **starting** theme; from then on the
-//! top bar owns it. Without `--appearance` the dashboard follows OS dark mode
-//! live (INTEGRASI-NATIVE §6).
+//! `--preset`, `--appearance`, and `--density` set the **starting** theme;
+//! from then on the top bar owns appearance and preset (density does not yet
+//! have a live toggle — see [`Options`]). Without `--appearance` the
+//! dashboard follows OS dark mode live (INTEGRASI-NATIVE §6), and that switch
+//! preserves whatever `--density` chose (`Theme::with_appearance` carries
+//! [`silka_theme::Theme::density`] across, the same way it already carries
+//! `preset`).
 
 mod app;
 mod dashboard;
@@ -38,7 +45,7 @@ mod transactions;
 
 use nav::Page;
 use silka_platform::{window, PlatformError};
-use silka_theme::{Appearance, Preset, Theme};
+use silka_theme::{Appearance, Density, Preset, Theme};
 use silka_widgets::{install_fonts, Fonts};
 
 fn main() -> Result<(), PlatformError> {
@@ -63,7 +70,8 @@ fn main() -> Result<(), PlatformError> {
         None => config.follow_system_appearance(),
     };
 
-    let theme = Theme::new(options.preset, options.appearance.unwrap_or_default());
+    let theme = Theme::new(options.preset, options.appearance.unwrap_or_default())
+        .with_density(options.density);
     app::run(config, theme, fonts, options.page())
 }
 
@@ -71,6 +79,7 @@ fn main() -> Result<(), PlatformError> {
 struct Options {
     preset: Preset,
     appearance: Option<Appearance>,
+    density: Density,
     start: Option<Page>,
 }
 
@@ -79,6 +88,7 @@ impl Options {
         let mut options = Options {
             preset: Preset::Cupertino,
             appearance: None,
+            density: Density::Comfortable,
             start: None,
         };
         let args: Vec<String> = args.collect();
@@ -104,6 +114,15 @@ impl Options {
                         i += 1;
                     }
                 }
+                "--density" => {
+                    if let Some(v) = args.get(i + 1) {
+                        options.density = match v.as_str() {
+                            "compact" => Density::Compact,
+                            _ => Density::Comfortable,
+                        };
+                        i += 1;
+                    }
+                }
                 "--page" => {
                     if let Some(v) = args.get(i + 1) {
                         options.start = Page::from_name(v);
@@ -124,7 +143,7 @@ impl Options {
 
     #[cfg(test)]
     fn theme(&self) -> Theme {
-        Theme::new(self.preset, self.appearance.unwrap_or_default())
+        Theme::new(self.preset, self.appearance.unwrap_or_default()).with_density(self.density)
     }
 }
 
@@ -160,6 +179,25 @@ mod arg_tests {
             options(&["--preset", "tailwind", "--appearance", "dark"]).theme(),
             Theme::tailwind(Appearance::Dark)
         );
+    }
+
+    #[test]
+    fn without_density_it_is_comfortable() {
+        let o = options(&[]);
+        assert_eq!(o.density, Density::Comfortable);
+        assert_eq!(o.theme(), Theme::cupertino(Appearance::Light));
+    }
+
+    #[test]
+    fn density_can_be_pinned_and_an_unknown_value_stays_comfortable() {
+        assert_eq!(options(&["--density", "compact"]).density, Density::Compact);
+        assert_eq!(
+            options(&["--density", "nonsense"]).density,
+            Density::Comfortable
+        );
+        let padat = options(&["--density", "compact"]).theme();
+        assert_eq!(padat.density, Density::Compact);
+        assert!(padat.spacing.unit < Theme::cupertino(Appearance::Light).spacing.unit);
     }
 
     #[test]

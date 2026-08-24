@@ -45,6 +45,20 @@ pub fn date(days: f64) -> String {
     LOCALE.date_full(days)
 }
 
+/// A signed change against the previous period: `+12%` or `-5%`.
+///
+/// `NumberFormat::Percent` does not sign a positive value (`format(0.12, …)`
+/// is `12%`, not `+12%`), and a delta without its sign is not a trend a
+/// reader can act on in a glance — that is the one thing this wrapper adds.
+pub fn delta_text(delta: f32) -> String {
+    let pct = NumberFormat::Percent(0).format(delta.abs() as f64, &LOCALE);
+    if delta < 0.0 {
+        format!("-{pct}")
+    } else {
+        format!("+{pct}")
+    }
+}
+
 /// A day number `offset` days away from [`TODAY`].
 pub fn day(offset: i64) -> f64 {
     (TODAY.to_days() + offset) as f64
@@ -76,6 +90,16 @@ pub struct Kpi {
     pub value: KpiValue,
     /// How the tile is tinted.
     pub tint: Tint,
+    /// Change against the previous period, as a fraction (`0.12` = `+12%`).
+    ///
+    /// `None` where a trend would not mean anything on this dataset — a
+    /// count of zero has no previous-period ratio to speak of, and inventing
+    /// one would be a number this file made up rather than data. The
+    /// direction is read literally (up is drawn in `success`, down in
+    /// `destructive`): whether a smaller number is actually the good outcome
+    /// (fewer rejections, say) is a per-metric judgement this dataset does
+    /// not attempt to encode.
+    pub delta: Option<f32>,
 }
 
 /// What a KPI tile shows — kept as data so the formatter, not the literal,
@@ -104,51 +128,61 @@ pub const KPIS: [Kpi; 10] = [
         label: "Total customers",
         value: KpiValue::Count(20),
         tint: Tint::Plain,
+        delta: Some(0.08),
     },
     Kpi {
         label: "In pipeline",
         value: KpiValue::Count(3),
         tint: Tint::Slot(0),
+        delta: Some(-0.25),
     },
     Kpi {
         label: "Verification",
         value: KpiValue::Count(3),
         tint: Tint::Slot(7),
+        delta: Some(0.5),
     },
     Kpi {
         label: "Processing",
         value: KpiValue::Count(2),
         tint: Tint::Slot(5),
+        delta: None,
     },
     Kpi {
         label: "Rejected",
         value: KpiValue::Count(1),
         tint: Tint::Plain,
+        delta: Some(-0.5),
     },
     Kpi {
         label: "Akad scheduled",
         value: KpiValue::Count(3),
         tint: Tint::Slot(2),
+        delta: Some(0.2),
     },
     Kpi {
         label: "Akad completed today",
         value: KpiValue::Count(0),
         tint: Tint::Slot(6),
+        delta: None,
     },
     Kpi {
         label: "Disbursement pending",
         value: KpiValue::Count(2),
         tint: Tint::Slot(1),
+        delta: Some(-0.1),
     },
     Kpi {
         label: "Disbursement today",
         value: KpiValue::Count(4),
         tint: Tint::Slot(3),
+        delta: Some(0.33),
     },
     Kpi {
         label: "Disbursed today",
         value: KpiValue::Money(196_000_000.0),
         tint: Tint::Slot(4),
+        delta: Some(0.15),
     },
 ];
 
@@ -418,6 +452,41 @@ mod tests {
             .find(|k| matches!(k.value, KpiValue::Money(_)))
             .expect("one KPI is an amount");
         assert!(money.value.text().starts_with("Rp "));
+    }
+
+    #[test]
+    fn delta_text_signs_a_positive_change_the_formatter_would_leave_bare() {
+        assert_eq!(delta_text(0.12), "+12%");
+        assert_eq!(delta_text(-0.05), "-5%");
+        assert_eq!(delta_text(0.0), "+0%");
+    }
+
+    #[test]
+    fn every_kpi_delta_has_a_direction_that_agrees_with_its_sign() {
+        // Not a tautology: this is what keeps a future edit that flips a sign
+        // by hand (rather than through `delta_text`) from silently drawing a
+        // downward tile in `success` green.
+        for k in KPIS {
+            if let Some(d) = k.delta {
+                let text = delta_text(d);
+                if d < 0.0 {
+                    assert!(text.starts_with('-'), "{}: {text}", k.label);
+                } else {
+                    assert!(text.starts_with('+'), "{}: {text}", k.label);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_zero_count_kpi_has_no_delta() {
+        // "Akad completed today" is 0 — a percent change against nothing is
+        // not a number this dataset invents.
+        let zero = KPIS
+            .iter()
+            .find(|k| matches!(k.value, KpiValue::Count(0)))
+            .expect("one KPI is a zero count");
+        assert_eq!(zero.delta, None, "{}", zero.label);
     }
 
     #[test]
