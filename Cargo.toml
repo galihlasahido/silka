@@ -19,6 +19,7 @@ members = [
     "examples/monitor",
     "examples/files",
     "examples/mdi",
+    "examples/account",
 ]
 
 [workspace.package]

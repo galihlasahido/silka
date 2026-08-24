@@ -1,0 +1,17 @@
+[package]
+name = "silka-account"
+description = "Account & Settings example: the framework's form catalogue in one screen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+silka-chart.workspace = true
+silka-core.workspace = true
+silka-paint.workspace = true
+silka-platform.workspace = true
+silka-text.workspace = true
+silka-theme.workspace = true
+silka-widgets.workspace = true

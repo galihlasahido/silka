@@ -3106,6 +3106,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "silka-account"
+version = "0.1.0"
+dependencies = [
+ "silka-chart",
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
+]
+
+[[package]]
 name = "silka-api-client"
 version = "0.1.0"
 dependencies = [
