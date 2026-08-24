@@ -72,7 +72,7 @@ use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode, TextDire
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, CornerRadii, Corners, Insets, LineCap, Point, Quad, Rect, Size, Stroke};
 use silka_text::FontWeight;
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -208,7 +208,7 @@ impl StepperStyle {
             half: MIN_HIT_TARGET,
             height: MIN_HIT_TARGET,
             corners: theme.corners(theme.radius.md),
-            border_width: theme.space(0.25),
+            border_width: theme.space_of(SpaceToken::Px),
             arm: theme.space(1.5),
             glyph_stroke: theme.space(0.5),
             value_padding: theme.space(2.0),

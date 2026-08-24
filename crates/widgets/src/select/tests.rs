@@ -18,7 +18,7 @@ use silka_core::signals::Runtime;
 use silka_core::tree::{BoxConstraints, NodeId, RenderTree};
 use silka_core::view::{column, reconcile, View};
 use silka_paint::{Color, Command, Point, Rect, Scene, Size};
-use silka_theme::{Appearance, Preset, Theme};
+use silka_theme::{Appearance, Preset, SpaceToken, Theme};
 
 use super::*;
 use crate::overlay::{self, overlay_layer};
@@ -855,7 +855,7 @@ fn daftar_panjang_dibatasi_tingginya_dan_bisa_digulir() {
         .node_ref::<crate::overlay::OverlayEntry>(entry)
         .unwrap()
         .panel_rect();
-    let tinggi_maks = s.row_height() * 5.0 + t.space(1.0) * 2.0 + t.space(0.25) * 2.0;
+    let tinggi_maks = s.row_height() * 5.0 + t.space(1.0) * 2.0 + t.space_of(SpaceToken::Px) * 2.0;
     assert!(
         panel.size.height <= tinggi_maks + 1.0,
         "panel {} melampaui {} baris terlihat",

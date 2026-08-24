@@ -31,7 +31,7 @@ use silka_core::tree::{Decoration, FocusRing, RenderNode};
 use silka_core::view::{pad, Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets, ShadowPair};
 use silka_text::FontWeight;
-use silka_theme::Theme;
+use silka_theme::{ControlToken, SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -57,7 +57,12 @@ pub const VIEWPORT_HINT: f32 = 1600.0;
 /// How many spare rows are built outside the viewport, above and below.
 pub const DEFAULT_OVERSCAN: usize = 3;
 
-/// Default row height — also the HIG minimum hit target.
+/// Fallback row height for a table built without a theme to ask.
+///
+/// The themed path uses [`ControlToken::Row`](silka_theme::ControlToken::Row)
+/// instead, which is denser: a row is content, not a control, and a table of two
+/// hundred rows cannot spend a 44pt hit target on each one. When rows *are*
+/// interactive the floor comes back — see [`TableBuilder::extent_final`].
 pub const DEFAULT_ROW_EXTENT: f32 = MIN_HIT_TARGET;
 
 // ---------------------------------------------------------------------------
@@ -368,7 +373,10 @@ where
         header: true,
         header_extent: theme.space(9.0),
         sticky: true,
-        extent: DEFAULT_ROW_EXTENT,
+        // A row is content, so it takes the denser row token rather than the
+        // 44pt control floor. `extent_final` puts the floor back when the rows
+        // are selectable or activatable.
+        extent: theme.control_of(ControlToken::Row),
         overscan: DEFAULT_OVERSCAN,
         mode: SelectionMode::Multiple,
         label: None,
@@ -395,7 +403,7 @@ where
             hover: theme.color.surface_hover,
             pressed: theme.color.surface_pressed,
             separator: theme.color.separator,
-            separator_width: theme.space(0.25),
+            separator_width: theme.space_of(SpaceToken::Px),
             indicator: theme.color.accent,
             indicator_size: theme.space(2.0),
             handle: theme.color.accent,

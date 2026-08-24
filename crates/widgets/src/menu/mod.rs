@@ -113,7 +113,7 @@ use silka_core::tree::{BoxConstraints, CrossAlign, NodeId, RenderTree};
 use silka_core::view::{column, constrained, expanded, fixed, pad, row, Builder, View};
 use silka_paint::{Insets, Point, Rect};
 use silka_text::{FontWeight, TextConstraints, TextStyle};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -458,7 +458,7 @@ impl Menu {
             // same rule macOS uses, and the value stays derived from tokens.
             disabled: t.color.surface.lerp(t.color.background, 0.6),
             corners: t.corners(radius),
-            border_width: t.space(0.25),
+            border_width: t.space_of(SpaceToken::Px),
             border: t.color.border,
             border_disabled: t.color.separator,
             // A chip is lighter than a button in shape only: the same shadow
@@ -733,7 +733,7 @@ impl Menu {
             .map(|(i, entry)| match entry {
                 MenuEntry::Separator => Builder::new(MenuSeparatorProps {
                     color: t.color.separator,
-                    thickness: t.space(0.25).max(1.0),
+                    thickness: t.space_of(SpaceToken::Px),
                     inset: t.space(1.0),
                     height: t.space(2.0),
                 })
@@ -770,7 +770,7 @@ impl Menu {
         let panel = pad(Insets::all(t.space(1.0)), isi)
             .background(t.color.surface_elevated)
             .corners(t.corners(t.radius.lg))
-            .border(t.space(0.25), t.color.separator)
+            .border(t.space_of(SpaceToken::Px), t.color.separator)
             .shadow(t.shadow.lg);
         let lebar = self.level_width(depth);
         constrained(BoxConstraints::new(lebar, lebar, 0.0, f32::INFINITY), panel).into()

@@ -34,7 +34,10 @@ use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 
 use crate::palette::hig;
 use crate::typography::{optical_tracking, weight, TypeStyle, TypographyTokens};
-use crate::{Appearance, ColorTokens, Preset, RadiusTokens, ShadowTokens, SpacingTokens, Theme};
+use crate::{
+    Appearance, ColorTokens, ControlTokens, Preset, RadiusTokens, ShadowTokens, SpacingTokens,
+    Theme,
+};
 
 /// Build the Cupertino preset's theme for a given appearance.
 pub fn theme(appearance: Appearance) -> Theme {
@@ -53,7 +56,19 @@ pub fn theme(appearance: Appearance) -> Theme {
         },
         shadow: shadows(appearance),
         spacing: SpacingTokens { unit: 4.0 },
+        control: ControlTokens {
+            // AppKit's control sizes: small 24, regular 32, large 40 — all on the
+            // 4pt scale, which is why a control lines up with a padded box.
+            sm: 24.0,
+            md: 32.0,
+            lg: 40.0,
+            // Finder's list rows, and the reason a table can show 20 rows in the
+            // space a 44pt floor would give 14.
+            row: 28.0,
+            menu_row: 24.0,
+        },
         typography: typography(),
+        density: crate::Density::Comfortable,
     }
 }
 

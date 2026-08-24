@@ -72,7 +72,7 @@ use silka_core::tree::{
 };
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, CornerRadii, CornerStyle, Corners, Quad, Rect, ShadowPair, Size};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 
@@ -223,7 +223,7 @@ impl SliderStyle {
             fill_disabled: theme.color.accent_muted,
             thumb: theme.color.surface_elevated,
             thumb_border: theme.color.separator,
-            thumb_border_width: theme.space(0.25),
+            thumb_border_width: theme.space_of(SpaceToken::Px),
             focus_ring: theme.color.focus_ring,
             focus_ring_width: theme.space(0.5),
             shadow: theme.shadow.sm,

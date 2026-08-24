@@ -39,9 +39,76 @@
 //! to convert the path to curves offline instead. There are no strokes here
 //! either: a stroked icon is converted to a filled path by its exporter, and if
 //! it is not, [`crate::Stroke`] draws it as a real line at draw time.
+//!
+//! ## The `viewBox` is a parameter, not an assumption
+//!
+//! [`rasterize_path`] takes the side of a `0 0 w h` grid, which covers most icon
+//! sets. It does not cover all of them: Material Symbols draws in
+//! `0 -960 960 960`, where every Y coordinate is negative. Mapping such a path
+//! as though it started at the origin puts the whole icon above the canvas and
+//! produces a **blank mask rather than an error** — the failure mode this crate
+//! works hardest to avoid. [`rasterize_path_in`] takes a full [`ViewBox`] for
+//! exactly that case.
 
 use crate::geometry::Point;
 use crate::image::{ImageAtlas, ImageId};
+
+/// The rectangle of user space an icon's path is drawn in.
+///
+/// Not every icon set draws in `0 0 24 24`. Material Symbols, for one, uses
+/// `0 -960 960 960` — a thousand-unit grid whose Y runs *negative*, so every
+/// coordinate in the path sits above the origin. A single `viewport: f32` can
+/// say how wide that grid is but not where it starts, and a path mapped without
+/// its origin lands entirely off the canvas: an icon that is silently blank
+/// rather than an error.
+///
+/// ```
+/// use silka_paint::ViewBox;
+///
+/// // The common case, and what your own artwork most likely uses.
+/// let lucide = ViewBox::square(24.0);
+/// assert_eq!((lucide.min_x, lucide.min_y), (0.0, 0.0));
+///
+/// // Material Symbols: same square grid, shifted a thousand units up.
+/// let material = ViewBox::new(0.0, -960.0, 960.0);
+/// assert_eq!(material.side, 960.0);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewBox {
+    /// The left edge in user units.
+    pub min_x: f32,
+    /// The top edge in user units — negative for a set like Material Symbols.
+    pub min_y: f32,
+    /// The side of the (square) grid in user units.
+    pub side: f32,
+}
+
+impl ViewBox {
+    /// A grid whose origin is `0 0`, which is what most icon sets use.
+    pub const fn square(side: f32) -> Self {
+        Self {
+            min_x: 0.0,
+            min_y: 0.0,
+            side,
+        }
+    }
+
+    /// A grid with an explicit origin, for a set that does not start at `0 0`.
+    pub const fn new(min_x: f32, min_y: f32, side: f32) -> Self {
+        Self { min_x, min_y, side }
+    }
+
+    /// Usable as a rasterisation target at all.
+    fn is_valid(self) -> bool {
+        self.min_x.is_finite() && self.min_y.is_finite() && self.side.is_finite() && self.side > 0.0
+    }
+}
+
+impl Default for ViewBox {
+    fn default() -> Self {
+        Self::square(24.0)
+    }
+}
 
 /// How a self-overlapping path decides what is inside.
 ///
@@ -133,11 +200,41 @@ const SUBSAMPLES: u32 = 4;
 /// `None` when the path cannot be parsed, uses an elliptical arc, or `size` is
 /// zero or absurd.
 pub fn rasterize_path(d: &str, viewport: f32, size: u32, rule: FillRule) -> Option<IconMask> {
-    if size == 0 || size > MAX_SIDE || !(viewport.is_finite() && viewport > 0.0) {
+    rasterize_path_in(d, ViewBox::square(viewport), size, rule)
+}
+
+/// [`rasterize_path`] for artwork whose `viewBox` does not start at `0 0`.
+///
+/// The origin is applied before the scale, so a path written in Material
+/// Symbols' `0 -960 960 960` grid lands on the canvas instead of a thousand
+/// units above it.
+///
+/// ```
+/// use silka_paint::{rasterize_path_in, FillRule, ViewBox};
+///
+/// // The same square, once in each grid, rasterises to the same mask.
+/// let plain = rasterize_path("M4 4 H20 V20 H4 Z", 24.0, 32, FillRule::NonZero).unwrap();
+/// let shifted = rasterize_path_in(
+///     "M4 -20 H20 V-4 H4 Z",
+///     ViewBox::new(0.0, -24.0, 24.0),
+///     32,
+///     FillRule::NonZero,
+/// )
+/// .unwrap();
+/// assert_eq!(plain.alpha(), shifted.alpha());
+/// # use silka_paint::rasterize_path;
+/// ```
+pub fn rasterize_path_in(
+    d: &str,
+    view_box: ViewBox,
+    size: u32,
+    rule: FillRule,
+) -> Option<IconMask> {
+    if size == 0 || size > MAX_SIDE || !view_box.is_valid() {
         return None;
     }
-    let scale = size as f32 / viewport;
-    let contours = flatten_path(d, scale)?;
+    let scale = size as f32 / view_box.side;
+    let contours = flatten_path(d, view_box, scale)?;
     Some(fill(&contours, size, size, rule))
 }
 
@@ -147,7 +244,13 @@ impl ImageAtlas {
     /// The one call an `icon()` widget needs: vector in, atlas handle out, and
     /// the colour still decided by a theme token at draw time.
     pub fn insert_svg_path(&mut self, d: &str, viewport: f32, size: u32) -> Option<ImageId> {
-        let mask = rasterize_path(d, viewport, size, FillRule::NonZero)?;
+        self.insert_svg_path_in(d, ViewBox::square(viewport), size)
+    }
+
+    /// [`ImageAtlas::insert_svg_path`] for artwork whose `viewBox` does not
+    /// start at `0 0`.
+    pub fn insert_svg_path_in(&mut self, d: &str, view_box: ViewBox, size: u32) -> Option<ImageId> {
+        let mask = rasterize_path_in(d, view_box, size, FillRule::NonZero)?;
         self.insert_mask(mask.width(), mask.height(), mask.alpha())
     }
 }
@@ -160,7 +263,8 @@ impl ImageAtlas {
 ///
 /// Every curve becomes line segments here, which is what keeps the rasteriser
 /// itself a scanline fill with no curve mathematics in it at all.
-fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
+fn flatten_path(d: &str, view_box: ViewBox, scale: f32) -> Option<Vec<Vec<Point>>> {
+    let scaled = |p: Point| map_point(p, view_box, scale);
     let mut scan = Scanner::new(d);
     let mut contours: Vec<Vec<Point>> = Vec::new();
     let mut current: Vec<Point> = Vec::new();
@@ -205,7 +309,7 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
                 }
                 pen = p;
                 start = p;
-                current.push(scaled(p, scale));
+                current.push(scaled(p));
                 last_cubic_ctrl = None;
                 last_quad_ctrl = None;
                 // A repeated coordinate pair after `M` means `L` (SVG rule).
@@ -214,7 +318,7 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
             b'L' => {
                 let p = abs(scan.point()?, pen);
                 pen = p;
-                current.push(scaled(p, scale));
+                current.push(scaled(p));
                 last_cubic_ctrl = None;
                 last_quad_ctrl = None;
             }
@@ -222,7 +326,7 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
                 let x = scan.number()?;
                 let p = Point::new(if relative { pen.x + x } else { x }, pen.y);
                 pen = p;
-                current.push(scaled(p, scale));
+                current.push(scaled(p));
                 last_cubic_ctrl = None;
                 last_quad_ctrl = None;
             }
@@ -230,7 +334,7 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
                 let y = scan.number()?;
                 let p = Point::new(pen.x, if relative { pen.y + y } else { y });
                 pen = p;
-                current.push(scaled(p, scale));
+                current.push(scaled(p));
                 last_cubic_ctrl = None;
                 last_quad_ctrl = None;
             }
@@ -250,7 +354,7 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
                     let to = abs(scan.point()?, pen);
                     (c1, c2, to)
                 };
-                push_cubic(&mut current, pen, c1, c2, to, scale);
+                push_cubic(&mut current, pen, c1, c2, to, view_box, scale);
                 pen = to;
                 last_cubic_ctrl = Some(c2);
                 last_quad_ctrl = None;
@@ -268,20 +372,20 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
                     let to = abs(scan.point()?, pen);
                     (c, to)
                 };
-                push_quadratic(&mut current, pen, ctrl, to, scale);
+                push_quadratic(&mut current, pen, ctrl, to, view_box, scale);
                 pen = to;
                 last_quad_ctrl = Some(ctrl);
                 last_cubic_ctrl = None;
             }
             b'Z' => {
                 if current.len() > 1 {
-                    current.push(scaled(start, scale));
+                    current.push(scaled(start));
                     contours.push(core::mem::take(&mut current));
                 } else {
                     current.clear();
                 }
                 pen = start;
-                current.push(scaled(start, scale));
+                current.push(scaled(start));
                 last_cubic_ctrl = None;
                 last_quad_ctrl = None;
             }
@@ -301,8 +405,15 @@ fn flatten_path(d: &str, scale: f32) -> Option<Vec<Vec<Point>>> {
     Some(contours)
 }
 
-fn scaled(p: Point, scale: f32) -> Point {
-    Point::new(p.x * scale, p.y * scale)
+/// User space → pixel space: shift by the `viewBox` origin, then scale.
+///
+/// The order matters. Scaling first would multiply the origin too, which is
+/// exactly the mistake that puts a Material Symbols path off the canvas.
+fn map_point(p: Point, view_box: ViewBox, scale: f32) -> Point {
+    Point::new(
+        (p.x - view_box.min_x) * scale,
+        (p.y - view_box.min_y) * scale,
+    )
 }
 
 /// How many line segments a curve becomes: one per pixel of control-polygon
@@ -314,11 +425,19 @@ fn segments_for(length_px: f32) -> u32 {
     (length_px.ceil() as u32).clamp(1, 64)
 }
 
-fn push_cubic(out: &mut Vec<Point>, from: Point, c1: Point, c2: Point, to: Point, scale: f32) {
-    let a = scaled(from, scale);
-    let b = scaled(c1, scale);
-    let c = scaled(c2, scale);
-    let d = scaled(to, scale);
+fn push_cubic(
+    out: &mut Vec<Point>,
+    from: Point,
+    c1: Point,
+    c2: Point,
+    to: Point,
+    view_box: ViewBox,
+    scale: f32,
+) {
+    let a = map_point(from, view_box, scale);
+    let b = map_point(c1, view_box, scale);
+    let c = map_point(c2, view_box, scale);
+    let d = map_point(to, view_box, scale);
     let n = segments_for(dist(a, b) + dist(b, c) + dist(c, d));
     for i in 1..=n {
         let t = i as f32 / n as f32;
@@ -329,10 +448,17 @@ fn push_cubic(out: &mut Vec<Point>, from: Point, c1: Point, c2: Point, to: Point
     }
 }
 
-fn push_quadratic(out: &mut Vec<Point>, from: Point, ctrl: Point, to: Point, scale: f32) {
-    let a = scaled(from, scale);
-    let b = scaled(ctrl, scale);
-    let c = scaled(to, scale);
+fn push_quadratic(
+    out: &mut Vec<Point>,
+    from: Point,
+    ctrl: Point,
+    to: Point,
+    view_box: ViewBox,
+    scale: f32,
+) {
+    let a = map_point(from, view_box, scale);
+    let b = map_point(ctrl, view_box, scale);
+    let c = map_point(to, view_box, scale);
     let n = segments_for(dist(a, b) + dist(b, c));
     for i in 1..=n {
         let t = i as f32 / n as f32;
@@ -749,5 +875,52 @@ mod tests {
         assert!(atlas
             .insert_svg_path("M0 0 A1 1 0 0 1 2 2", 24.0, 32)
             .is_none());
+    }
+
+    /// The trap this whole `ViewBox` exists for: a Material Symbols path mapped
+    /// as though its grid started at `0 0` draws **nothing at all**, and nothing
+    /// about that is an error the caller can see. So the negative-Y grid has to
+    /// be carried, not assumed away.
+    #[test]
+    fn kisi_y_negatif_tidak_menghasilkan_mask_kosong() {
+        // A real Material Symbols path (`remove`, the minus sign).
+        const MINUS: &str =
+            "M200-440q-17 0-28.5-11.5T160-480q0-17 11.5-28.5T200-520h560q17 0 28.5 11.5T800-480q0 \
+             17-11.5 28.5T760-440H200Z";
+        const GRID: ViewBox = ViewBox::new(0.0, -960.0, 960.0);
+
+        let benar = rasterize_path_in(MINUS, GRID, 48, FillRule::NonZero).expect("terbaca");
+        // The bar crosses the middle of the canvas.
+        assert!(benar.pixel(24, 24) > 200, "tengah harus terisi");
+        assert!(
+            benar.alpha().iter().any(|&a| a > 0),
+            "mask tidak boleh kosong"
+        );
+
+        // Same path, origin thrown away: parses fine, and is entirely blank.
+        let salah = rasterize_path(MINUS, 960.0, 48, FillRule::NonZero).expect("tetap terbaca");
+        assert!(
+            salah.alpha().iter().all(|&a| a == 0),
+            "tanpa origin, ikon senyap-kosong — inilah yang dicegah ViewBox"
+        );
+    }
+
+    #[test]
+    fn view_box_menolak_sisi_tak_masuk_akal() {
+        assert!(rasterize_path_in(
+            "M4 4 H20 V20 H4 Z",
+            ViewBox::square(0.0),
+            16,
+            FillRule::NonZero
+        )
+        .is_none());
+        assert!(rasterize_path_in(
+            "M4 4 H20 V20 H4 Z",
+            ViewBox::new(f32::NAN, 0.0, 24.0),
+            16,
+            FillRule::NonZero
+        )
+        .is_none());
+        assert_eq!(ViewBox::default(), ViewBox::square(24.0));
     }
 }

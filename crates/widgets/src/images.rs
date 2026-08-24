@@ -47,7 +47,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
-use silka_paint::{ImageAtlas, ImageId, ImageSource, Size};
+use silka_paint::{ImageAtlas, ImageId, ImageSource, Size, ViewBox};
 
 thread_local! {
     /// The application's bitmap atlas for this thread.
@@ -168,7 +168,13 @@ impl Images {
     /// Uncached: prefer [`Images::icon`], which keys the result so a toolbar
     /// redrawn every frame rasterises nothing.
     pub fn insert_svg_path(&self, d: &str, viewport: f32, size: u32) -> Option<ImageId> {
-        self.with(|a| a.insert_svg_path(d, viewport, size))
+        self.insert_svg_path_in(d, ViewBox::square(viewport), size)
+    }
+
+    /// [`Images::insert_svg_path`] for artwork whose `viewBox` does not start at
+    /// `0 0` — see [`silka_paint::ViewBox`].
+    pub fn insert_svg_path_in(&self, d: &str, view_box: ViewBox, size: u32) -> Option<ImageId> {
+        self.with(|a| a.insert_svg_path_in(d, view_box, size))
     }
 
     /// The rasterised form of one icon path, **cached** by `key` and pixel
@@ -178,6 +184,15 @@ impl Images {
     /// path data itself for a custom one); `size` is in pixels, so the caller
     /// has already multiplied the point size by the scale factor.
     pub fn icon(&self, key: &str, d: &str, viewport: f32, size: u32) -> Option<ImageId> {
+        self.icon_in(key, d, ViewBox::square(viewport), size)
+    }
+
+    /// [`Images::icon`] for artwork whose `viewBox` does not start at `0 0`.
+    ///
+    /// The cache is keyed by `key` and pixel size only, so a `key` has to name
+    /// one piece of artwork in one grid — which is what the built-in set does,
+    /// and what a custom `key` should do too.
+    pub fn icon_in(&self, key: &str, d: &str, view_box: ViewBox, size: u32) -> Option<ImageId> {
         if size == 0 {
             return None;
         }
@@ -185,7 +200,7 @@ impl Images {
         if let Some(id) = self.sisi.icons.borrow().get(&kunci) {
             return Some(*id);
         }
-        let id = self.insert_svg_path(d, viewport, size)?;
+        let id = self.insert_svg_path_in(d, view_box, size)?;
         self.sisi.icons.borrow_mut().insert(kunci, id);
         Some(id)
     }

@@ -41,7 +41,7 @@ use std::ops::Range;
 
 use silka_paint::{Color, Corners, GlyphRun, Insets, Point, Rect, Size};
 use silka_text::{FontFamily, FontWeight, TextConstraints, TextEngine, TextLayout, TextStyle};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use super::document::{BlockKind, DocPos, DocRange, InlineStyle, Marks, Span};
 
@@ -130,7 +130,7 @@ impl EditorStyle {
             indent: t.space(6.0),
             code_padding: Insets::symmetric(t.space(3.0), t.space(2.0)),
             code_corners: t.corners(t.radius.sm),
-            rule: t.space(0.25).max(1.0),
+            rule: t.space_of(SpaceToken::Px),
         }
     }
 

@@ -110,4 +110,22 @@ component that cannot be repaired by an update.
 
 ## License
 
-MIT
+Licensed under either of [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE) at your option — the dual licence the Rust
+ecosystem has settled on, so this crate can be depended on from a project under
+either one.
+
+Unless you state otherwise, any contribution you intentionally submit for
+inclusion in this work is licensed the same way, without additional terms.
+
+### Third-party assets
+
+Bundled assets keep their own licences, which are not the same as the licence
+above:
+
+| Asset | Source | Licence |
+| --- | --- | --- |
+| Icon paths in `silka-widgets` | [Material Symbols](https://github.com/google/material-design-icons) (Rounded, filled) | Apache-2.0 — see [`crates/widgets/ICONS.md`](crates/widgets/ICONS.md) |
+
+`ICONS.md` carries the upstream version, the per-icon mapping, and the
+statement of modification that Apache-2.0 §4(b) requires.

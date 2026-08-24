@@ -141,6 +141,31 @@ fn hit_target_minimal_44pt_di_kedua_sumbu() {
     );
 }
 
+/// The button's height is a token now, not the accident of its font metrics plus
+/// its padding. That is what lets it line up with a `text_field` beside it — and
+/// it has to hold in **both** presets, which pick different numbers.
+#[test]
+fn tinggi_tombol_datang_dari_token_kontrol() {
+    use silka_theme::ControlToken;
+
+    let f = Fonts::bundled_only();
+    for preset in Preset::ALL {
+        let t = Theme::new(preset, Appearance::Light);
+        let tree = pohon(button_in(&f, &t, "Ok"));
+        let tinggi = tree.size(id_tombol(&tree)).height;
+
+        // Whatever the preset asks for, clamped up by the HIG floor — never the
+        // leftover of text plus padding.
+        let diharapkan = t
+            .control_of(ControlToken::Md)
+            .max(t.hit_target_of(ControlToken::Md));
+        assert_eq!(
+            tinggi, diharapkan,
+            "{preset:?}: tinggi tombol harus token, bukan sisa perhitungan teks"
+        );
+    }
+}
+
 #[test]
 fn warna_dan_bentuk_sudut_selalu_datang_dari_token() {
     let f = Fonts::bundled_only();

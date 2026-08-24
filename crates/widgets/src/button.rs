@@ -60,7 +60,7 @@ use silka_paint::{
     Color, CornerRadii, Corners, Insets, Point, Quad, Rect, ShadowPair, Size, Transform,
 };
 use silka_text::FontWeight;
-use silka_theme::{Appearance, Theme};
+use silka_theme::{Appearance, ControlToken, SpaceToken, Theme};
 
 use crate::fonts::Fonts;
 use crate::text::text_in;
@@ -92,7 +92,11 @@ use crate::text::text_in;
 /// let id = tree.children(tree.root())[0];
 /// assert!(tree.size(id).height >= MIN_HIT_TARGET);
 /// ```
-pub const MIN_HIT_TARGET: f32 = 44.0;
+///
+/// Re-exported from [`silka_theme`] rather than declared here: the 44pt floor is
+/// a rule of the design system, and `Theme::hit_target_of` has to be able to
+/// apply it. Two copies of one constant is one copy too many.
+pub use silka_theme::MIN_HIT_TARGET;
 
 /// Number of dots in the "loading" indicator.
 const JUMLAH_TITIK: usize = 3;
@@ -236,7 +240,7 @@ impl ButtonVariant {
         };
 
         let border_width = match self {
-            ButtonVariant::Secondary => theme.space(0.25),
+            ButtonVariant::Secondary => theme.space_of(SpaceToken::Px),
             _ => 0.0,
         };
         let shadows = match self {
@@ -1323,13 +1327,25 @@ impl From<Button> for View {
             .role(AccessRole::Container)])
         .main(MainAlign::Center)
         .cross(CrossAlign::Center)
-        .padding(Insets::symmetric(t.space(4.0), t.space(2.0)));
+        // Horizontal padding still comes from the scale; the vertical size is
+        // the control token's job now, so a button lines up with a `text_field`
+        // beside it instead of agreeing with it by coincidence.
+        .padding(Insets::symmetric(t.space(4.0), 0.0));
 
-        // Hit target ≥ 44pt on both axes even when the visual is smaller
-        // (HIG); the text stays centered because the flex container inside it
-        // does the aligning, not arithmetic.
+        // Two different measurements, on purpose (§KOMPONEN "hit target ≥ 44pt"):
+        // `control_of` is what the button *looks* like, `hit_target_of` is what
+        // answers a finger. They are allowed to disagree — a 32pt AppKit-sized
+        // button still catches a clumsy click — and the text stays centred because
+        // the flex container does the aligning rather than arithmetic.
+        let tinggi_visual = t.control_of(ControlToken::Md);
+        let target = t.hit_target_of(ControlToken::Md);
         let kotak = constrained(
-            BoxConstraints::new(MIN_HIT_TARGET, f32::INFINITY, MIN_HIT_TARGET, f32::INFINITY),
+            BoxConstraints::new(
+                target,
+                f32::INFINITY,
+                tinggi_visual.max(target),
+                f32::INFINITY,
+            ),
             isi,
         );
 

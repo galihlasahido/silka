@@ -503,7 +503,8 @@ pub use ambient::{
 pub use divider::{divider, divider_in, Divider, DividerBox, DividerProps};
 pub use icon::{
     chevron_back, chevron_back_in, chevron_forward, chevron_forward_in, icon, icon_in, icon_path,
-    icon_path_in, Icon, IconBox, IconName, IconProps, ICON_VIEWPORT,
+    icon_path_in, icon_path_in_box, icon_path_in_box_in, Icon, IconBox, IconName, IconProps,
+    ICON_VIEWPORT, MATERIAL_SYMBOLS_VIEW_BOX,
 };
 pub use image::{image, image_in, Image, ImageBox, ImageFit, ImageProps};
 pub use images::{

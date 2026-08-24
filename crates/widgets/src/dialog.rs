@@ -81,7 +81,7 @@ use silka_core::view::{column, constrained, row, Builder, View, ViewNode};
 use silka_core::Callback;
 use silka_paint::{Insets, Point, Size};
 use silka_text::FontWeight;
-use silka_theme::{Theme, TypeStyle};
+use silka_theme::{SpaceToken, Theme, TypeStyle};
 
 use crate::button::{button_variant_in, ButtonVariant};
 use crate::fonts::Fonts;
@@ -863,7 +863,7 @@ impl DialogBuilder {
             // The hairline follows the spacing scale (0.25 step = 1pt): in
             // dark mode this is what separates the panel from the scrim
             // behind it.
-            .border(t.space(0.25), t.color.separator)
+            .border(t.space_of(SpaceToken::Px), t.color.separator)
             .shadow(t.shadow.xl);
 
         // The width is clamped to the available space by

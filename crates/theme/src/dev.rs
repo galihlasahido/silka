@@ -87,7 +87,8 @@ use std::time::SystemTime;
 use silka_paint::{Color, CornerStyle};
 
 use crate::{
-    Appearance, ColorToken, FontToken, Preset, RadiusToken, Theme, TypeStyle, TypographyTokens,
+    Appearance, ColorToken, ControlToken, FontToken, Preset, RadiusToken, Theme, TypeStyle,
+    TypographyTokens,
 };
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,7 @@ pub struct ThemeOverrides {
     radii: Vec<(RadiusToken, f32)>,
     corner_style: Option<CornerStyle>,
     space_unit: Option<f32>,
+    controls: Vec<(ControlToken, f32)>,
     font_sizes: Vec<(FontToken, f32)>,
 }
 
@@ -212,6 +214,7 @@ impl ThemeOverrides {
             && self.radii.is_empty()
             && self.corner_style.is_none()
             && self.space_unit.is_none()
+            && self.controls.is_empty()
             && self.font_sizes.is_empty()
     }
 
@@ -219,6 +222,7 @@ impl ThemeOverrides {
     pub fn len(&self) -> usize {
         self.colors.len()
             + self.radii.len()
+            + self.controls.len()
             + self.font_sizes.len()
             + usize::from(self.corner_style.is_some())
             + usize::from(self.space_unit.is_some())
@@ -273,6 +277,18 @@ impl ThemeOverrides {
             // file is edited by hand, so it is guarded rather than trusted.
             theme.spacing.unit = unit.max(0.5);
         }
+        for (token, value) in &self.controls {
+            // A control cannot be shorter than a hairline; a token file is edited
+            // by hand, so this is guarded rather than trusted.
+            let value = value.max(1.0);
+            match token {
+                ControlToken::Sm => theme.control.sm = value,
+                ControlToken::Md => theme.control.md = value,
+                ControlToken::Lg => theme.control.lg = value,
+                ControlToken::Row => theme.control.row = value,
+                ControlToken::MenuRow => theme.control.menu_row = value,
+            }
+        }
         for (token, size) in &self.font_sizes {
             setel_ukuran_font(&mut theme.typography, *token, size.max(1.0));
         }
@@ -321,6 +337,17 @@ impl ThemeOverrides {
 
         out.push_str("\n# --- spacing ---\n");
         out.push_str(&format!("space.unit = {}\n", theme.spacing.unit));
+
+        out.push_str("\n# --- control heights ---\n");
+        out.push_str("# Visual height. The hit target is derived, never dumped:\n");
+        out.push_str("# it is a rule (>= 44pt), not a value to tune.\n");
+        for token in ControlToken::ALL {
+            out.push_str(&format!(
+                "control.{} = {}\n",
+                token.name(),
+                theme.control.get(token)
+            ));
+        }
 
         out.push_str("\n# --- typography ---\n");
         for token in FontToken::ALL {
@@ -378,6 +405,12 @@ impl ThemeOverrides {
                         .find(|t| t.name() == name)
                         .ok_or_else(|| salah(format!("unknown radius token {name:?}")))?;
                     self.radii.push((token, angka(value, line)?));
+                } else if let Some(name) = key.strip_prefix("control.") {
+                    let token = ControlToken::ALL
+                        .into_iter()
+                        .find(|t| t.name() == name)
+                        .ok_or_else(|| salah(format!("unknown control token {name:?}")))?;
+                    self.controls.push((token, angka(value, line)?));
                 } else if let Some(rest) = key.strip_prefix("font.") {
                     let Some(name) = rest.strip_suffix(".size") else {
                         return Err(salah(format!(

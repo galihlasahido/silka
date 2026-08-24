@@ -25,7 +25,7 @@
 //! ```
 //! # use silka_core::signals::Runtime;
 //! # use silka_core::view::View;
-//! # use silka_theme::{Appearance, Theme};
+//! # use silka_theme::{Appearance, SpaceToken, Theme};
 //! # use silka_widgets::{text_in, tree_in, Fonts, TreeKey, TreeNode, TreeState};
 //! # let rt = Runtime::new();
 //! # let fonts = Fonts::bundled_only();
@@ -42,7 +42,7 @@
 //!
 //! tree_in(&t, state, files, move |row| View::from(text_in(&fonts, row.label.to_string())))
 //!     .row_extent(28.0)
-//!     .guides(t.space(0.25))
+//!     .guides(t.space_of(SpaceToken::Px))
 //!     .label("Files")
 //!     .on_expand(|key| println!("load children of {key}"))
 //!     .on_activate(|key| println!("open {key}"));

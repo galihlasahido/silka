@@ -159,7 +159,7 @@ impl RadioStyle {
         let c = &theme.color;
         Self {
             outer: theme.space(4.0),
-            border_width: theme.space(0.25),
+            border_width: theme.space_of(SpaceToken::Px),
             dot: theme.space(1.5),
             gap: theme.space(2.0),
             focus_ring_width: theme.space(0.5),

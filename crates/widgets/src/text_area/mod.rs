@@ -94,7 +94,7 @@ use silka_core::tree::{FocusRing, NodeId, RenderNode, RenderTree};
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets};
 use silka_text::TextStyle;
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::editing::TextCallback;
@@ -454,7 +454,7 @@ pub fn text_area_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> T
             padding,
             // As thin as the smallest spacing step: the HIG caret is a
             // hairline, not a slab.
-            caret_width: t.space(0.25),
+            caret_width: t.space_of(SpaceToken::Px),
             line_numbers: false,
             gutter_gap: t.space(2.0),
             label: None,
@@ -480,7 +480,7 @@ pub fn text_area_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> T
                 background: t.color.surface,
                 background_hover: t.color.surface_hover,
                 background_focus: t.color.surface,
-                border_width: t.space(0.25),
+                border_width: t.space_of(SpaceToken::Px),
                 border: t.color.border,
                 border_focus: t.color.accent,
                 corners: t.corners(t.radius.md),

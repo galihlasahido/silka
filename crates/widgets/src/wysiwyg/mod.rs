@@ -82,7 +82,7 @@ use silka_core::tree::{FocusRing, NodeId, RenderNode, RenderTree};
 use silka_core::view::{Builder, View, ViewNode};
 use silka_core::Callback;
 use silka_paint::{Color, Corners, Insets};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -283,7 +283,7 @@ pub fn wysiwyg_in(fonts: &Fonts, theme: &Theme, document: Document) -> Wysiwyg {
             style,
             padding: Insets::symmetric(t.space(3.0), t.space(2.5)),
             // As thin as the smallest spacing step: the HIG caret is a hairline.
-            caret_width: t.space(0.25),
+            caret_width: t.space_of(SpaceToken::Px),
             label: None,
             disabled: false,
             read_only: false,
@@ -299,7 +299,7 @@ pub fn wysiwyg_in(fonts: &Fonts, theme: &Theme, document: Document) -> Wysiwyg {
             background: t.color.surface,
             background_hover: t.color.surface_hover,
             background_focus: t.color.surface,
-            border_width: t.space(0.25),
+            border_width: t.space_of(SpaceToken::Px),
             border: t.color.border,
             border_focus: t.color.accent,
             corners: t.corners(t.radius.md),

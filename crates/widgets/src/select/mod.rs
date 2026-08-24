@@ -77,7 +77,7 @@ use silka_core::tree::{BoxConstraints, CrossAlign};
 use silka_core::view::{column, constrained, pad, viewport, Builder, View};
 use silka_paint::Insets;
 use silka_text::{FontWeight, TextConstraints, TextStyle};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -419,7 +419,7 @@ impl Select {
             // same rule macOS uses, and the value stays derived from tokens.
             disabled: t.color.surface.lerp(t.color.background, 0.6),
             corners: t.corners(t.radius.md),
-            border_width: t.space(0.25),
+            border_width: t.space_of(SpaceToken::Px),
             border: t.color.border,
             border_disabled: t.color.separator,
             shadows: t.shadow.sm,
@@ -598,7 +598,7 @@ impl Select {
         let panel = pad(Insets::all(t.space(1.0)), isi)
             .background(t.color.surface_elevated)
             .corners(t.corners(t.radius.lg))
-            .border(t.space(0.25), t.color.separator)
+            .border(t.space_of(SpaceToken::Px), t.color.separator)
             .shadow(t.shadow.lg);
         // The panel's width is locked to the trigger's: a list that "jumps
         // wider" as it opens is the first thing that makes a select feel cheap.

@@ -94,7 +94,7 @@ pub use layer::{Layer, LayerEffect};
 pub use scene::{Command, Quad, Scene, ShadowQuad};
 pub use shadow::{Shadow, ShadowPair};
 pub use stroke::{LineCap, LineJoin, Stroke, DEFAULT_MITER_LIMIT};
-pub use svg::{rasterize_path, FillRule, IconMask};
+pub use svg::{rasterize_path, rasterize_path_in, FillRule, IconMask, ViewBox};
 pub use transform::Transform;
 
 /// Compiles and runs every Rust example in this crate's `README.md`.

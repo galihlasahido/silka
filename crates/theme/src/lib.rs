@@ -65,6 +65,8 @@
 )]
 
 pub mod color;
+pub mod control;
+pub mod density;
 // The module doc lives in `dev.rs` as `//!`. An outer `///` here would merge
 // with it and make rustdoc resolve the whole text in *this* module's scope,
 // where `ThemeOverrides` does not exist.
@@ -79,6 +81,8 @@ pub mod token;
 pub mod typography;
 
 pub use color::{ColorToken, ColorTokens};
+pub use control::{ControlToken, ControlTokens, MIN_HIT_TARGET};
+pub use density::Density;
 pub use radius::{RadiusToken, RadiusTokens};
 pub use shadow::{ShadowToken, ShadowTokens};
 pub use spacing::{SpaceToken, SpacingTokens};
@@ -208,8 +212,12 @@ pub struct Theme {
     pub shadow: ShadowTokens,
     /// Spacing tokens.
     pub spacing: SpacingTokens,
+    /// Control and row heights.
+    pub control: ControlTokens,
     /// Typography tokens.
     pub typography: TypographyTokens,
+    /// How closely spaced controls and rows are — see [`Density`].
+    pub density: Density,
 }
 
 impl Default for Theme {
@@ -253,6 +261,25 @@ impl Theme {
         Theme::new(preset, self.appearance)
     }
 
+    /// The same theme at a different [`Density`].
+    ///
+    /// Rebuilt from `(self.preset, self.appearance)` — the comfortable
+    /// baseline each preset function returns — and then scaled, **not**
+    /// scaled from `self.spacing`/`self.control` directly. That is what
+    /// makes calling this twice with the same density idempotent instead of
+    /// compounding the factor, exactly the same "rebuilt, not patched"
+    /// contract [`Theme::with_appearance`] already has for token
+    /// customizations.
+    pub fn with_density(self, density: Density) -> Self {
+        let base = Theme::new(self.preset, self.appearance);
+        Theme {
+            spacing: base.spacing.with_density(density),
+            control: base.control.with_density(density),
+            density,
+            ..base
+        }
+    }
+
     // --- Token resolution (§2.7: utilities never hard-code numbers) --------
 
     /// Resolve a token against this theme.
@@ -272,6 +299,23 @@ impl Theme {
     /// The distance of one spacing-scale token, in logical points.
     pub fn space_of(&self, token: SpaceToken) -> f32 {
         self.spacing.get(token)
+    }
+
+    /// The **visual** height of one control or row token, in logical points.
+    ///
+    /// What the widget draws. For the area that has to respond to a pointer, see
+    /// [`Theme::hit_target_of`] — the two are deliberately allowed to differ.
+    pub fn control_of(&self, token: ControlToken) -> f32 {
+        self.control.get(token)
+    }
+
+    /// The height of the area that must **respond** for one control token.
+    ///
+    /// At least [`MIN_HIT_TARGET`] for anything pressable, even when the drawn
+    /// control is shorter (HIG). A row is content rather than a control and keeps
+    /// its own height — see [`mod@control`].
+    pub fn hit_target_of(&self, token: ControlToken) -> f32 {
+        self.control.hit_target(token)
     }
 
     /// The radius value of one token, in logical points (without its shape).

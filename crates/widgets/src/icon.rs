@@ -43,7 +43,24 @@
 //! Elliptical arcs (`A`/`a`) are refused by the rasteriser: an arc converted
 //! wrongly is a silently misshapen icon, so the artwork is converted to curves
 //! by its exporter instead. That is why every path in the built-in set is
-//! written with lines and cubics only.
+//! written with lines and curves only.
+//!
+//! # Where the built-in artwork comes from
+//!
+//! The set is **Material Symbols Rounded** (filled, 24dp), used unmodified under
+//! Apache-2.0. `crates/widgets/ICONS.md` carries the upstream commit, the
+//! per-symbol mapping, and the statement of modification the licence requires.
+//!
+//! Upstream draws in a `0 -960 960 960` grid — a thousand units square whose Y
+//! is **negative** — not the `0 0 24 24` a hand-drawn icon would use. Rather
+//! than rewriting every coordinate (one mistyped decimal there is artwork that is
+//! subtly wrong and passes every test), the grid travels with the path:
+//! [`IconName::view_box`] reports it, and [`silka_paint::ViewBox`] applies it.
+//!
+//! This matters at the call site only when you add a symbol from the same
+//! upstream set: use [`icon_path_in_box`] with [`MATERIAL_SYMBOLS_VIEW_BOX`], not
+//! [`icon_path`]. Handing a negative-Y path to [`icon_path`] parses perfectly and
+//! draws **nothing**, because the artwork lands above the canvas.
 //!
 //! # Arrows that mean "back" and "forward" (§9.8)
 //!
@@ -86,14 +103,26 @@ use silka_core::scheduler::Dirty;
 use silka_core::signals::Key;
 use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode};
 use silka_core::view::{Builder, View, ViewNode};
-use silka_paint::{Color, ImageId, ImageQuad, Rect, Size};
+use silka_paint::{Color, ImageId, ImageQuad, Rect, Size, ViewBox};
 use silka_theme::{ColorToken, SpaceToken, Theme};
 
 use crate::ambient::active_theme;
 use crate::images::{active_images, Images};
 
-/// The side of the `viewBox` every built-in path is drawn in.
+/// The side of a `0 0 w h` icon grid — the default for **your own** artwork.
+///
+/// The built-in set does not use this: Material Symbols draws in
+/// [`MATERIAL_SYMBOLS_VIEW_BOX`], and each symbol carries its own grid through
+/// [`IconName::view_box`].
 pub const ICON_VIEWPORT: f32 = 24.0;
+
+/// The grid Material Symbols draws in: a thousand units square, Y running
+/// **negative** from the baseline.
+///
+/// Kept public because it is the one number an application needs in order to add
+/// a symbol from the same upstream set through [`icon_path_in_box`] — see
+/// `crates/widgets/ICONS.md`.
+pub const MATERIAL_SYMBOLS_VIEW_BOX: ViewBox = ViewBox::new(0.0, -960.0, 960.0);
 
 /// The built-in monochrome symbol set.
 ///
@@ -105,10 +134,12 @@ pub const ICON_VIEWPORT: f32 = 24.0;
 /// use silka_widgets::IconName;
 ///
 /// // Every symbol has a stable name (used as the atlas cache key) and a path
-/// // the rasteriser accepts.
+/// // the rasteriser accepts, drawn in the grid the symbol names itself.
 /// for name in IconName::ALL {
 ///     assert!(!name.name().is_empty());
-///     assert!(name.path().starts_with('M'));
+///     let d = name.path();
+///     assert!(d.starts_with('M') || d.starts_with('m'));
+///     assert_eq!(name.view_box().side, 960.0);
 /// }
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -223,99 +254,191 @@ impl IconName {
     ///
     /// Lines and cubics only — see the module docs for why there are no arcs
     /// and no strokes.
+    /// The filled path, drawn in the grid [`IconName::view_box`] names.
+    ///
+    /// Material Symbols Rounded, filled, 24dp, taken unmodified from the
+    /// upstream `google/material-design-icons` (Apache-2.0). The coordinates
+    /// are therefore in a `0 -960 960 960` grid with **negative Y**, not the
+    /// `0 0 24 24` a hand-drawn icon would use — see
+    /// `crates/widgets/ICONS.md` for the per-symbol mapping and the licence.
+    ///
+    /// Lines and curves only: not one of these paths needs an elliptical arc,
+    /// which is what lets them stay byte-for-byte upstream (the rasteriser
+    /// refuses `A`/`a`).
     pub const fn path(self) -> &'static str {
         match self {
             IconName::Check => {
-                "M9.55 18.2 L3.4 12.05 L5.35 10.1 L9.55 14.3 L18.65 5.2 L20.6 7.15 Z"
+                "m382-354 339-339q12-12 28-12t28 12q12 12 12 28.5T777-636L410-268 \
+                 q-12 12-28 12t-28-12L182-440q-12-12-11.5-28.5T183-497q12-12 28.5-12t28.5 12 \
+                 l142 143Z"
             }
-            IconName::ChevronUp => "M3 16 L12 7 L21 16 L18.5 18.5 L12 12 L5.5 18.5 Z",
-            IconName::ChevronDown => "M3 8 L12 17 L21 8 L18.5 5.5 L12 12 L5.5 5.5 Z",
-            IconName::ChevronLeft => "M16 3 L7 12 L16 21 L18.5 18.5 L12 12 L18.5 5.5 Z",
-            IconName::ChevronRight => "M8 3 L17 12 L8 21 L5.5 18.5 L12 12 L5.5 5.5 Z",
+            IconName::ChevronUp => {
+                "M480-528 324-372q-11 11-28 11t-28-11q-11-11-11-28t11-28l184-184q12-12 28-12 \
+                 t28 12l184 184q11 11 11 28t-11 28q-11 11-28 11t-28-11L480-528Z"
+            }
+            IconName::ChevronDown => {
+                "M480-361q-8 0-15-2.5t-13-8.5L268-556q-11-11-11-28t11-28q11-11 28-11t28 11 \
+                 l156 156 156-156q11-11 28-11t28 11q11 11 11 28t-11 28L508-372q-6 6-13 8.5 \
+                 t-15 2.5Z"
+            }
+            IconName::ChevronLeft => {
+                "m432-480 156 156q11 11 11 28t-11 28q-11 11-28 11t-28-11L348-452q-6-6-8.5-13 \
+                 t-2.5-15q0-8 2.5-15t8.5-13l184-184q11-11 28-11t28 11q11 11 11 28t-11 28 \
+                 L432-480Z"
+            }
+            IconName::ChevronRight => {
+                "M504-480 348-636q-11-11-11-28t11-28q11-11 28-11t28 11l184 184q6 6 8.5 13 \
+                 t2.5 15q0 8-2.5 15t-8.5 13L404-268q-11 11-28 11t-28-11q-11-11-11-28t11-28 \
+                 l156-156Z"
+            }
             IconName::Close => {
-                "M5.6 4 L12 10.4 L18.4 4 L20 5.6 L13.6 12 L20 18.4 L18.4 20 L12 13.6 \
-                 L5.6 20 L4 18.4 L10.4 12 L4 5.6 Z"
+                "M480-424 284-228q-11 11-28 11t-28-11q-11-11-11-28t11-28l196-196-196-196 \
+                 q-11-11-11-28t11-28q11-11 28-11t28 11l196 196 196-196q11-11 28-11t28 11 \
+                 q11 11 11 28t-11 28L536-480l196 196q11 11 11 28t-11 28q-11 11-28 11t-28-11 \
+                 L480-424Z"
             }
             IconName::Plus => {
-                "M10.6 4 H13.4 V10.6 H20 V13.4 H13.4 V20 H10.6 V13.4 H4 V10.6 H10.6 Z"
+                "M440-440H240q-17 0-28.5-11.5T200-480q0-17 11.5-28.5T240-520h200v-200 \
+                 q0-17 11.5-28.5T480-760q17 0 28.5 11.5T520-720v200h200q17 0 28.5 11.5 \
+                 T760-480q0 17-11.5 28.5T720-440H520v200q0 17-11.5 28.5T480-200 \
+                 q-17 0-28.5-11.5T440-240v-200Z"
             }
-            IconName::Minus => "M4 10.6 H20 V13.4 H4 Z",
+            IconName::Minus => {
+                "M240-440q-17 0-28.5-11.5T200-480q0-17 11.5-28.5T240-520h480q17 0 28.5 11.5 \
+                 T760-480q0 17-11.5 28.5T720-440H240Z"
+            }
             IconName::Search => {
-                "M10.5 3.5 C14.366 3.5 17.5 6.634 17.5 10.5 C17.5 14.366 14.366 17.5 10.5 17.5 \
-                 C6.634 17.5 3.5 14.366 3.5 10.5 C3.5 6.634 6.634 3.5 10.5 3.5 Z \
-                 M10.5 5.5 C7.739 5.5 5.5 7.739 5.5 10.5 C5.5 13.261 7.739 15.5 10.5 15.5 \
-                 C13.261 15.5 15.5 13.261 15.5 10.5 C15.5 7.739 13.261 5.5 10.5 5.5 Z \
-                 M14.5 16.3 L16.3 14.5 L20.8 19 L19 20.8 Z"
+                "M380-320q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5 \
+                 T640-580q0 44-14 83t-38 69l224 224q11 11 11 28t-11 28q-11 11-28 11t-28-11 \
+                 L532-372q-30 24-69 38t-83 14Zm0-80q75 0 127.5-52.5T560-580q0-75-52.5-127.5 \
+                 T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"
             }
-            IconName::Menu => "M4 5 H20 V7.4 H4 Z M4 10.8 H20 V13.2 H4 Z M4 16.6 H20 V19 H4 Z",
+            IconName::Menu => {
+                "M160-240q-17 0-28.5-11.5T120-280q0-17 11.5-28.5T160-320h640q17 0 28.5 11.5 \
+                 T840-280q0 17-11.5 28.5T800-240H160Zm0-200q-17 0-28.5-11.5T120-480 \
+                 q0-17 11.5-28.5T160-520h640q17 0 28.5 11.5T840-480q0 17-11.5 28.5T800-440 \
+                 H160Zm0-200q-17 0-28.5-11.5T120-680q0-17 11.5-28.5T160-720h640 \
+                 q17 0 28.5 11.5T840-680q0 17-11.5 28.5T800-640H160Z"
+            }
             IconName::Ellipsis => {
-                "M5 10.4 C5.883 10.4 6.6 11.117 6.6 12 C6.6 12.883 5.883 13.6 5 13.6 \
-                 C4.117 13.6 3.4 12.883 3.4 12 C3.4 11.117 4.117 10.4 5 10.4 Z \
-                 M12 10.4 C12.883 10.4 13.6 11.117 13.6 12 C13.6 12.883 12.883 13.6 12 13.6 \
-                 C11.117 13.6 10.4 12.883 10.4 12 C10.4 11.117 11.117 10.4 12 10.4 Z \
-                 M19 10.4 C19.883 10.4 20.6 11.117 20.6 12 C20.6 12.883 19.883 13.6 19 13.6 \
-                 C18.117 13.6 17.4 12.883 17.4 12 C17.4 11.117 18.117 10.4 19 10.4 Z"
+                "M240-400q-33 0-56.5-23.5T160-480q0-33 23.5-56.5T240-560q33 0 56.5 23.5 \
+                 T320-480q0 33-23.5 56.5T240-400Zm240 0q-33 0-56.5-23.5T400-480 \
+                 q0-33 23.5-56.5T480-560q33 0 56.5 23.5T560-480q0 33-23.5 56.5T480-400Zm240 0 \
+                 q-33 0-56.5-23.5T640-480q0-33 23.5-56.5T720-560q33 0 56.5 23.5T800-480 \
+                 q0 33-23.5 56.5T720-400Z"
             }
             IconName::Info => {
-                "M12 3 C16.971 3 21 7.029 21 12 C21 16.971 16.971 21 12 21 \
-                 C7.029 21 3 16.971 3 12 C3 7.029 7.029 3 12 3 Z \
-                 M12 5 C8.134 5 5 8.134 5 12 C5 15.866 8.134 19 12 19 \
-                 C15.866 19 19 15.866 19 12 C19 8.134 15.866 5 12 5 Z \
-                 M10.8 6.6 H13.2 V9 H10.8 Z M10.8 10.6 H13.2 V17.4 H10.8 Z"
+                "M480-280q17 0 28.5-11.5T520-320v-160q0-17-11.5-28.5T480-520q-17 0-28.5 11.5 \
+                 T440-480v160q0 17 11.5 28.5T480-280Zm0-320q17 0 28.5-11.5T520-640 \
+                 q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640q0 17 11.5 28.5T480-600Z \
+                 m0 520q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763 \
+                 q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480 \
+                 q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z"
             }
             IconName::Warning => {
-                "M12 2.6 L22.4 20.6 L1.6 20.6 Z \
-                 M10.9 8.5 L10.9 14.5 L13.1 14.5 L13.1 8.5 Z \
-                 M10.9 16 L10.9 18.2 L13.1 18.2 L13.1 16 Z"
+                "M109-120q-11 0-20-5.5T75-140q-5-9-5.5-19.5T75-180l370-640q6-10 15.5-15 \
+                 t19.5-5q10 0 19.5 5t15.5 15l370 640q6 10 5.5 20.5T885-140q-5 9-14 14.5 \
+                 t-20 5.5H109Zm371-120q17 0 28.5-11.5T520-280q0-17-11.5-28.5T480-320 \
+                 q-17 0-28.5 11.5T440-280q0 17 11.5 28.5T480-240Zm0-120q17 0 28.5-11.5 \
+                 T520-400v-120q0-17-11.5-28.5T480-560q-17 0-28.5 11.5T440-520v120 \
+                 q0 17 11.5 28.5T480-360Z"
             }
             IconName::Trash => {
-                "M9 2.8 H15 V4.6 H20 V6.8 H4 V4.6 H9 Z M5.8 8.4 H18.2 L17.2 21.2 H6.8 Z"
+                "M280-120q-33 0-56.5-23.5T200-200v-520q-17 0-28.5-11.5T160-760q0-17 11.5-28.5 \
+                 T200-800h160q0-17 11.5-28.5T400-840h160q17 0 28.5 11.5T600-800h160 \
+                 q17 0 28.5 11.5T800-760q0 17-11.5 28.5T760-720v520q0 33-23.5 56.5T680-120 \
+                 H280Zm120-160q17 0 28.5-11.5T440-320v-280q0-17-11.5-28.5T400-640 \
+                 q-17 0-28.5 11.5T360-600v280q0 17 11.5 28.5T400-280Zm160 0q17 0 28.5-11.5 \
+                 T600-320v-280q0-17-11.5-28.5T560-640q-17 0-28.5 11.5T520-600v280 \
+                 q0 17 11.5 28.5T560-280Z"
             }
             IconName::Star => {
-                "M12 3 L14.29 8.84 L20.56 9.22 L15.71 13.21 L17.29 19.28 L12 15.9 \
-                 L6.71 19.28 L8.29 13.21 L3.44 9.22 L9.71 8.84 Z"
+                "M480-269 314-169q-11 7-23 6t-21-8q-9-7-14-17.5t-2-23.5l44-189-147-127 \
+                 q-10-9-12.5-20.5T140-571q4-11 12-18t22-9l194-17 75-178q5-12 15.5-18t21.5-6 \
+                 q11 0 21.5 6t15.5 18l75 178 194 17q14 2 22 9t12 18q4 11 1.5 22.5T809-528 \
+                 L662-401l44 189q3 13-2 23.5T690-171q-9 7-21 8t-23-6L480-269Z"
             }
             IconName::Heart => {
-                "M12 20.5 C12 20.5 3 14.6 3 8.9 C3 5.9 5.4 3.5 8.4 3.5 \
-                 C10.1 3.5 11.3 4.4 12 5.4 C12.7 4.4 13.9 3.5 15.6 3.5 \
-                 C18.6 3.5 21 5.9 21 8.9 C21 14.6 12 20.5 12 20.5 Z"
+                "M480-147q-14 0-28.5-5T426-168l-69-63q-106-97-191.5-192.5T80-634q0-94 63-157 \
+                 t157-63q53 0 100 22.5t80 61.5q33-39 80-61.5T660-854q94 0 157 63t63 157 \
+                 q0 115-85 211T602-230l-68 62q-11 11-25.5 16t-28.5 5Z"
             }
             IconName::User => {
-                "M12 4 C14.209 4 16 5.791 16 8 C16 10.209 14.209 12 12 12 \
-                 C9.791 12 8 10.209 8 8 C8 5.791 9.791 4 12 4 Z \
-                 M4.5 21 C4.5 16.9 7.9 13.6 12 13.6 C16.1 13.6 19.5 16.9 19.5 21 Z"
+                "M480-480q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113 \
+                 q0 66-47 113t-113 47ZM160-240v-32q0-34 17.5-62.5T224-378q62-31 126-46.5 \
+                 T480-440q66 0 130 15.5T736-378q29 15 46.5 43.5T800-272v32q0 33-23.5 56.5 \
+                 T720-160H240q-33 0-56.5-23.5T160-240Z"
             }
             IconName::Calendar => {
-                "M7 2.6 H9.2 V5 H14.8 V2.6 H17 V5 H20.4 V21.4 H3.6 V5 H7 Z \
-                 M5.8 9 L5.8 19.2 L18.2 19.2 L18.2 9 Z"
+                "M200-80q-33 0-56.5-23.5T120-160v-560q0-33 23.5-56.5T200-800h40v-40 \
+                 q0-17 11.5-28.5T280-880q17 0 28.5 11.5T320-840v40h320v-40q0-17 11.5-28.5 \
+                 T680-880q17 0 28.5 11.5T720-840v40h40q33 0 56.5 23.5T840-720v560 \
+                 q0 33-23.5 56.5T760-80H200Zm0-80h560v-400H200v400Zm280-240q-17 0-28.5-11.5 \
+                 T440-440q0-17 11.5-28.5T480-480q17 0 28.5 11.5T520-440q0 17-11.5 28.5 \
+                 T480-400Zm-160 0q-17 0-28.5-11.5T280-440q0-17 11.5-28.5T320-480 \
+                 q17 0 28.5 11.5T360-440q0 17-11.5 28.5T320-400Zm320 0q-17 0-28.5-11.5 \
+                 T600-440q0-17 11.5-28.5T640-480q17 0 28.5 11.5T680-440q0 17-11.5 28.5 \
+                 T640-400ZM480-240q-17 0-28.5-11.5T440-280q0-17 11.5-28.5T480-320 \
+                 q17 0 28.5 11.5T520-280q0 17-11.5 28.5T480-240Zm-160 0q-17 0-28.5-11.5 \
+                 T280-280q0-17 11.5-28.5T320-320q17 0 28.5 11.5T360-280q0 17-11.5 28.5 \
+                 T320-240Zm320 0q-17 0-28.5-11.5T600-280q0-17 11.5-28.5T640-320 \
+                 q17 0 28.5 11.5T680-280q0 17-11.5 28.5T640-240Z"
             }
             IconName::Download => {
-                "M10.6 3 H13.4 V12.2 H17.4 L12 18.2 L6.6 12.2 H10.6 Z M4 19.4 H20 V21.4 H4 Z"
+                "M480-337q-8 0-15-2.5t-13-8.5L308-492q-12-12-11.5-28t11.5-28q12-12 28.5-12.5 \
+                 T365-549l75 75v-286q0-17 11.5-28.5T480-800q17 0 28.5 11.5T520-760v286l75-75 \
+                 q12-12 28.5-11.5T652-548q11 12 11.5 28T652-492L508-348q-6 6-13 8.5t-15 2.5Z \
+                 M240-160q-33 0-56.5-23.5T160-240v-80q0-17 11.5-28.5T200-360q17 0 28.5 11.5 \
+                 T240-320v80h480v-80q0-17 11.5-28.5T760-360q17 0 28.5 11.5T800-320v80 \
+                 q0 33-23.5 56.5T720-160H240Z"
             }
             IconName::Upload => {
-                "M12 2.8 L17.4 8.8 H13.4 V18 H10.6 V8.8 H6.6 Z M4 19.4 H20 V21.4 H4 Z"
+                "M240-160q-33 0-56.5-23.5T160-240v-80q0-17 11.5-28.5T200-360q17 0 28.5 11.5 \
+                 T240-320v80h480v-80q0-17 11.5-28.5T760-360q17 0 28.5 11.5T800-320v80 \
+                 q0 33-23.5 56.5T720-160H240Zm200-486-75 75q-12 12-28.5 11.5T308-572 \
+                 q-11-12-11.5-28t11.5-28l144-144q6-6 13-8.5t15-2.5q8 0 15 2.5t13 8.5l144 144 \
+                 q12 12 11.5 28T652-572q-12 12-28.5 12.5T595-571l-75-75v286q0 17-11.5 28.5 \
+                 T480-320q-17 0-28.5-11.5T440-360v-286Z"
             }
             IconName::Sun => {
-                "M12 7.4 C14.54 7.4 16.6 9.46 16.6 12 C16.6 14.54 14.54 16.6 12 16.6 \
-                 C9.46 16.6 7.4 14.54 7.4 12 C7.4 9.46 9.46 7.4 12 7.4 Z \
-                 M10.9 1.8 H13.1 V5 H10.9 Z M10.9 19 H13.1 V22.2 H10.9 Z \
-                 M1.8 10.9 H5 V13.1 H1.8 Z M19 10.9 H22.2 V13.1 H19 Z \
-                 M3.6 5.2 L5.2 3.6 L7.5 5.9 L5.9 7.5 Z \
-                 M20.4 5.2 L18.8 3.6 L16.5 5.9 L18.1 7.5 Z \
-                 M3.6 18.8 L5.2 20.4 L7.5 18.1 L5.9 16.5 Z \
-                 M20.4 18.8 L18.8 20.4 L16.5 18.1 L18.1 16.5 Z"
+                "M480-280q-83 0-141.5-58.5T280-480q0-83 58.5-141.5T480-680q83 0 141.5 58.5 \
+                 T680-480q0 83-58.5 141.5T480-280ZM80-440q-17 0-28.5-11.5T40-480 \
+                 q0-17 11.5-28.5T80-520h80q17 0 28.5 11.5T200-480q0 17-11.5 28.5T160-440H80Z \
+                 m720 0q-17 0-28.5-11.5T760-480q0-17 11.5-28.5T800-520h80q17 0 28.5 11.5 \
+                 T920-480q0 17-11.5 28.5T880-440h-80ZM480-760q-17 0-28.5-11.5T440-800v-80 \
+                 q0-17 11.5-28.5T480-920q17 0 28.5 11.5T520-880v80q0 17-11.5 28.5T480-760Z \
+                 m0 720q-17 0-28.5-11.5T440-80v-80q0-17 11.5-28.5T480-200q17 0 28.5 11.5 \
+                 T520-160v80q0 17-11.5 28.5T480-40ZM226-678l-43-42q-12-11-11.5-28t11.5-29 \
+                 q12-12 29-12t28 12l42 43q11 12 11 28t-11 28q-11 12-27.5 11.5T226-678Z \
+                 m494 495-42-43q-11-12-11-28.5t11-27.5q11-12 27.5-11.5T734-282l43 42 \
+                 q12 11 11.5 28T777-183q-12 12-29 12t-28-12Zm-42-495q-12-11-11.5-27.5T678-734 \
+                 l42-43q11-12 28-11.5t29 11.5q12 12 12 29t-12 28l-43 42q-12 11-28 11t-28-11Z \
+                 M183-183q-12-12-12-29t12-28l43-42q12-11 28.5-11t27.5 11q12 11 11.5 27.5 \
+                 T282-226l-42 43q-11 12-28 11.5T183-183Z"
             }
             IconName::Moon => {
-                "M16 3.4 C9.6 4.7 4.5 7.9 4.5 12 C4.5 16.1 9.6 19.3 16 20.6 \
-                 C11.6 18.6 8.5 15.6 8.5 12 C8.5 8.4 11.6 5.4 16 3.4 Z"
+                "M480-120q-151 0-255.5-104.5T120-480q0-138 90-239.5T440-838q13-2 23 3.5 \
+                 t16 14.5q6 9 6.5 21t-7.5 23q-17 26-25.5 55t-8.5 61q0 90 63 153t153 63 \
+                 q31 0 61.5-9t54.5-25q11-7 22.5-6.5T819-479q10 5 15.5 15t3.5 24 \
+                 q-14 138-117.5 229T480-120Z"
             }
             IconName::Bell => {
-                "M12 2.6 C15.6 2.6 18.2 5.2 18.2 8.8 V14 L20 17.4 H4 L5.8 14 V8.8 \
-                 C5.8 5.2 8.4 2.6 12 2.6 Z \
-                 M9.6 18.8 H14.4 C14.4 20.5 13.3 21.6 12 21.6 \
-                 C10.7 21.6 9.6 20.5 9.6 18.8 Z"
+                "M200-200q-17 0-28.5-11.5T160-240q0-17 11.5-28.5T200-280h40v-280 \
+                 q0-83 50-147.5T420-792v-28q0-25 17.5-42.5T480-880q25 0 42.5 17.5T540-820v28 \
+                 q80 20 130 84.5T720-560v280h40q17 0 28.5 11.5T800-240q0 17-11.5 28.5T760-200 \
+                 H200ZM480-80q-33 0-56.5-23.5T400-160h160q0 33-23.5 56.5T480-80Z"
             }
         }
+    }
+
+    /// The grid this symbol's path is drawn in.
+    ///
+    /// Every built-in symbol answers [`MATERIAL_SYMBOLS_VIEW_BOX`], because
+    /// the whole set comes from one upstream. It is a method rather than a
+    /// constant so that adding a symbol from a different set later is a change
+    /// to one arm instead of a change to the contract.
+    pub const fn view_box(self) -> ViewBox {
+        MATERIAL_SYMBOLS_VIEW_BOX
     }
 }
 
@@ -345,7 +468,7 @@ pub struct IconBox {
     /// The artwork to use instead while the document reads right-to-left;
     /// `None` = this symbol looks the same either way (§9.8).
     mirror: Option<(Rc<str>, Rc<str>)>,
-    viewport: f32,
+    view_box: ViewBox,
     size: f32,
     color: Color,
     label: Option<String>,
@@ -378,7 +501,7 @@ impl IconBox {
         let (key, path) = self.artwork(rtl);
         self.rasterized_px = px;
         self.rasterized_rtl = rtl;
-        self.image = self.images.icon(&key, &path, self.viewport, px);
+        self.image = self.images.icon_in(&key, &path, self.view_box, px);
     }
 
     /// The artwork this icon draws in a given reading direction.
@@ -475,7 +598,7 @@ pub struct IconProps {
     key: Rc<str>,
     path: Rc<str>,
     mirror: Option<(Rc<str>, Rc<str>)>,
-    viewport: f32,
+    view_box: ViewBox,
     size: f32,
     color: Color,
     label: Option<String>,
@@ -488,7 +611,7 @@ impl ViewNode for IconProps {
             key: self.key.clone(),
             path: self.path.clone(),
             mirror: self.mirror.clone(),
-            viewport: self.viewport,
+            view_box: self.view_box,
             size: self.size,
             color: self.color,
             label: self.label.clone(),
@@ -507,12 +630,12 @@ impl ViewNode for IconProps {
         let artwork_changed = n.key != self.key
             || n.path != self.path
             || n.mirror != self.mirror
-            || n.viewport != self.viewport;
+            || n.view_box != self.view_box;
         if artwork_changed || n.size != self.size || n.images != self.images {
             n.key.clone_from(&self.key);
             n.path.clone_from(&self.path);
             n.mirror.clone_from(&self.mirror);
-            n.viewport = self.viewport;
+            n.view_box = self.view_box;
             n.size = self.size;
             n.images = self.images.clone();
             // Force a fresh rasterisation; layout is where it happens, because
@@ -564,7 +687,7 @@ pub fn icon(name: IconName) -> Icon {
 /// [`icon()`] with the atlas and the theme passed explicitly — for views built
 /// outside a build pass.
 pub fn icon_in(images: &Images, theme: &Theme, name: IconName) -> Icon {
-    build(images, theme, name.name(), name.path(), ICON_VIEWPORT)
+    build(images, theme, name.name(), name.path(), name.view_box())
 }
 
 /// An icon from **your own** path data, cached under `key`.
@@ -591,7 +714,47 @@ pub fn icon_path(key: impl AsRef<str>, path: impl AsRef<str>, viewport: f32) -> 
 
 /// [`icon_path`] with the atlas and the theme passed explicitly.
 pub fn icon_path_in(images: &Images, theme: &Theme, key: &str, path: &str, viewport: f32) -> Icon {
-    build(images, theme, key, path, viewport)
+    build(images, theme, key, path, ViewBox::square(viewport))
+}
+
+/// [`icon_path`] for artwork whose `viewBox` does **not** start at `0 0`.
+///
+/// This is what adding another symbol from the same upstream set as the built-ins
+/// needs, because Material Symbols draws in a negative-Y grid
+/// ([`MATERIAL_SYMBOLS_VIEW_BOX`]). Passing such a path to [`icon_path`] parses
+/// perfectly and draws **nothing** — the grid has to come with it.
+///
+/// ```
+/// use silka_widgets::{icon_path_in_box, MATERIAL_SYMBOLS_VIEW_BOX};
+///
+/// // `bookmark` from Material Symbols Rounded, filled — upstream, unmodified.
+/// let saved = icon_path_in_box(
+///     "material/bookmark",
+///     "m480-240-168 72q-40 17-76-6.5T200-241v-519q0-33 23.5-56.5T280-840h400q33 0 \
+///      56.5 23.5T760-760v519q0 43-36 66.5t-76 6.5l-168-72Z",
+///     MATERIAL_SYMBOLS_VIEW_BOX,
+/// );
+/// # let _ = saved;
+/// ```
+pub fn icon_path_in_box(key: impl AsRef<str>, path: impl AsRef<str>, view_box: ViewBox) -> Icon {
+    build(
+        &active_images(),
+        &active_theme(),
+        key.as_ref(),
+        path.as_ref(),
+        view_box,
+    )
+}
+
+/// [`icon_path_in_box`] with the atlas and the theme passed explicitly.
+pub fn icon_path_in_box_in(
+    images: &Images,
+    theme: &Theme,
+    key: &str,
+    path: &str,
+    view_box: ViewBox,
+) -> Icon {
+    build(images, theme, key, path, view_box)
 }
 
 /// The chevron that points **backward** along the reading direction — the
@@ -650,16 +813,16 @@ pub fn chevron_forward_in(images: &Images, theme: &Theme) -> Icon {
     icon_in(images, theme, IconName::ChevronRight).mirrored(IconName::ChevronLeft)
 }
 
-fn build(images: &Images, theme: &Theme, key: &str, path: &str, viewport: f32) -> Icon {
+fn build(images: &Images, theme: &Theme, key: &str, path: &str, view_box: ViewBox) -> Icon {
     Icon {
         props: IconProps {
             key: Rc::from(key),
             path: Rc::from(path),
             mirror: None,
-            viewport: if viewport.is_finite() && viewport > 0.0 {
-                viewport
+            view_box: if view_box.side.is_finite() && view_box.side > 0.0 {
+                view_box
             } else {
-                ICON_VIEWPORT
+                ViewBox::square(ICON_VIEWPORT)
             },
             size: theme.space_of(SpaceToken::S4),
             color: theme.color_of(ColorToken::Label),
@@ -830,12 +993,63 @@ mod tests {
         for name in IconName::ALL {
             assert!(
                 images
-                    .icon(name.name(), name.path(), ICON_VIEWPORT, 24)
+                    .icon_in(name.name(), name.path(), name.view_box(), 24)
                     .is_some(),
                 "'{}' is not a path the rasteriser accepts",
                 name.name()
             );
         }
+    }
+
+    /// Accepting the path is not the same as drawing something, and the
+    /// difference is the whole reason [`ViewBox`] exists: a Material Symbols path
+    /// mapped in a `0 0 24 24` grid parses perfectly and rasterises to an empty
+    /// mask. `is_some()` would pass. Coverage is what actually proves it.
+    #[test]
+    fn every_built_in_icon_actually_draws_pixels() {
+        use silka_paint::{rasterize_path_in, FillRule};
+
+        for name in IconName::ALL {
+            let mask = rasterize_path_in(name.path(), name.view_box(), 48, FillRule::NonZero)
+                .unwrap_or_else(|| panic!("'{}' should rasterise", name.name()));
+            let ink: u32 = mask.alpha().iter().map(|&a| u32::from(a)).sum();
+            assert!(
+                ink > 0,
+                "'{}' rasterised to a blank mask — the viewBox is wrong, not the path",
+                name.name()
+            );
+
+            // A symbol that covered almost nothing would also be a bug worth
+            // catching: a stray decimal point shrinks artwork rather than
+            // erasing it.
+            let lit = mask.alpha().iter().filter(|&&a| a > 32).count();
+            assert!(
+                lit >= 48,
+                "'{}' covers only {lit} px of 48x48 — suspiciously small",
+                name.name()
+            );
+        }
+    }
+
+    /// The trap, stated as a test: drop the grid and every icon goes blank.
+    #[test]
+    fn built_in_paths_are_blank_without_their_view_box() {
+        use silka_paint::{rasterize_path, FillRule};
+
+        let blank = IconName::ALL
+            .iter()
+            .filter(|name| {
+                rasterize_path(name.path(), ICON_VIEWPORT, 48, FillRule::NonZero)
+                    .map(|m| m.alpha().iter().all(|&a| a == 0))
+                    .unwrap_or(true)
+            })
+            .count();
+        assert_eq!(
+            blank,
+            IconName::ALL.len(),
+            "the built-in set is drawn in a negative-Y grid, so ICON_VIEWPORT \
+             alone must not be able to render it"
+        );
     }
 
     #[test]

@@ -37,7 +37,10 @@ use silka_paint::{Color, CornerStyle, Shadow, ShadowPair};
 use crate::palette::tailwind::{AMBER, BLUE, EMERALD, RED, SLATE};
 use crate::palette::Step;
 use crate::typography::{weight, TypeStyle, TypographyTokens};
-use crate::{Appearance, ColorTokens, Preset, RadiusTokens, ShadowTokens, SpacingTokens, Theme};
+use crate::{
+    Appearance, ColorTokens, ControlTokens, Preset, RadiusTokens, ShadowTokens, SpacingTokens,
+    Theme,
+};
 
 /// Build the Tailwind/shadcn preset's theme for a given appearance.
 pub fn theme(appearance: Appearance) -> Theme {
@@ -56,7 +59,17 @@ pub fn theme(appearance: Appearance) -> Theme {
         },
         shadow: shadows(appearance),
         spacing: SpacingTokens { unit: 4.0 },
+        control: ControlTokens {
+            // shadcn's control heights (h-8 / h-10 / h-11 in Tailwind units),
+            // rounded onto the same 4pt scale the rest of this preset uses.
+            sm: 32.0,
+            md: 40.0,
+            lg: 44.0,
+            row: 36.0,
+            menu_row: 32.0,
+        },
         typography: typography(),
+        density: crate::Density::Comfortable,
     }
 }
 

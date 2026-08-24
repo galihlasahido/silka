@@ -99,7 +99,7 @@ use silka_core::tree::{
 use silka_core::view::{column, expanded, row, Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets, Point, Quad, Size};
 use silka_text::FontWeight;
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -675,14 +675,14 @@ impl PaletteStyle {
         Self {
             panel: Decoration::fill(theme.color.surface_elevated)
                 .corners(theme.corners(theme.radius.xl))
-                .border(theme.space(0.25), theme.color.separator)
+                .border(theme.space_of(SpaceToken::Px), theme.color.separator)
                 .shadows(theme.shadow.xl),
             width: theme.space(140.0),
             top_gap: theme.space(24.0),
             padding: Insets::all(theme.space(2.0)),
             gap: theme.space(2.0),
             separator: theme.color.separator,
-            separator_thickness: theme.space(0.25),
+            separator_thickness: theme.space_of(SpaceToken::Px),
             row_height: MIN_HIT_TARGET,
             row_corners: theme.corners(theme.radius.md),
             row_padding: Insets::symmetric(theme.space(2.5), theme.space(1.5)),

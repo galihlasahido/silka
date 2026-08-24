@@ -65,7 +65,7 @@ use silka_core::tree::{
 use silka_core::view::{row, Builder, View, ViewNode};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Rect, Size};
 use silka_text::FontWeight;
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -126,7 +126,7 @@ impl SegmentedStyle {
     /// Not one colour originates here: both presets and dark mode are therefore
     /// automatically correct, without a single `if`.
     pub fn from_theme(theme: &Theme) -> Self {
-        let rambut = theme.space(0.25);
+        let rambut = theme.space_of(SpaceToken::Px);
         let sumur = theme.space(0.5);
         // The thumb's radius is the well's radius minus the padding, which is
         // what makes two concentric rounded rectangles look concentric instead

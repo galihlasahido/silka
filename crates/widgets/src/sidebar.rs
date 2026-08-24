@@ -83,7 +83,7 @@ use silka_core::tree::{
 use silka_core::view::{column, expanded, row, Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets, Layer, Point, Quad, Rect, Size};
 use silka_text::FontWeight;
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
@@ -208,7 +208,7 @@ impl SidebarStyle {
             // content, and the two must not read as the same plane.
             background: theme.color.surface,
             separator: theme.color.separator,
-            separator_thickness: theme.space(0.25),
+            separator_thickness: theme.space_of(SpaceToken::Px),
             material: SidebarMaterial::default(),
             padding: Insets::symmetric(theme.space(2.0), theme.space(2.0)),
             row_spacing: theme.space(0.5),

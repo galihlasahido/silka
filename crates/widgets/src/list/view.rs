@@ -263,7 +263,7 @@ where
 /// ```
 /// # use silka_core::signals::Runtime;
 /// # use silka_core::view::{fixed, View};
-/// # use silka_theme::{Appearance, Theme};
+/// # use silka_theme::{Appearance, SpaceToken, Theme};
 /// # use silka_widgets::{list_in, ListState};
 /// # let rt = Runtime::new();
 /// # let t = Theme::cupertino(Appearance::Dark);
@@ -272,7 +272,7 @@ where
 /// // A hundred thousand rows; only the visible dozen ever call `item`.
 /// list_in(&t, state, 100_000, |_i| View::from(fixed(240.0, 44.0)))
 ///     .item_extent(44.0)
-///     .separators(t.space(0.25))
+///     .separators(t.space_of(SpaceToken::Px))
 ///     .label("Transactions")
 ///     .on_activate(|i| println!("open row {i}"));
 /// ```

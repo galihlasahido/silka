@@ -13,7 +13,7 @@
 
 use silka_core::tree::{Decoration, FocusRing};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Rect, ShadowPair};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 
@@ -119,7 +119,7 @@ impl TabsStyle {
     /// [`Theme`], so both presets are automatically correct and dark mode
     /// follows without an `if` branch.
     pub fn from_theme(theme: &Theme, variant: TabsVariant) -> Self {
-        let rambut = theme.space(0.25);
+        let rambut = theme.space_of(SpaceToken::Px);
         let dasar = Self {
             variant,
             track: Decoration::NONE,

@@ -42,7 +42,9 @@
 
 use silka_paint::{Color, Corners, ShadowPair};
 
-use crate::{ColorToken, FontToken, RadiusToken, ShadowToken, SpaceToken, Theme, TypeStyle};
+use crate::{
+    ColorToken, ControlToken, FontToken, RadiusToken, ShadowToken, SpaceToken, Theme, TypeStyle,
+};
 
 /// Something that becomes a concrete value once it meets the active theme.
 ///
@@ -99,6 +101,17 @@ impl Token for ShadowToken {
 
     fn resolve(self, theme: &Theme) -> ShadowPair {
         theme.shadow.get(self)
+    }
+}
+
+/// A control height resolves to its **visual** height. The hit target is a
+/// separate question with a separate answer ([`Theme::hit_target_of`]), and
+/// collapsing the two here would quietly make every small control 44pt tall.
+impl Token for ControlToken {
+    type Value = f32;
+
+    fn resolve(self, theme: &Theme) -> f32 {
+        theme.control.get(self)
     }
 }
 

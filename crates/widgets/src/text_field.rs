@@ -43,8 +43,10 @@
 //! - **AccessKit node** with role [`AccessRole::TextInput`], a name, a
 //!   **value**, and the `SET_VALUE` action (voice dictation) — disabled state
 //!   included.
-//! - **Dark mode** follows the tokens; **hit target ≥ 44pt**
-//!   ([`MIN_HIT_TARGET`]) even though the line itself is far shorter;
+//! - **Dark mode** follows the tokens; the drawn height is
+//!   [`ControlToken::Md`] while the **hit target
+//!   stays ≥ 44pt** ([`MIN_HIT_TARGET`]) even though the line itself is far
+//!   shorter;
 //!   **reduced-motion** is honored because every motion goes through [`Tick`].
 //! - **IME preedit is rendered inline** with an underline, and while
 //!   composition is running the normal key path is held back (§3.8). For that
@@ -81,8 +83,11 @@ use silka_core::tree::{
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, Corners, GlyphRun, Insets, Point, Quad, Rect, Size};
 use silka_text::{Caret, Movement, TextConstraints, TextEdit, TextLayout, TextStyle};
-use silka_theme::Theme;
+use silka_theme::{ControlToken, SpaceToken, Theme};
 
+// Referenced by the doc links below rather than by code: the height now comes
+// from `ControlToken::Md`, and `hit_target_of` is what applies the 44pt floor.
+#[allow(unused_imports)]
 use crate::button::MIN_HIT_TARGET;
 use crate::editing::{self, EditCaps};
 use crate::fonts::Fonts;
@@ -1265,10 +1270,17 @@ pub fn text_field_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> 
                 .single_line(),
             padding: Insets::symmetric(t.space(3.0), t.space(1.5)),
             corners: t.corners(t.radius.md),
-            min_height: MIN_HIT_TARGET,
+            // The control token, not the hit-target floor. A field used to be
+            // exactly 44pt tall because that floor was the only number available,
+            // which made it taller than every AppKit field beside it. The target
+            // is still honoured — `hit_target_of` clamps it — but the two are now
+            // separate questions with separate answers.
+            min_height: t
+                .control_of(ControlToken::Md)
+                .max(t.hit_target_of(ControlToken::Md)),
             // As thin as the smallest spacing step: the HIG caret is a hairline,
             // not a slab.
-            caret_width: t.space(0.25),
+            caret_width: t.space_of(SpaceToken::Px),
             label: None,
             disabled: false,
             read_only: false,
@@ -1281,7 +1293,7 @@ pub fn text_field_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> 
             background: t.color.surface,
             background_hover: t.color.surface_hover,
             background_focus: t.color.surface,
-            border_width: t.space(0.25),
+            border_width: t.space_of(SpaceToken::Px),
             border_color: t.color.border,
             border_focus_color: t.color.accent,
             focus_ring: Some(FocusRing::new(t.space(0.5), t.color.focus_ring)),
@@ -1368,7 +1380,8 @@ impl TextField {
         self.map(move |x| x.corners = corners)
     }
 
-    /// Minimum height; defaults to [`MIN_HIT_TARGET`] (HIG).
+    /// Minimum height; defaults to the medium control token, clamped up by the
+    /// [`MIN_HIT_TARGET`] floor (HIG).
     pub fn min_height(self, height: f32) -> Self {
         self.map(move |x| x.min_height = height.max(0.0))
     }

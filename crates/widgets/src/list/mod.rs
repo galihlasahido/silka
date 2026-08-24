@@ -9,7 +9,7 @@
 //! ```
 //! # use silka_core::signals::Runtime;
 //! # use silka_core::view::View;
-//! # use silka_theme::{Appearance, Theme};
+//! # use silka_theme::{Appearance, SpaceToken, Theme};
 //! # use silka_widgets::{list_in, text_in, Fonts, ListState};
 //! # let rt = Runtime::new();
 //! # let fonts = Fonts::bundled_only();
@@ -27,7 +27,7 @@
 //!         let f = fonts.clone();
 //!         move || View::from(text_in(&f, "Transactions"))
 //!     })
-//!     .separators(theme.space(0.25))
+//!     .separators(theme.space_of(SpaceToken::Px))
 //!     .label("Transactions")
 //!     .on_activate(|i| println!("open row {i}"));
 //! ```

@@ -73,7 +73,7 @@ use silka_core::tree::{
 };
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Quad, Rect, Size};
-use silka_theme::Theme;
+use silka_theme::{SpaceToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 
@@ -171,7 +171,7 @@ pub struct SplitStyle {
 impl SplitStyle {
     /// Resolve every token.
     pub fn from_theme(theme: &Theme) -> Self {
-        let rambut = theme.space(0.25);
+        let rambut = theme.space_of(SpaceToken::Px);
         let pegangan = theme.space(0.75);
         Self {
             thickness: rambut,

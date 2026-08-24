@@ -60,7 +60,7 @@
 //! | Keyboard + focus ring | Space/Enter/↓ open, Esc closes, Delete/Backspace clear, and the grid takes over from there |
 //! | AccessKit node | a `Button` carrying the spoken date as its **value**, with `expanded` saying whether the panel is out |
 //! | Dark mode | token-driven |
-//! | Hit target ≥ 44pt | [`MIN_HIT_TARGET`] is the field's floor |
+//! | Hit target ≥ 44pt | the field draws at [`ControlToken::Md`] but is clamped to at least [`MIN_HIT_TARGET`](crate::MIN_HIT_TARGET) |
 //! | Reduced motion | the panel's entrance is the overlay system's, which already honours it |
 
 use silka_core::access::{AccessActions, AccessNode, AccessRole};
@@ -79,8 +79,9 @@ use silka_core::tree::{
 use silka_core::view::{constrained, pad, row, Builder, View, ViewNode};
 use silka_paint::{Color, CornerRadii, Corners, Insets, Point, Quad, Size};
 use silka_text::FontWeight;
-use silka_theme::{ColorToken, RadiusToken, SpaceToken, Theme};
+use silka_theme::{ColorToken, ControlToken, RadiusToken, SpaceToken, Theme};
 
+#[cfg(test)]
 use crate::button::MIN_HIT_TARGET;
 use crate::calendar::{calendar_in, Calendar};
 use crate::fonts::Fonts;
@@ -288,7 +289,12 @@ impl DateFieldStyle {
             placeholder: theme.color_of(ColorToken::TertiaryLabel),
             disabled_label: theme.color_of(ColorToken::DisabledLabel),
             padding: Insets::symmetric(theme.space(3.0), theme.space(2.0)),
-            min_height: MIN_HIT_TARGET,
+            // The control token, not the hit-target floor — the same split
+            // `text_field` draws between what is painted and what must respond
+            // (see its `min_height` for the longer version of this comment).
+            min_height: theme
+                .control_of(ControlToken::Md)
+                .max(theme.hit_target_of(ControlToken::Md)),
             focus_ring_width: theme.space(0.5),
             focus_ring: theme.color_of(ColorToken::FocusRing),
         }
