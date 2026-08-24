@@ -470,6 +470,7 @@ pub mod list;
 pub mod menu;
 pub mod motion;
 pub mod overlay;
+pub mod pagination;
 pub mod popover;
 pub mod progress;
 pub mod radio;
@@ -562,6 +563,7 @@ pub use motion::{advance, is_animating, settle};
 pub use overlay::{
     overlay, overlay_layer, Align, Anchor, Barrier, Dismiss, PhysicalSide, Placement, Side,
 };
+pub use pagination::{pagination, pagination_in, OnChange, PageItem, Pagination};
 pub use popover::{popover, popover_in, Popover, PopoverPanel, PopoverPanelProps, PopoverStyle};
 pub use progress::{
     progress_bar, progress_bar_in, progress_circle, progress_circle_in, ProgressBar,
