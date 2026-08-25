@@ -85,6 +85,9 @@ pub struct ListState {
     /// would be overwritten before anyone got to read it. Commands and
     /// measurements must not share one place.
     request: Signal<Option<f32>>,
+    /// A `jump_to` request that has not been served yet — see [`ListState::jump_to`]
+    /// for why this is a second channel rather than a flag on [`ListState::scroll_to`].
+    jump: Signal<Option<f32>>,
 }
 
 impl ListState {
@@ -95,6 +98,7 @@ impl ListState {
             scroll: runtime.signal(ListScroll::default()),
             selected: runtime.signal(None),
             request: runtime.signal(None),
+            jump: runtime.signal(None),
         }
     }
 
@@ -138,6 +142,24 @@ impl ListState {
         self.scroll_to(m.scroll_to_item(index));
     }
 
+    /// Jump to a given position with **no** animation — the position simply
+    /// changes, the way [`ListState::scroll_to`] deliberately does not.
+    ///
+    /// This exists for exactly one situation: content was just inserted
+    /// **above** the viewport (an inbox thread loading older history as it is
+    /// scrolled to the top) and the offset has to move by precisely the
+    /// height that insertion added, so that the rows already on screen stay
+    /// in the same place. That correction is not a scroll a person asked
+    /// for — it is bookkeeping standing in for one, and animating it would
+    /// show a visible flick opposite the direction the person is scrolling in
+    /// as their own gesture and this correction race each other. A user-
+    /// facing jump ("scroll to the newest message") should almost always use
+    /// [`ListState::scroll_to`] instead, for the same reason a page does not
+    /// hard-cut to the row it just selected.
+    pub fn jump_to(&self, offset: f32) {
+        self.jump.set(Some(offset));
+    }
+
     /// The pending `scroll_to` request — **tracks**, and that is the whole
     /// point: the list component must subscribe so that a `scroll_to` from an
     /// event handler really does schedule a frame.
@@ -153,6 +175,24 @@ impl ListState {
         let permintaan = self.request.peek();
         if permintaan.is_some() {
             self.request.set(None);
+        }
+        permintaan
+    }
+
+    /// The pending `jump_to` request — **tracks**, for the same reason
+    /// [`ListState::pending_scroll`] does.
+    pub(crate) fn pending_jump(&self) -> Option<f32> {
+        self.jump.get()
+    }
+
+    /// Take the pending `jump_to` request (called by [`super::sync`]).
+    pub(crate) fn take_jump(&self) -> Option<f32> {
+        if !self.jump.is_alive() {
+            return None;
+        }
+        let permintaan = self.jump.peek();
+        if permintaan.is_some() {
+            self.jump.set(None);
         }
         permintaan
     }
@@ -173,7 +213,10 @@ impl ListState {
     /// list is detached from the tree; writing to a dead signal panics, so every
     /// write goes through this guard.
     pub fn is_alive(&self) -> bool {
-        self.scroll.is_alive() && self.selected.is_alive() && self.request.is_alive()
+        self.scroll.is_alive()
+            && self.selected.is_alive()
+            && self.request.is_alive()
+            && self.jump.is_alive()
     }
 
     /// Publish the layout measurements; writes only when something changed.
@@ -269,10 +312,12 @@ pub fn use_list_state() -> ListState {
     let scroll = use_signal(ListScroll::default);
     let selected = use_signal(|| None);
     let request = use_signal(|| None);
+    let jump = use_signal(|| None);
     ListState {
         scroll,
         selected,
         request,
+        jump,
     }
 }
 

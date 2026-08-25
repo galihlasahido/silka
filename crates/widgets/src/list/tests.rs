@@ -423,6 +423,44 @@ fn scroll_to_item_dari_aplikasi_menggulirkan_daftar() {
     assert!(u.list().first() >= 300 - DEFAULT_OVERSCAN);
 }
 
+/// The whole point of `jump_to`: it reaches its target in the very next
+/// frame, with no spring in flight — unlike `scroll_to`, which needs
+/// `tuntas()` (several settling frames) to get there at all.
+#[test]
+fn jump_to_tidak_menganimasikan_apa_apa() {
+    let mut u = polos(2_000);
+    let sebelum = u.scroll().offset();
+    u.state().jump_to(sebelum + 500.0 * EXTENT);
+    // One frame — not `tuntas()` — is deliberately all this test gives it.
+    u.frame();
+    assert!(
+        (u.scroll().offset() - (sebelum + 500.0 * EXTENT)).abs() < 1.0,
+        "jump_to did not land on its target in a single frame: {}",
+        u.scroll().offset()
+    );
+    assert!(
+        !crate::is_animating(u.ui.tree()),
+        "jump_to left something animating — it should have snapped, not sprung"
+    );
+}
+
+/// `scroll_to`, by contrast, is still under way after one frame — the
+/// contrast that justifies `jump_to` existing as a second, separate channel
+/// rather than a flag on this one.
+#[test]
+fn scroll_to_is_still_animating_after_one_frame() {
+    let mut u = polos(2_000);
+    let sebelum = u.scroll().offset();
+    let tujuan = sebelum + 500.0 * EXTENT;
+    u.state().scroll_to(tujuan);
+    u.frame();
+    assert!(
+        (u.scroll().offset() - tujuan).abs() > 1.0,
+        "scroll_to reached its target in a single frame — the spring is not \
+         being exercised, which is exactly what jump_to is for"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Accessibility
 // ---------------------------------------------------------------------------

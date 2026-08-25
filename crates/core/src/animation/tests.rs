@@ -367,6 +367,24 @@ fn retarget_setiap_frame_tetap_konvergen() {
 }
 
 #[test]
+fn menuju_target_berjarak_besar_tetap_settle() {
+    // A scroll offset several thousand points from its target — position and
+    // target both large enough that `target.add(x)` can round a shrinking
+    // `x` back to the exact bits already stored before `x` itself reaches
+    // `tolerance.distance`. `advance` used to keep reporting "still
+    // animating" forever in that state, even though nothing was left to
+    // paint: the position had frozen but the stale velocity never did.
+    let mut v = SpringValue::new(3632.0).with_spring(Spring::smooth());
+    v.set_target(3216.0);
+    let n = jalankan(&mut v, Motion::Full);
+    assert!(
+        n < 500,
+        "spring butuh {n} frame untuk settle pada jarak besar"
+    );
+    assert_eq!(v.position(), 3216.0);
+}
+
+#[test]
 fn retarget_ke_target_yang_sama_tidak_mengubah_lintasan() {
     let mut a = SpringValue::new(0.0).with_spring(Spring::bouncy());
     let mut b = a;

@@ -3203,6 +3203,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "silka-inbox"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
+]
+
+[[package]]
 name = "silka-mdi"
 version = "0.1.0"
 dependencies = [

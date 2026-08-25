@@ -232,6 +232,18 @@ pub fn sync_virtual<N: Virtualized>(tree: &mut RenderTree) -> Dirty {
             }
         }
 
+        // 1b. The `jump_to` the application left behind — no spring, so no
+        // `Dirty::ANIMATION`: nothing is left moving for this one.
+        if let Some(tujuan) = state.and_then(|s| s.take_jump()) {
+            let berubah = tree
+                .node_mut_ref::<ScrollView>(wadah)
+                .is_some_and(|s| s.jump_to(tujuan));
+            if berubah {
+                tree.mark_needs_layout(wadah);
+                dirty |= Dirty::LAYOUT | Dirty::PAINT;
+            }
+        }
+
         // 2. Pending reveal (arrow keys, focus that just landed).
         let reveal = tree.node_mut_ref::<N>(id).and_then(N::take_virtual_reveal);
         if let Some(index) = reveal {

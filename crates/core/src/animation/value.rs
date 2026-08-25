@@ -522,7 +522,21 @@ impl<T: Animatable> SpringValue<T> {
             self.settle();
             return false;
         }
-        self.position = self.target.add(x);
+        let baru = self.target.add(x);
+        // The propagator's closed form can keep computing a genuine,
+        // ever-shrinking correction that `target.add(x)` is too coarse to
+        // represent at this magnitude — rounded straight back to the exact
+        // position and velocity already stored. Once storing the "new"
+        // values changes nothing bit-for-bit, no future frame can either
+        // (same deterministic formula, same rounded inputs), so reporting
+        // "still animating" would spin forever doing no visible work — the
+        // same failure `Tolerance`'s own doc comment warns about, just
+        // caught one layer lower, in the arithmetic rather than the units.
+        if baru.sub(self.position).magnitude() == 0.0 && v.sub(self.velocity).magnitude() == 0.0 {
+            self.settle();
+            return false;
+        }
+        self.position = baru;
         self.velocity = v;
         true
     }

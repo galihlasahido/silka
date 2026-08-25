@@ -505,10 +505,11 @@ impl ListBuilder {
     fn isi(&self) -> View {
         let scroll = self.state.scroll();
         let selected = self.state.selected();
-        // Read **only** so this component subscribes: a `scroll_to` from an
-        // event handler has to schedule a frame, and that frame is what runs
-        // `sync` — the party that actually scrolls.
+        // Read **only** so this component subscribes: a `scroll_to`/`jump_to`
+        // from an event handler has to schedule a frame, and that frame is
+        // what runs `sync` — the party that actually scrolls.
         let _ = self.state.pending_scroll();
+        let _ = self.state.pending_jump();
         let metrics = self.metrics(scroll.viewport);
         let range = metrics.visible_range(scroll.offset, self.overscan);
 

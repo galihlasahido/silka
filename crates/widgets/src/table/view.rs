@@ -673,10 +673,11 @@ impl TableBuilder {
             .state
             .active_column()
             .min(columns.len().saturating_sub(1));
-        // Read **only** to subscribe this component: a `scroll_to` from an
-        // event handler has to schedule a frame, and it is that frame which
-        // runs `sync`.
+        // Read **only** to subscribe this component: a `scroll_to`/`jump_to`
+        // from an event handler has to schedule a frame, and it is that frame
+        // which runs `sync`.
         let _ = self.state.scroll_state().pending_scroll();
+        let _ = self.state.scroll_state().pending_jump();
 
         let metrics = self.metrics(scroll.viewport);
         let range = metrics.visible_range(scroll.offset, self.overscan);
