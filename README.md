@@ -129,3 +129,10 @@ above:
 
 `ICONS.md` carries the upstream version, the per-icon mapping, and the
 statement of modification that Apache-2.0 §4(b) requires.
+
+## Support
+
+If silka is useful to you, consider supporting its development:
+
+[![Support via PayPal](https://img.shields.io/badge/PayPal-Support-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://paypal.me/abahido)
+[![Support via Lynk.id](https://img.shields.io/badge/Lynk.id-Support-FB6B35?style=for-the-badge&logo=kofi&logoColor=white)](https://lynk.id/abahido/s/z52m3ekew032)
