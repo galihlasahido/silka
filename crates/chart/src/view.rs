@@ -1306,6 +1306,97 @@ mod tests {
         assert!(s_rtl[0] > s_rtl[1], "…dan di kanan saat bercermin");
     }
 
+    /// Every legend swatch the chart painted, as its left edge x — the same
+    /// "quad above the plot" filter `legenda_dan_judul_mulai_dari_sisi_baca`
+    /// uses, generalized to an arbitrary series count.
+    fn swatches(tree: &mut RenderTree) -> Vec<f32> {
+        let mut scene = Scene::new(Color::TRANSPARENT);
+        tree.paint_into(&mut scene);
+        let plot = chart(tree).geometry().unwrap().plot;
+        scene
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::Quad(q) if q.rect.max_y() < plot.min_y() => Some(q.rect.origin.x),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_legend_too_wide_for_one_row_wraps_instead_of_dropping_the_rest() {
+        let (f, t) = env();
+        let sempit = Size::new(260.0, 400.0);
+        let build = |n: usize| {
+            let names = [
+                "Pendapatan",
+                "Biaya",
+                "Target",
+                "Realisasi",
+                "Proyeksi",
+                "Selisih",
+            ];
+            let mut b = bar_chart_in(&f, &t, data());
+            for nama in &names[..n] {
+                b = b.y_named(*nama, |d: &Tx| d.nilai);
+            }
+            b.legend(true)
+        };
+
+        let mut satu_baris = pohon(build(2), sempit);
+        let mut banyak_baris = pohon(build(6), sempit);
+
+        assert_eq!(
+            swatches(&mut satu_baris).len(),
+            2,
+            "dua deret harus muat satu baris tanpa ada yang dijatuhkan"
+        );
+        assert_eq!(
+            swatches(&mut banyak_baris).len(),
+            6,
+            "enam deret di kotak sempit tidak boleh kehilangan satu pun — \
+             yang tidak muat harus pindah baris, bukan dijatuhkan"
+        );
+
+        let atas_satu = chart(&satu_baris).geometry().unwrap().plot.min_y();
+        let atas_banyak = chart(&banyak_baris).geometry().unwrap().plot.min_y();
+        assert!(
+            atas_banyak > atas_satu + 4.0,
+            "enam deret yang membungkus ke baris berikutnya harus mendorong \
+             plot lebih jauh ke bawah daripada satu baris: {atas_satu} vs {atas_banyak}"
+        );
+    }
+
+    #[test]
+    fn legend_wrap_is_capped_so_it_cannot_swallow_the_plot() {
+        // A pathological number of series in a short box: wrapping without a
+        // limit would push the plot's top past the box entirely. The budget
+        // in `layout_legend` caps this at half the content height, so some
+        // entries are dropped rather than the plot disappearing.
+        let (f, t) = env();
+        let pendek = Size::new(220.0, 140.0);
+        let mut banyak = bar_chart_in(&f, &t, data());
+        for i in 0..16 {
+            banyak = banyak.y_named(format!("Deret {i}"), |d: &Tx| d.nilai);
+        }
+        let mut tree = pohon(banyak.legend(true), pendek);
+
+        let jumlah = swatches(&mut tree).len();
+        assert!(
+            jumlah > 0 && jumlah < 16,
+            "16 deret di kotak pendek harus membungkus lalu berhenti, \
+             bukan menampilkan semuanya atau tidak satu pun: {jumlah} swatch tergambar"
+        );
+
+        let plot = chart(&tree).geometry().unwrap().plot;
+        assert!(
+            plot.size.height >= pendek.height * 0.5 - 40.0,
+            "legenda yang terus dibungkus tidak boleh menelan lebih dari \
+             separuh kotak: tinggi plot tersisa {}",
+            plot.size.height
+        );
+    }
+
     #[test]
     fn mengganti_arah_membangun_ulang_geometrinya() {
         // The derived state is cached per size and per scale factor; direction

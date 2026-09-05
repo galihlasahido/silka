@@ -130,6 +130,8 @@ pub struct ChartStyle {
     pub swatch_size: f32,
     /// The gap between two legend entries.
     pub legend_entry_gap: f32,
+    /// The gap between two wrapped legend rows.
+    pub legend_row_gap: f32,
     /// The gap between the title and everything below it.
     pub title_gap: f32,
     /// The padding kept inside the chart box.
@@ -186,6 +188,7 @@ impl ChartStyle {
             swatch_gap: theme.space(1.5),
             swatch_size: theme.space(2.5),
             legend_entry_gap: theme.space(4.0),
+            legend_row_gap: theme.space(1.5),
             title_gap: theme.space(2.0),
             padding: theme.space(1.0),
         }

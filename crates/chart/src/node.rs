@@ -486,12 +486,14 @@ impl ChartBox {
         self.geometry = Some(geometry);
     }
 
-    /// Lay the legend out in a row and return its height.
+    /// Lay the legend out, wrapping onto more rows as needed, and return its
+    /// total height.
     fn layout_legend(&mut self, content: Rect) -> f32 {
         let gaya = self.style.legend_text.clone();
         let swatch = self.style.swatch_size;
         let gap_swatch = self.style.swatch_gap;
         let gap_entri = self.style.legend_entry_gap;
+        let gap_baris = self.style.legend_row_gap;
         let warna_teks = self.style.label;
 
         let entri: Vec<(String, Color)> = self
@@ -502,22 +504,33 @@ impl ChartBox {
             .map(|(i, s)| (s.name.clone(), self.style.series_color(i, s.color)))
             .collect();
 
+        // A legend that wrapped without limit would eat the plot it exists to
+        // explain, so it may not claim more than half the content height —
+        // the first row is exempt from that budget (there is always room for
+        // at least one), and whatever does not fit past it is dropped rather
+        // than squeezed in; the tooltip still names every series.
+        let tinggi_maks = (content.size.height * 0.5).max(swatch);
+
         // `x` walks along the reading direction and is turned into a screen
         // coordinate at the end: the first series is the leading one, and its
         // swatch always sits on the side the eye starts from (§9.8).
         let mut x = 0.0f32;
-        let mut tinggi = swatch;
+        let mut y = 0.0f32;
+        let mut tinggi_baris = swatch;
         for (nama, warna) in entri {
             let ukuran = self.measure(&nama, &gaya);
             let lebar = swatch + gap_swatch + ukuran.width;
             if x > 0.0 && x + lebar > content.size.width {
-                // One row only: a legend that wrapped would eat the plot it is
-                // explaining. What does not fit is dropped, and the tooltip
-                // still names every series.
-                break;
+                let y_baru = y + tinggi_baris + gap_baris;
+                if y_baru + ukuran.height.max(swatch) > tinggi_maks {
+                    break;
+                }
+                y = y_baru;
+                x = 0.0;
+                tinggi_baris = swatch;
             }
-            let baris_y = content.min_y();
-            tinggi = tinggi.max(ukuran.height);
+            let baris_y = content.min_y() + y;
+            tinggi_baris = tinggi_baris.max(ukuran.height);
             let (x_swatch, x_teks) = if self.rtl {
                 (content.max_x() - x - swatch, content.max_x() - x - lebar)
             } else {
@@ -538,7 +551,7 @@ impl ChartBox {
             self.push_label(&nama, Point::new(x_teks, baris_y), warna_teks, &gaya);
             x += lebar + gap_entri;
         }
-        tinggi
+        y + tinggi_baris
     }
 
     /// The x a run of `width` points starts at when it hugs the **leading**
