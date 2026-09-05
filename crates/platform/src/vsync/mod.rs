@@ -220,11 +220,18 @@ impl VsyncSource {
     }
 
     /// Ask for one frame on the next vsync.
+    ///
+    /// The display link paces the frame; the redraw request guarantees it
+    /// arrives. Unpausing on its own leaves a single point of failure — if the
+    /// first callback after the pause does not come, nothing else asks for a
+    /// frame and the window sits on a dirty tree until some unrelated event
+    /// wakes the loop. Asking winit as well costs nothing when the link is
+    /// healthy (the scheduler serves one frame for both) and turns a stall into
+    /// a frame that is merely a little early.
     pub fn schedule(&self) {
         #[cfg(target_os = "macos")]
         if let Some(link) = self.link.as_ref() {
             link.set_paused(false);
-            return;
         }
         self.window.request_redraw();
     }
