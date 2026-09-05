@@ -3298,6 +3298,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "silka-roster"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
+]
+
+[[package]]
 name = "silka-testing"
 version = "0.1.0"
 dependencies = [
