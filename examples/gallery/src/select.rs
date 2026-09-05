@@ -253,8 +253,7 @@ mod tests {
     impl Layar {
         fn baru(theme: Theme) -> Self {
             let mut layar = Self {
-                ui: headless_app(theme, move |cx| halaman(cx))
-                    .sized(VIEWPORT.width, VIEWPORT.height),
+                ui: headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height),
                 jam: Instant::now(),
             };
             layar.diamkan();

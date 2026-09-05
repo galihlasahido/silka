@@ -279,8 +279,7 @@ mod tests {
     const VIEWPORT: Size = Size::new(1100.0, 1400.0);
 
     fn ui(theme: Theme) -> AppRuntime {
-        let mut ui =
-            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
+        let mut ui = headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }

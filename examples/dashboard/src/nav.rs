@@ -453,24 +453,20 @@ fn header(t: &Theme) -> View {
 /// The navigation tree.
 fn navigation(t: &Theme, state: TreeState, page: Signal<Page>) -> View {
     let theme = *t;
-    tree(
-        state,
-        |parent| children(parent),
-        move |r| nav_row(&theme, r),
-    )
-    .row_extent(kit::MIN_HIT)
-    .indent(t.space(4.0))
-    .row_corners(t.corners_of(RadiusToken::Md))
-    .label(NAV_LABEL)
-    .background(t.color.surface)
-    // Return (and a double click) on a leaf. Single-click navigation goes
-    // through the selection instead — see [`selected_page`].
-    .on_activate(move |key| {
-        if let Some(p) = entry(key).and_then(|e| e.page) {
-            page.set(p);
-        }
-    })
-    .into()
+    tree(state, children, move |r| nav_row(&theme, r))
+        .row_extent(kit::MIN_HIT)
+        .indent(t.space(4.0))
+        .row_corners(t.corners_of(RadiusToken::Md))
+        .label(NAV_LABEL)
+        .background(t.color.surface)
+        // Return (and a double click) on a leaf. Single-click navigation goes
+        // through the selection instead — see [`selected_page`].
+        .on_activate(move |key| {
+            if let Some(p) = entry(key).and_then(|e| e.page) {
+                page.set(p);
+            }
+        })
+        .into()
 }
 
 /// One navigation row.
@@ -654,8 +650,8 @@ mod tests {
             let (e, parent) = entry_for(p).unwrap_or_else(|| panic!("{} has no row", p.slug()));
             assert_eq!(e.page, Some(p));
             // …and a nested row knows which group has to be opened for it.
-            if parent.is_some() {
-                assert!(entry(parent.unwrap()).is_some());
+            if let Some(parent) = parent {
+                assert!(entry(parent).is_some());
             }
         }
     }

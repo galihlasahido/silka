@@ -101,14 +101,13 @@ fn dapat_dicopot(label: Signal<Vec<String>>) -> View {
 
         let chip: Vec<View> = sekarang
             .iter()
-            .cloned()
             .map(|nama| {
                 let untuk_hapus = nama.clone();
                 View::from(
                     tag(nama.clone())
                         .key(nama.clone())
                         .tone(BadgeTone::Warning)
-                        .remove_label(nama_hapus(&nama))
+                        .remove_label(nama_hapus(nama))
                         .on_remove(move || {
                             label.update(|l| l.retain(|x| *x != untuk_hapus));
                         }),

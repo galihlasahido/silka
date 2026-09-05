@@ -104,7 +104,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
             "A mention inside a sentence",
             [
                 View::from(
-                    row([kepala::catatan(&t, KALIMAT), View::from(sebutan(&t))])
+                    row([kepala::catatan(&t, KALIMAT), sebutan(&t)])
                         .spacing(t.space(1.5))
                         .cross(CrossAlign::Center),
                 ),

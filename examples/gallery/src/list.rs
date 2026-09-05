@@ -266,7 +266,7 @@ mod tests {
 
     /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme) -> AppRuntime {
-        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
+        headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// Pump frames until the app is genuinely at rest **and** no spring is

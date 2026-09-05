@@ -77,8 +77,7 @@ pub fn prev_grapheme(text: &str, index: usize) -> usize {
     let index = snap_grapheme(text, index);
     text.grapheme_indices(true)
         .map(|(i, _)| i)
-        .filter(|&awal| awal < index)
-        .next_back()
+        .rfind(|&awal| awal < index)
         .unwrap_or(0)
 }
 

@@ -66,12 +66,9 @@ fn bentuk(t: &Theme) -> View {
         "Lines, circles, blocks",
         [
             View::from(
-                row([
-                    View::from(skeleton_circle(GARIS_TENGAH)),
-                    View::from(skeleton_text(3)),
-                ])
-                .spacing(t.space(4.0))
-                .cross(CrossAlign::Start),
+                row([View::from(skeleton_circle(GARIS_TENGAH)), skeleton_text(3)])
+                    .spacing(t.space(4.0))
+                    .cross(CrossAlign::Start),
             ),
             View::from(
                 skeleton()
@@ -112,7 +109,7 @@ fn tukar(dimuat: Signal<bool>) -> View {
                         .height(t.typography.headline.size)
                         .width_fraction(0.6),
                 ),
-                View::from(skeleton_text(2)),
+                skeleton_text(2),
             ]
         };
 

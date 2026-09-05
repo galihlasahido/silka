@@ -1030,9 +1030,11 @@ impl RenderNode for Slider {
                         // that point. Pressing the track means "bring the thumb
                         // here".
                         let thumb = self.thumb_rect(&g, i);
-                        self.grab = (thumb.contains(u.local))
-                            .then(|| u.local.x - thumb.center().x)
-                            .unwrap_or(0.0);
+                        self.grab = if thumb.contains(u.local) {
+                            u.local.x - thumb.center().x
+                        } else {
+                            0.0
+                        };
                     }
                     if let Some(i) = self.dragging {
                         if u.phase != DragPhase::Cancel {

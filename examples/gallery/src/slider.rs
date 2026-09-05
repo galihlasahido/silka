@@ -235,7 +235,7 @@ mod tests {
     const VIEWPORT: Size = Size::new(720.0, 640.0);
 
     fn ui(theme: Theme) -> AppRuntime {
-        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
+        headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// A slider's a11y node, looked up by name.

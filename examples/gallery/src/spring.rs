@@ -773,8 +773,7 @@ mod tests {
     const FRAME: Duration = Duration::from_micros(8_333);
 
     fn ui(theme: Theme) -> AppRuntime {
-        let mut ui =
-            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
+        let mut ui = headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }

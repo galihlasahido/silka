@@ -70,7 +70,7 @@ fn matriks(t: &Theme) -> View {
         });
         View::from(
             row([
-                View::from(kepala::catatan(t, variant.name())),
+                kepala::catatan(t, variant.name()),
                 View::from(row(pil).spacing(t.space(2.0)).cross(CrossAlign::Center)),
             ])
             .spacing(t.space(4.0))
@@ -115,7 +115,7 @@ fn dalam_kalimat(t: &Theme) -> View {
         "Inline",
         [View::from(
             row([
-                View::from(kepala::catatan(t, "Invoice #001280")),
+                kepala::catatan(t, "Invoice #001280"),
                 View::from(
                     badge("Paid")
                         .tone(BadgeTone::Success)

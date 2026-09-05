@@ -138,7 +138,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
             .color(t.color.secondary_label)
             .max_width(t.space(LEBAR)),
         ),
-        View::from(bar.view()),
+        bar.view(),
         editor(
             &t,
             Kabel {
@@ -287,7 +287,7 @@ mod tests {
 
     /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme) -> AppRuntime {
-        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
+        headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     fn frame(ui: &mut AppRuntime, waktu: Instant) {

@@ -86,7 +86,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
                 &t,
                 "Three tones, one stack",
                 [
-                    View::from(tombol(&t, daftar, diurungkan)),
+                    tombol(&t, daftar, diurungkan),
                     kepala::catatan(
                         &t,
                         format!(

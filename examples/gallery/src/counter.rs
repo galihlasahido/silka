@@ -147,7 +147,7 @@ mod tests {
 
     /// A headless app assembled **exactly the way `run_app` does it**.
     fn ui(theme: Theme) -> AppRuntime {
-        let ui = headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
+        let ui = headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height);
         // What the shell does every frame; once is enough here since the test
         // window never moves between monitors.
         ui.env::<Signal<ScaleFactor>>()

@@ -315,7 +315,7 @@ fn main() -> Result<(), PlatformError> {
             // Without this the `GlyphRun` commands carry no bitmaps and the
             // window renders blank — the atlas is what crosses to the GPU.
             .glyphs(fonts.shared()),
-        move |cx| app(cx),
+        app,
         advance,
     )
 }
@@ -371,8 +371,7 @@ mod tests {
     /// tree is the contract, so it is what the test reads (§3.8).
     #[test]
     fn the_window_builds_and_announces_its_parts() {
-        let mut ui =
-            headless_app(Theme::cupertino(Appearance::Dark), move |cx| app(cx)).sized(900.0, 620.0);
+        let mut ui = headless_app(Theme::cupertino(Appearance::Dark), app).sized(900.0, 620.0);
         ui.frame();
 
         let tree = ui.access_tree();

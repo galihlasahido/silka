@@ -94,7 +94,7 @@ pub fn advance(tree: &mut RenderTree, tick: &Tick) -> Dirty {
 /// Shared by the window and by the tests, so a test can never accidentally
 /// exercise a different application than the one that ships.
 pub fn app(theme: Theme, start: Page) -> AppRuntime {
-    headless_app(theme, move |cx| shell(cx))
+    headless_app(theme, shell)
         .with_env(move |rt| rt.signal(start))
         .with_env(|rt| rt.signal(AppearanceMode::default()))
         .with_env(|rt| rt.signal(MenuState::new()))

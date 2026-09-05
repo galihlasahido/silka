@@ -119,6 +119,8 @@ use crate::text_field::{text_field_in, ArrowKeys};
 // Callback
 // ---------------------------------------------------------------------------
 
+type PickFn = Rc<dyn Fn(usize, &str)>;
+
 /// What runs when the user takes one of the suggestions.
 ///
 /// It carries the index **and** the text, because callers need both: the index
@@ -143,7 +145,7 @@ use crate::text_field::{text_field_in, ArrowKeys};
 /// assert_ne!(on_select, PickCallback::new(|_, _| {}));
 /// ```
 #[derive(Clone)]
-pub struct PickCallback(Rc<dyn Fn(usize, &str)>);
+pub struct PickCallback(PickFn);
 
 impl PickCallback {
     /// Wrap a closure.

@@ -49,7 +49,7 @@ pub fn halaman(cx: &BuildCtx) -> View {
     let dpi: ScaleFactor = cx.expect_env::<Signal<ScaleFactor>>().get();
     active_fonts().set_scale_factor(dpi.get());
 
-    let terakhir = use_signal(|| String::new());
+    let terakhir = use_signal(String::new);
     let sibuk = use_signal(|| false);
 
     column([
@@ -179,7 +179,7 @@ mod tests {
 
     /// A headless app assembled **exactly the way `run_app_with` does it**.
     fn ui(theme: Theme) -> AppRuntime {
-        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
+        headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// One complete frame, animation tick included — the same order as the

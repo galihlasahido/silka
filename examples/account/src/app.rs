@@ -94,7 +94,7 @@ pub fn app(theme: Theme) -> AppRuntime {
     headless_app(theme, shell)
         .with_env(|rt| rt.signal(Section::default()))
         .with_env(|rt| rt.signal(AppearanceMode::default()))
-        .with_env(move |rt| AccountState::seed(rt))
+        .with_env(AccountState::seed)
 }
 
 /// Open the window and run the application.

@@ -102,12 +102,15 @@ pub(crate) fn effect_from_operation(operation: NSDragOperation) -> Option<DragEf
 // The source object
 // ---------------------------------------------------------------------------
 
+/// The application's completion callback for one drag session.
+type FinishCallback = Box<dyn FnOnce(Option<DragEffect>)>;
+
 /// Everything the source object has to remember for the length of a drag.
 struct SourceIvars {
     /// The mask handed back to AppKit on every request.
     allowed: NSDragOperation,
     /// The application's completion callback, taken out when the drag ends.
-    on_finish: RefCell<Option<Box<dyn FnOnce(Option<DragEffect>)>>>,
+    on_finish: RefCell<Option<FinishCallback>>,
     /// Set once the session has ended, so the next drag can sweep this object
     /// away safely.
     finished: Cell<bool>,

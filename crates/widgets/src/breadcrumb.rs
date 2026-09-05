@@ -253,13 +253,13 @@ pub fn shrink_budgets(natural: &[f32], available: f32, min_each: f32) -> Vec<f32
     // Oldest first, current page last — hence `rev()` over everything but the
     // final crumb, then the final crumb only if there is still a deficit.
     let n = out.len();
-    for i in 0..n - 1 {
+    for lebar in out.iter_mut().take(n - 1) {
         if kurang <= 0.0 {
             break;
         }
-        let bisa = (out[i] - lantai).max(0.0);
+        let bisa = (*lebar - lantai).max(0.0);
         let ambil = bisa.min(kurang);
-        out[i] -= ambil;
+        *lebar -= ambil;
         kurang -= ambil;
     }
     if kurang > 0.0 {

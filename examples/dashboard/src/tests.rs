@@ -306,7 +306,7 @@ fn money_and_dates_on_screen_come_from_the_locale() {
     // …and the akad card's date, in Indonesian day-month order.
     let today = data::date(data::day(0));
     assert_eq!(today, "28 Jul 2026");
-    assert!(labels.iter().any(|l| *l == today));
+    assert!(labels.contains(&today));
 }
 
 #[test]

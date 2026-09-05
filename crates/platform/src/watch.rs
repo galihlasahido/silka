@@ -48,7 +48,7 @@
 
 use core::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::mpsc::Receiver;
 
 /// What happened to a path.
 ///
@@ -259,14 +259,11 @@ impl Watch {
     /// Never blocks, so it is safe to call once per frame.
     pub fn poll(&self) -> Vec<FileChange> {
         let mut raw = Vec::new();
-        loop {
-            match self.events.try_recv() {
-                Ok(change) => raw.push(change),
-                // Disconnected means the watcher thread is gone; there is
-                // nothing more to deliver, ever, and that is not an error the
-                // frame loop can act on.
-                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
-            }
+        // Disconnected means the watcher thread is gone; there is nothing more
+        // to deliver, ever, and that is not an error the frame loop can act on
+        // — `try_recv` returning either error just ends the drain.
+        while let Ok(change) = self.events.try_recv() {
+            raw.push(change);
         }
         coalesce(raw)
     }

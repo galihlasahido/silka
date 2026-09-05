@@ -185,7 +185,7 @@ mod tests {
     const FRAME: Duration = Duration::from_micros(8_333);
 
     fn ui(theme: Theme) -> AppRuntime {
-        headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height)
+        headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height)
     }
 
     /// A node's rectangle **according to the accessibility tree** — the tests

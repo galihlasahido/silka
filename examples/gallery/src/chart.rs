@@ -487,7 +487,7 @@ mod tests {
     /// A headless app assembled **exactly the way `run_app` does it**.
     fn aplikasi_dengan(preset: Preset, appearance: Appearance) -> AppRuntime {
         let theme = Theme::new(preset, appearance);
-        let ui = headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
+        let ui = headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height);
         ui.env::<Signal<silka_core::app::ScaleFactor>>()
             .expect("run_app menitipkan scale factor")
             .set(silka_core::app::ScaleFactor(SKALA as f32));

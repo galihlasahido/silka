@@ -1,6 +1,6 @@
 //! `button` tests — every `KOMPONEN.md` Definition of Done item that can be
 //! proven **without a GPU**: both presets, a spring on every state, keyboard
-//! + focus ring, the AccessKit node, dark mode, the 44pt hit target, and
+//! and focus ring, the AccessKit node, dark mode, the 44pt hit target, and
 //! reduced-motion.
 
 use super::*;

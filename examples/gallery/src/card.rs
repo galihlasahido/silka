@@ -110,7 +110,7 @@ fn bagian(t: &Theme) -> View {
             card([
                 View::from(card_header(NAMA_FAKTUR).subtitle(SUB_FAKTUR)),
                 View::from(isi),
-                View::from(kaki),
+                kaki,
             ])
             .label(NAMA_FAKTUR),
         )],

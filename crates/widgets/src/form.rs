@@ -956,7 +956,7 @@ mod tests {
             focusable, 0,
             "the control here is a plain box; a form must not invent a Tab stop"
         );
-        assert!(!FIELD_FOCUS.focusable);
+        const { assert!(!FIELD_FOCUS.focusable) };
     }
 
     #[test]

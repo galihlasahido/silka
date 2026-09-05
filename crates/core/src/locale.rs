@@ -618,7 +618,7 @@ impl Locale {
     /// ```
     pub fn parse_numeric(&self, text: &str) -> Option<Date> {
         let bagian: Vec<&str> = text
-            .split(|c: char| c == '/' || c == '.' || c == '-')
+            .split(['/', '.', '-'])
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .collect();

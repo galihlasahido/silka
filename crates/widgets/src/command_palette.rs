@@ -451,7 +451,7 @@ pub fn rank(commands: &[Command], query: &str) -> Vec<Hit> {
 
     if !kosong {
         // Stable, so equal scores keep the application's order.
-        hits.sort_by(|a, b| b.score.cmp(&a.score));
+        hits.sort_by_key(|h| std::cmp::Reverse(h.score));
     }
     hits
 }
@@ -1220,14 +1220,13 @@ impl RenderNode for PaletteBox {
                 ctx.handled();
                 self.activate();
             }
-            KeyCode::Named(NamedKey::Escape) => {
+            KeyCode::Named(NamedKey::Escape)
                 // Handled **only** when something actually closed: otherwise it
                 // has to keep bubbling, or a palette without an `on_dismiss`
                 // would swallow the Esc that belongs to the overlay above it.
-                if self.dismiss() {
+                if self.dismiss() => {
                     ctx.handled();
                 }
-            }
             // Tab is deliberately untouched: it belongs to focus navigation,
             // and a palette that trapped it would be a keyboard trap.
             _ => {}

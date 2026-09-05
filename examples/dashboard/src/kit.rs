@@ -492,6 +492,6 @@ mod tests {
 
     #[test]
     fn a_hit_target_of_44_is_what_the_icon_button_reserves() {
-        assert!(MIN_HIT >= silka_widgets::MIN_HIT_TARGET);
+        const { assert!(MIN_HIT >= silka_widgets::MIN_HIT_TARGET) };
     }
 }

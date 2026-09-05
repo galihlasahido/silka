@@ -225,8 +225,7 @@ mod tests {
 
     impl Uji {
         fn baru(theme: Theme) -> Self {
-            let ui =
-                headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
+            let ui = headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height);
             Self {
                 ui,
                 jam: Instant::now(),

@@ -221,9 +221,9 @@ fn bagian_pemisah(t: &Theme) -> View {
         .child(judul_baris("Paid", "1.204"));
 
     let vertikal = row([
-        View::from(keterangan("left")),
+        keterangan("left"),
         divider().vertical().into(),
-        View::from(keterangan("right")),
+        keterangan("right"),
     ])
     .gap_3()
     .cross(CrossAlign::Stretch);
@@ -531,8 +531,7 @@ mod tests {
     const VIEWPORT: Size = Size::new(1100.0, 1400.0);
 
     fn ui(theme: Theme) -> AppRuntime {
-        let mut ui =
-            headless_app(theme, move |cx| halaman(cx)).sized(VIEWPORT.width, VIEWPORT.height);
+        let mut ui = headless_app(theme, halaman).sized(VIEWPORT.width, VIEWPORT.height);
         ui.frame();
         ui
     }

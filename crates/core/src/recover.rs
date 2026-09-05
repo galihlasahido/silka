@@ -404,6 +404,9 @@ mod tests {
     }
 
     #[test]
+    // The `None`+`expect()` here is the point of the test — it is `catch`'s
+    // handling of a real `expect()` panic under scrutiny, not this value.
+    #[allow(clippy::unnecessary_literal_unwrap)]
     fn catch_menangkap_expect_yang_gagal() {
         install_hook();
         let kosong: Option<u8> = None;

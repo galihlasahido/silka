@@ -1238,8 +1238,10 @@ mod tests {
     fn arrow_down_opens_but_never_closes() {
         let niat: Rc<RefCell<Vec<DateIntent>>> = Rc::new(RefCell::new(Vec::new()));
         let sink = niat.clone();
-        let mut state = DatePickerState::default();
-        state.open = true;
+        let state = DatePickerState {
+            open: true,
+            ..Default::default()
+        };
         let mut tree = laid_out(
             picker(state)
                 .on_intent(move |i| sink.borrow_mut().push(i))
@@ -1301,8 +1303,10 @@ mod tests {
     fn the_panel_stays_shut_until_it_knows_where_the_field_is() {
         // Drawn before `sync` has answered, it would appear in the middle of
         // the window for one frame and then jump to the field.
-        let mut state = DatePickerState::default();
-        state.open = true;
+        let mut state = DatePickerState {
+            open: true,
+            ..Default::default()
+        };
         let mut tree = RenderTree::new();
         let p = picker(state);
         reconcile(
@@ -1339,8 +1343,10 @@ mod tests {
     fn sync_answers_the_anchor_request_after_layout() {
         let niat: Rc<RefCell<Vec<DateIntent>>> = Rc::new(RefCell::new(Vec::new()));
         let sink = niat.clone();
-        let mut state = DatePickerState::default();
-        state.open = true;
+        let state = DatePickerState {
+            open: true,
+            ..Default::default()
+        };
         let p = picker(state).on_intent(move |i| sink.borrow_mut().push(i));
 
         let mut tree = RenderTree::new();

@@ -289,7 +289,7 @@ fn main() -> Result<(), PlatformError> {
             // Without this the `GlyphRun` commands carry no bitmaps and the
             // window renders blank — the atlas is what crosses to the GPU.
             .glyphs(fonts.shared()),
-        move |cx| app(cx),
+        app,
         // One tick for every spring in the tree, once per frame (§3.5).
         advance,
     )
@@ -326,8 +326,7 @@ mod tests {
     /// — the a11y tree is the contract, so it is what the test reads (§3.8).
     #[test]
     fn the_app_builds_and_announces_its_parts() {
-        let mut ui =
-            headless_app(Theme::cupertino(Appearance::Dark), move |cx| app(cx)).sized(640.0, 720.0);
+        let mut ui = headless_app(Theme::cupertino(Appearance::Dark), app).sized(640.0, 720.0);
         ui.frame();
 
         let tree = ui.access_tree();
