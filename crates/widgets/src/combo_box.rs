@@ -434,6 +434,17 @@ impl ViewNode for ComboFieldProps {
             // Nothing this node draws changes — the panel is a different
             // subtree — but the a11y `expanded` state does.
             dirty |= Dirty::PAINT;
+            // The list just opened with no anchor yet, and only `sync` (run
+            // from `crate::advance`) can supply one — so one more frame
+            // *must* be scheduled. Without this the application goes idle
+            // believing there is nothing left to do, and a list opened from
+            // the keyboard would simply never appear — the same bug
+            // `menu::item::MenuRowProps::update` already guards against for
+            // a submenu opened the same way; this seam needed the identical
+            // fix and never had it.
+            if n.wants_anchor() {
+                dirty |= Dirty::ANIMATION;
+            }
         }
         if n.label != self.label {
             n.label.clone_from(&self.label);
@@ -914,6 +925,107 @@ mod tests {
     }
 
     // -- keys ---------------------------------------------------------------
+
+    #[test]
+    fn opening_by_keyboard_alone_still_becomes_visible_in_a_real_scheduler_loop() {
+        // Every other test in this module drives `sync` by hand, one call at
+        // a time — which proves `sync` is correct but not that a real
+        // application, whose scheduler stops asking for frames the moment it
+        // believes itself idle, ever calls it again after the rebuild that
+        // creates the request. It used not to: `ctx.request_animation()`'s
+        // single granted frame was spent on the tree as it stood *before*
+        // that rebuild, and nothing asked for a second one, so a list opened
+        // by ↓ alone (no click, no spring to incidentally buy an extra
+        // frame) stayed open forever with no panel ever drawn.
+        use silka_core::app::app;
+        use silka_core::input::{
+            Event, KeyCode, NamedKey, PointerButton, PointerEvent, PointerPhase,
+        };
+        use silka_core::signals::Signal;
+        use silka_theme::Theme as CoreTheme;
+
+        fn shell(cx: &silka_core::app::BuildCtx) -> View {
+            let t: CoreTheme = theme();
+            let query: Signal<String> = cx.expect_env();
+            let state: Signal<MenuState> = cx.expect_env();
+            let combo = combo_box_in(&fonts(), &t, query.get())
+                .suggestions(cities())
+                .bind(state)
+                .on_change(move |s| query.set(s.to_string()));
+            let mut layer = crate::overlay_layer(column([combo.field()]));
+            for panel in combo.overlays() {
+                layer = layer.overlay(panel);
+            }
+            layer.into()
+        }
+
+        let mut ui = app(shell)
+            .with_env(|rt| rt.signal(String::new()))
+            .with_env(|rt| rt.signal(MenuState::new()))
+            .sized(BOX.width, BOX.height);
+        let mut clock = std::time::Instant::now();
+        let mut frame = |ui: &mut silka_core::app::AppRuntime| {
+            clock += Duration::from_millis(16);
+            let _ = ui.animate_at(clock, crate::advance);
+            ui.frame();
+        };
+        // The very first layout has to happen before anything is clickable.
+        frame(&mut ui);
+
+        // Focus the field with a real click first, then let its own
+        // focus-ring spring fully settle — the point is to test the
+        // keyboard path in isolation, with nothing else left animating that
+        // could incidentally buy the sync seam an extra frame.
+        let center = Point::new(20.0, 20.0);
+        for e in [
+            PointerEvent::new(PointerPhase::Move, center, Duration::ZERO),
+            PointerEvent::new(PointerPhase::Down, center, Duration::from_millis(8))
+                .button(PointerButton::Primary),
+            PointerEvent::new(PointerPhase::Up, center, Duration::from_millis(60))
+                .button(PointerButton::Primary),
+        ] {
+            ui.dispatch(&Event::Pointer(e));
+        }
+        // Settle the click's own focus-ring spring completely before testing
+        // the keyboard path in isolation.
+        for _ in 0..600 {
+            frame(&mut ui);
+            if ui.is_idle() {
+                break;
+            }
+        }
+        assert!(ui.is_idle(), "the click's own spring never settled");
+
+        ui.dispatch(&Event::Key(KeyEvent::pressed(
+            KeyCode::Named(NamedKey::ArrowDown),
+            Duration::ZERO,
+        )));
+
+        let mut settled = false;
+        for _ in 0..600 {
+            frame(&mut ui);
+            if ui.is_idle() {
+                settled = true;
+                break;
+            }
+        }
+        assert!(settled, "the app never went idle after opening the list");
+
+        let state: Signal<MenuState> = ui.env().expect("MenuState");
+        let m = state.get();
+        assert!(m.open, "↓ must open the list");
+        assert!(
+            m.anchor.is_some(),
+            "the list opened but its anchor was never resolved — the exact \
+             deadlock this test exists to catch"
+        );
+        assert!(
+            ui.access_tree().find_label("Bandung").is_some(),
+            "the anchor resolved but the suggestion panel still never \
+             rendered:\n{}",
+            ui.access_tree().dump()
+        );
+    }
 
     #[test]
     fn the_down_arrow_opens_a_closed_list() {

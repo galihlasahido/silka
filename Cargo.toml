@@ -22,6 +22,7 @@ members = [
     "examples/account",
     "examples/inbox",
     "examples/roster",
+    "examples/booking",
 ]
 
 [workspace.package]

@@ -654,6 +654,17 @@ impl ViewNode for DateFieldProps {
             n.anchored = self.anchored;
             n.clearable = self.clearable;
             dirty |= Dirty::PAINT;
+            // The panel just opened with no anchor yet, and only `sync` (run
+            // from `crate::advance`) can supply one — so one more frame
+            // *must* be scheduled. Without this the application goes idle
+            // believing there is nothing left to do, and a panel opened from
+            // the keyboard (Space/Enter/↓) would simply never appear — the
+            // same bug `menu::item::MenuRowProps::update` already guards
+            // against for a submenu opened the same way; this seam needed
+            // the identical fix and never had it.
+            if n.wants_anchor() {
+                dirty |= Dirty::ANIMATION;
+            }
         }
         if n.disabled != self.disabled {
             n.disabled = self.disabled;
@@ -1261,6 +1272,104 @@ mod tests {
             niat.borrow().is_empty(),
             "↓ on an open picker must not close the panel the reader is \
              about to arrow into"
+        );
+    }
+
+    #[test]
+    fn reopening_by_keyboard_alone_still_becomes_visible_in_a_real_scheduler_loop() {
+        // Every other test in this module drives `sync` by hand, one call at
+        // a time — which proves `sync` is correct but not that a real
+        // application, whose scheduler stops asking for frames the moment it
+        // believes itself idle, ever calls it again after the rebuild that
+        // creates the request. It used not to: `ctx.request_animation()`'s
+        // single granted frame was spent on the tree as it stood *before*
+        // that rebuild, and nothing asked for a second one, so a panel
+        // reopened by keyboard alone (no click, no spring left running to
+        // incidentally buy an extra frame) stayed "open" forever with no
+        // panel ever drawn.
+        use silka_core::app::app;
+        use silka_core::input::{Event, PointerButton, PointerEvent, PointerPhase};
+        use silka_core::signals::Signal;
+        use silka_paint::Point;
+
+        fn shell(cx: &silka_core::app::BuildCtx) -> View {
+            let state: Signal<DatePickerState> = cx.expect_env();
+            let p = picker(state.get()).on_intent(move |i| {
+                state.update(|s| {
+                    s.apply(i, HARI_INI);
+                });
+            });
+            crate::overlay_layer(column([p.field()]))
+                .overlay(p.panel())
+                .into()
+        }
+
+        let mut ui = app(shell).with_env(|rt| rt.signal(DatePickerState::default()));
+        ui = ui.sized(BOX.width, BOX.height);
+        let mut clock = std::time::Instant::now();
+        let mut frame = |ui: &mut silka_core::app::AppRuntime| {
+            clock += Duration::from_millis(16);
+            let _ = ui.animate_at(clock, crate::advance);
+            ui.frame();
+        };
+        frame(&mut ui);
+
+        let center = Point::new(20.0, 20.0);
+        for e in [
+            PointerEvent::new(PointerPhase::Move, center, Duration::ZERO),
+            PointerEvent::new(PointerPhase::Down, center, Duration::from_millis(8))
+                .button(PointerButton::Primary),
+            PointerEvent::new(PointerPhase::Up, center, Duration::from_millis(60))
+                .button(PointerButton::Primary),
+        ] {
+            ui.dispatch(&Event::Pointer(e));
+        }
+        for _ in 0..600 {
+            frame(&mut ui);
+            if ui.is_idle() {
+                break;
+            }
+        }
+        assert!(ui.is_idle(), "the click never settled");
+        let state: Signal<DatePickerState> = ui.env().expect("DatePickerState");
+        assert!(state.get().open, "the click did not open the panel");
+
+        // Close it and let that settle too, so the keyboard reopen below is
+        // tested in isolation from anything the click's own spring left
+        // moving.
+        ui.dispatch(&Event::Key(KeyEvent::pressed(
+            KeyCode::Named(NamedKey::Escape),
+            Duration::ZERO,
+        )));
+        for _ in 0..600 {
+            frame(&mut ui);
+            if ui.is_idle() {
+                break;
+            }
+        }
+        assert!(ui.is_idle(), "closing it never settled");
+        assert!(!state.get().open);
+
+        ui.dispatch(&Event::Key(KeyEvent::pressed(
+            KeyCode::Named(NamedKey::ArrowDown),
+            Duration::ZERO,
+        )));
+        let mut settled = false;
+        for _ in 0..600 {
+            frame(&mut ui);
+            if ui.is_idle() {
+                settled = true;
+                break;
+            }
+        }
+        assert!(settled, "the app never went idle after reopening the panel");
+
+        let s = state.get();
+        assert!(s.open, "↓ must reopen the panel");
+        assert!(
+            s.anchor.is_some(),
+            "the panel reopened but its anchor was never resolved — the \
+             exact deadlock this test exists to catch"
         );
     }
 

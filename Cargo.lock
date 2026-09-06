@@ -3131,6 +3131,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "silka-booking"
+version = "0.1.0"
+dependencies = [
+ "silka-core",
+ "silka-paint",
+ "silka-platform",
+ "silka-text",
+ "silka-theme",
+ "silka-widgets",
+]
+
+[[package]]
 name = "silka-chart"
 version = "0.1.0"
 dependencies = [
