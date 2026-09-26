@@ -24,7 +24,7 @@ use silka_core::signals::{Runtime, Signal};
 use silka_core::tree::{BoxConstraints, NodeId, RenderTree};
 use silka_core::view::{column, reconcile, View};
 use silka_paint::{Point, Rect, Size};
-use silka_theme::{Appearance, Preset, Theme};
+use silka_theme::{Appearance, ControlToken, Preset, Theme};
 
 use super::*;
 use crate::overlay::{entries as overlay_entries, overlay_layer, OverlayEntry};
@@ -715,14 +715,15 @@ fn baris_diumumkan_lengkap_dengan_peran_status_dan_hit_target() {
             .unwrap_or_else(|| panic!("tidak ada baris {label:?}:\n{}", pohon.dump()))
     };
 
-    // Every row honours the HIG hit target, small as a menu row looks.
+    // Rows are content, so they take the menu-row token — no 44pt floor, the
+    // same rule the table and the list follow. Their *controls* keep the floor.
+    let diharapkan = tema().control_of(ControlToken::MenuRow);
     for e in pohon.entries() {
         if e.node.role == AccessRole::MenuItem {
-            assert!(
-                e.bounds.size.height >= crate::MIN_HIT_TARGET,
-                "baris {:?} cuma {:?}",
+            assert_eq!(
+                e.bounds.size.height, diharapkan,
+                "baris {:?} harus tinggi MenuRow",
                 e.node.label,
-                e.bounds.size
             );
         }
     }
@@ -948,13 +949,14 @@ fn semua_nilai_gambar_berasal_dari_token_di_kedua_preset() {
             assert_eq!(pemicu.hover, t.color.surface_hover);
             assert_eq!(pemicu.focus_ring, t.color.focus_ring);
             assert_eq!(pemicu.corners.style, t.radius.style);
-            assert!(pemicu.min_height >= crate::MIN_HIT_TARGET);
+            assert!(pemicu.min_height >= t.hit_target_of(ControlToken::Md));
 
             let baris = m.row_style(0);
             assert_eq!(baris.highlight, t.color.surface_hover);
             assert_eq!(baris.mark, t.color.accent);
             assert_eq!(baris.corners.style, t.radius.style);
-            assert!(baris.min_height >= crate::MIN_HIT_TARGET);
+            // A row is content: the menu-row token, not the control floor.
+            assert_eq!(baris.min_height, t.control_of(ControlToken::MenuRow));
             // The level has both checkables and a submenu, so both gutters are
             // reserved; a level without them reserves neither.
             assert!(baris.leading > 0.0 && baris.trailing > 0.0);

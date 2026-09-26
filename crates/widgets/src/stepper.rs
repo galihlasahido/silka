@@ -72,8 +72,11 @@ use silka_core::tree::{BoxConstraints, LayoutCtx, PaintCtx, RenderNode, TextDire
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, CornerRadii, Corners, Insets, LineCap, Point, Quad, Rect, Size, Stroke};
 use silka_text::FontWeight;
-use silka_theme::{SpaceToken, Theme};
+use silka_theme::{ControlToken, SpaceToken, Theme};
 
+// Referenced only by the doc links above: the height now comes from
+// `hit_target_of(Md)`, which *is* this floor as a token.
+#[allow(unused_imports)]
 use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 use crate::slider::snap;
@@ -202,11 +205,18 @@ pub struct StepperStyle {
 
 impl StepperStyle {
     /// The defaults taken from `theme`.
+    ///
+    /// The stepper's own definition of done is explicit that it does **not**
+    /// exempt itself from the 44pt hit target — a stepper is drawn small in
+    /// AppKit, but each half must still answer a full target. `hit_target_of`
+    /// is that rule as a token: it equals 44pt today and stays there under
+    /// every density, so the promise holds without a hand-copied constant.
     pub fn from_theme(theme: &Theme) -> Self {
         let c = &theme.color;
+        let target = theme.hit_target_of(ControlToken::Md);
         Self {
-            half: MIN_HIT_TARGET,
-            height: MIN_HIT_TARGET,
+            half: target,
+            height: target,
             corners: theme.corners(theme.radius.md),
             border_width: theme.space_of(SpaceToken::Px),
             arm: theme.space(1.5),

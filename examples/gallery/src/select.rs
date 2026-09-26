@@ -367,9 +367,14 @@ mod tests {
         assert_eq!(layar.baris_menu(), MATA_UANG.len());
         for e in layar.pohon().entries() {
             if e.node.role == AccessRole::MenuItem {
-                assert!(
-                    e.bounds.size.height >= silka_widgets::MIN_HIT_TARGET,
-                    "baris {:?} terlalu pendek",
+                // A row is content, not a control: it takes the menu-row
+                // token, which has no 44pt floor. The *trigger* keeps the
+                // floor — that is what `hit_target_of` is for.
+                let t = Theme::cupertino(Appearance::Light);
+                assert_eq!(
+                    e.bounds.size.height,
+                    t.control_of(silka_theme::ControlToken::MenuRow),
+                    "baris {:?} harus tinggi MenuRow",
                     e.node.label
                 );
             }

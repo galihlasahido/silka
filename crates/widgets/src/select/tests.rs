@@ -23,6 +23,7 @@ use silka_theme::{Appearance, Preset, SpaceToken, Theme};
 use super::*;
 use crate::overlay::{self, overlay_layer};
 use crate::Fonts;
+use crate::MIN_HIT_TARGET;
 
 const RUANG: Size = Size::new(640.0, 480.0);
 const OPSI: [&str; 4] = ["Rupiah", "Dolar AS", "Euro", "Yen"];
@@ -220,7 +221,9 @@ fn segitiga_membalik_arah_saat_terbuka() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn hit_target_pemicu_dan_baris_minimal_44pt() {
+fn hit_target_pemicu_44pt_dan_baris_dari_token_menu_row() {
+    use silka_theme::ControlToken;
+
     let f = Fonts::bundled_only();
     let t = tema();
     let s = select_uji(&f, &t, SelectState::with_selected(0)).open(true);
@@ -228,20 +231,25 @@ fn hit_target_pemicu_dan_baris_minimal_44pt() {
     overlay::settle(&mut tree);
     tree.layout(BoxConstraints::tight(RUANG));
 
+    // The trigger is a control: the medium control token, clamped up by the
+    // HIG floor. It must still answer 44pt under every density.
     let ukuran = tree.size(pemicu(&tree));
     assert!(
-        ukuran.height >= MIN_HIT_TARGET,
+        ukuran.height >= t.hit_target_of(ControlToken::Md),
         "pemicu cuma {ukuran:?} (HIG minta {MIN_HIT_TARGET}pt)"
     );
     assert!(ukuran.width > 0.0);
 
+    // Popup rows are content, not controls: the menu-row token, no 44pt floor.
+    // A 12-option popup at 44pt a row is a second window, not a menu.
+    let diharapkan = t.control_of(ControlToken::MenuRow);
     let baris = baris(&tree);
     assert_eq!(baris.len(), OPSI.len());
     for id in baris {
-        assert!(
-            tree.size(id).height >= MIN_HIT_TARGET,
-            "baris {id:?} cuma {:?}",
-            tree.size(id)
+        assert_eq!(
+            tree.size(id).height,
+            diharapkan,
+            "baris {id:?} harus tinggi MenuRow ({diharapkan}pt), bukan 44pt"
         );
     }
 }

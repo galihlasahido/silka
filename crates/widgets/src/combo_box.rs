@@ -77,7 +77,7 @@
 //! | Keyboard + focus ring | ↓/↑/Return/Esc here, everything else in the field — and **focus never leaves the field**, which is what keeps typing possible while the list is open |
 //! | AccessKit node | a [`AccessRole::Group`] carrying `expanded` around the field's [`AccessRole::TextInput`], with the panel's `Menu`/`MenuItem` nodes |
 //! | Dark mode | tokens only, in the two components underneath |
-//! | Hit target ≥ 44pt | the field's `min_height` and the menu's row height, both already [`crate::MIN_HIT_TARGET`] |
+//! | Hit target ≥ 44pt | the field inherits `hit_target_of(Md)` from `text_field`; the popup's rows are content and take `ControlToken::MenuRow` |
 //! | Reduced motion | inherited from both |
 //!
 //! ## Filtering is the application's job

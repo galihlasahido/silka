@@ -50,7 +50,7 @@
 //! | Full keyboard + focus ring | Space/Enter/arrows/Home/End/Esc + typeahead, all on the trigger that holds focus |
 //! | AccessKit nodes | Trigger = `Button` + value + `Expand`/`Collapse`; row = `MenuItem` + `toggled` |
 //! | Dark mode | Tokens; not a single color literal in this file |
-//! | Hit target ≥ 44pt | `min_height` on the trigger **and** on every row |
+//! | Hit target ≥ 44pt | the trigger (a control) reads `hit_target_of(Md)`; popup rows are content and take `ControlToken::MenuRow` |
 //! | Reduced-motion | Every spring runs through [`Tick`](silka_core::animation::Tick), which carries [`Motion`](silka_core::animation::Motion) |
 //!
 //! ## Deliberately not here yet
@@ -77,9 +77,8 @@ use silka_core::tree::{BoxConstraints, CrossAlign};
 use silka_core::view::{column, constrained, pad, viewport, Builder, View};
 use silka_paint::Insets;
 use silka_text::{FontWeight, TextConstraints, TextStyle};
-use silka_theme::{SpaceToken, Theme};
+use silka_theme::{ControlToken, SpaceToken, Theme};
 
-use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 use crate::overlay::{overlay, Align, Anchor, Barrier, Dismiss, OverlayBuilder, Placement, Side};
 use crate::text::text_in;
@@ -338,9 +337,13 @@ impl Select {
         self.selected_label().unwrap_or(&self.placeholder)
     }
 
-    /// Height of one popup row — which is also the minimum hit target (HIG).
+    /// Height of one popup row.
+    ///
+    /// The [`ControlToken::MenuRow`] token, not a constant — a compact density
+    /// packs the dropdown tighter. A row is content rather than a control, so
+    /// unlike the trigger it carries no 44pt floor of its own.
     pub fn row_height(&self) -> f32 {
-        MIN_HIT_TARGET
+        self.theme.control_of(ControlToken::MenuRow)
     }
 
     /// How many rows are actually visible in the popup.
@@ -434,7 +437,11 @@ impl Select {
                 t.color.secondary_label
             },
             min_width: self.width_value(),
-            min_height: MIN_HIT_TARGET,
+            // The trigger is a control, so its height is the medium control
+            // token clamped up by the HIG floor — same shape as the button.
+            min_height: t
+                .control_of(ControlToken::Md)
+                .max(t.hit_target_of(ControlToken::Md)),
         }
     }
 
@@ -451,7 +458,10 @@ impl Select {
             padding: Insets::symmetric(t.space(2.0), t.space(1.0)),
             marker: t.color.accent,
             marker_size: t.space(1.5),
-            min_height: MIN_HIT_TARGET,
+            // A row is content, so it takes the menu-row token — denser than the
+            // control floor, which is what lets a 12-option popup stay a popup
+            // instead of a second window.
+            min_height: t.control_of(ControlToken::MenuRow),
         }
     }
 
@@ -557,6 +567,13 @@ impl Select {
                     } else {
                         t.color.label
                     })
+                    // The token's line height, not `TextStyle`'s 1.35 default —
+                    // an off-scale line made the row 1.55pt taller than
+                    // `row_height()`, and scroll is derived from that number, so
+                    // the keyboard highlight drifted off its row by one row in
+                    // about fifteen. The measurement and the arithmetic must be
+                    // one number.
+                    .line_height(t.typography.body_line_height)
                     .single_line()
                     // The row's name is announced from the row node, not twice.
                     .role(AccessRole::Container);

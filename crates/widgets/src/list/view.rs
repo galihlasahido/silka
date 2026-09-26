@@ -29,7 +29,7 @@ use silka_core::signals::Key;
 use silka_core::tree::{Decoration, FocusRing, RenderNode};
 use silka_core::view::{pad, Builder, View, ViewNode};
 use silka_paint::{Color, Corners, Insets, ShadowPair};
-use silka_theme::Theme;
+use silka_theme::{ControlToken, Theme};
 
 use crate::button::MIN_HIT_TARGET;
 use crate::scroll_view::{scroll_view_in, Scrollbar, ScrollbarStyle};
@@ -294,7 +294,7 @@ where
         header_extent: 0.0,
         sticky: true,
         empty: None,
-        extent: DEFAULT_ROW_EXTENT,
+        extent: theme.control_of(ControlToken::Row),
         overscan: DEFAULT_OVERSCAN,
         selectable: true,
         label: None,

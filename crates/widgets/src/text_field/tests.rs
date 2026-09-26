@@ -221,6 +221,73 @@ fn hit_target_minimal_44pt_walau_barisnya_pendek() {
     );
 }
 
+/// `frameless()` drops the box **and** the border but keeps the focus ring —
+/// the ring is how a keyboard user finds the field, and a field that is
+/// invisible both at rest and while focused is a bug, not a style.
+#[test]
+fn frameless_menghilangkan_bingkai_tapi_menyisakan_focus_ring() {
+    let f = fonts();
+    let t = tema();
+
+    // Framed: the surface quad and the hairline border are both drawn.
+    let mut berbingkai = Uji::baru(text_field_in(&f, &t, "x"));
+    berbingkai.fokus();
+    crate::settle(&mut berbingkai.tree);
+    let s = berbingkai.scene();
+    let latar = s
+        .commands()
+        .iter()
+        .any(|c| matches!(c, Command::Quad(q) if q.background == t.color.surface));
+    let bingkai = s.commands().iter().any(|c| {
+        matches!(c, Command::Quad(q) if q.border_width == t.space_of(silka_theme::SpaceToken::Px))
+    });
+    assert!(latar, "kolom berbingkai harus menggambar latar");
+    assert!(bingkai, "kolom berbingkai harus menggambar bingkai");
+
+    // Frameless: neither is drawn, at rest **or** focused.
+    let mut polos = Uji::baru(text_field_in(&f, &t, "x").frameless());
+    polos.fokus();
+    crate::settle(&mut polos.tree);
+    let s = polos.scene();
+    assert!(
+        !s.commands().iter().any(|c| matches!(c,
+            Command::Quad(q) if q.background == t.color.surface)),
+        "kolom frameless tidak boleh menggambar latar"
+    );
+    // The only stroked quad left is the **focus ring** — wider than the 1pt
+    // hairline border and coloured with the accent, not `border`. That is the
+    // one stroke a frameless field keeps: focused, it is what makes the field
+    // findable.
+    let strokes: Vec<_> = s
+        .commands()
+        .iter()
+        .filter_map(|c| match c {
+            Command::Quad(q) if q.border_width > 0.0 => Some(q),
+            _ => None,
+        })
+        .collect();
+    let hairline = t.space_of(silka_theme::SpaceToken::Px);
+    let accent = t.color.accent;
+    assert!(
+        strokes.iter().all(|q| {
+            // The ring's alpha is scaled by focus progress (`0.65` mid-settle
+            // here), so compare the colour channels — which identify *which*
+            // stroke this is — and let alpha move.
+            let b = q.border_color;
+            q.border_width > hairline
+                && (b.r - accent.r).abs() < 1e-4
+                && (b.g - accent.g).abs() < 1e-4
+                && (b.b - accent.b).abs() < 1e-4
+                && b.a > 0.0
+        }),
+        "kolom frameless hanya boleh menggambar ring, bukan bingkai: {strokes:?}"
+    );
+    assert!(
+        !strokes.is_empty(),
+        "kolom frameless fokus tetap harus menggambar ring"
+    );
+}
+
 #[test]
 fn dibacakan_screen_reader_sebagai_kolom_teks_berisi_nilainya() {
     let f = fonts();

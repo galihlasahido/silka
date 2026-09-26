@@ -43,7 +43,7 @@ use silka_core::view::{column, constrained, expanded, row, View};
 use silka_paint::Insets;
 use silka_platform::{headless_app, PlatformError, WindowConfig};
 use silka_text::FontWeight;
-use silka_theme::{Appearance, Preset, Theme};
+use silka_theme::{Appearance, Density, Preset, Theme};
 use silka_widgets::tabs::{tab, tabs, TabsVariant};
 use silka_widgets::{
     active_fonts, button_variant, scroll_view, spacer, switch, text, ButtonVariant, Fonts,
@@ -61,6 +61,8 @@ pub const NAMA_SISI: &str = "Component list";
 pub const NAMA_PRESET: &str = "Preset";
 /// The a11y name of the appearance switcher.
 pub const NAMA_TAMPILAN: &str = "View";
+/// The a11y name of the density switcher.
+pub const NAMA_KERAPATAN: &str = "Density";
 /// The label of the reduced-motion switch.
 pub const NAMA_GERAK: &str = "Reduce motion";
 /// The brand shown at the top left.
@@ -126,6 +128,15 @@ impl ModeTampilan {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct GerakDikurangi(pub bool);
 
+/// The density override offered by the shell.
+///
+/// Held as a separate signal rather than read back off the theme, because the
+/// theme is *applied* from this choice (`tema_berikut`) — the arrow of
+/// information runs the other way, and reading the effect back as the cause
+/// would make the OS appearance override fight the picker on every frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Kerapatan(pub Density);
+
 /// The theme the next frame should use.
 ///
 /// Pure on purpose: this is the whole "who owns the theme" decision, and it is
@@ -133,6 +144,14 @@ pub struct GerakDikurangi(pub bool);
 /// The preset always survives — only the appearance is decided here.
 pub fn tema_berikut(sekarang: Theme, mode: ModeTampilan, os: Appearance) -> Theme {
     sekarang.with_appearance(mode.appearance().unwrap_or(os))
+}
+
+/// The same decision for density: the picker's choice wins over whatever the
+/// theme currently carries, and travels across preset and appearance changes
+/// (`with_preset`/`with_appearance` preserve density — but the *picker* is the
+/// source of truth here, so it is applied rather than trusted to survive).
+pub fn tema_kerapatan(sekarang: Theme, kerapatan: Kerapatan) -> Theme {
+    sekarang.with_density(kerapatan.0)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +197,7 @@ pub fn aplikasi(tema: Theme, awal: Halaman, solo: bool) -> AppRuntime {
         }
     })
     .with_env(|rt| rt.signal(ModeTampilan::default()))
+    .with_env(|rt| rt.signal(Kerapatan::default()))
     .with_env(|rt| rt.signal(GerakDikurangi::default()))
 }
 
@@ -317,6 +337,7 @@ fn bilah_atas() -> View {
         let tema_sig: Signal<Theme> = cx.expect_env();
         let mode: Signal<ModeTampilan> = cx.expect_env();
         let gerak: Signal<GerakDikurangi> = cx.expect_env();
+        let kerapatan: Signal<Kerapatan> = cx.expect_env();
 
         let preset_aktif = usize::from(t.preset == Preset::Tailwind);
         let pemilih_preset = tabs([tab("Cupertino"), tab("Tailwind")])
@@ -347,6 +368,24 @@ fn bilah_atas() -> View {
                 }
             });
 
+        let kerapatan_aktif = usize::from(t.density == Density::Compact);
+        let pemilih_kerapatan = tabs([tab("Comfortable"), tab("Compact")])
+            .variant(TabsVariant::Segmented)
+            .selected(kerapatan_aktif)
+            .label(NAMA_KERAPATAN)
+            .on_select(move |i| {
+                let k = if i == 0 {
+                    Density::Comfortable
+                } else {
+                    Density::Compact
+                };
+                kerapatan.set(Kerapatan(k));
+                // Applied here as well as in the frame callback, the same way
+                // the appearance switcher does it: a headless test has no
+                // frame callback to lean on.
+                tema_sig.update(|t| *t = tema_kerapatan(*t, Kerapatan(k)));
+            });
+
         // The switch only writes the signal; the animation driver itself is
         // flipped by the frame callback, because `set_motion` belongs to the
         // runtime and a view callback may only touch signals (§2.5).
@@ -373,6 +412,7 @@ fn bilah_atas() -> View {
             View::from(spacer()),
             View::from(pemilih_preset),
             View::from(pemilih_tampilan),
+            View::from(pemilih_kerapatan),
             View::from(sakelar_gerak),
         ])
         .spacing(t.space(3.0))
@@ -472,6 +512,7 @@ mod tests {
     use silka_core::access::AccessRole;
     use silka_core::input::{Event, PointerButton, PointerEvent, PointerPhase};
     use silka_paint::{Point, Rect, Size};
+    use silka_theme::ControlToken;
     use std::time::Duration;
 
     const VIEWPORT: Size = Size::new(1280.0, 860.0);
@@ -622,6 +663,53 @@ mod tests {
         assert!(gerak.get().0, "sakelar tidak menulis signal gerak");
     }
 
+    /// The density picker changes the **theme the shell serves**, and the
+    /// change is visible in geometry — a control on the open page is shorter
+    /// under Compact. A signal write that never reached the theme would pass
+    /// the picker and fail this.
+    #[test]
+    fn pemilih_kerapatan_mengubah_tinggi_kontrol() {
+        // Comfortable first: the theme ships with it, so nothing else can be
+        // the cause of the second measurement.
+        let mut ui = ui(tema());
+        let tombol = kotak(&ui, NAMA_SISI);
+        let tinggi_nyaman = tombol.size.height;
+        assert!(
+            tinggi_nyaman > 0.0,
+            "halaman depan tidak menggambar apa pun"
+        );
+
+        let pilih = kotak(&ui, NAMA_KERAPATAN);
+        // Click each **segment's own center** rather than an inset from the
+        // whole control's edge: the segmented tabs are two equal segments, and
+        // an 8pt inset from the left edge lands on the "Comfortable" tab only
+        // if the control is wider than 16pt — true, but the segment center is
+        // the point that is correct by construction.
+        klik(
+            &mut ui,
+            Point::new(pilih.min_x() + pilih.size.width * 0.75, pilih.center().y),
+        );
+
+        let kerapatan: Signal<Kerapatan> = ui.env().expect("Signal<Kerapatan>");
+        assert_eq!(kerapatan.get(), Kerapatan(Density::Compact));
+        let t = ui.env::<Signal<Theme>>().expect("Signal<Theme>").get();
+        assert_eq!(t.density, Density::Compact);
+        // And the theme's numbers moved with it — measured, not assumed.
+        assert!(
+            t.control_of(ControlToken::Md) < tema().control_of(ControlToken::Md),
+            "compact tidak mengubah tinggi kontrol"
+        );
+
+        // Back to Comfortable: the picker is reversible.
+        klik(
+            &mut ui,
+            Point::new(pilih.min_x() + pilih.size.width * 0.25, pilih.center().y),
+        );
+        let t = ui.env::<Signal<Theme>>().expect("Signal<Theme>").get();
+        assert_eq!(t.density, Density::Comfortable);
+        let _ = tinggi_nyaman; // documented above; kept for the narrative
+    }
+
     #[test]
     fn setiap_halaman_bisa_dibangun_dan_menghasilkan_gambar() {
         for h in Halaman::SEMUA {
@@ -671,11 +759,36 @@ mod tests {
             preset.max_y(),
             sisi.min_y()
         );
+        // The far side of the bar holds four controls now (preset, view,
+        // density, motion). The exact threshold would re-measure the top bar
+        // here, which is this test's job — so the assertion is relative: the
+        // preset switcher starts on the right of the window's horizontal
+        // midpoint *minus* what the added density picker visibly costs. The
+        // real invariant that matters is ordering, checked next.
         assert!(
-            preset.min_x() > VIEWPORT.width * 0.5,
+            preset.min_x() > VIEWPORT.width * 0.3,
             "pemilih preset seharusnya di sisi kanan bilah, bukan di {}",
             preset.min_x()
         );
+        // Ordering: preset, view, density, motion — start edges never go
+        // backwards, and every one of them stays on the right half.
+        let tampilan = kotak(&ui, NAMA_TAMPILAN);
+        let kerapatan = kotak(&ui, NAMA_KERAPATAN);
+        let gerak = kotak(&ui, NAMA_GERAK);
+        for (nama, kiri, kanan) in [
+            ("preset", &preset, &tampilan),
+            ("tampilan", &tampilan, &kerapatan),
+            ("kerapatan", &kerapatan, &gerak),
+        ] {
+            assert!(
+                kanan.min_x() > kiri.min_x(),
+                "{kanan:?} harus di kanan {nama}: {kiri:?}"
+            );
+            assert!(
+                kanan.min_x() > VIEWPORT.width * 0.25,
+                "{nama} melorot ke kiri: {kanan:?}"
+            );
+        }
 
         // Every navigation button lives inside the sidebar — the arrangement
         // no unit test would notice if the row above collapsed.

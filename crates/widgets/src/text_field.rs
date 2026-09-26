@@ -181,6 +181,7 @@ pub struct TextFieldBox {
     disabled: bool,
     read_only: bool,
     arrows: ArrowKeys,
+    frameless: bool,
 
     color: Color,
     placeholder_color: Color,
@@ -503,6 +504,19 @@ impl TextFieldBox {
         } else {
             self.border_color.lerp(self.border_focus_color, fokus)
         };
+        // `frameless` skips the box and the border but **keeps** the focus
+        // ring: the ring is how a keyboard user finds the field, and a field
+        // without a frame and without a ring is invisible precisely when it is
+        // being used.
+        if self.frameless {
+            return Decoration {
+                background: Color::TRANSPARENT,
+                corners: self.corners,
+                border_width: 0.0,
+                border_color: border,
+                shadows: silka_paint::ShadowPair::NONE,
+            };
+        }
         Decoration {
             background: latar,
             corners: self.corners,
@@ -1013,6 +1027,7 @@ pub struct TextFieldProps {
     on_change: Option<TextCallback>,
     on_submit: Option<TextCallback>,
     spring: Spring,
+    frameless: bool,
 }
 
 impl ViewNode for TextFieldProps {
@@ -1044,6 +1059,7 @@ impl ViewNode for TextFieldProps {
             focus_ring: self.focus_ring,
             on_change: self.on_change.clone(),
             on_submit: self.on_submit.clone(),
+            frameless: self.frameless,
             edit,
             props_value: self.value.clone(),
             hovered: false,
@@ -1111,6 +1127,7 @@ impl ViewNode for TextFieldProps {
             || n.border_width != self.border_width
             || n.border_color != self.border_color
             || n.border_focus_color != self.border_focus_color
+            || n.frameless != self.frameless
             || n.focus_ring != self.focus_ring
         {
             n.corners = self.corners;
@@ -1125,6 +1142,7 @@ impl ViewNode for TextFieldProps {
             n.border_width = self.border_width;
             n.border_color = self.border_color;
             n.border_focus_color = self.border_focus_color;
+            n.frameless = self.frameless;
             n.focus_ring = self.focus_ring;
             // Text color follows the node's color: the run must be
             // re-rasterized.
@@ -1300,6 +1318,7 @@ pub fn text_field_in(fonts: &Fonts, theme: &Theme, value: impl Into<String>) -> 
             on_change: None,
             on_submit: None,
             spring: Spring::snappy(),
+            frameless: false,
         },
         key: None,
     }
@@ -1389,6 +1408,23 @@ impl TextField {
     /// The spring that drives the hover/focus transitions.
     pub fn spring(self, spring: Spring) -> Self {
         self.map(move |x| x.spring = spring)
+    }
+
+    /// Draw the field **without** its frame: no background box and no border,
+    /// only the text, the caret, and the focus ring.
+    ///
+    /// This exists for fields that live inside something that already draws
+    /// them — a search row inside a panel, the command palette's input, a
+    /// toolbar entry. A frameless field inside a framed one reads as one
+    /// control; two nested frames read as a bug.
+    ///
+    /// The default is framed, deliberately: a bare field dropped onto a bare
+    /// page would be invisible, and an invisible text field is a support
+    /// ticket. Saying "no frame" is the call that shows up in review.
+    pub fn frameless(self) -> Self {
+        self.map(|x| {
+            x.frameless = true;
+        })
     }
 }
 

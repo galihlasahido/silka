@@ -113,9 +113,8 @@ use silka_core::tree::{BoxConstraints, CrossAlign, NodeId, RenderTree};
 use silka_core::view::{column, constrained, expanded, fixed, pad, row, Builder, View};
 use silka_paint::{Insets, Point, Rect};
 use silka_text::{FontWeight, TextConstraints, TextStyle};
-use silka_theme::{SpaceToken, Theme};
+use silka_theme::{ControlToken, SpaceToken, Theme};
 
-use crate::button::MIN_HIT_TARGET;
 use crate::fonts::Fonts;
 use crate::overlay::{
     overlay, Align, Anchor, Barrier, Dismiss, OverlayBuilder, OverlayLayer, Placement, Side,
@@ -381,9 +380,14 @@ impl Menu {
         &self.state
     }
 
-    /// Height of one row — which is also the minimum hit target (HIG).
+    /// Height of one row.
+    ///
+    /// The [`ControlToken::MenuRow`] token, not a constant: a compact density
+    /// packs the menu tighter. A row is content rather than a control, so it
+    /// carries no 44pt floor of its own — the same rule the table and the list
+    /// follow — while the trigger stays a control and keeps its floor.
     pub fn row_height(&self) -> f32 {
-        MIN_HIT_TARGET
+        self.theme.control_of(ControlToken::MenuRow)
     }
 
     /// The label of the item at `(depth, index)`, if it exists.
@@ -474,7 +478,11 @@ impl Menu {
             } else {
                 t.color.secondary_label
             },
-            min_height: MIN_HIT_TARGET,
+            // The trigger is a control: the medium control token, clamped up by
+            // the HIG floor.
+            min_height: t
+                .control_of(ControlToken::Md)
+                .max(t.hit_target_of(ControlToken::Md)),
         }
     }
 
@@ -514,7 +522,9 @@ impl Menu {
             trailing: if ada_submenu { t.space(4.0) } else { 0.0 },
             mark: t.color.accent,
             arrow: t.color.secondary_label,
-            min_height: MIN_HIT_TARGET,
+            // A row is content: the menu-row token, no 44pt floor — same as
+            // `select`'s popup rows and the table's rows.
+            min_height: t.control_of(ControlToken::MenuRow),
         }
     }
 
@@ -789,6 +799,9 @@ impl Menu {
             anak.push(
                 text_in(&self.fonts, ikon)
                     .size(t.typography.body_size)
+                    // Token line height, not `TextStyle`'s 1.35 default: an off-scale
+                    // line made rows 1.55pt taller than `row_height()`.
+                    .line_height(t.typography.body_line_height)
                     .color(warna)
                     .single_line()
                     .role(AccessRole::Container)
@@ -798,6 +811,7 @@ impl Menu {
         anak.push(
             text_in(&self.fonts, it.label())
                 .size(t.typography.body_size)
+                .line_height(t.typography.body_line_height)
                 .color(warna)
                 .single_line()
                 // The row's name is announced from the row node, not twice.
@@ -811,6 +825,9 @@ impl Menu {
             anak.push(
                 text_in(&self.fonts, s.display(self.shortcut_style))
                     .size(t.typography.body_size)
+                    // Token line height, not `TextStyle`'s 1.35 default: an off-scale
+                    // line made rows 1.55pt taller than `row_height()`.
+                    .line_height(t.typography.body_line_height)
                     .color(if it.is_enabled() {
                         t.color.tertiary_label
                     } else {

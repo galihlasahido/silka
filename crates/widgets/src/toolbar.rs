@@ -85,9 +85,7 @@ use silka_core::tree::{
 };
 use silka_core::view::{Builder, View, ViewNode};
 use silka_paint::{Color, CornerStyle, Corners, Insets, Point, Quad, Rect, Size};
-use silka_theme::Theme;
-
-use crate::button::MIN_HIT_TARGET;
+use silka_theme::{ControlToken, Theme};
 
 // ---------------------------------------------------------------------------
 // Fit plan
@@ -310,11 +308,15 @@ impl ToolbarStyle {
     /// Resolve every token.
     pub fn from_theme(theme: &Theme) -> Self {
         let titik = theme.space(1.0);
+        // Both are controls pressed with one finger: the medium control token
+        // clamped by the HIG floor, which is what keeps the promise under every
+        // density instead of a hand-copied constant.
+        let target = theme.hit_target_of(ControlToken::Md);
         Self {
             padding: Insets::symmetric(theme.space(2.0), theme.space(1.0)),
             spacing: theme.space(2.0),
-            min_height: MIN_HIT_TARGET,
-            overflow_side: MIN_HIT_TARGET,
+            min_height: target,
+            overflow_side: target,
             overflow_corners: theme.corners(theme.radius.sm),
             dot_size: titik,
             dot_gap: theme.space(0.75),
@@ -1438,6 +1440,7 @@ pub fn settle(tree: &mut RenderTree) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::button::MIN_HIT_TARGET;
     use silka_core::signals::Runtime;
     use silka_core::tree::TextDirection;
     use silka_core::view::{fixed, reconcile};

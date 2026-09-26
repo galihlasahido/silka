@@ -87,8 +87,8 @@ use std::time::SystemTime;
 use silka_paint::{Color, CornerStyle};
 
 use crate::{
-    Appearance, ColorToken, ControlToken, FontToken, Preset, RadiusToken, Theme, TypeStyle,
-    TypographyTokens,
+    Appearance, ColorToken, ControlToken, Density, FontToken, Preset, RadiusToken, Theme,
+    TypeStyle, TypographyTokens,
 };
 
 // ---------------------------------------------------------------------------
@@ -160,6 +160,7 @@ impl From<TokenParseError> for ThemeFileError {
 pub struct ThemeOverrides {
     preset: Option<Preset>,
     appearance: Option<Appearance>,
+    density: Option<Density>,
     colors: Vec<(ColorToken, Color)>,
     radii: Vec<(RadiusToken, f32)>,
     corner_style: Option<CornerStyle>,
@@ -210,6 +211,7 @@ impl ThemeOverrides {
     pub fn is_empty(&self) -> bool {
         self.preset.is_none()
             && self.appearance.is_none()
+            && self.density.is_none()
             && self.colors.is_empty()
             && self.radii.is_empty()
             && self.corner_style.is_none()
@@ -226,11 +228,17 @@ impl ThemeOverrides {
             + self.font_sizes.len()
             + usize::from(self.corner_style.is_some())
             + usize::from(self.space_unit.is_some())
+            + usize::from(self.density.is_some())
     }
 
     /// The base preset the file asked for, if any.
     pub fn preset(&self) -> Option<Preset> {
         self.preset
+    }
+
+    /// The density the file asked for, if any.
+    pub fn density(&self) -> Option<Density> {
+        self.density
     }
 
     /// The base appearance the file asked for, if any.
@@ -249,11 +257,13 @@ impl ThemeOverrides {
         // Rebuilding from the preset rather than mutating `base` is what makes a
         // reload idempotent: editing `preset = tailwind` and back again returns
         // exactly the original theme instead of a hybrid.
-        let mut theme = if preset == base.preset && appearance == base.appearance {
-            base
-        } else {
-            Theme::new(preset, appearance)
-        };
+        let density = self.density.unwrap_or(base.density);
+        let mut theme =
+            if preset == base.preset && appearance == base.appearance && density == base.density {
+                base
+            } else {
+                Theme::new(preset, appearance).with_density(density)
+            };
 
         for (token, color) in &self.colors {
             theme.color.set(*token, *color);
@@ -306,9 +316,10 @@ impl ThemeOverrides {
         out.push_str("# preview app applies it without a restart (§9.1).\n\n");
         out.push_str(&format!("preset = {}\n", nama_preset(theme.preset)));
         out.push_str(&format!(
-            "appearance = {}\n\n",
+            "appearance = {}\n",
             nama_appearance(theme.appearance)
         ));
+        out.push_str(&format!("density = {}\n\n", theme.density.name()));
 
         out.push_str("# --- colors ---\n");
         for token in ColorToken::ALL {
@@ -386,6 +397,17 @@ impl ThemeOverrides {
                     other => {
                         return Err(salah(format!(
                             "unknown appearance {other:?} — expected `light` or `dark`"
+                        )))
+                    }
+                });
+            }
+            "density" => {
+                self.density = Some(match value {
+                    "comfortable" => Density::Comfortable,
+                    "compact" => Density::Compact,
+                    other => {
+                        return Err(salah(format!(
+                            "unknown density {other:?} — expected `comfortable` or `compact`"
                         )))
                     }
                 });
@@ -801,5 +823,58 @@ mod tests {
         assert_eq!(ThemeOverrides::dump(&dibaca), ThemeOverrides::dump(&theme));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Density rides the same file as every other token — and the round trip
+    /// goes through `apply`, because that is where density used to be dropped:
+    /// `with_appearance`/`with_preset` rebuilt from scratch and silently reset
+    /// it to `Comfortable`. Dumping without parsing would not have caught that.
+    #[test]
+    fn density_bolak_balik_lewat_apply() {
+        for density in Density::ALL {
+            let asal = Theme::cupertino(Appearance::Dark).with_density(density);
+            let teks = ThemeOverrides::dump(&asal);
+            assert!(
+                teks.contains(&format!("density = {}", density.name())),
+                "dump harus menyebut density {densiti:?}:\n{teks}",
+                densiti = density
+            );
+
+            // Apply onto a *different* base: that is the reload path, and the
+            // path that loses the density if `apply` forgets to carry it.
+            let balik = ThemeOverrides::parse(&teks)
+                .unwrap()
+                .apply(Theme::tailwind(Appearance::Light));
+            assert_eq!(balik.density, density);
+            // And the scaled numbers must arrive with it, not the base's.
+            assert_eq!(balik.spacing.unit, asal.spacing.unit);
+            assert_eq!(
+                balik.control_of(ControlToken::Md),
+                asal.control_of(ControlToken::Md)
+            );
+        }
+    }
+
+    /// Parsing `density = compact` alone must densify the theme it is applied
+    /// to — a one-line override file is the common hot-reload edit.
+    #[test]
+    fn satu_baris_density_mengubah_tema() {
+        let t = ThemeOverrides::parse("density = compact")
+            .unwrap()
+            .apply(Theme::default());
+        assert_eq!(t.density, Density::Compact);
+        assert!(
+            t.control_of(ControlToken::Md) < Theme::default().control_of(ControlToken::Md),
+            "compact harus lebih pendek dari comfortable"
+        );
+    }
+
+    /// An unknown density is an error naming the valid values, like every
+    /// other key in this format.
+    #[test]
+    fn density_tak_dikenal_ditolak() {
+        let e = ThemeOverrides::parse("density = dense").unwrap_err();
+        assert!(e.message.contains("comfortable"), "{e:?}");
+        assert!(e.message.contains("compact"), "{e:?}");
     }
 }
