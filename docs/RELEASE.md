@@ -441,6 +441,54 @@ separate decision:
 There is no CI job for this yet, on purpose: a submission needs a review cycle
 and a human, and automating the upload while the review is manual buys nothing.
 
+### 8.1 Which entitlements file, and how it reaches codesign
+
+Two files, one per product, and they are not variants of each other:
+
+| File | Product | Sandbox | Signed with | Notarized |
+|---|---|---|---|---|
+| `packaging/macos/entitlements.plist` | Developer ID — direct download, updated by `silka-dist` | no | `Developer ID Application` | yes |
+| `packaging/macos/entitlements.mas.plist` | Mac App Store | **yes, mandatory** | `3rd Party Mac Developer Application` | never |
+
+Use the Developer ID file for everything you ship yourself. It exists to list
+the holes the hardened runtime needs and nothing else: silka's entitlements are
+deliberately just `files.user-selected.read-write` (file dialogs, and the
+updater renaming bundles) and `network.client` (the update feed). There is no
+JIT entitlement — wgpu compiles shaders in the GPU driver, not in our address
+space — and no microphone entitlement, because nothing in `crates/platform`
+touches audio input. An entitlement that is not earning its keep is a question
+in review with no good answer.
+
+Use the MAS file only for an App Store submission. It adds the sandbox and the
+app-scoped bookmarks that let `silka_platform::recent` reopen a document after
+a relaunch. It is also the file to revisit whenever the framework grows a
+capability that touches something the sandbox guards: `silka_platform::watch`
+on a path the user typed, for instance, is denied in a sandboxed build until
+the path came from a panel or a bookmark. Every key in that file carries its
+justification in a comment, and a new key without one should not pass review of
+the diff.
+
+Both files reach the same script. `macos-sign.sh` signs with
+`packaging/macos/entitlements.plist` by default and takes the path from the
+environment, so the MAS flow is two environment variables, not a fork of the
+script:
+
+```sh
+MACOS_SIGN_IDENTITY="3rd Party Mac Developer Application: Acme Ltd (AB12CD34EF)" \
+MACOS_ENTITLEMENTS="$PWD/packaging/macos/entitlements.mas.plist" \
+.github/scripts/macos-sign.sh dist/MyApp.app
+
+productbuild --component dist/MyApp.app /Applications MyApp.pkg \
+  --sign "3rd Party Mac Developer Installer: Acme Ltd (AB12CD34EF)"
+```
+
+The `.pkg` step is the only new tooling: the App Store accepts a `.pkg`, not a
+`.dmg`, and it is signed with the **Installer** identity by `productbuild`,
+not by `codesign`. Everything else in the script — inside-out signing, no
+`--deep`, the temporary keychain — applies unchanged. And there is no
+`macos-notarize.sh` call afterwards, by definition: if notarytool accepts the
+bundle, it was signed with the wrong identity.
+
 ---
 
 ## 9. When it goes wrong
