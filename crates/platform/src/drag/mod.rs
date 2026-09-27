@@ -40,23 +40,25 @@
 //! # let _ = Point::ZERO;
 //! ```
 //!
-//! ## The two platforms that are not implemented yet, and why
+//! ## The one platform that is not implemented yet, and why
 //!
-//! Neither is a shrug; both are blocked on something specific, and both are
-//! reported as [`DragError::Unsupported`] with that reason in the message
-//! rather than silently doing nothing:
+//! It is not a shrug; it is blocked on something specific, and it is reported
+//! as [`DragError::Unsupported`] with that reason in the message rather than
+//! silently doing nothing:
 //!
-//! - **Windows.** `DoDragDrop` needs two COM objects implemented by the caller
-//!   (`IDropSource` and `IDataObject`). windows-rs can do it, but only with its
-//!   `implement` machinery and a `Win32_System_Com`/`Win32_System_Ole` feature
-//!   set this workspace does not pin yet. The vocabulary here already carries
-//!   what those objects need — [`DragItem::windows_format`] is the clipboard
-//!   format name each item registers under.
 //! - **Wayland.** `wl_data_device::start_drag` requires the seat and the
 //!   **serial of the input event that started the drag**. winit exposes neither
 //!   through its public API, so a correct implementation means either a winit
 //!   change or reaching around it. [`DragItem::mime`] is the offer type each
 //!   item would advertise.
+//!
+//! **Windows** is implemented (`windows` module): `DoDragDrop` over two COM
+//! objects implemented here — `IDataObject` carrying every
+//! [`DragItem`] under [`DragItem::windows_format`], and `IDropSource`
+//! answering the mouse and the Esc key. What is still honest to say about it:
+//! the drag image (the picture following the pointer) is not drawn yet —
+//! that needs `IDragSourceHelper` — so a Windows drag works everywhere but
+//! travels without its thumbnail.
 //!
 //! An application can tell which platforms are live without starting a drag:
 //! [`is_supported`].
@@ -77,6 +79,15 @@ use crate::platform::NativeWindow;
 /// is done — the same reason `platform::macos` exists.
 #[cfg(target_os = "macos")]
 pub mod macos;
+
+/// The Windows backend: `DoDragDrop` over a hand-built `IDataObject` and
+/// `IDropSource`.
+///
+/// Not public: unlike `macos`, every type under it is a COM boundary detail,
+/// and the escape hatch reaches the same OS through `platform::windows`
+/// directly.
+#[cfg(target_os = "windows")]
+mod windows;
 
 // ---------------------------------------------------------------------------
 // Effects
@@ -909,12 +920,17 @@ impl DragSource {
 
         #[cfg(target_os = "windows")]
         {
-            let _ = (window, pointer);
-            Err(DragError::Unsupported(
-                "DoDragDrop needs IDropSource and IDataObject implemented through windows-rs \
-                 `implement`, and the Win32_System_Ole feature is not pinned by this workspace yet"
-                    .into(),
-            ))
+            // `DoDragDrop` runs its own modal loop: the pointer position the
+            // drag starts from is wherever the mouse already is, so `pointer`
+            // is informational on this platform — recorded here rather than
+            // silently dropped, because a future drag-image helper will want
+            // the hotspot offset from it.
+            let _ = pointer;
+            // `begin` re-borrows mutably for the finish callback; the shadow
+            // binding is what keeps the macOS arm's by-value move above
+            // possible while this arm needs `&mut`.
+            let mut source = self;
+            windows::begin(&mut source, window)
         }
 
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
