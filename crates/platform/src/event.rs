@@ -55,6 +55,16 @@ pub enum ShellEvent {
     /// The one source here that fires while the application is not focused at
     /// all — which is precisely why it cannot arrive as a window event.
     Hotkey(HotkeyActivation),
+    /// The user pressed a media key (INTEGRASI-NATIVE §3) — play/pause, next,
+    /// previous, stop, seek — from a keyboard's media row, a headset, or the
+    /// OS's own Now Playing surface.
+    ///
+    /// Like a hotkey, this fires wherever the OS's remote-command machinery
+    /// lives, not in the window's event stream, and it is already filtered
+    /// against the capability set the media session was installed with.
+    /// [`MediaKey::resolve`](crate::media::MediaKey::resolve) is how a
+    /// `PlayPause` becomes the play or pause the player means.
+    Media(crate::media::MediaKey),
     /// A background task has a result waiting (REKOMENDASI §9.6).
     ///
     /// Sent from a worker thread by the notifier
@@ -139,6 +149,19 @@ pub fn forward_native_events(proxy: EventLoopProxy<ShellEvent>) {
 
 /// The process-wide proxy, remembered by [`forward_native_events`].
 static PROXY: std::sync::OnceLock<Mutex<EventLoopProxy<ShellEvent>>> = std::sync::OnceLock::new();
+
+/// A clone of the process-wide proxy, for a backend that must deliver events
+/// from an OS thread it does not own.
+///
+/// `pub(crate)` because the proxies are plumbing: applications receive
+/// [`ShellEvent`]s through the loop itself, never through this handle. `None`
+/// before the event loop exists — which is exactly what
+/// [`media::install`](crate::media::MediaControls::install) checks before it
+/// claims any keys.
+pub(crate) fn shell_proxy() -> Option<EventLoopProxy<ShellEvent>> {
+    let proxy = PROXY.get()?;
+    proxy.lock().ok().map(|p| p.clone())
+}
 
 /// A `Send + Sync` closure that makes the event loop turn one more frame.
 ///

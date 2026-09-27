@@ -17,12 +17,14 @@
 //!
 //! The vocabulary and the arithmetic — [`NowPlaying`], [`MediaKey`],
 //! [`MediaCapabilities`], and the pure functions that turn a position into the
-//! string every one of those OS surfaces wants. What is **not** here is the
-//! backend: `souvlaki` is the crate that covers all three, and it is not pinned
-//! by this workspace, while MediaPlayer.framework and WinRT are outside the
-//! binding set that is. [`MediaControls::install`] therefore reports
-//! [`MediaError::Unsupported`] with that reason rather than doing nothing
-//! quietly.
+//! string every one of those OS surfaces wants. The backend is `souvlaki`
+//! (pinned by the workspace, gated per target in `Cargo.toml`), wrapped in the
+//! `backend` submodule — the only file in the framework where a `souvlaki::`
+//! type may
+//! appear, the same boundary rule `notification` keeps for `notify-rust`.
+//! [`MediaControls::install`] starts a [`MediaSession`]; key presses come back
+//! as [`ShellEvent::Media`](crate::ShellEvent::Media) through the event-loop
+//! proxy, the path every off-loop native callback takes.
 //!
 //! ```
 //! use std::time::Duration;
@@ -42,6 +44,8 @@
 
 use core::fmt;
 use std::time::Duration;
+
+mod backend;
 
 /// What the player is doing.
 ///
@@ -407,6 +411,13 @@ impl NowPlaying {
 pub enum MediaError {
     /// Nothing has a title, so there is nothing the OS could show.
     NoTitle,
+    /// The controls were installed before there was anything to deliver key
+    /// presses into. [`MediaControls::install`] must be called from inside the
+    /// event loop — anywhere [`crate::forward_native_events`] has run, which
+    /// means anywhere a window exists.
+    NoEventLoop,
+    /// The window handle the OS wants could not be read (Windows).
+    NoWindow,
     /// No backend on this build. The message says what each platform needs.
     Unsupported(String),
     /// The OS refused.
@@ -417,6 +428,12 @@ impl fmt::Display for MediaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MediaError::NoTitle => write!(f, "nothing playing has a title"),
+            MediaError::NoEventLoop => write!(
+                f,
+                "media controls need a running event loop to deliver key presses; \
+                 install them from inside the event loop"
+            ),
+            MediaError::NoWindow => write!(f, "the window handle could not be read"),
             MediaError::Unsupported(m) => write!(f, "no media integration: {m}"),
             MediaError::Os(m) => write!(f, "the OS refused the media controls: {m}"),
         }
@@ -428,10 +445,11 @@ impl std::error::Error for MediaError {}
 /// The application's end of the media integration.
 ///
 /// A plain value: the identity and the capability set can be assembled and
-/// asserted with no OS involved.
+/// asserted with no OS involved. The OS part starts at [`MediaControls::install`],
+/// which returns a [`MediaSession`].
 ///
 /// ```
-/// use silka_platform::media::{media_controls, MediaCapabilities, MediaError};
+/// use silka_platform::media::{media_controls, MediaCapabilities};
 ///
 /// let controls = media_controls("com.example.player")
 ///     .display_name("Player")
@@ -439,9 +457,7 @@ impl std::error::Error for MediaError {}
 ///
 /// assert_eq!(controls.identity(), "com.example.player");
 /// assert!(controls.capabilities_set().contains(MediaCapabilities::SEEK));
-///
-/// // Honest about not being wired up yet.
-/// assert!(matches!(controls.install(), Err(MediaError::Unsupported(_))));
+/// assert_eq!(controls.name(), "Player");
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MediaControls {
@@ -494,29 +510,132 @@ impl MediaControls {
 
     /// Claim the media keys and start publishing Now Playing.
     ///
+    /// `window` is the window the OS attaches the controls to (Windows binds
+    /// them to its `HWND`); on macOS and Linux it is passed for symmetry and
+    /// not otherwise used — pass the main window.
+    ///
+    /// Must be called from inside the event loop — anywhere a window exists,
+    /// because [`crate::forward_native_events`] has run by then. Before that
+    /// there is no [`EventLoopProxy`](winit::event_loop::EventLoopProxy) to
+    /// deliver key presses through, and this returns
+    /// [`MediaError::NoEventLoop`] rather than installing controls whose
+    /// buttons would silently do nothing.
+    ///
+    /// ```no_run
+    /// use silka_platform::media::{media_controls, MediaCapabilities};
+    /// use silka_platform::NativeWindow;
+    ///
+    /// fn claim(window: &NativeWindow) -> Result<(), silka_platform::media::MediaError> {
+    ///     // `publish`/`stop` mutate the session's OS registration, so the
+    ///     // binding is `mut` — that is the whole ownership story here.
+    ///     let mut session = media_controls("com.example.player")
+    ///         .display_name("Player")
+    ///         .capabilities(
+    ///             MediaCapabilities::PLAY_PAUSE
+    ///                 .union(MediaCapabilities::NEXT)
+    ///                 .union(MediaCapabilities::PREVIOUS),
+    ///         )
+    ///         .install(window)?;
+    ///
+    ///     // The keys are now ours: publish what is playing.
+    ///     session.publish(&silka_platform::media::now_playing("Souvlaki Space Station"))?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
     /// # Errors
     ///
-    /// Always [`MediaError::Unsupported`] today — see the module documentation.
-    pub fn install(&self) -> Result<(), MediaError> {
-        Err(MediaError::Unsupported(
-            "souvlaki covers all three platforms and is not pinned by this workspace; \
-             MediaPlayer.framework and the WinRT SystemMediaTransportControls are outside the \
-             binding set that is"
-                .into(),
-        ))
+    /// - [`MediaError::NoEventLoop`] — called before the event loop exists.
+    /// - [`MediaError::NoWindow`] — Windows could not read the `HWND`.
+    /// - [`MediaError::Os`] — the OS refused the registration.
+    pub fn install(&self, window: &crate::NativeWindow) -> Result<MediaSession, MediaError> {
+        let hwnd = hwnd_of(window);
+        backend::install(self, hwnd).map(|backend| MediaSession {
+            backend,
+            identity: self.identity.clone(),
+        })
+    }
+}
+
+/// The window handle the Windows backend binds the controls to.
+///
+/// `None` everywhere else — [`PlatformConfig`](crate::media::backend) carries
+/// the field on every platform, and `None` is what macOS and Linux want.
+#[cfg(target_os = "windows")]
+fn hwnd_of(window: &crate::NativeWindow) -> Option<*mut core::ffi::c_void> {
+    // `NativeWindow::hwnd` returns the handle as `isize` precisely so no
+    // windows-rs type crosses that boundary.
+    window.hwnd().map(|hwnd| hwnd as *mut core::ffi::c_void)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn hwnd_of(_window: &crate::NativeWindow) -> Option<*mut core::ffi::c_void> {
+    None
+}
+
+/// A live claim on the media keys, owned by the application.
+///
+/// Returned by [`MediaControls::install`]. While the value is alive the
+/// application is the OS's Now Playing entry and the owner of its media keys;
+/// key presses arrive as [`ShellEvent::Media`](crate::ShellEvent::Media) —
+/// filtered against the capability set and routed through the same event-loop
+/// channel as menu clicks and global hotkeys — which
+/// [`on_media_key`](crate::WindowConfig::on_media_key) is the ordinary way to
+/// receive.
+///
+/// Publishing is stateless: pass the full [`NowPlaying`] each time something
+/// changes, exactly as the OS surfaces expect.
+///
+/// ```
+/// use silka_platform::media::{media_controls, now_playing, PlaybackState};
+///
+/// // The vocabulary is plain values; a session is the only part that talks
+/// // to the OS, and there is none here.
+/// let track = now_playing("Souvlaki Space Station")
+///     .artist("Slowdive")
+///     .state(PlaybackState::Playing);
+/// assert_eq!(track.playback_state(), PlaybackState::Playing);
+/// ```
+pub struct MediaSession {
+    backend: backend::Session,
+    identity: String,
+}
+
+impl fmt::Debug for MediaSession {
+    /// Hand-written: the backend owns raw OS handles that are noise in a log.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MediaSession")
+            .field("identity", &self.identity)
+            .finish()
+    }
+}
+
+impl MediaSession {
+    /// The identity the session was installed with.
+    pub fn identity(&self) -> &str {
+        &self.identity
     }
 
-    /// Publish what is playing.
+    /// Publish what is playing. Pass the complete state every time: the OS
+    /// surfaces display exactly what they are told, so a changed track means
+    /// publishing the new one, not a diff.
     ///
     /// # Errors
     ///
-    /// [`MediaError::NoTitle`] for an item with nothing to show, and otherwise
-    /// [`MediaError::Unsupported`] — see [`MediaControls::install`].
-    pub fn publish(&self, track: &NowPlaying) -> Result<(), MediaError> {
-        if track.title().trim().is_empty() {
-            return Err(MediaError::NoTitle);
-        }
-        self.install()
+    /// [`MediaError::NoTitle`] for an item with nothing to show — refused
+    /// before the OS is asked — and [`MediaError::Os`] if the OS refused.
+    pub fn publish(&mut self, track: &NowPlaying) -> Result<(), MediaError> {
+        self.backend.publish(track)
+    }
+
+    /// Withdraw from Now Playing: playback has stopped, so the OS surface has
+    /// nothing left to show. The keys stay claimed until the session drops.
+    ///
+    /// # Errors
+    ///
+    /// [`MediaError::Os`] if the OS refused.
+    pub fn stop(&mut self) -> Result<(), MediaError> {
+        self.backend.stop()
     }
 }
 
@@ -627,15 +746,19 @@ mod tests {
     }
 
     #[test]
-    fn tanpa_judul_ditolak_sebelum_backend_disalahkan() {
+    fn tanpa_event_loop_instalasi_menolak_dengan_alasan() {
+        // No event loop in a unit test — and that is the one honest
+        // `Unsupported` left: installing controls whose buttons could never
+        // deliver a press would be worse than refusing.
+        //
+        // Reached through `backend::install` with no window handle, because a
+        // `NativeWindow` cannot exist without an event loop — which is exactly
+        // the precondition under test.
         let controls = media_controls("com.example.player");
-        assert_eq!(
-            controls.publish(&now_playing("  ")),
-            Err(MediaError::NoTitle)
-        );
-        assert!(matches!(
-            controls.publish(&now_playing("x")),
-            Err(MediaError::Unsupported(_))
-        ));
+        match backend::install(&controls, None) {
+            Err(MediaError::NoEventLoop) => {}
+            Err(lain) => panic!("harusnya NoEventLoop, dapat {lain:?}"),
+            Ok(_) => panic!("harusnya NoEventLoop, dapat Ok"),
+        }
     }
 }

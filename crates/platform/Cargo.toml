@@ -91,13 +91,32 @@ objc2-app-kit = { workspace = true, features = [
 keyring.workspace = true
 global-hotkey.workspace = true
 
+# Media keys + Now Playing (§3). `souvlaki` TIDAK didaftar lintas platform
+# seperti notify-rust, karena backend Linux-nya perlu fitur berbeda: di sini
+# (macOS/Windows) tanpa fitur D-Bus apa pun, dan di blok Linux di bawah dengan
+# `use_zbus` — MPRIS lewat zbus, murni Rust, bukan libdbus. `default-features`
+# crate ini ("use_dbus" / dbus-rs) sengaja mati di seluruh workspace; lihat
+# catatan di Cargo.toml root.
+souvlaki.workspace = true
+
 # Escape hatch Windows (§8): windows-rs di-re-export apa adanya lewat
 # `platform::windows`, versi dikunci workspace.
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true
+# Dipakai drag source (§4): hasil ekspansi macro `#[implement]` menyebut
+# path `windows_core::`, dan `windows` sendiri tidak me-re-export penuh.
+windows-core.workspace = true
 
 # Escape hatch Linux/BSD (§8): zbus di-re-export lewat `platform::linux`.
 # `target_vendor = "apple"` dikecualikan supaya macOS/iOS tidak ikut menarik
 # runtime D-Bus.
 [target.'cfg(all(unix, not(target_vendor = "apple")))'.dependencies]
 zbus.workspace = true
+
+# Media keys + Now Playing di Linux: MPRIS 2 lewat fitur `use_zbus` milik
+# souvlaki (zbus murni Rust). Konsisten dengan keputusan D-Bus repo lain:
+# yang ditolak adalah *AppMenu* (menubar, H10 — GNOME tidak punya registrar),
+# bukan D-Bus; zbus sudah menjadi dependensi Linux di atas, dan MPRIS adalah
+# standar freedesktop yang benar-benar dipakai desktop (lock screen, quick
+# settings, `playerctl`).
+souvlaki = { workspace = true, features = ["use_zbus"] }

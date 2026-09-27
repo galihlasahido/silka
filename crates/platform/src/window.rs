@@ -249,6 +249,13 @@ type TrayFn = Box<dyn FnMut(&TrayActivation) -> Dirty>;
 /// until it is shown.
 type HotkeyFn = Box<dyn FnMut(&HotkeyActivation) -> Dirty>;
 
+/// Handler for a media key (INTEGRASI-NATIVE §3). Same contract as
+/// [`MenuFn`]: the key arrives already filtered against the capability set the
+/// session was installed with, and the handler owns the resolve —
+/// [`MediaKey::resolve`](crate::media::MediaKey::resolve) turns a `PlayPause`
+/// into the play or pause the player means.
+type MediaFn = Box<dyn FnMut(&crate::media::MediaKey) -> Dirty>;
+
 /// The glyph atlas source shared with the scene builder.
 ///
 /// Shared through `Rc<RefCell<…>>` because two parties use it in turn on the
@@ -317,6 +324,7 @@ pub struct WindowConfig {
     tray_fn: Option<TrayFn>,
     hotkeys: Option<HotkeyManager>,
     hotkey_fn: Option<HotkeyFn>,
+    media_fn: Option<MediaFn>,
     titlebar: TitlebarStyle,
     material: Material,
     material_state: MaterialState,
@@ -371,6 +379,7 @@ pub fn window(title: impl Into<String>) -> WindowConfig {
         tray_fn: None,
         hotkeys: None,
         hotkey_fn: None,
+        media_fn: None,
         titlebar: TitlebarStyle::Native,
         material: Material::None,
         material_state: MaterialState::FollowsWindow,
@@ -845,6 +854,38 @@ impl WindowConfig {
         self
     }
 
+    /// Handler for media keys (INTEGRASI-NATIVE §3).
+    ///
+    /// Only fires while a [`MediaSession`](crate::media::MediaSession) is
+    /// alive: installing the session is what claims the keys, and every press
+    /// that arrives here has already been filtered against the capability set
+    /// it was installed with. Resolve
+    /// [`MediaKey::PlayPause`](crate::media::MediaKey::PlayPause) with
+    /// [`MediaKey::resolve`](crate::media::MediaKey::resolve) — the OS sends
+    /// one key for both directions.
+    ///
+    /// ```
+    /// use silka_platform::{window, Dirty};
+    /// use silka_platform::media::{MediaKey, PlaybackState};
+    ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// # if !cfg!(debug_assertions) { return Ok(()); } // doctest: no window here
+    /// window("Player")
+    ///     .on_media_key(|key| {
+    ///         let _ = key.resolve(PlaybackState::Playing);
+    ///         Dirty::PAINT
+    ///     });
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn on_media_key(
+        mut self,
+        handler: impl FnMut(&crate::media::MediaKey) -> Dirty + 'static,
+    ) -> Self {
+        self.media_fn = Some(Box::new(handler));
+        self
+    }
+
     /// How much of the OS titlebar to keep (INTEGRASI-NATIVE §1).
     ///
     /// Titlebar shape is decided when the window is created, so this is a
@@ -1223,6 +1264,7 @@ struct Shell {
     /// The hotkey set, registered once the event loop is running.
     hotkey_config: Option<HotkeyManager>,
     hotkey_fn: Option<HotkeyFn>,
+    media_fn: Option<MediaFn>,
     titlebar: TitlebarStyle,
     material: Material,
     material_state: MaterialState,
@@ -1281,6 +1323,7 @@ impl Shell {
             tray_fn: config.tray_fn,
             hotkey_config: config.hotkeys,
             hotkey_fn: config.hotkey_fn,
+            media_fn: config.media_fn,
             titlebar: config.titlebar,
             material: config.material,
             material_state: config.material_state,
@@ -1687,6 +1730,22 @@ impl Shell {
         }
     }
 
+    /// Route a media key into the application.
+    ///
+    /// Like a hotkey, this arrives outside the window's event stream — from
+    /// the keyboard's media row, a headset, or the OS's Now Playing surface —
+    /// so it takes the same application-wide route rather than the per-window
+    /// one.
+    fn media_event(&mut self, key: crate::media::MediaKey) {
+        let Some(f) = self.media_fn.as_mut() else {
+            return;
+        };
+        let dirty = f(&key);
+        if !dirty.is_empty() {
+            self.minta(dirty);
+        }
+    }
+
     /// Route a tray gesture into the application.
     fn tray_event(&mut self, activation: TrayActivation) {
         let Some(f) = self.tray_fn.as_mut() else {
@@ -1866,6 +1925,9 @@ impl ApplicationHandler<ShellEvent> for Shell {
             ShellEvent::Menu(a) => return self.menu(a),
             ShellEvent::Tray(a) => return self.tray_event(a),
             ShellEvent::Hotkey(a) => return self.hotkey_event(a),
+            // A media key from wherever the OS's remote-command machinery
+            // lives (§3). Application-wide, like the other three above.
+            ShellEvent::Media(k) => return self.media_event(k),
             // A background task delivered something (§9.6). The payload is
             // already in the channel; one frame is all that is needed, and
             // `AppRuntime::frame` applies it before it drains the dirty scopes.

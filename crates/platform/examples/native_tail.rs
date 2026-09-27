@@ -28,7 +28,7 @@ use silka_platform::dock::{set_badge, supports_badge, supports_progress, Badge};
 use silka_platform::drag::{drag, DragEffects};
 use silka_platform::hotkey::{hotkeys, windows_virtual_key};
 use silka_platform::instance::{single_instance, InstanceRole};
-use silka_platform::media::{media_controls, now_playing, PlaybackState};
+use silka_platform::media::{now_playing, PlaybackState};
 use silka_platform::menu::{item, menu, shortcut, MenuBar};
 use silka_platform::menubar::in_window_model;
 use silka_platform::notification::{notify, Timeout};
@@ -154,10 +154,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         track.position_text(),
         track.duration_text().unwrap_or_else(|| "live".into())
     );
-    report(
-        "media controls",
-        media_controls("com.example.silka-tail").publish(&track),
-    );
+    // Claiming the actual keys needs a live event loop (`MediaControls::
+    // install` refuses with `NoEventLoop` before that) — the vocabulary is
+    // what this example exercises. `publish` and `stop` live on the
+    // `MediaSession` that `install` returns, owned by the application.
+    println!("media session vocabulary: ok (install needs an event loop)");
 
     // ---------------------------------------------------------------- §2
     // The Linux in-window menubar model: a drawn menubar, not D-Bus.
