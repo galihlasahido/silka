@@ -20,6 +20,10 @@
 #   MACOS_CERT_PASSWORD     password that .p12 was exported with
 #   MACOS_KEYCHAIN_PASSWORD any string; the temporary keychain's own password
 #   MACOS_SIGN_IDENTITY     e.g. "Developer ID Application: Acme Ltd (AB12CD34EF)"
+#   MACOS_ENTITLEMENTS      optional; defaults to
+#                           packaging/macos/entitlements.plist. Point it at
+#                           packaging/macos/entitlements.mas.plist for a Mac
+#                           App Store build (docs/RELEASE.md §8.1).
 #
 # In the workflow they arrive as ${{ secrets.MACOS_CERT_P12 }} and friends.
 # Produce the first one with:

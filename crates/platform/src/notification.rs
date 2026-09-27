@@ -454,7 +454,11 @@ fn notify_rust_urgency(urgency: Urgency) -> notify_rust::Urgency {
 fn show_notify_rust(n: &notify_rust::Notification) -> Result<(), NotificationError> {
     #[cfg(target_os = "windows")]
     {
-        n.show().map_err(|e| NotificationError::Os(e.to_string()))
+        // Even here `show()` returns a handle (the Win32 toast handle); it is
+        // dropped on the floor for the same reason as everywhere else.
+        n.show()
+            .map(|_handle| ())
+            .map_err(|e| NotificationError::Os(e.to_string()))
     }
     #[cfg(not(target_os = "windows"))]
     {
