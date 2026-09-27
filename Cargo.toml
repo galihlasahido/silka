@@ -78,7 +78,18 @@ objc2-app-kit     = { version = "0.3", default-features = false, features = ["st
 # binding Win32 dalam satu binary. Hanya dikompilasi di target Windows.
 # `Win32_System_Registry` dipakai `system_reduces_transparency()` (§6);
 # `Win32_System_Com` dipakai taskbar progress lewat `ITaskbarList3` (§2).
-windows           = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Registry", "Win32_System_Com"] }
+# `Win32_System_Ole` + `Win32_System_DataExchange` + `Win32_System_Memory` +
+# `Win32_UI_Input_KeyboardAndMouse` dipakai drag source (§4): DoDragDrop,
+# IDropSource, RegisterClipboardFormatW, alokasi HGLOBAL payload, dan pembacaan
+# tombol/Esc di `QueryContinueDrag`. `Win32_System_SystemServices` membawa
+# konstanta MK_* yang sama. `STGMEDIUM`/`IDataObject_Impl`/`ReleaseStgMedium`
+# di-gate di balik `Win32_Graphics_Gdi` + `Win32_System_Com_StructuredStorage`
+# oleh windows-rs sendiri (union-nya menyebut HBITMAP/HMETAFILE), jadi keduanya
+# harus menyala meski payload kita selalu HGLOBAL. Macro `#[implement]` untuk
+# dua objek COM drag datang dari `windows-core` — dideklarasikan eksplisit
+# karena path `windows_core::` muncul di hasil ekspansi macro-nya.
+windows           = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Registry", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_SystemServices", "Win32_UI_Input_KeyboardAndMouse"] }
+windows-core      = "0.62"
 
 # Escape hatch Linux (INTEGRASI-NATIVE §8) — zbus untuk D-Bus (portal, global
 # menu, notifikasi lanjutan). Versi dikunci sama dengan yang dipakai
@@ -147,6 +158,20 @@ notify            = "8"       # menonton berkas: FSEvents / ReadDirectoryChanges
 # `credential.rs`): backend Secret Service butuh libdbus saat build, dan
 # kernel keyring tidak bertahan setelah reboot.
 keyring           = { version = "3", default-features = false, features = ["apple-native", "windows-native"] }
+# Media keys + Now Playing (INTEGRASI-NATIVE §3) — HANYA di crates/platform,
+# aturan batas yang sama: `silka_platform::media` adalah kosakata kita sendiri,
+# tipe `souvlaki::` tidak pernah terlihat di atas modul yang membungkusnya.
+#
+# Fitur `default` ("use_dbus") sengaja DIMATIKAN: backend itu memakai dbus-rs,
+# yang butuh libdbus asli saat build — alasan yang sama dengan penolakan
+# keyring di Linux. Linux memakai `use_zbus` (MPRIS lewat zbus, murni Rust),
+# diaktifkan per-target di crates/platform/Cargo.toml. Keputusan D-Bus yang
+# konsisten dengan repo: menubar menolak D-Bus *karena AppMenu-nya* (tidak ada
+# registrar di GNOME), bukan menolak D-Bus itu sendiri — zbus sudah menjadi
+# dependensi Linux (escape hatch §8) — sedangkan MPRIS adalah standar
+# freedesktop yang didukung GNOME/KDE dan muncul di lock screen & quick
+# settings keduanya.
+souvlaki          = { version = "0.8", default-features = false }
 
 # Accessibility (§3.8) — output first-class dari render tree, bukan susulan.
 # `accesskit` (kosakata node) hidup di crates/core di balik modul `access`;

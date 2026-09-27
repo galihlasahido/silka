@@ -47,6 +47,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use cosmic_text::{
     Align, Attrs, Buffer, CacheKeyFlags, Metrics, Shaping, SwashCache, SwashContent, Wrap,
@@ -448,6 +449,122 @@ impl TextEngine {
         }
     }
 
+    /// **Shape** text against constraints, with byte ranges marked by metadata.
+    ///
+    /// This is the marked twin of [`TextEngine::layout`]: the text is shaped
+    /// exactly the same way, but the glyphs shaped from the byte range
+    /// `range` come back carrying `metadata` (instead of the default `0`) on
+    /// [`cosmic_text`]'s glyphs — which [`TextEngine::rasterize_runs`] turns
+    /// into a per-run color. Marking never changes **what** is shaped, only
+    /// how it is later colored: the measurement, line breaking and glyph
+    /// positions are identical to the unmarked
+    /// [`TextEngine::layout`](Self::layout), so a caller can
+    /// keep measuring through the unmarked path and pay for the marked shape
+    /// only when it draws.
+    ///
+    /// Matchers that report **character** indices (like a fuzzy matcher's
+    /// match positions) must convert them to byte offsets with
+    /// [`str::char_indices`] before calling this — a byte range that starts in
+    /// the middle of a multi-byte character would otherwise color half a
+    /// letter. Ranges outside the text are clamped to it; empty ranges and
+    /// metadata beyond the color table are harmless. Ranges may arrive in any
+    /// order but must not overlap; overlapping ranges color by whichever span
+    /// comes first.
+    pub fn layout_marked(
+        &mut self,
+        text: &str,
+        style: &TextStyle,
+        constraints: TextConstraints,
+        marks: &[(Range<usize>, u32)],
+    ) -> TextLayout {
+        if marks.is_empty() {
+            return self.layout(text, style, constraints);
+        }
+
+        let constraints = constraints.normalized();
+        let line_height = style.line_height_px();
+        let metrics = Metrics::new(style.size.max(0.5), line_height);
+
+        let mut buffer = Buffer::new_empty(metrics);
+        buffer.set_wrap(&mut self.fonts, wrap_cosmic(style.wrap));
+        buffer.set_size(
+            &mut self.fonts,
+            constraints
+                .has_bounded_width()
+                .then_some(constraints.max_width),
+            None,
+        );
+
+        let mut attrs = Attrs::new()
+            .family(font::family_for(&style.family, self.ui_family.as_deref()))
+            .weight(fontdb::Weight(style.weight.0));
+        if style.italic {
+            attrs = attrs.style(cosmic_text::Style::Italic);
+        }
+        if style.tracking != 0.0 {
+            attrs = attrs.letter_spacing(style.tracking);
+        }
+
+        // Walk the marks in byte order and cut the text into spans: the gaps
+        // between marks keep the default attrs (metadata 0), the marks
+        // themselves carry theirs. `set_rich_text` needs the spans in order
+        // and covering the whole text.
+        let mut terurut: Vec<&(Range<usize>, u32)> = marks.iter().collect();
+        terurut.sort_by_key(|(range, _)| range.start);
+        let mut spans: Vec<(&str, cosmic_text::Attrs)> = Vec::with_capacity(terurut.len() * 2 + 1);
+        let mut kursor = 0usize; // byte offset
+        for (range, metadata) in terurut {
+            // Clamp into the text: a mark past the end is noise, not a panic.
+            let mulai = range.start.clamp(kursor, text.len());
+            let akhir = range.end.clamp(kursor, text.len());
+            if mulai >= akhir {
+                continue;
+            }
+            if mulai > kursor {
+                spans.push((&text[kursor..mulai], attrs.clone()));
+            }
+            // `Attrs::metadata` consumes the receiver, so every span gets its
+            // own copy — `Attrs` is a handful of borrowed fields, cheap to
+            // clone and built exactly twice per span here.
+            spans.push((
+                &text[mulai..akhir],
+                attrs.clone().metadata(*metadata as usize),
+            ));
+            kursor = akhir;
+        }
+        if kursor < text.len() {
+            spans.push((&text[kursor..], attrs.clone()));
+        }
+
+        buffer.set_rich_text(
+            &mut self.fonts,
+            spans,
+            &attrs,
+            Shaping::Advanced,
+            align_cosmic(style.align),
+        );
+        buffer.shape_until_scroll(&mut self.fonts, false);
+        self.shapes += 1;
+
+        let hasil = ukur(&buffer, constraints, style.max_lines, line_height);
+
+        let justified = style.align == TextAlign::Justified;
+        let never_wraps = !justified && style.wrap == TextWrap::None;
+        let width_independent = !justified && (never_wraps || !hasil.soft_wrapped);
+        let glyphs_stable = width_independent && style.align == TextAlign::Start && !hasil.rtl;
+
+        TextLayout {
+            buffer,
+            max_lines: style.max_lines,
+            measure: hasil.measure,
+            glyph_count: hasil.glyph_count,
+            intrinsic: hasil.intrinsic,
+            width_independent,
+            glyphs_stable,
+            never_wraps,
+        }
+    }
+
     /// **Rasterize** a layout into draw commands.
     ///
     /// `origin` is the top-left corner of the text block in logical points. Its
@@ -499,6 +616,91 @@ impl TextEngine {
         }
 
         run_out
+    }
+
+    /// **Rasterize** a layout into several glyph runs, grouped by mark.
+    ///
+    /// This is the marked twin of [`TextEngine::rasterize`]: identical glyphs
+    /// at identical positions, but instead of one run of one color the glyphs
+    /// are grouped into consecutive runs by the metadata their spans carried
+    /// (see [`TextEngine::layout_marked`]). Glyph with metadata `m` is colored
+    /// `colors[m]`; metadata pointing past the end of `colors` falls back to
+    /// `colors[0]`, which keeps a forgotten mark harmless rather than a panic.
+    ///
+    /// The grouping is per *consecutive* glyphs: a text marked `A A B A`
+    /// rasterizes into three runs, not two, because a [`GlyphRun`] is one
+    /// color and glyphs of one color that are not adjacent cannot share one.
+    /// Runs come back in draw order; an empty layout produces an empty vec.
+    pub fn rasterize_runs(
+        &mut self,
+        layout: &TextLayout,
+        origin: Point,
+        colors: &[Color],
+    ) -> Vec<GlyphRun> {
+        if colors.is_empty() {
+            return Vec::new();
+        }
+        let warna_dari =
+            |metadata: usize| -> Color { colors.get(metadata).copied().unwrap_or(colors[0]) };
+
+        let scale = self.scale_factor;
+        let mut runs: Vec<GlyphRun> = Vec::new();
+        // A layout without marks carries metadata 0 on every glyph, so the
+        // common case degenerates to `rasterize`: one run, one color.
+        let mut run_saat: Option<&mut GlyphRun> = None;
+
+        let batas = layout.max_lines.unwrap_or(usize::MAX);
+        for run in layout.buffer.layout_runs().take(batas) {
+            for glyph in run.glyphs {
+                let fisik = glyph.physical(
+                    (origin.x * scale, origin.y * scale + run.line_y * scale),
+                    scale,
+                );
+                let key = GlyphKey {
+                    font: self.font_id(fisik.cache_key.font_id),
+                    glyph: fisik.cache_key.glyph_id,
+                    size_bits: fisik.cache_key.font_size_bits,
+                    weight: fisik.cache_key.font_weight.0,
+                    subpixel_x: bin_dari(fisik.cache_key.x_bin),
+                    subpixel_y: bin_dari(fisik.cache_key.y_bin),
+                    synthetic_italic: fisik.cache_key.flags.contains(CacheKeyFlags::FAKE_ITALIC),
+                };
+
+                let id = match self.cache.lookup(&key) {
+                    GlyphLookup::Hit(id) => Some(id),
+                    GlyphLookup::Empty => None,
+                    GlyphLookup::Miss => self.raster_dan_simpan(key, fisik.cache_key),
+                };
+                let Some(id) = id else { continue };
+                let Some(image) = self.cache.image(id) else {
+                    continue;
+                };
+
+                let bounds = Rect::new(
+                    (fisik.x + image.left) as f32 / scale,
+                    (fisik.y - image.top) as f32 / scale,
+                    image.rect.width as f32 / scale,
+                    image.rect.height as f32 / scale,
+                );
+
+                let warna = warna_dari(glyph.metadata);
+                // Extend the run being built when the color matches, else
+                // start a new one. Kept as a computed `Option<&mut GlyphRun>`
+                // rather than a `match` with assignment arms: the borrow of
+                // `runs` ends before the next iteration re-assigns it.
+                let cocok = run_saat
+                    .as_deref_mut()
+                    .is_some_and(|current| current.color == warna);
+                if !cocok {
+                    runs.push(GlyphRun::new(warna));
+                    run_saat = runs.last_mut();
+                }
+                let current = run_saat.as_deref_mut().expect("a run exists here");
+                current.push(Glyph::new(id, bounds));
+            }
+        }
+
+        runs
     }
 
     /// The shortcut: measure, shape, rasterize, and push into a [`Scene`].
@@ -1142,6 +1344,98 @@ mod tests {
         assert_eq!(e.scale_factor(), 1.0);
         e.set_scale_factor(3.0);
         assert_eq!(e.scale_factor(), 3.0);
+    }
+
+    #[test]
+    fn layout_tanda_dan_layout_biasa_menghasilkan_bentuk_yang_sama() {
+        // Marks are a *color* decision, never a shaping decision: the glyph
+        // count, the measurement, and therefore the layout box must be
+        // identical with and without them, or a highlight would move text.
+        let mut e = engine();
+        let s = TextStyle::new().size(15.0);
+        let teks = "Open File";
+        let polos = e.layout(teks, &s, TextConstraints::UNBOUNDED);
+        let bertanda = e.layout_marked(
+            teks,
+            &s,
+            TextConstraints::UNBOUNDED,
+            &[(0..4, 1u32)], // "Open", byte range
+        );
+        assert_eq!(polos.glyph_count(), bertanda.glyph_count());
+        assert_eq!(
+            polos.measure().content_size,
+            bertanda.measure().content_size
+        );
+    }
+
+    #[test]
+    fn rasterize_runs_mengelompokkan_berdasarkan_metadata() {
+        let mut e = engine();
+        let s = TextStyle::new().size(15.0);
+        let l = e.layout_marked(
+            "Open File",
+            &s,
+            TextConstraints::UNBOUNDED,
+            &[(0..4, 1u32)], // "Open" marked, " File" unmarked (metadata 0)
+        );
+
+        let dasar = Color::WHITE;
+        let tanda = Color::hex(0x0A84FF);
+        let runs = e.rasterize_runs(&l, Point::ZERO, &[dasar, tanda]);
+
+        // Two colors → two runs, in draw order: the marked "Open" comes first
+        // in the text, so its run leads.
+        assert_eq!(runs.len(), 2, "satu tanda + satu warna dasar");
+        assert_eq!(runs[0].color, tanda);
+        assert_eq!(runs[1].color, dasar);
+
+        // Every glyph drawn by the single-run path is drawn somewhere here:
+        // the total is conserved across the split.
+        let total: usize = runs.iter().map(|r| r.len()).sum();
+        let tunggal = e.rasterize(&l, Point::ZERO, dasar);
+        assert_eq!(total, tunggal.len());
+
+        // The run split lands on the marked/unmarked boundary: "Open" has 4
+        // glyphs, " File" has 5 characters but the space has no pixels, so 4
+        // glyphs are drawn.
+        assert_eq!(runs[0].len(), 4);
+        assert_eq!(runs[1].len(), 4);
+    }
+
+    #[test]
+    fn metadata_di_luar_tabel_warna_jatuh_ke_dasar() {
+        // A forgotten mark must never panic or drop glyphs: out-of-range
+        // metadata is the base color, and the glyph survives.
+        let mut e = engine();
+        let s = TextStyle::new().size(15.0);
+        let l = e.layout_marked("Ab", &s, TextConstraints::UNBOUNDED, &[(0..1, 7u32)]);
+        let runs = e.rasterize_runs(&l, Point::ZERO, &[Color::WHITE]);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].color, Color::WHITE);
+        assert_eq!(runs[0].len(), 2, "kedua glyph tetap digambar");
+    }
+
+    #[test]
+    fn tanpa_tanda_rasterize_runs_tunggal() {
+        // The degenerate case is the common case: an unmarked layout rasterizes
+        // into exactly one run in the base color — the same shape `rasterize`
+        // produces, just wrapped in a vec.
+        let mut e = engine();
+        let s = TextStyle::new().size(15.0);
+        let l = e.layout("Open File", &s, TextConstraints::UNBOUNDED);
+        let runs = e.rasterize_runs(&l, Point::ZERO, &[Color::WHITE, Color::hex(0xFF0000)]);
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].color, Color::WHITE);
+    }
+
+    #[test]
+    fn tabel_warna_kosong_menghasilkan_kosong() {
+        // `rasterize_runs` without a color table has nothing to draw with; the
+        // contract is an empty vec rather than a panic.
+        let mut e = engine();
+        let s = TextStyle::new().size(15.0);
+        let l = e.layout("x", &s, TextConstraints::UNBOUNDED);
+        assert!(e.rasterize_runs(&l, Point::ZERO, &[]).is_empty());
     }
 
     #[test]

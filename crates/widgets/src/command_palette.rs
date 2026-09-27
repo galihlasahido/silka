@@ -72,15 +72,17 @@
 //! | Hit target ≥ 44pt | [`PaletteStyle::row_height`] |
 //! | Reduced motion | row tints are [`Decorative`](silka_core::animation::MotionRole::Decorative) |
 //!
-//! # Deliberately not here yet
+//! # What used to be missing
 //!
-//! - **A borderless search field.** `text_field` draws its own frame and offers
-//!   no way to drop it, so the palette's field looks like a field rather than
-//!   like a bare line of text. Cosmetic, and a change to `text_field` rather
-//!   than to this file.
-//! - **Highlighting the matched characters** inside a row's title.
-//!   [`FuzzyMatch::positions`] already carries exactly which characters those
-//!   are; what is missing is a styled-run text leaf to draw them with.
+//! - **A borderless search field.** The blocker is gone: [`text_field`](mod@crate::text_field)
+//!   now has `frameless()`, which drops the box and the border but keeps the
+//!   focus ring. Adopting it in the panel is cosmetic follow-up work, not a
+//!   missing capability.
+//! - **Highlighting the matched characters** inside a row's title is done:
+//!   [`FuzzyMatch::positions`] (character indices) flow into the title's
+//!   marked characters — [`crate::text::TextBox`] renders marked characters as
+//!   a second glyph run in [`PaletteStyle::match_color`], rasterized by
+//!   `TextEngine::layout_marked` + `rasterize_runs` in `silka-text`.
 
 use std::ops::Range;
 
@@ -653,6 +655,15 @@ pub struct PaletteStyle {
     pub pressed: Color,
     /// Colour of a row title.
     pub title: Color,
+    /// Colour of the matched characters inside a row title.
+    ///
+    /// This is the **accent** token — the one a link is drawn in. There is no
+    /// separate "link" token, and accent is exactly the role "this is the
+    /// part your query found" plays: interactive, emphasized content, fed by
+    /// the OS accent color (`Theme::with_accent`). The translucent cousins
+    /// (`accent_muted`, the row tint above) wash out as a glyph color, so the
+    /// solid accent is the honest choice.
+    pub match_color: Color,
     /// Colour of a row subtitle.
     pub subtitle: Color,
     /// Colour of a disabled row.
@@ -691,6 +702,7 @@ impl PaletteStyle {
             hover: theme.color.surface_hover,
             pressed: theme.color.surface_pressed,
             title: theme.color.label,
+            match_color: theme.color.accent,
             subtitle: theme.color.secondary_label,
             disabled: theme.color.disabled_label,
             shortcut: theme.color.tertiary_label,
@@ -1598,7 +1610,7 @@ impl CommandPalette {
                         }
                     }
                 }
-                baris.push(self.row_view(&style, slot, slot == aktif, cmd));
+                baris.push(self.row_view(&style, slot, slot == aktif, cmd, &hits[slot].positions));
             }
         }
         kolom.push(View::from(
@@ -1678,12 +1690,21 @@ impl CommandPalette {
     }
 
     /// Assemble one result row.
+    ///
+    /// `positions` carries the characters of the **title** that the query
+    /// matched (see [`Hit::positions`]); they are drawn in
+    /// [`PaletteStyle::match_color`] so the eye can verify the match the way
+    /// every palette does. A row disabled by its command skips the highlight:
+    /// accent-colored glyphs on a `disabled_label` title would read as
+    /// interactive, and the one thing a disabled row must not whisper is "try
+    /// me".
     fn row_view(
         &self,
         style: &PaletteStyle,
         slot: usize,
         highlighted: bool,
         cmd: &Command,
+        positions: &[usize],
     ) -> View {
         let warna = if cmd.enabled {
             style.title
@@ -1703,14 +1724,16 @@ impl CommandPalette {
         }
 
         let mut teks: Vec<View> = Vec::with_capacity(2);
-        teks.push(View::from(
-            text_in(&self.fonts, cmd.title.as_str())
-                .size(style.title_size)
-                .weight(FontWeight::MEDIUM)
-                .color(warna)
-                .single_line()
-                .role(AccessRole::Container),
-        ));
+        let mut judul = text_in(&self.fonts, cmd.title.as_str())
+            .size(style.title_size)
+            .weight(FontWeight::MEDIUM)
+            .color(warna)
+            .single_line()
+            .role(AccessRole::Container);
+        if cmd.enabled && !positions.is_empty() {
+            judul = judul.mark(positions.iter().copied(), style.match_color);
+        }
+        teks.push(View::from(judul));
         if let Some(s) = &cmd.subtitle {
             teks.push(View::from(
                 text_in(&self.fonts, s.as_str())
@@ -1899,6 +1922,83 @@ mod tests {
             tree.children(id).iter().find_map(|c| cari(tree, *c))
         }
         cari(tree, tree.root()).expect("palette ada di pohon")
+    }
+
+    /// A query matching "Open File" highlights exactly the matched characters.
+    ///
+    /// End-to-end through the real panel: the row title's TextBox paints two
+    /// glyph runs (accent for the matched "Ope", base color for "n File"), and
+    /// the empty query paints one — the palette-just-opened state has nothing
+    /// to emphasize.
+    #[test]
+    fn judul_hasil_menyorot_karakter_yang_cocok() {
+        use silka_paint::Command;
+
+        let fonts = Fonts::bundled_only();
+        let t = theme();
+        let accent = t.color.accent;
+
+        let mut dengan_kueri = built(palette(&fonts, &t).query("Ope").highlight(0).panel());
+        let mut scene = silka_paint::Scene::new(Color::BLACK);
+        dengan_kueri.paint_into(&mut scene);
+        let runs: Vec<_> = scene
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::GlyphRun(r) => Some(r.clone()),
+                _ => None,
+            })
+            .collect();
+        let accent_runs: Vec<_> = runs.iter().filter(|r| r.color == accent).collect();
+        assert!(
+            !accent_runs.is_empty(),
+            "karakter yang cocok digambar dengan warna aksen"
+        );
+        // The matched prefix is exactly "Ope" — three glyphs in the accent.
+        assert_eq!(accent_runs.len(), 1);
+        assert_eq!(accent_runs[0].len(), 3, "O-P-E, tiga karakter dicocokkan");
+
+        // Without a query, nothing is marked: every title run is base-colored.
+        let mut tanpa_kueri = built(palette(&fonts, &t).highlight(0).panel());
+        let mut scene_kosong = silka_paint::Scene::new(Color::BLACK);
+        tanpa_kueri.paint_into(&mut scene_kosong);
+        let run_kosong: Vec<_> = scene_kosong
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::GlyphRun(r) => Some(r.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            run_kosong.iter().all(|r| r.color != accent),
+            "kueri kosong tidak punya apa pun untuk disorot"
+        );
+    }
+
+    /// A disabled row keeps its disabled color even where the query matched:
+    /// accent glyphs on a disabled title would read as interactive.
+    #[test]
+    fn baris_nonaktif_tidak_menyorot() {
+        use silka_paint::Command;
+
+        let fonts = Fonts::bundled_only();
+        let t = theme();
+        // "Quit" is disabled; the query "ui" matches inside it.
+        let mut tree = built(
+            command_palette_in(&fonts, &t, vec![command("app.quit", "Quit").enabled(false)])
+                .open(true)
+                .query("ui")
+                .panel(),
+        );
+        let mut scene = silka_paint::Scene::new(Color::BLACK);
+        tree.paint_into(&mut scene);
+        let accent = t.color.accent;
+        let ada_accent = scene
+            .commands()
+            .iter()
+            .any(|c| matches!(c, Command::GlyphRun(r) if r.color == accent));
+        assert!(!ada_accent, "baris nonaktif digambar tanpa sorotan aksen");
     }
 
     /// The node the keyboard actually lands on.

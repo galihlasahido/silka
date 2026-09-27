@@ -39,6 +39,8 @@ use silka_theme::{ColorToken, FontToken, Token};
 
 use crate::fonts::Fonts;
 
+use std::ops::Range;
+
 // ---------------------------------------------------------------------------
 // Render node
 // ---------------------------------------------------------------------------
@@ -83,12 +85,18 @@ pub struct TextBox {
     text: String,
     style: TextStyle,
     color: Color,
+    /// Which **characters** (indices, not bytes) are drawn in `mark_color`.
+    /// Purely visual: the size, the shaping and the accessible name ignore it.
+    marks: Vec<usize>,
+    mark_color: Color,
     max_width: Option<f32>,
     role: AccessRole,
     fonts: Fonts,
 
     // -- derived (always a product of the fields above) --
-    run: GlyphRun,
+    /// One run per marked region color, in draw order: one when there are no
+    /// marks, several when the text is highlighted in parts.
+    runs: Vec<GlyphRun>,
     size: Size,
     /// Width limit used for the last shaping pass (`INFINITY` = unbounded).
     shaped_width: f32,
@@ -107,10 +115,12 @@ impl TextBox {
             text: props.text.clone(),
             style: props.style.clone(),
             color: props.color,
+            marks: props.marks.clone(),
+            mark_color: props.mark_color,
             max_width: props.max_width,
             role: props.role,
             fonts: props.fonts.clone(),
-            run: GlyphRun::new(props.color),
+            runs: Vec::new(),
             size: Size::ZERO,
             shaped_width: f32::NAN,
             shaped_scale: f32::NAN,
@@ -125,6 +135,44 @@ impl TextBox {
         self.max_width.unwrap_or(f32::INFINITY)
     }
 
+    /// The marks as merged **byte** ranges — the unit the text engine shapes
+    /// in — with metadata 1 (`rasterize_runs` colors metadata 1 with the
+    /// second entry of its color table, i.e. [`TextBox::mark_color`]).
+    ///
+    /// Character indices are the styling unit the callers hand in (a fuzzy
+    /// matcher reports match positions per character), so this is where the
+    /// conversion happens: a multi-byte character still costs one index.
+    /// Adjacent marks merge into one range, out-of-range indices are dropped,
+    /// and the result is byte-ordered as the engine requires.
+    fn rentang_tanda(&self) -> Vec<(Range<usize>, u32)> {
+        if self.marks.is_empty() {
+            return Vec::new();
+        }
+        let mut indeks: Vec<usize> = self.marks.clone();
+        indeks.sort_unstable();
+        indeks.dedup();
+
+        let mut keluar: Vec<(Range<usize>, u32)> = Vec::new();
+        let mut berikut = indeks.iter().copied().peekable();
+        let mut posisi = 0usize;
+        for (byte, c) in self.text.char_indices() {
+            if berikut.peek() != Some(&posisi) {
+                posisi += 1;
+                continue;
+            }
+            berikut.next();
+            posisi += 1;
+            let akhir = byte + c.len_utf8();
+            match keluar.last_mut() {
+                // Adjacent marked characters are one range: fewer spans to
+                // shape, and one run instead of several identical ones.
+                Some((rentang, _)) if rentang.end == byte => rentang.end = akhir,
+                _ => keluar.push((byte..akhir, 1)),
+            }
+        }
+        keluar
+    }
+
     /// Shape and rasterize against a given width limit.
     ///
     /// Rasterization uses origin `(0, 0)`: each glyph's destination rect is
@@ -134,16 +182,30 @@ impl TextBox {
         let teks = &self.text;
         let gaya = &self.style;
         let warna = self.color;
-        let (run, size, lebar_minimum) = self.fonts.with(|mesin| {
+        let warna_tanda = self.mark_color;
+        let tanda = self.rentang_tanda();
+        let (runs, size, lebar_minimum) = self.fonts.with(|mesin| {
             // `TextConstraints::width(INFINITY)` = unbounded, so a single path
             // serves both a one-line label and a column of paragraph text.
-            let layout = mesin.layout(teks, gaya, TextConstraints::width(batas_lebar));
+            // Marks change colors only, never the shape, so the two paths
+            // measure identically.
+            let layout = if tanda.is_empty() {
+                mesin.layout(teks, gaya, TextConstraints::width(batas_lebar))
+            } else {
+                mesin.layout_marked(teks, gaya, TextConstraints::width(batas_lebar), &tanda)
+            };
             let size = layout.measure().content_size;
             let minimum = layout.minimum_valid_width();
-            let run = mesin.rasterize(&layout, Point::ZERO, warna);
-            (run, size, minimum)
+            // The color table: metadata 0 = the text color, metadata 1 = the
+            // mark color (see `rentang_tanda`).
+            let runs = if tanda.is_empty() {
+                vec![mesin.rasterize(&layout, Point::ZERO, warna)]
+            } else {
+                mesin.rasterize_runs(&layout, Point::ZERO, &[warna, warna_tanda])
+            };
+            (runs, size, minimum)
         });
-        self.run = run;
+        self.runs = runs;
         self.size = size;
         self.lebar_minimum = lebar_minimum;
         self.shaped_width = batas_lebar;
@@ -198,7 +260,15 @@ impl TextBox {
 
     /// How many glyphs will be drawn.
     pub fn glyph_count(&self) -> usize {
-        self.run.len()
+        self.runs.iter().map(|r| r.len()).sum()
+    }
+
+    /// The glyph runs currently in hand, one per color in draw order.
+    ///
+    /// A text without marks is one run; marked text is several. Exposed for
+    /// tests and for widgets that need to inspect (not redraw) what they drew.
+    pub fn glyph_runs(&self) -> &[GlyphRun] {
+        &self.runs
     }
 }
 
@@ -207,7 +277,7 @@ impl std::fmt::Debug for TextBox {
         f.debug_struct("TextBox")
             .field("text", &self.text)
             .field("size", &self.size)
-            .field("glyphs", &self.run.len())
+            .field("glyphs", &self.runs.iter().map(|r| r.len()).sum::<usize>())
             .finish()
     }
 }
@@ -230,10 +300,12 @@ impl RenderNode for TextBox {
     }
 
     fn paint(&self, ctx: &mut PaintCtx<'_>) {
-        if self.run.is_empty() {
-            return;
+        for run in &self.runs {
+            if run.is_empty() {
+                continue;
+            }
+            ctx.glyph_run(run.clone());
         }
-        ctx.glyph_run(self.run.clone());
     }
 
     fn access(&self, node: &mut AccessNode) {
@@ -281,6 +353,9 @@ pub struct TextProps {
     text: String,
     style: TextStyle,
     color: Color,
+    /// Character indices to draw in `mark_color` — purely visual.
+    marks: Vec<usize>,
+    mark_color: Color,
     max_width: Option<f32>,
     role: AccessRole,
     fonts: Fonts,
@@ -304,6 +379,8 @@ impl ViewNode for TextProps {
         let isi_berubah = n.text != self.text
             || n.style != self.style
             || n.color != self.color
+            || n.marks != self.marks
+            || n.mark_color != self.mark_color
             || n.max_width != self.max_width
             || n.fonts != self.fonts;
         if !isi_berubah {
@@ -312,6 +389,8 @@ impl ViewNode for TextProps {
         n.text.clone_from(&self.text);
         n.style.clone_from(&self.style);
         n.color = self.color;
+        n.marks.clone_from(&self.marks);
+        n.mark_color = self.mark_color;
         n.max_width = self.max_width;
         n.fonts = self.fonts.clone();
         // Reshaping is deferred to layout: that is where the effective column
@@ -414,6 +493,8 @@ pub fn text_in(fonts: &Fonts, text: impl Into<String>) -> Text {
             text: text.into(),
             style: TextStyle::new(),
             color: Color::WHITE,
+            marks: Vec::new(),
+            mark_color: Color::WHITE,
             max_width: None,
             role: AccessRole::Label,
             fonts: fonts.clone(),
@@ -514,6 +595,42 @@ impl Text {
     /// The a11y role — [`AccessRole::Label`] by default.
     pub fn role(self, role: AccessRole) -> Self {
         self.map(move |p| p.role = role)
+    }
+
+    /// Draw the characters at these **indices** in `mark_color`.
+    ///
+    /// Indices count characters, not bytes — the unit a fuzzy matcher reports
+    /// its match positions in. Marks are purely visual: the measured size, the
+    /// line breaking and the accessible name are exactly those of the
+    /// unmarked text. Calling this again replaces the previous marks; pass an
+    /// empty iterator to clear them.
+    ///
+    /// ```
+    /// use silka_paint::Color;
+    /// use silka_widgets::{text, Fonts};
+    ///
+    /// // The matched "ob" inside "Profile" lights up in the accent color.
+    /// let _ = text("Profile")
+    ///     .mark([2, 3], Color::hex(0x0A84FF));
+    /// # let _ = Fonts::bundled_only();
+    /// ```
+    pub fn mark(self, chars: impl IntoIterator<Item = usize>, color: Color) -> Self {
+        self.map(move |p| {
+            p.marks = chars.into_iter().collect();
+            p.mark_color = color;
+        })
+    }
+
+    /// Recolor the existing marks without touching which characters are
+    /// marked — the escape hatch for a color that comes from a theme token
+    /// resolved after `.mark(...)`.
+    pub fn mark_color(self, color: Color) -> Self {
+        self.map(move |p| p.mark_color = color)
+    }
+
+    /// Which characters are marked, as a sorted list of indices.
+    pub fn marks(&self) -> &[usize] {
+        &self.props.marks
     }
 }
 
@@ -696,6 +813,73 @@ mod tests {
         assert_eq!(ukuran.width, harapan.content_size.width);
         assert_eq!(ukuran.height, harapan.content_size.height);
         assert!(ukuran.width > 0.0 && ukuran.height > 0.0);
+    }
+
+    #[test]
+    fn tanda_menghasilkan_run_kedua_tanpa_mengubah_ukuran() {
+        // Marks are paint, not layout: the same text with some characters
+        // highlighted must measure identically to the plain one and announce
+        // itself unchanged — while painting more than one glyph run.
+        let f = Fonts::bundled_only();
+        let isi = "Open File";
+
+        let polos = pohon(
+            text_in(&f, isi).size(15.0).color(Color::WHITE),
+            BoxConstraints::loose(Size::new(400.0, 200.0)),
+        );
+        let sorot = pohon(
+            text_in(&f, isi)
+                .size(15.0)
+                .color(Color::WHITE)
+                .mark(0..4, Color::hex(0x0A84FF)),
+            BoxConstraints::loose(Size::new(400.0, 200.0)),
+        );
+        let node = |t: &RenderTree| t.children(t.root())[0];
+        assert_eq!(
+            polos.size(node(&polos)),
+            sorot.size(node(&sorot)),
+            "sorotan tidak boleh menggeser teks"
+        );
+
+        let mut t = sorot;
+        let perintah: Vec<_> = scene(&mut t)
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                Command::GlyphRun(r) => Some(r.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(perintah.len(), 2, "dua warna = dua run: tanda + dasar");
+        // Draw order follows the text: the marked "Open" leads.
+        assert_eq!(perintah[0].color, Color::hex(0x0A84FF));
+        assert_eq!(perintah[1].color, Color::WHITE);
+        // The accessible name is the full text, never a run fragment.
+        let total: usize = perintah.iter().map(|r| r.len()).sum();
+        assert!(
+            total >= 8,
+            "semua glyph tetap digambar, hanya warnanya beda"
+        );
+    }
+
+    #[test]
+    fn tanda_di_luar_teks_dibuang_tanpa_panic() {
+        // A stale highlight (positions computed for a previous title) must be
+        // noise, never a panic or a garbled draw.
+        let f = Fonts::bundled_only();
+        let mut tree = pohon(
+            text_in(&f, "Ok")
+                .size(15.0)
+                .mark([7, 99], Color::hex(0xFF0000)),
+            BoxConstraints::loose(Size::new(200.0, 100.0)),
+        );
+        let s = scene(&mut tree);
+        let run = glyph_run(&s);
+        assert_eq!(
+            run.color,
+            Color::WHITE,
+            "tanpa tanda efektif, satu warna dasar"
+        );
     }
 
     #[test]
