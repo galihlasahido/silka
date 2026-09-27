@@ -663,6 +663,58 @@ pub struct AccessNode {
     /// this number cannot be inferred from the a11y tree — the widget is the
     /// only one that knows it.
     pub size_of_set: Option<usize>,
+    /// How changes to this node reach a screen reader **without focus moving**.
+    ///
+    /// `Off` (the default) is a statement, not an absence: a screen reader may
+    /// start reading a live subtree whenever it changes, so a node that does
+    /// not declare itself live must never announce anything on its own. Only
+    /// widgets whose content can change while the user is elsewhere — a toast
+    /// appearing, a background job finishing, an error surfacing — declare
+    /// otherwise. See [`AccessLive`].
+    pub live: AccessLive,
+}
+
+/// The live-region politeness of an accessibility node.
+///
+/// A **live region** is how a screen reader learns about content that changed
+/// while the user was somewhere else. Without it, a toast would be announced
+/// only when the user happened to navigate onto it — which for a notification
+/// is the same as not announcing it at all. With it, the announcement happens
+/// at the moment the node appears or changes.
+///
+/// The two levels are not "louder and quieter" but "interrupt or wait":
+///
+/// | Value | Screen reader behavior | Right for |
+/// |---|---|---|
+/// | [`AccessLive::Off`] | nothing is ever announced | everything, by default |
+/// | [`AccessLive::Polite`] | waits for the user to pause, then speaks | toasts, status, progress |
+/// | [`AccessLive::Assertive`] | interrupts whatever is being read | errors that demand action |
+///
+/// `Polite` is the answer for almost everything an application means by
+/// "notify the user": a toast that interrupted the user mid-sentence would be
+/// ruder than no toast at all. `Assertive` is reserved for the rare case where
+/// waiting is a hazard — and an application that reaches for it for marketing
+/// copy has picked the wrong tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AccessLive {
+    /// Changes to this node are never announced on their own.
+    #[default]
+    Off,
+    /// Changes are announced when the screen reader is idle.
+    Polite,
+    /// Changes interrupt the current announcement immediately.
+    Assertive,
+}
+
+impl AccessLive {
+    /// The name a test or a log can print.
+    pub const fn name(self) -> &'static str {
+        match self {
+            AccessLive::Off => "off",
+            AccessLive::Polite => "polite",
+            AccessLive::Assertive => "assertive",
+        }
+    }
 }
 
 impl AccessNode {
@@ -745,6 +797,16 @@ impl AccessNode {
         self.level = Some(level);
         self.position_in_set = Some(position);
         self.size_of_set = Some(size);
+        self
+    }
+
+    /// Declare how changes to this node reach a screen reader.
+    ///
+    /// `Off` is the default and needs no call; use
+    /// [`AccessLive::Polite`] for a toast or a status line,
+    /// [`AccessLive::Assertive`] for an error that must interrupt.
+    pub fn live(mut self, live: AccessLive) -> Self {
+        self.live = live;
         self
     }
 

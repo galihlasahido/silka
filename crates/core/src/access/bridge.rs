@@ -18,13 +18,14 @@
 //!    tree map — never guessed.
 
 use accesskit::{
-    Action, Node, NodeId as AkNodeId, Rect as AkRect, Role, Toggled, Tree, TreeUpdate,
+    Action, Live, Node, NodeId as AkNodeId, Rect as AkRect, Role, Toggled, Tree, TreeUpdate,
 };
 
 use crate::tree::NodeId;
 
 use super::node::{
-    AccessAction, AccessActionRequest, AccessActions, AccessNode, AccessRole, AccessToggled,
+    AccessAction, AccessActionRequest, AccessActions, AccessLive, AccessNode, AccessRole,
+    AccessToggled,
 };
 use super::tree::{AccessEntry, AccessTree, AccessUpdate};
 
@@ -83,6 +84,16 @@ impl From<AccessToggled> for Toggled {
             AccessToggled::Off => Toggled::False,
             AccessToggled::On => Toggled::True,
             AccessToggled::Mixed => Toggled::Mixed,
+        }
+    }
+}
+
+impl From<AccessLive> for Live {
+    fn from(live: AccessLive) -> Self {
+        match live {
+            AccessLive::Off => Live::Off,
+            AccessLive::Polite => Live::Polite,
+            AccessLive::Assertive => Live::Assertive,
         }
     }
 }
@@ -168,6 +179,7 @@ fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
         level,
         position_in_set,
         size_of_set,
+        live,
     } = &entry.node;
 
     let mut node = Node::new(Role::from(*role));
@@ -219,6 +231,11 @@ fn accesskit_node(entry: &AccessEntry, scale: f64) -> Node {
     if let Some(s) = size_of_set {
         node.set_size_of_set(*s);
     }
+    // Live regions always set, including `Off`: on the AccessKit side the
+    // default of a fresh `Node` is also `Off`, so the explicit set is what
+    // makes a widget's declaration (or its absence) survive a diff — a node
+    // that *stops* being live must be re-sent saying so.
+    node.set_live(Live::from(*live));
     for action in accesskit_actions(*actions) {
         node.add_action(action);
     }

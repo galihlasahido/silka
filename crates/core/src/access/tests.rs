@@ -19,7 +19,7 @@ use crate::tree::{
 };
 use crate::view::{fixed, pad, reconcile, viewport, Builder, View, ViewNode};
 
-use super::{AccessAction, AccessEntry};
+use super::{AccessAction, AccessEntry, AccessLive};
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -469,6 +469,61 @@ fn hanya_node_berubah_yang_dikirim() {
         .collect();
     assert_eq!(nama, [Some("Tutup")]);
     assert!(update.removed.is_empty());
+}
+
+#[test]
+fn node_yang_menjadi_live_ikut_terkirim_dan_sampai_ke_accesskit() {
+    // A node turning live is exactly the "toast appeared" event: the
+    // announcement only happens if the change reaches the platform, so the
+    // diff must catch `live` like it catches a label.
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, kolom([tombol("Simpan")]));
+    tree.layout(window(200.0, 200.0));
+    let sebelum = tree.access_tree(None);
+
+    let mut live_node = AccessNode::with_role(AccessRole::Button)
+        .label("Simpan")
+        .with_actions(AccessActions::CLICK | AccessActions::FOCUS);
+    live_node.live = AccessLive::Assertive;
+    reconcile(&mut tree, kolom([control(120.0, 32.0, live_node)]));
+    tree.perform_layout(window(200.0, 200.0));
+    let sesudah = tree.access_tree(None);
+
+    let update = sesudah.changes_since(Some(&sebelum));
+    assert_eq!(
+        update.changed.len(),
+        1,
+        "perubahan live harus dianggap perubahan node"
+    );
+
+    // …and the AccessKit side really receives the polite/announce bit.
+    let ak = update.to_tree_update(1.0);
+    let id = sesudah.find_label("Simpan").expect("ada").id;
+    let (_, node) = ak
+        .nodes
+        .iter()
+        .find(|(kid, _)| *kid == crate::access::accesskit_id(id))
+        .expect("node terkirim");
+    assert_eq!(node.live(), Some(accesskit::Live::Assertive));
+}
+
+#[test]
+fn live_bawaan_adalah_off_dan_tetap_terkirim_sebagai_off() {
+    // `Off` is a statement, not an absence: it must reach AccessKit as `Off`
+    // so a screen reader never treats an unmarked subtree as live.
+    let mut tree = RenderTree::new();
+    reconcile(&mut tree, kolom([tombol("Simpan")]));
+    tree.layout(window(200.0, 200.0));
+
+    let a11y = tree.access_tree(None);
+    let id = a11y.find_label("Simpan").expect("ada").id;
+    let ak = a11y.to_tree_update(1.0);
+    let (_, node) = ak
+        .nodes
+        .iter()
+        .find(|(kid, _)| *kid == crate::access::accesskit_id(id))
+        .expect("node terkirim");
+    assert_eq!(node.live(), Some(accesskit::Live::Off));
 }
 
 #[test]

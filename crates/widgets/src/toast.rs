@@ -54,16 +54,17 @@
 //! | Hit target ≥ 44pt | the buttons are [`mod@crate::button`]/[`mod@crate::icon_button`] |
 //! | Reduced motion | [`MotionRole::Essential`](silka_core::animation::MotionRole): the slide says where the message went |
 //!
-//! **Known limitation, stated rather than hidden:** `AccessNode` has no
-//! live-region concept yet, so a toast is announced when a screen reader
-//! reaches it rather than the moment it appears. The vocabulary needs an
-//! `AccessLive` field before that can be honest, and inventing one here would
-//! put it in the wrong crate.
+//! **Live regions:** a toast card declares
+//! [`AccessLive::Polite`](silka_core::access::AccessLive) — the announcement
+//! happens the moment the card appears, without focus moving, and without
+//! interrupting whatever the screen reader was already saying. `Assertive` is
+//! deliberately not used: a notification that cuts the user off mid-sentence
+//! is ruder than no notification at all.
 
 use std::rc::Rc;
 use std::time::Duration;
 
-use silka_core::access::{AccessNode, AccessRole};
+use silka_core::access::{AccessLive, AccessNode, AccessRole};
 use silka_core::animation::{Spring, SpringValue, Tick};
 use silka_core::input::{
     DragAxis, DragGesture, DragPhase, Event, EventCtx, HitBehavior, HitShape, PointerPhase,
@@ -698,6 +699,10 @@ impl RenderNode for ToastBox {
     fn access(&self, node: &mut AccessNode) {
         node.role = AccessRole::Group;
         node.label.clone_from(&self.label);
+        // The whole point of a toast: it announces itself when it appears,
+        // while the user is somewhere else — and politely, because
+        // interrupting is for errors, not for "Invoice sent".
+        node.live = AccessLive::Polite;
         // A card on its way out is already gone as far as a reader is
         // concerned; leaving it announced would make the list flicker.
         node.hidden = self.leaving;
@@ -1541,6 +1546,27 @@ mod tests {
             .find_label("Invoice sent. INV-0184")
             .unwrap_or_else(|| panic!("{}", a11y.dump()));
         assert_eq!(e.node.role, AccessRole::Group);
+    }
+
+    #[test]
+    fn a_toast_announces_itself_politely_when_it_appears() {
+        // The live region is what turns "announced when the user happens to
+        // navigate onto it" into "announced the moment it appears".
+        let tree = opened(stack(vec![toast("Invoice sent").id(1).sticky()]));
+        let a11y = tree.access_tree(None);
+        let e = a11y
+            .find_label("Invoice sent")
+            .unwrap_or_else(|| panic!("{}", a11y.dump()));
+        assert_eq!(e.node.live, AccessLive::Polite);
+
+        // And nothing else claims the channel: a node that never asked to be
+        // live stays silent, because `Off` is a statement rather than an
+        // absence.
+        let other = tree.access_tree(None);
+        assert!(other
+            .entries()
+            .iter()
+            .any(|e| e.node.live == AccessLive::Off));
     }
 
     #[test]
