@@ -51,7 +51,8 @@
 //! # let _ = needs_raster;
 //! ```
 
-use std::collections::HashMap;
+use std::cell::Cell;
+use std::collections::{HashMap, VecDeque};
 
 use silka_paint::{AtlasRegion, GlyphFormat, GlyphImageId, GlyphPlacement, GlyphSource};
 
@@ -318,14 +319,54 @@ const UKURAN_AWAL_MASK: u32 = 1024;
 /// Initial size of the color atlas. 256² × 4 bytes = 256 KiB — emoji are far
 /// rarer.
 const UKURAN_AWAL_COLOR: u32 = 256;
-/// An upper bound that is safe on every desktop GPU.
-const UKURAN_MAKS: u32 = 4096;
+/// The largest mask atlas: 4096² bytes = 16 MiB, safe on every desktop GPU.
+const UKURAN_MAKS_MASK: u32 = 4096;
+/// The largest color atlas: 2048² × 4 bytes = 16 MiB. Emoji are rare enough
+/// that a color atlas as big as the mask one would be 64 MiB of mostly nothing.
+const UKURAN_MAKS_COLOR: u32 = 2048;
+
+/// One glyph bitmap in the atlas, with what eviction needs to know about it.
+#[derive(Debug)]
+struct Slot {
+    image: GlyphImage,
+    /// Needed to forget the `by_key` mapping when the bitmap is evicted.
+    key: GlyphKey,
+    /// The atlas epoch in which this bitmap was last looked up, inserted or
+    /// drawn. A `Cell` because the draw path (`GlyphSource::placement`) only
+    /// has `&self`.
+    stamp: Cell<u64>,
+}
+
+fn index(format: AtlasFormat) -> usize {
+    match format {
+        AtlasFormat::Mask => 0,
+        AtlasFormat::Color => 1,
+    }
+}
 
 /// The glyph cache: a map from key → bitmap in the atlas, plus the atlases.
 ///
-/// Issued ids are **never reused**. If the atlas fills up and has to be rebuilt,
-/// old ids simply stop resolving (the previous frame's draw commands skip that
-/// glyph) — they never point at the wrong glyph.
+/// Issued ids are **never reused**. If an id is evicted or the atlas has to be
+/// rebuilt, the id simply stops resolving (the draw command skips that glyph)
+/// — it never points at the wrong glyph.
+///
+/// ## When the atlas is full
+///
+/// 1. **Evict.** Bitmaps nobody has looked up or drawn for two drawn frames are
+///    removed and their space is reused. Victims come off an age queue with a
+///    second chance (a clock), so a pass costs O(victims), not O(cache).
+///    Anything used in the current or the previous drawn frame is never a
+///    victim: the previous frame's glyphs are still on screen, and their ids
+///    are held by nodes that do not look them up again.
+/// 2. **Grow** (double, up to 4096² mask / 2048² color) when there is nothing
+///    left to evict — the working set really is larger than the atlas. This
+///    rebuilds the atlas from empty, as it always has.
+/// 3. **Skip** the glyph at the cap. It is rasterized again on the next
+///    lookup, so it appears as soon as space frees up.
+///
+/// A "frame" is the span between two [`GlyphSource::take_dirty`] calls for the
+/// same format — the renderer makes one per format per drawn frame, and an idle
+/// application makes none, so nothing ages while nothing is drawn.
 ///
 /// ```
 /// use silka_paint::{Color, GlyphFormat, GlyphSource, Point};
@@ -348,9 +389,19 @@ pub struct GlyphCache {
     mask: GlyphAtlas,
     color: GlyphAtlas,
     by_key: HashMap<GlyphKey, Option<GlyphImageId>>,
-    images: HashMap<GlyphImageId, GlyphImage>,
+    images: HashMap<GlyphImageId, Slot>,
+    /// Per format: ids in the order they will be considered for eviction.
+    queue: [VecDeque<GlyphImageId>; 2],
+    /// Per format: drawn frames so far (see the type docs).
+    epoch: [u64; 2],
+    /// Per format: the epoch in which an eviction pass found nothing to take,
+    /// so a full atlas does not repeat the pass for every glyph of the frame.
+    no_victim: [Option<u64>; 2],
+    /// Per format: the size the atlas may grow to.
+    max_size: [u32; 2],
     next_id: u32,
     generation: u64,
+    evictions: u64,
     hits: u64,
     misses: u64,
 }
@@ -375,11 +426,32 @@ impl GlyphCache {
             color: GlyphAtlas::new(AtlasFormat::Color, color_size),
             by_key: HashMap::new(),
             images: HashMap::new(),
+            queue: [VecDeque::new(), VecDeque::new()],
+            epoch: [0, 0],
+            no_victim: [None, None],
+            max_size: [UKURAN_MAKS_MASK, UKURAN_MAKS_COLOR],
             next_id: 0,
             generation: 0,
+            evictions: 0,
             hits: 0,
             misses: 0,
         }
+    }
+
+    /// The same cache, but with atlases that may not grow past these sides.
+    ///
+    /// For applications with a tight memory budget, and for tests that need to
+    /// reach the cap without rasterizing thousands of glyphs. A limit below the
+    /// current size never shrinks an atlas; it only stops further growth.
+    pub fn with_max_sizes(mut self, mask_max: u32, color_max: u32) -> Self {
+        self.max_size = [mask_max.max(1), color_max.max(1)];
+        self
+    }
+
+    /// How many bitmaps have been evicted to make room, since the cache was
+    /// created. Zero for an application whose glyphs always fit.
+    pub fn evictions(&self) -> u64 {
+        self.evictions
     }
 
     /// The mask atlas (ordinary text).
@@ -400,8 +472,9 @@ impl GlyphCache {
         }
     }
 
-    /// How many times the atlas has been rebuilt. An increment invalidates every
-    /// previously issued id.
+    /// How many times the atlas has been rebuilt from empty. An increment
+    /// invalidates every previously issued id; an eviction (see
+    /// [`GlyphCache::evictions`]) invalidates only the ids it removed.
     pub fn generation(&self) -> u64 {
         self.generation
     }
@@ -427,6 +500,9 @@ impl GlyphCache {
         match self.by_key.get(key) {
             Some(Some(id)) => {
                 self.hits += 1;
+                if let Some(slot) = self.images.get(id) {
+                    slot.stamp.set(self.epoch[index(slot.image.format)]);
+                }
                 GlyphLookup::Hit(*id)
             }
             Some(None) => {
@@ -442,7 +518,7 @@ impl GlyphCache {
 
     /// The data of one glyph bitmap.
     pub fn image(&self, id: GlyphImageId) -> Option<&GlyphImage> {
-        self.images.get(&id)
+        self.images.get(&id).map(|slot| &slot.image)
     }
 
     /// Record that this glyph genuinely has no pixels (space, control
@@ -453,17 +529,20 @@ impl GlyphCache {
 
     /// Put a bitmap into the atlas and issue its id.
     ///
-    /// If the atlas is full, it grows (discarding all its contents) and the
-    /// insert is retried once. `None` only happens when a single glyph is bigger
-    /// than the maximum atlas — that case is simply skipped, which is far better
-    /// than panicking mid-frame (§9.7).
+    /// If the atlas is full, bitmaps that have gone unused are evicted first;
+    /// only when there is nothing to evict does the atlas grow (discarding all
+    /// its contents) and the insert is retried once. `None` happens when a
+    /// single glyph is bigger than the maximum atlas, or when the atlas is at
+    /// its cap and everything in it was used this frame or the last — that
+    /// glyph is simply skipped, which is far better than panicking mid-frame
+    /// (§9.7), and is rasterized again on its next lookup.
     pub fn insert(&mut self, key: GlyphKey, glyph: RasterGlyph<'_>) -> Option<GlyphImageId> {
         if glyph.width == 0 || glyph.height == 0 {
             self.insert_empty(key);
             return None;
         }
 
-        let rect = match self.alokasi(glyph.format, glyph.width, glyph.height) {
+        let rect = match self.alokasi_atau_gusur(glyph.format, glyph.width, glyph.height) {
             Some(r) => r,
             None => {
                 self.grow(glyph.format)?;
@@ -477,14 +556,19 @@ impl GlyphCache {
         self.next_id = self.next_id.wrapping_add(1);
         self.images.insert(
             id,
-            GlyphImage {
-                id,
-                format: glyph.format,
-                rect,
-                left: glyph.left,
-                top: glyph.top,
+            Slot {
+                image: GlyphImage {
+                    id,
+                    format: glyph.format,
+                    rect,
+                    left: glyph.left,
+                    top: glyph.top,
+                },
+                key,
+                stamp: Cell::new(self.epoch[index(glyph.format)]),
             },
         );
+        self.queue[index(glyph.format)].push_back(id);
         self.by_key.insert(key, Some(id));
         Some(id)
     }
@@ -499,11 +583,64 @@ impl GlyphCache {
         self.atlas_mut(format).allocate(width, height)
     }
 
+    /// Allocate, evicting unused bitmaps one by one until the request fits.
+    ///
+    /// A victim is the oldest bitmap not used in this drawn frame or the last;
+    /// a recently used one at the front of the queue gets a second chance and
+    /// moves to the back. One pass looks at each queued id at most once, and a
+    /// pass that finds nothing is not repeated within the same frame.
+    fn alokasi_atau_gusur(
+        &mut self,
+        format: AtlasFormat,
+        width: u32,
+        height: u32,
+    ) -> Option<AtlasRect> {
+        if let Some(rect) = self.alokasi(format, width, height) {
+            return Some(rect);
+        }
+        let f = index(format);
+        if self.no_victim[f] == Some(self.epoch[f]) {
+            return None;
+        }
+
+        let evictions_before = self.evictions;
+        let mut budget = self.queue[f].len();
+        while budget > 0 {
+            budget -= 1;
+            let Some(id) = self.queue[f].pop_front() else {
+                break;
+            };
+            let Some(slot) = self.images.get(&id) else {
+                continue;
+            };
+            if slot.stamp.get() + 1 >= self.epoch[f] {
+                self.queue[f].push_back(id);
+                continue;
+            }
+            if let Some(slot) = self.images.remove(&id) {
+                self.by_key.remove(&slot.key);
+                self.atlas_mut(format).free(slot.image.rect);
+                self.evictions += 1;
+            }
+            if let Some(rect) = self.alokasi(format, width, height) {
+                return Some(rect);
+            }
+        }
+        // A pass that took something but still could not fit this glyph may
+        // be followed by one that takes more; only a fruitless one is worth
+        // not repeating.
+        if self.evictions == evictions_before {
+            self.no_victim[f] = Some(self.epoch[f]);
+        }
+        None
+    }
+
     /// Double the size of the full atlas; `None` when it is already at the cap.
     fn grow(&mut self, format: AtlasFormat) -> Option<()> {
+        let cap = self.max_size[index(format)];
         let (mask, color) = match format {
-            AtlasFormat::Mask => ((self.mask.size() * 2).min(UKURAN_MAKS), self.color.size()),
-            AtlasFormat::Color => (self.mask.size(), (self.color.size() * 2).min(UKURAN_MAKS)),
+            AtlasFormat::Mask => ((self.mask.size() * 2).min(cap), self.color.size()),
+            AtlasFormat::Color => (self.mask.size(), (self.color.size() * 2).min(cap)),
         };
         let tumbuh = mask > self.mask.size() || color > self.color.size();
         if !tumbuh {
@@ -518,6 +655,8 @@ impl GlyphCache {
         self.color.reset(color_size);
         self.by_key.clear();
         self.images.clear();
+        self.queue = [VecDeque::new(), VecDeque::new()];
+        self.no_victim = [None, None];
         self.generation += 1;
     }
 }
@@ -538,13 +677,19 @@ impl GlyphSource for GlyphCache {
     }
 
     fn take_dirty(&mut self, format: GlyphFormat) -> Option<AtlasRegion> {
-        self.atlas_mut(dari_paint(format))
-            .take_dirty()
-            .map(ke_region)
+        let format = dari_paint(format);
+        // One call per format per drawn frame: this is the clock eviction runs
+        // on.
+        self.epoch[index(format)] += 1;
+        self.atlas_mut(format).take_dirty().map(ke_region)
     }
 
     fn placement(&self, image: GlyphImageId) -> Option<GlyphPlacement> {
-        let img = self.images.get(&image)?;
+        let slot = self.images.get(&image)?;
+        let img = &slot.image;
+        // Being drawn is the strongest "in use" signal there is: it is the
+        // only one that covers a node holding its ids across frames.
+        slot.stamp.set(self.epoch[index(img.format)]);
         Some(GlyphPlacement::new(
             ke_paint(img.format),
             ke_region(img.rect),
@@ -862,5 +1007,291 @@ mod tests {
         let kotak = cache.take_dirty(GlyphFormat::Mask).expect("ada perubahan");
         assert_eq!(kotak.max_x(), ukuran, "seluruh lebar harus diunggah ulang");
         assert_eq!(kotak.max_y(), ukuran);
+    }
+
+    // -- eviction -----------------------------------------------------------
+
+    /// A distinct, never-zero fill for each glyph, so a wrong or stale slot
+    /// shows up as a wrong byte.
+    fn fill_of(g: u16) -> u8 {
+        (g % 250) as u8 + 1
+    }
+
+    fn put(cache: &mut GlyphCache, g: u16, w: u32, h: u32) -> Option<GlyphImageId> {
+        cache.insert(
+            key(g, SubpixelBin::Zero),
+            RasterGlyph {
+                width: w,
+                height: h,
+                left: 0,
+                top: h as i32,
+                format: AtlasFormat::Mask,
+                data: &vec![fill_of(g); (w * h) as usize],
+            },
+        )
+    }
+
+    /// One drawn frame, as the renderer's upload step would report it.
+    fn draw_frame(cache: &mut GlyphCache) {
+        cache.take_dirty(GlyphFormat::Mask);
+        cache.take_dirty(GlyphFormat::Color);
+    }
+
+    /// A 32² mask atlas that holds exactly nine 8×8 glyphs and may not grow.
+    fn full_cache() -> (GlyphCache, Vec<GlyphImageId>) {
+        let mut cache = GlyphCache::with_sizes(32, 16).with_max_sizes(32, 16);
+        let ids = (0..9u16)
+            .map(|g| put(&mut cache, g, 8, 8).expect("nine fit"))
+            .collect();
+        assert!(put(&mut cache, 99, 8, 8).is_none(), "the tenth cannot");
+        (cache, ids)
+    }
+
+    #[test]
+    fn a_full_atlas_evicts_the_unused_instead_of_rebuilding() {
+        let (mut cache, ids) = full_cache();
+        for _ in 0..3 {
+            draw_frame(&mut cache);
+        }
+
+        let new = put(&mut cache, 100, 8, 8).expect("room was made");
+        assert_eq!(cache.generation(), 0, "nothing was wiped");
+        assert_eq!(cache.evictions(), 1);
+        assert_eq!(cache.mask_atlas().size(), 32, "it did not grow either");
+
+        // The oldest went; its id no longer resolves and its key is a miss.
+        assert!(cache.image(ids[0]).is_none());
+        assert_eq!(cache.lookup(&key(0, SubpixelBin::Zero)), GlyphLookup::Miss);
+        // The others are untouched.
+        for (g, id) in ids.iter().enumerate().skip(1) {
+            assert_eq!(
+                cache.lookup(&key(g as u16, SubpixelBin::Zero)),
+                GlyphLookup::Hit(*id)
+            );
+        }
+        assert_eq!(
+            cache.lookup(&key(100, SubpixelBin::Zero)),
+            GlyphLookup::Hit(new)
+        );
+    }
+
+    #[test]
+    fn what_was_drawn_or_looked_up_recently_survives() {
+        let (mut cache, ids) = full_cache();
+        for _ in 0..3 {
+            draw_frame(&mut cache);
+        }
+        // Glyph 0 is looked up (a layout reusing it); glyph 1 is only drawn
+        // (a node holding its id) — neither looks at the cache by key.
+        assert_eq!(
+            cache.lookup(&key(0, SubpixelBin::Zero)),
+            GlyphLookup::Hit(ids[0])
+        );
+        assert!(GlyphSource::placement(&cache, ids[1]).is_some());
+
+        for g in 200..203u16 {
+            put(&mut cache, g, 8, 8).expect("three victims exist");
+        }
+        assert_eq!(cache.evictions(), 3);
+        assert!(cache.image(ids[0]).is_some(), "looked up this frame");
+        assert!(cache.image(ids[1]).is_some(), "drawn this frame");
+        for gone in &ids[2..5] {
+            assert!(cache.image(*gone).is_none());
+        }
+    }
+
+    #[test]
+    fn nothing_on_screen_is_ever_evicted() {
+        let (mut cache, ids) = full_cache();
+        // One drawn frame later, everything was last used in the frame that
+        // is still showing.
+        draw_frame(&mut cache);
+        assert!(put(&mut cache, 100, 8, 8).is_none(), "skipped, not stolen");
+        assert_eq!(cache.evictions(), 0);
+        for id in &ids {
+            assert!(cache.image(*id).is_some());
+        }
+
+        // And the skipped glyph is not remembered as failed: once those age,
+        // it goes in.
+        draw_frame(&mut cache);
+        draw_frame(&mut cache);
+        assert!(put(&mut cache, 100, 8, 8).is_some());
+    }
+
+    #[test]
+    fn a_pass_that_found_nothing_is_not_repeated_within_the_frame() {
+        let (mut cache, _) = full_cache();
+        draw_frame(&mut cache);
+        for g in 100..130u16 {
+            assert!(put(&mut cache, g, 8, 8).is_none());
+        }
+        assert_eq!(cache.evictions(), 0);
+    }
+
+    #[test]
+    fn the_atlas_stays_bounded_however_many_distinct_glyphs_come() {
+        let mut cache = GlyphCache::with_sizes(64, 16).with_max_sizes(64, 16);
+        for g in 0..3_000u16 {
+            // One drawn frame every few glyphs: a text-heavy app scrolling.
+            if g % 4 == 0 {
+                draw_frame(&mut cache);
+            }
+            put(&mut cache, g, 7, 9);
+        }
+        assert_eq!(cache.mask_atlas().size(), 64);
+        assert_eq!(cache.generation(), 0, "never wiped, never grew");
+        assert!(cache.evictions() > 2_000, "{}", cache.evictions());
+        // 64² holds at most (64 / 8) columns × (64 / 10) shelves.
+        assert!(cache.len() <= 8 * 6, "{} entries", cache.len());
+        assert!(
+            cache.mask_atlas().utilization() < 1.0,
+            "space is in use, not leaked"
+        );
+        // The newest glyph is the one that is there.
+        assert!(matches!(
+            cache.lookup(&key(2_999, SubpixelBin::Zero)),
+            GlyphLookup::Hit(_)
+        ));
+    }
+
+    #[test]
+    fn an_evicted_glyph_comes_back_with_a_new_id_and_the_right_pixels() {
+        let (mut cache, ids) = full_cache();
+        for _ in 0..3 {
+            draw_frame(&mut cache);
+        }
+        put(&mut cache, 100, 8, 8).unwrap();
+        assert_eq!(cache.lookup(&key(0, SubpixelBin::Zero)), GlyphLookup::Miss);
+
+        for _ in 0..3 {
+            draw_frame(&mut cache);
+        }
+        let back = put(&mut cache, 0, 8, 8).expect("room again");
+        assert_ne!(back, ids[0], "ids are never reused");
+        assert!(cache.image(ids[0]).is_none(), "the old id stays dead");
+
+        let rect = cache.image(back).unwrap().rect;
+        let atlas = cache.mask_atlas();
+        for y in rect.y..rect.max_y() {
+            for x in rect.x..rect.max_x() {
+                assert_eq!(atlas.data()[(y * atlas.size() + x) as usize], fill_of(0));
+            }
+        }
+    }
+
+    #[test]
+    fn after_heavy_churn_every_live_glyph_is_intact_and_the_rest_is_blank() {
+        let mut cache = GlyphCache::with_sizes(96, 16).with_max_sizes(96, 16);
+        let mut seed = 0x9E37_79B9u32;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed
+        };
+        let mut sizes = HashMap::new();
+        for g in 0..4_000u16 {
+            if g % 5 == 0 {
+                draw_frame(&mut cache);
+            }
+            let (w, h) = (3 + next() % 12, 8 + next() % 3 * 3);
+            sizes.insert(g, (w, h));
+            put(&mut cache, g, w, h);
+        }
+        assert!(cache.evictions() > 0);
+
+        let hits: Vec<(u16, GlyphImageId)> = sizes
+            .keys()
+            .filter_map(|g| match cache.lookup(&key(*g, SubpixelBin::Zero)) {
+                GlyphLookup::Hit(id) => Some((*g, id)),
+                _ => None,
+            })
+            .collect();
+        let atlas = cache.mask_atlas();
+        let side = atlas.size();
+        let mut owned = vec![false; (side * side) as usize];
+        let mut live = 0;
+        for (g, id) in hits {
+            let (w, h) = sizes[&g];
+            live += 1;
+            let rect = cache.image(id).unwrap().rect;
+            assert_eq!((rect.width, rect.height), (w, h));
+            for y in rect.y..rect.max_y() {
+                for x in rect.x..rect.max_x() {
+                    let i = (y * side + x) as usize;
+                    assert!(!owned[i], "two glyphs share pixel ({x}, {y})");
+                    owned[i] = true;
+                    assert_eq!(atlas.data()[i], fill_of(g), "glyph {g} at ({x}, {y})");
+                }
+            }
+        }
+        assert!(live > 10, "only {live} glyphs survived");
+        for (i, byte) in atlas.data().iter().enumerate() {
+            assert!(
+                owned[i] || *byte == 0,
+                "stale pixel {byte:#x} left at ({}, {})",
+                i as u32 % side,
+                i as u32 / side
+            );
+        }
+    }
+
+    #[test]
+    fn eviction_is_uploaded_to_the_backend() {
+        let (mut cache, _) = full_cache();
+        for _ in 0..3 {
+            draw_frame(&mut cache);
+        }
+        put(&mut cache, 100, 8, 8).unwrap();
+        let rect = cache
+            .take_dirty(GlyphFormat::Mask)
+            .expect("something changed");
+        assert!(rect.width >= 8 && rect.height >= 8);
+    }
+
+    #[test]
+    fn the_color_atlas_ages_on_its_own_clock() {
+        let mut cache = GlyphCache::with_sizes(32, 16).with_max_sizes(32, 16);
+        let emoji = |cache: &mut GlyphCache, g: u16| {
+            cache.insert(
+                key(g, SubpixelBin::Zero),
+                RasterGlyph {
+                    width: 6,
+                    height: 6,
+                    left: 0,
+                    top: 6,
+                    format: AtlasFormat::Color,
+                    data: &[0xFF; 6 * 6 * 4],
+                },
+            )
+        };
+        let ids: Vec<_> = (1..=4).map(|g| emoji(&mut cache, g).unwrap()).collect();
+        assert!(emoji(&mut cache, 5).is_none(), "a 16² atlas holds four 6×6");
+
+        // Mask frames do not age the color atlas.
+        for _ in 0..5 {
+            cache.take_dirty(GlyphFormat::Mask);
+        }
+        assert!(emoji(&mut cache, 5).is_none());
+
+        for _ in 0..3 {
+            cache.take_dirty(GlyphFormat::Color);
+        }
+        assert!(emoji(&mut cache, 5).is_some());
+        assert!(cache.image(ids[0]).is_none() && cache.image(ids[1]).is_some());
+    }
+
+    #[test]
+    fn growing_still_works_when_nothing_can_be_evicted() {
+        // The cap is what stops growth, not eviction's existence.
+        let mut cache = GlyphCache::with_sizes(32, 16).with_max_sizes(64, 16);
+        for g in 0..9u16 {
+            put(&mut cache, g, 8, 8).unwrap();
+        }
+        draw_frame(&mut cache);
+        put(&mut cache, 100, 8, 8).expect("grows because everything is fresh");
+        assert_eq!(cache.mask_atlas().size(), 64);
+        assert_eq!(cache.generation(), 1);
     }
 }

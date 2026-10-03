@@ -1535,4 +1535,57 @@ mod tests {
         assert_eq!(e.glyphs().image(id).unwrap().format, AtlasFormat::Mask);
         assert_eq!(e.glyphs().mask_atlas().format(), AtlasFormat::Mask);
     }
+
+    #[test]
+    fn a_small_capped_atlas_keeps_drawing_text_as_sizes_come_and_go() {
+        use silka_paint::{GlyphFormat, GlyphSource};
+
+        let mut e = engine();
+        *e.glyphs_mut() = GlyphCache::with_sizes(128, 32).with_max_sizes(128, 32);
+
+        // A text that changes size every "frame" (a window being zoomed): each
+        // size is a fresh set of bitmaps, the previous sizes are never drawn
+        // again, and together they are far more than 128² can hold.
+        let text = "Quick brown fox";
+        let mut last = None;
+        for step in 0..40 {
+            let size = 11.0 + step as f32 * 0.25;
+            let l = e.layout(
+                text,
+                &TextStyle::new().size(size),
+                TextConstraints::UNBOUNDED,
+            );
+            last = Some(e.rasterize(&l, Point::ZERO, Color::WHITE));
+            // The renderer's upload step: one per format per drawn frame.
+            e.take_dirty(GlyphFormat::Mask);
+            e.take_dirty(GlyphFormat::Color);
+        }
+
+        assert_eq!(e.atlas_size(GlyphFormat::Mask), 128, "the cap held");
+        assert_eq!(
+            e.glyphs().generation(),
+            0,
+            "no frame was wiped to make room"
+        );
+        assert!(e.glyphs().evictions() > 0, "the atlas had to evict");
+
+        // The frame still showing resolves, and what the atlas holds at each
+        // rect is real coverage, not a neighbour's pixels. A frame may lose a
+        // glyph or two at the very end: by 20pt the last two drawn frames
+        // (kept safe on purpose) plus the new one are about as large as the
+        // 128² atlas itself, so the cap — not fragmentation — is what is left.
+        let last = last.unwrap();
+        assert!(last.glyphs.len() >= 8, "{} glyphs", last.glyphs.len());
+        let side = e.atlas_size(GlyphFormat::Mask) as usize;
+        for g in &last.glyphs {
+            let place = e.placement(g.image).expect("a glyph of the last frame");
+            let r = place.region;
+            let inked = (r.y..r.y + r.height)
+                .flat_map(|y| (r.x..r.x + r.width).map(move |x| (x, y)))
+                .any(|(x, y)| {
+                    e.atlas_pixels(GlyphFormat::Mask)[y as usize * side + x as usize] > 0
+                });
+            assert!(inked, "glyph at {r:?} is blank");
+        }
+    }
 }
