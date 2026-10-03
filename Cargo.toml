@@ -66,6 +66,10 @@ objc2             = "0.6"
 # (reduce motion / reduce transparency).
 objc2-foundation  = { version = "0.3", default-features = false, features = ["std", "NSObjCRuntime", "NSRunLoop", "NSString", "NSUserDefaults"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CADisplayLink", "objc2-core-foundation"] }
+# Touch ID / Face ID (INTEGRASI-NATIVE §5): `LAContext` lewat LocalAuthentication.
+# Fitur dipilih satu-satu seperti objc2-app-kit; `block2` dibutuhkan untuk reply handler.
+objc2-local-authentication = { version = "0.3", default-features = false, features = ["std", "LAContext", "LABiometryType", "LAError", "LAPublicDefines", "block2"] }
+block2            = "0.6"
 # AppKit hanya sebanyak yang dibutuhkan pekerjaan escape hatch yang lazim:
 # titlebar transparan + traffic lights (NSWindow/NSView/NSResponder), vibrancy
 # (NSVisualEffectView), dan info layar (NSScreen). Fitur dipilih satu-satu:
@@ -88,7 +92,7 @@ objc2-app-kit     = { version = "0.3", default-features = false, features = ["st
 # harus menyala meski payload kita selalu HGLOBAL. Macro `#[implement]` untuk
 # dua objek COM drag datang dari `windows-core` — dideklarasikan eksplisit
 # karena path `windows_core::` muncul di hasil ekspansi macro-nya.
-windows           = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Registry", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_SystemServices", "Win32_UI_Input_KeyboardAndMouse"] }
+windows           = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Registry", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Ole", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_SystemServices", "Win32_UI_Input_KeyboardAndMouse", "Security_Credentials_UI", "Foundation", "Win32_System_WinRT"] }
 windows-core      = "0.62"
 
 # Escape hatch Linux (INTEGRASI-NATIVE §8) — zbus untuk D-Bus (portal, global

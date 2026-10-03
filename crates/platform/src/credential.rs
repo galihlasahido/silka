@@ -33,12 +33,18 @@
 //! ## Proving the human is still there
 //!
 //! [`BiometricPrompt`] is Touch ID / Face ID / Windows Hello. The vocabulary is
-//! here; the backends are not, and the module says which API each one needs
-//! rather than pretending. What **is** worth stating up front, and is encoded in
-//! the API, is that biometrics is an *authorisation* gesture and never a
+//! here, and so are the backends: `LAContext` on macOS and the WinRT
+//! `UserConsentVerifier` on Windows, each confined to its own submodule.
+//! Linux has none and says so. What is worth stating up front, and is encoded
+//! in the API, is that biometrics is an *authorisation* gesture and never a
 //! *storage* mechanism: it returns "the user is present", not a key.
 
 use core::fmt;
+
+#[cfg(target_os = "macos")]
+mod biometric_macos;
+#[cfg(target_os = "windows")]
+mod biometric_windows;
 
 /// Why a credential operation did not happen.
 ///
@@ -307,6 +313,8 @@ pub enum BiometricKind {
     TouchId,
     /// Face ID.
     FaceId,
+    /// Optic ID.
+    OpticId,
     /// Windows Hello (fingerprint, face, or PIN — the OS decides).
     WindowsHello,
 }
@@ -353,13 +361,19 @@ impl fmt::Display for BiometricError {
 
 impl std::error::Error for BiometricError {}
 
-/// What the machine offers, as far as this build can tell.
+/// What the machine offers right now.
 ///
-/// Always [`BiometricKind::None`] today — the backends named in
-/// [`BiometricPrompt`] are not written. It is a function rather than a constant
-/// because the answer depends on hardware, and a caller written against it now
-/// keeps working when the backends land.
+/// Asks the OS (`canEvaluatePolicy` on macOS, `UserConsentVerifier` on
+/// Windows), so the answer depends on hardware and enrolment and can change
+/// while the application runs. [`BiometricKind::None`] on Linux, where no
+/// backend exists. Cheap enough to call before showing a "use Touch ID"
+/// button, but it does ask the OS each time.
 pub fn biometric_kind() -> BiometricKind {
+    #[cfg(target_os = "macos")]
+    return biometric_macos::kind();
+    #[cfg(target_os = "windows")]
+    return biometric_windows::kind();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     BiometricKind::None
 }
 
@@ -376,9 +390,11 @@ pub fn biometric_kind() -> BiometricKind {
 ///     .fallback("Use password…");
 /// assert_eq!(prompt.reason(), "unlock your saved sign-in");
 ///
-/// // Honest about not being wired up yet, rather than silently succeeding —
-/// // which for an authorisation gesture would be the worst possible bug.
-/// assert!(matches!(prompt.authenticate(), Err(BiometricError::Unsupported(_))));
+/// // `authenticate()` blocks until the user answers, so it is not run here —
+/// // it would show a real system prompt. The error type is the contract: only
+/// // `Ok(())` means the user is present.
+/// let _: fn(&silka_platform::credential::BiometricPrompt) -> Result<(), BiometricError> =
+///     silka_platform::credential::BiometricPrompt::authenticate;
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BiometricPrompt {
@@ -413,19 +429,33 @@ impl BiometricPrompt {
 
     /// Show the prompt and wait for an answer.
     ///
+    /// **Blocks the calling thread** until the user answers or dismisses the
+    /// prompt: Touch ID / Face ID through `LAContext` on macOS, Windows Hello
+    /// through `UserConsentVerifier` on Windows. The application's UI does not
+    /// repaint while it waits, so call it from a worker thread when that
+    /// matters.
+    ///
+    /// Biometrics is an authorisation gesture, never a key: `Ok(())` means
+    /// "the enrolled user is present", nothing more.
+    ///
     /// # Errors
     ///
-    /// Always [`BiometricError::Unsupported`] today. macOS needs
-    /// `LAContext::evaluatePolicy:localizedReason:reply:` from
-    /// LocalAuthentication, and Windows needs the WinRT
-    /// `UserConsentVerifier` — neither of which is in the binding set this
-    /// workspace pins. **Failing closed is the only safe seam** for an
-    /// authorisation gesture: an `Ok(())` placeholder would be a security hole
-    /// that looks like progress.
+    /// Every outcome except a verified match is an error — the call fails
+    /// closed. [`BiometricError::Cancelled`] when the user dismissed the
+    /// prompt, [`BiometricError::Failed`] for a mismatch or lockout,
+    /// [`BiometricError::Unavailable`] when there is no sensor or no enrolled
+    /// biometric, [`BiometricError::Os`] for anything else the OS reported,
+    /// and [`BiometricError::Unsupported`] on platforms with no backend
+    /// (Linux).
     pub fn authenticate(&self) -> Result<(), BiometricError> {
+        #[cfg(target_os = "macos")]
+        return biometric_macos::authenticate(&self.reason, self.fallback.as_deref());
+        #[cfg(target_os = "windows")]
+        return biometric_windows::authenticate(&self.reason, self.fallback.as_deref());
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         Err(BiometricError::Unsupported(
-            "macOS needs LocalAuthentication (LAContext) and Windows needs the WinRT \
-             UserConsentVerifier; neither binding is pinned by this workspace"
+            "this platform has no biometric backend: macOS uses LocalAuthentication \
+             and Windows uses the WinRT UserConsentVerifier"
                 .into(),
         ))
     }
@@ -493,16 +523,23 @@ mod tests {
         );
     }
 
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     #[test]
     fn biometrik_gagal_tertutup_bukan_terbuka() {
-        // An `Ok(())` placeholder for an authorisation gesture would be a
-        // security hole that looks like progress.
+        // Where no backend exists, an `Ok(())` placeholder for an authorisation
+        // gesture would be a security hole that looks like progress.
         let prompt = biometric_prompt("unlock your saved sign-in");
         assert!(matches!(
             prompt.authenticate(),
             Err(BiometricError::Unsupported(_))
         ));
         assert!(!biometric_kind().is_available());
+    }
+
+    #[test]
+    fn availability_can_always_be_asked_without_a_prompt() {
+        // Must not panic or block on any machine, with or without a sensor.
+        let _ = biometric_kind();
     }
 
     #[test]
