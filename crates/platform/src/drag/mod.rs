@@ -55,10 +55,11 @@
 //! **Windows** is implemented (`windows` module): `DoDragDrop` over two COM
 //! objects implemented here — `IDataObject` carrying every
 //! [`DragItem`] under [`DragItem::windows_format`], and `IDropSource`
-//! answering the mouse and the Esc key. What is still honest to say about it:
-//! the drag image (the picture following the pointer) is not drawn yet —
-//! that needs `IDragSourceHelper` — so a Windows drag works everywhere but
-//! travels without its thumbnail.
+//! answering the mouse and the Esc key. The drag image (the picture following
+//! the pointer) is handed to the shell's `IDragSourceHelper`, which stores it in
+//! the data object; if the preview is unusable or the helper refuses, the drag
+//! still works and simply travels without its thumbnail. What is still honest to
+//! say about it: this path has been compiled for Windows but never run on one.
 //!
 //! An application can tell which platforms are live without starting a drag:
 //! [`is_supported`].
@@ -88,6 +89,11 @@ pub mod macos;
 /// directly.
 #[cfg(target_os = "windows")]
 mod windows;
+
+/// Pixel-format and hotspot arithmetic for the Windows drag image, free of OS
+/// types so it is tested on every host.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+mod image_bits;
 
 // ---------------------------------------------------------------------------
 // Effects
