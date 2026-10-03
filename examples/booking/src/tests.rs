@@ -352,3 +352,107 @@ fn the_seed_booking_is_on_the_list_from_the_start() {
         "the next booking must not collide with the seeded one"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The date panel: where it sits, and what it shows
+// ---------------------------------------------------------------------------
+
+/// The long label of a January 2026 day cell — the month `TODAY` and the
+/// seeded value both fall in.
+fn jan(day: u32) -> String {
+    Locale::default().date_long(Date::new(2026, 1, day))
+}
+
+/// The panel hangs under the field, starts at the field's leading edge, and
+/// stays inside the window. The calendar's own arrows stand in for the
+/// panel's rect, which the accessibility tree does not expose on its own.
+fn assert_panel_under_field(screen: &Screen, when: &str) {
+    let field = screen.rect(form::DATE_FIELD);
+    let prev = screen.rect("Previous month, December 2025");
+    let next = screen.rect("Next month, February 2026");
+    assert!(
+        prev.min_y() > field.max_y(),
+        "{when}: the panel starts above the field's bottom edge: field {field:?}, arrow {prev:?}"
+    );
+    assert!(
+        prev.min_y() - field.max_y() < 40.0,
+        "{when}: the panel is detached from the field: field {field:?}, arrow {prev:?}"
+    );
+    assert!(
+        prev.min_x() >= field.min_x() && prev.min_x() - field.min_x() < 40.0,
+        "{when}: the panel is not aligned to the field's leading edge: field {field:?}, arrow {prev:?}"
+    );
+    assert!(
+        next.max_x() <= VIEWPORT.width && next.max_y() <= VIEWPORT.height,
+        "{when}: the panel leaves the window: {next:?}"
+    );
+}
+
+#[test]
+fn the_date_panel_attaches_under_the_field_every_time_it_opens() {
+    let mut screen = Screen::new(theme());
+    screen.click(form::DATE_FIELD);
+    assert_panel_under_field(&screen, "first open");
+
+    // Picking closes it; reopening with a value set is the reported case.
+    screen.click(&jan(14));
+    screen.click(form::DATE_FIELD);
+    assert_panel_under_field(&screen, "reopened with 01/14/2026 set");
+    screen.press(NamedKey::Escape);
+
+    // A validation message appears and the page reflows.
+    screen.click(form::SUBMIT);
+    screen.click(form::DATE_FIELD);
+    assert_panel_under_field(&screen, "after the error line appeared");
+}
+
+#[test]
+fn the_calendar_title_does_not_cover_the_next_month_arrow() {
+    let mut screen = Screen::new(theme());
+    screen.click(form::DATE_FIELD);
+    let prev = screen.rect("Previous month, December 2025");
+    let next = screen.rect("Next month, February 2026");
+    // January 2026 starts on a Thursday, so the 4th is the Sunday column and
+    // the 3rd the Saturday one.
+    let sunday = screen.rect(&jan(4));
+    let saturday = screen.rect(&jan(3));
+    assert!(
+        (prev.min_x() - sunday.min_x()).abs() < 0.5,
+        "previous arrow {prev:?} is not at the grid's leading edge {sunday:?}"
+    );
+    assert!(
+        (next.max_x() - saturday.max_x()).abs() < 0.5,
+        "next arrow {next:?} is not at the grid's trailing edge {saturday:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Typing in the room field
+// ---------------------------------------------------------------------------
+
+#[test]
+fn each_keystroke_in_the_room_field_costs_one_frame_not_a_cascade() {
+    // A report of "typing is very slow" has to be answerable from frame
+    // counts, which unlike wall-clock time do not depend on the machine: a
+    // key that needs one frame cannot be the reason a window feels laggy,
+    // and a key that starts needing dozens would be.
+    let mut screen = Screen::new(theme());
+    screen.click(form::ROOM_FIELD);
+    for ch in "ced".chars() {
+        screen.ui.dispatch(&Event::Key(KeyEvent::pressed(
+            KeyCode::Character(ch),
+            Duration::ZERO,
+        )));
+        let mut frames = 0;
+        while !screen.ui.is_idle() || frames == 0 {
+            screen.frame();
+            frames += 1;
+            assert!(
+                frames <= 3,
+                "typing {ch:?} needed {frames}+ frames to settle"
+            );
+        }
+    }
+    let query = screen.ui.env::<BookingState>().expect("BookingState").query;
+    assert_eq!(query.get(), "ced");
+}

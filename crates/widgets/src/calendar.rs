@@ -1436,7 +1436,17 @@ impl From<Calendar> for View {
 
         let mut anak: Vec<View> = Vec::with_capacity(3);
         if c.header {
-            anak.push(c.head());
+            // The column is centred, so a bare header row would shrink to its
+            // two arrows and leave its `expanded` heading no width at all —
+            // the title then paints across the next-month arrow. Pinning it
+            // to the grid's own width (seven cells and six gaps) is what lets
+            // the heading take whatever the arrows leave.
+            let style = c.style();
+            let width = 7.0 * style.cell + 6.0 * style.gap;
+            anak.push(View::from(constrained(
+                BoxConstraints::new(width, width, 0.0, f32::INFINITY),
+                c.head(),
+            )));
         }
         anak.push(c.headings());
         anak.push(grid.into());
@@ -1508,6 +1518,34 @@ mod tests {
             }
         }
         None
+    }
+
+    #[test]
+    fn the_heading_row_spans_the_grid_so_the_title_cannot_cover_an_arrow() {
+        // The column is centred, so an unpinned header row shrank to its two
+        // arrows, leaving the `expanded` title no width — and the title was
+        // then painted straight across the next-month arrow.
+        let tree = laid_out(build(AGU));
+        let a11y = tree.access_tree(None);
+        let rect = |label: &str| {
+            a11y.find_label(label)
+                .unwrap_or_else(|| panic!("no node labelled {label:?}:\n{}", a11y.dump()))
+                .bounds
+        };
+        let prev = rect("Previous month, Juli 2026");
+        let next = rect("Next month, September 2026");
+        // 27 Juli is the first cell (Monday-first Indonesian locale) and
+        // 2 Agustus the last of its row.
+        let first = rect("27 Juli 2026");
+        let last = rect("2 Agustus 2026");
+        assert!(
+            (prev.min_x() - first.min_x()).abs() < 0.5,
+            "previous arrow {prev:?} is not at the grid's leading edge {first:?}"
+        );
+        assert!(
+            (next.max_x() - last.max_x()).abs() < 0.5,
+            "next arrow {next:?} is not at the grid's trailing edge {last:?}"
+        );
     }
 
     #[test]
