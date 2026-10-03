@@ -19,7 +19,7 @@ inside the shipped binary and therefore has to be testable:
 | `pending` | What has to happen at the next restart, and what if the swap fails? |
 | `crash` | What is written down before the process dies, and where is it read back? |
 
-## Two deliberate refusals
+## One deliberate refusal, one optional dependency
 
 **1. This crate does not verify signatures.** It computes the digest, it hands
 you the exact bytes that were signed, and it takes a `SignatureVerifier` you
@@ -29,17 +29,22 @@ would produce a verification routine that looks like security and is not. The
 digest check it *does* perform is integrity, not authenticity, and the type
 names say so.
 
-**2. This crate does not write minidumps.** `crash::write_minidump` returns
-`MinidumpError::Unsupported` naming the API it is waiting for
-(`minidump-writer`, or Crashpad's handler process), the same convention the
-platform crate uses for every backend it does not have yet. What it does write
-is the metadata *around* the dump — application, version, build id, platform,
-panic label, message and location — because that file is what makes a dump
-symbolicatable six months later, and because it is useful on its own.
+**2. Minidumps come from one optional dependency.** `crash::write_minidump`
+writes a real dump of the current process on macOS and Windows through
+`minidump-writer`, behind the default-on `minidump` feature (opt out with
+`default-features = false` for the zero-dependency build). Elsewhere it returns
+`MinidumpError::Unsupported` saying why, the convention the platform crate uses
+for every backend it does not have. The dump is **in-process**: sound for a Rust
+panic, unreliable for heap corruption or a stack overflow, which need a
+Crashpad-style handler process (a second signed executable, and a distribution
+decision rather than a function). The JSON report beside the dump — application,
+version, build id, platform, panic label, message and location — is what makes
+it symbolicatable six months later.
 
-## Zero dependencies, on purpose
+## Almost no dependencies, on purpose
 
-An updater is the one component that cannot be fixed by an update. Every byte of
+Apart from that one opt-out-able crash backend, nothing here pulls a
+dependency tree. An updater is the one component that cannot be fixed by an update. Every byte of
 its logic is arithmetic over bytes here — SHA-256, a JSON reader, a version
 ordering — so that the code path which decides whether to replace the
 application is a code path you can read in an afternoon.

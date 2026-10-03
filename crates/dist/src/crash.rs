@@ -20,18 +20,21 @@
 //! );
 //! ```
 //!
-//! # Why a JSON file and not a minidump
+//! # A JSON file and a minidump, side by side
 //!
-//! Both, eventually — but they answer different questions and only one of them
-//! can be written by this crate.
+//! They answer different questions. A **minidump** is the register state and
+//! the stacks of every thread; it is what tells you *which* line crashed in a
+//! release build. [`write_minidump`] writes one for the current process on macOS
+//! and Windows (behind the default-on `minidump` feature) and returns
+//! [`MinidumpError::Unsupported`] elsewhere, naming why — the convention
+//! `silka-platform` uses for every backend it does not have. Writing a
+//! plausible-looking one by hand would produce a file no symbolizer accepts,
+//! discovered six months later when it matters.
 //!
-//! A **minidump** is the register state and the stacks of every thread. It is
-//! what tells you *which* line crashed in a release build, and writing one
-//! correctly means walking a dying process's memory: [`write_minidump`] returns
-//! [`MinidumpError::Unsupported`] naming the API it waits for, the same
-//! convention `silka-platform` uses for every backend it does not have yet.
-//! Writing a plausible-looking one by hand would produce a file no symbolizer
-//! accepts, discovered six months later when it matters.
+//! [`report_to_directory`] writes both for a panic: `crash-<id>.json` and, when
+//! a backend exists, `crash-<id>.dmp` with the same stem. [`minidump_for`] finds
+//! the dump belonging to a report, and [`prune`] / [`clear_all`] remove the pair
+//! together.
 //!
 //! The **JSON report** is the metadata *around* the dump, and it is the half
 //! that makes a dump usable: application, version, build id, platform, which
@@ -336,14 +339,7 @@ impl CrashReport {
     pub fn write_into(&self, directory: &Path) -> Result<PathBuf, CrashError> {
         fs::create_dir_all(directory).map_err(CrashError::Io)?;
 
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
-        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let path = directory.join(format!(
-            "crash-{:020}-{}-{:010}.json",
-            self.at,
-            std::process::id(),
-            unique
-        ));
+        let path = directory.join(format!("{}.json", unique_stem(self.at)));
         fs::write(&path, self.to_json().to_string()).map_err(CrashError::Io)?;
         Ok(path)
     }
@@ -394,6 +390,13 @@ fn optional_text<'a>(value: &'a Json, key: &'static str) -> Result<Option<&'a st
     }
 }
 
+/// `crash-<time>-<pid>-<counter>`, the name both a report and its dump share.
+fn unique_stem(at: u64) -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("crash-{:020}-{}-{:010}", at, std::process::id(), unique)
+}
+
 fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -420,7 +423,10 @@ pub fn report_to_directory(context: CrashContext, directory: impl Into<PathBuf>)
     let directory = directory.into();
     silka_core::recover::on_crash(move |panic| {
         let report = CrashReport::from_panic(&context, panic);
-        if report.write_into(&directory).is_ok() {
+        if let Ok(path) = report.write_into(&directory) {
+            // Best effort and after the report: the JSON is the part that must
+            // survive, and a dump that fails or is unsupported changes nothing.
+            let _ = write_minidump_beside(&path);
             // Pruning after the write rather than before: the newest report is
             // the one worth keeping even when the directory is already at the
             // limit, and pruning first would risk dropping it on a failed write.
@@ -475,18 +481,29 @@ pub fn prune(directory: &Path, keep: usize) -> Result<usize, CrashError> {
         if fs::remove_file(path).is_ok() {
             removed += 1;
         }
+        let _ = fs::remove_file(path.with_extension("dmp"));
     }
     Ok(removed)
 }
 
-/// Delete every report in `directory` — what an uploader calls once the server
-/// has acknowledged them.
+/// Delete every report in `directory`, and every minidump, — what an uploader
+/// calls once the server has acknowledged them. The count is of reports.
 pub fn clear_all(directory: &Path) -> Result<usize, CrashError> {
     let files = report_files(directory)?;
     let mut removed = 0usize;
     for path in files {
         if fs::remove_file(&path).is_ok() {
             removed += 1;
+        }
+        let _ = fs::remove_file(path.with_extension("dmp"));
+    }
+    // Dumps written on their own, with no report beside them.
+    if let Ok(entries) = fs::read_dir(directory) {
+        for path in entries.flatten().map(|entry| entry.path()) {
+            let name = path.file_name().and_then(|name| name.to_str());
+            if name.is_some_and(|n| n.starts_with("crash-") && n.ends_with(".dmp")) {
+                let _ = fs::remove_file(&path);
+            }
         }
     }
     Ok(removed)
@@ -521,36 +538,139 @@ fn report_files(directory: &Path) -> Result<Vec<PathBuf>, CrashError> {
 // Minidumps
 // ---------------------------------------------------------------------------
 
-/// Write a minidump beside the report — **not implemented**.
+/// Write a minidump of the **current process** into `directory`.
 ///
-/// Always returns [`MinidumpError::Unsupported`], which names the API this is
-/// waiting for. The convention comes from `silka-platform`: a call with no
-/// backend returns a typed error saying so, rather than quietly doing nothing
-/// and letting an application ship believing it collects dumps.
+/// The file is named like a report (`crash-<time>-<pid>-<n>.dmp`) so it sorts
+/// and is pruned with them. The call blocks until the dump is on disk.
 ///
-/// What a real implementation needs, and why it is not here:
+/// Available on macOS and Windows with the `minidump` feature; anywhere else it
+/// returns [`MinidumpError::Unsupported`] and writes nothing, rather than
+/// quietly succeeding and letting an application ship believing it collects
+/// dumps.
 ///
-/// - **In-process** (`minidump-writer`) is the small version: it walks the
-///   dying process from inside a signal handler, which is unsound the moment the
-///   crash was heap corruption — the allocator it needs is the thing that broke.
-/// - **Out-of-process** (a Crashpad-style handler) is the correct version, and
-///   it is a second executable that has to ship, be signed, be notarized and be
-///   started before anything else. That is a distribution problem as much as a
-///   code one, which is why it belongs in this crate's plan and not in a
-///   placeholder that returns `Ok(())`.
-pub fn write_minidump(_directory: &Path) -> Result<PathBuf, MinidumpError> {
-    Err(MinidumpError::Unsupported {
-        needs: "minidump-writer for an in-process dump, or a Crashpad-style handler process",
-    })
+/// # What this is not
+///
+/// This is an **in-process** dump: the crashing process inspects itself. That
+/// is sound for what a UI toolkit mostly sees — a Rust panic, with the
+/// allocator and the runtime intact — and unreliable for the cases an
+/// out-of-process handler exists for: heap corruption, a stack overflow, a
+/// hard fault. For those the correct design is a Crashpad-style handler
+/// process, which is a second signed executable and a distribution decision,
+/// not something this function can fake.
+///
+/// # Never panics
+///
+/// A panic inside the panic hook recurses, so the backend runs under
+/// `catch_unwind`, a call re-entered from the same thread is refused rather
+/// than recursed, and a partly written file is removed.
+pub fn write_minidump(directory: &Path) -> Result<PathBuf, MinidumpError> {
+    if !crate::minidump::AVAILABLE {
+        return Err(unsupported());
+    }
+    fs::create_dir_all(directory).map_err(|error| MinidumpError::Failed {
+        reason: error.to_string(),
+    })?;
+    write_dump_file(&directory.join(format!("{}.dmp", unique_stem(unix_seconds()))))
+}
+
+/// Write a minidump next to the report at `report`, sharing its file stem.
+///
+/// What [`report_to_directory`] calls, so [`minidump_for`] can pair them. Same
+/// availability and guarantees as [`write_minidump`].
+pub fn write_minidump_beside(report: &Path) -> Result<PathBuf, MinidumpError> {
+    if !crate::minidump::AVAILABLE {
+        return Err(unsupported());
+    }
+    write_dump_file(&report.with_extension("dmp"))
+}
+
+/// The minidump belonging to the report file `report`, if one was written.
+pub fn minidump_for(report: &Path) -> Option<PathBuf> {
+    let path = report.with_extension("dmp");
+    path.is_file().then_some(path)
+}
+
+fn unsupported() -> MinidumpError {
+    MinidumpError::Unsupported {
+        needs: "minidump-writer, which only the `minidump` feature on macOS and Windows provides",
+    }
+}
+
+fn write_dump_file(path: &Path) -> Result<PathBuf, MinidumpError> {
+    use std::cell::Cell;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+
+    thread_local! {
+        static WRITING: Cell<bool> = const { Cell::new(false) };
+    }
+    // Per thread: the hazard is a dump that panics and re-enters through the
+    // panic hook, not two threads each writing their own file.
+    if WRITING.with(|busy| busy.replace(true)) {
+        return Err(MinidumpError::Failed {
+            reason: String::from("a minidump is already being written on this thread"),
+        });
+    }
+
+    // The backend lists the threads and then asks each for its registers; a
+    // thread that exits in between makes that second step fail. Another try
+    // sees the new list, so a few attempts a few milliseconds apart turn a race
+    // into a rare event (at most ~140 ms in total before giving up).
+    const ATTEMPTS: u64 = 8;
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        let mut last = String::new();
+        for attempt in 0..ATTEMPTS {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(5 * attempt));
+            }
+            let _ = fs::remove_file(path);
+            let mut file = fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(path)
+                .map_err(|error| error.to_string())?;
+            match crate::minidump::write(&mut file) {
+                Ok(()) => {
+                    let length = file.metadata().map_err(|error| error.to_string())?.len();
+                    if length == 0 {
+                        return Err(String::from("the backend wrote an empty file"));
+                    }
+                    return Ok(());
+                }
+                Err(reason) => last = reason,
+            }
+        }
+        Err(last)
+    }));
+    WRITING.with(|busy| busy.set(false));
+
+    match outcome {
+        Ok(Ok(())) => Ok(path.to_path_buf()),
+        Ok(Err(reason)) => {
+            let _ = fs::remove_file(path);
+            Err(MinidumpError::Failed { reason })
+        }
+        Err(_) => {
+            let _ = fs::remove_file(path);
+            Err(MinidumpError::Failed {
+                reason: String::from("the minidump backend panicked"),
+            })
+        }
+    }
 }
 
 /// Why no minidump was written.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MinidumpError {
     /// This build has no minidump backend.
     Unsupported {
         /// The API that would provide one.
         needs: &'static str,
+    },
+    /// A backend exists and failed; nothing is left on disk.
+    Failed {
+        /// What it said.
+        reason: String,
     },
 }
 
@@ -562,6 +682,9 @@ impl fmt::Display for MinidumpError {
                     f,
                     "this build writes no minidumps; it is waiting for {needs}"
                 )
+            }
+            MinidumpError::Failed { reason } => {
+                write!(f, "minidump could not be written: {reason}")
             }
         }
     }
@@ -901,15 +1024,64 @@ mod tests {
 
     // -- minidumps ---------------------------------------------------------
 
+    #[cfg(not(all(feature = "minidump", any(target_os = "macos", target_os = "windows"))))]
     #[test]
     fn minidump_menolak_dengan_menyebut_apa_yang_ditunggu() {
         let scratch = Scratch::new("minidump");
-        let error = write_minidump(&scratch.root).expect_err("belum ada backend");
+        let error = write_minidump(&scratch.root).expect_err("tidak ada backend");
         assert!(matches!(error, MinidumpError::Unsupported { .. }));
         assert!(
             error.to_string().contains("minidump-writer"),
             "galat harus menyebut API yang ditunggu: {error}"
         );
+    }
+
+    #[cfg(all(feature = "minidump", any(target_os = "macos", target_os = "windows")))]
+    #[test]
+    fn minidump_sungguhan_punya_header_mdmp() {
+        let scratch = Scratch::new("minidump");
+        let path = write_minidump(&scratch.root).expect("dump proses ini harus bisa ditulis");
+        assert_eq!(path.extension().and_then(|e| e.to_str()), Some("dmp"));
+        let bytes = fs::read(&path).unwrap();
+        assert!(bytes.len() > 32, "dump terlalu kecil: {}", bytes.len());
+        assert_eq!(&bytes[..4], b"MDMP");
+        // Written on its own, it still gets cleaned up with the reports.
+        assert_eq!(clear_all(&scratch.root).unwrap(), 0);
+        assert!(!path.exists());
+    }
+
+    #[cfg(all(feature = "minidump", any(target_os = "macos", target_os = "windows")))]
+    #[test]
+    fn dump_dan_laporan_sepasang_dan_dipangkas_bersama() {
+        let scratch = Scratch::new("pasangan");
+        let report = CrashReport::from_panic(&context(), &panic_report());
+        let json = report.write_into(&scratch.root).unwrap();
+        assert!(minidump_for(&json).is_none());
+
+        let dump = write_minidump_beside(&json).unwrap();
+        assert_eq!(minidump_for(&json), Some(dump.clone()));
+        assert_eq!(dump.file_stem(), json.file_stem());
+        // The queue still sees exactly one report.
+        assert_eq!(read_all(&scratch.root).unwrap().len(), 1);
+
+        // Pruning the report takes its dump with it.
+        let second = report.write_into(&scratch.root).unwrap();
+        assert_eq!(prune(&scratch.root, 1).unwrap(), 1);
+        assert!(!json.exists() && !dump.exists());
+        assert!(second.exists());
+    }
+
+    #[test]
+    fn dump_ke_direktori_yang_tak_bisa_dibuat_gagal_tanpa_panik() {
+        let scratch = Scratch::new("buruk");
+        let blocker = scratch.root.join("berkas");
+        fs::write(&blocker, b"x").unwrap();
+        // A file where the directory should be.
+        let error = write_minidump(&blocker.join("dalam")).expect_err("harus gagal");
+        assert!(matches!(
+            error,
+            MinidumpError::Failed { .. } | MinidumpError::Unsupported { .. }
+        ));
     }
 
     // -- wiring ------------------------------------------------------------
@@ -927,5 +1099,12 @@ mod tests {
         assert!(all
             .iter()
             .any(|(_, report)| report.message().contains("bang dari uji")));
+        // …and, where a backend exists, the dump beside it.
+        if crate::minidump::AVAILABLE {
+            assert!(
+                all.iter().any(|(path, _)| minidump_for(path).is_some()),
+                "hook harus menulis dump sepasang dengan laporannya"
+            );
+        }
     }
 }

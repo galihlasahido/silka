@@ -117,6 +117,12 @@ unicode-segmentation = "1.13"
 # so an application that already lives in tokio (an HTTP client, a database
 # pool) can hand its futures straight to `Tasks::spawn` instead of wrapping each
 # one in `block_on`.
+# Minidump writing for crash reports (SISA-PEKERJAAN §I5) — HANYA di
+# crates/dist, di balik fitur `minidump`, dan hanya dipasang di macOS/Windows.
+# Tulis-sendiri-di-proses (bukan handler out-of-process): lihat batasan di
+# `silka_dist::crash::write_minidump`.
+minidump-writer   = "0.13"
+
 tokio             = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "macros"] }
 
 # Flex/Grid layout (§3.4) — HANYA di crates/core, dan di sana pun hanya di

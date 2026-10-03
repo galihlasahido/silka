@@ -7,6 +7,13 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
+[features]
+# A real minidump on macOS and Windows. On by default because a crash reporter
+# without a dump is half of one; an application that wants the zero-dependency
+# build opts out with `default-features = false`.
+default = ["minidump"]
+minidump = ["dep:minidump-writer"]
+
 [dependencies]
 # The only edge this crate has into the framework: `recover::on_crash` is where
 # a panic report is handed over, and this crate turns that report into a file on
@@ -17,3 +24,8 @@ silka-core.workspace = true
 # version ordering — is arithmetic over bytes, and an updater that pulls a
 # dependency tree is an updater that has to be updated. See README.md for the
 # one thing this crate refuses to implement itself: signature verification.
+
+# Confined to `src/minidump.rs`. Not a dependency at all on Linux, where the
+# in-process walk would need ptrace of ourselves and is refused with a reason.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+minidump-writer = { workspace = true, optional = true }

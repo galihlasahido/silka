@@ -69,16 +69,18 @@
 //! The digest check it *does* perform is integrity, not authenticity, and the
 //! type names say so.
 //!
-//! **This crate does not write minidumps.**
-//! [`crash::write_minidump`] returns
-//! [`MinidumpError::Unsupported`] naming the
-//! API it is waiting for — the same convention `silka-platform` uses for every
-//! backend it does not have yet. What it *does* write is the metadata around the
-//! dump, because that is what makes a dump symbolicatable six months later.
+//! **Minidumps are the one optional dependency.**
+//! [`crash::write_minidump`] writes a real dump of the current process on macOS
+//! and Windows through `minidump-writer`, behind the default-on `minidump`
+//! feature. Where there is no backend (Linux, or the feature off) it returns
+//! [`MinidumpError::Unsupported`] naming why — the same convention
+//! `silka-platform` uses for every backend it does not have. The JSON report
+//! beside the dump is what makes it symbolicatable six months later.
 //!
-//! ## Zero dependencies, on purpose
+//! ## Almost no dependencies, on purpose
 //!
-//! Except `silka-core`, whose [`recover::on_crash`](silka_core::recover::on_crash)
+//! Except `minidump-writer` (the `minidump` feature, macOS and Windows only) and
+//! `silka-core`, whose [`recover::on_crash`](silka_core::recover::on_crash)
 //! is where a panic report is handed over, nothing here depends on anything.
 //! SHA-256, the JSON reader, the version ordering: all of it is arithmetic over
 //! bytes. An updater is the one component that cannot be repaired by an update,
@@ -102,6 +104,7 @@
 pub mod crash;
 pub mod feed;
 pub mod json;
+mod minidump;
 pub mod pending;
 pub mod sha256;
 pub mod update;
