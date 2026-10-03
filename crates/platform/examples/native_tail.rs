@@ -23,7 +23,9 @@
 use std::time::Duration;
 
 use silka_platform::association::{app, association, url_scheme, DeepLink};
-use silka_platform::credential::{biometric_prompt, credential, is_supported as keychain_here};
+use silka_platform::credential::{
+    biometric_kind, biometric_prompt, credential, is_supported as keychain_here,
+};
 use silka_platform::dock::{set_badge, supports_badge, supports_progress, Badge};
 use silka_platform::drag::{drag, DragEffects};
 use silka_platform::hotkey::{hotkeys, windows_virtual_key};
@@ -31,9 +33,9 @@ use silka_platform::instance::{single_instance, InstanceRole};
 use silka_platform::media::{now_playing, PlaybackState};
 use silka_platform::menu::{item, menu, shortcut, MenuBar};
 use silka_platform::menubar::in_window_model;
-use silka_platform::notification::{notify, Timeout};
+use silka_platform::notification::{needs_bundle, notify, Timeout};
 use silka_platform::recent::note_recent;
-use silka_platform::share::{open_url, share_sheet};
+use silka_platform::share::{open_url, reveal, share_sheet};
 use silka_platform::trash::trash;
 use silka_platform::watch::{watch, Recursion};
 use silka_platform::{drag::DragPreview, image::RgbaImage};
@@ -80,6 +82,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------------------- §2
     // Dock badge, taskbar progress, and a notification.
     report("dock badge", set_badge(&Badge::Count(3)));
+    // Without a signed bundle macOS drops notifications silently, so the
+    // honest thing is to say so before asking for one.
+    println!(
+        "notification needs a signed bundle here: {}",
+        needs_bundle()
+    );
     report(
         "notification",
         notify("Native tail")
@@ -94,6 +102,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scratch = std::env::temp_dir().join("silka-native-tail.md");
     std::fs::write(&scratch, "# scratch\n")?;
     report("recent document", note_recent(&scratch));
+    // Revealing only selects the file in Finder / Explorer; nothing is opened
+    // or run, and it must happen before the file goes to the trash.
+    report("reveal in file manager", reveal(&scratch));
     report("move to trash", trash(&scratch));
 
     // ---------------------------------------------------------------- §5
@@ -114,7 +125,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\ncredential store available: {}", keychain_here());
     let token = credential("com.example.silka-tail", "demo");
     report("store token", token.set_password("s3cr3t"));
+    match token.password() {
+        Ok(read_back) => println!("read token back: {} characters", read_back.len()),
+        Err(e) => println!("read token back: {e}"),
+    }
     report("delete token", token.delete());
+    println!(
+        "biometrics here: {:?} (available: {})",
+        biometric_kind(),
+        biometric_kind().is_available()
+    );
     report(
         "biometric prompt",
         biometric_prompt("unlock the demo token").authenticate(),
